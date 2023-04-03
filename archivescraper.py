@@ -38,21 +38,6 @@ def pick_table(tables, column_index=0):
     print('pick_table: not found')
     return None
 
-def to_csv(df, stream=None):
-    output = Logger(stream)
-    if df is not None:
-        cols = df.columns
-        cols = [col[0] for col in cols]
-        cols.insert(1, 'Link')
-        output.write(','.join(cols))
-        table = df.to_numpy()
-        table = table.tolist()
-        for row in table:
-            #print(row)
-            fixed_row = list(row[0]) + [x[0] for x in row[1:]]
-            fixed_row = map(lambda x: '' if 'redlink' in x else x, fixed_row)
-            output.write(','.join(fixed_row))
-
 def extract_table(df, only_linked=True):
     if df is None:
         return []
@@ -139,14 +124,14 @@ def get_lastmod(url):
 def scan_archive(archive, stream=None):
     output = Logger(stream)
     output.write(archive.report)
-    for f in range(len(archive.fonds)):
-        fond = Fond(archive.fonds[f], archive)
+    for f in range(len(archive.children)):
+        fond = Fond(archive.children[f], archive)
         output.write(fond.report)
-        for o in range(len(fond.opi)):
-            opus = Opus(fond.opi[o], fond)
+        for o in range(len(fond.children)):
+            opus = Opus(fond.children[o], fond)
             output.write(opus.report)
-            for c in range(len(opus.cases)):
-                case = Case(opus.cases[c], opus)
+            for c in range(len(opus.children)):
+                case = Case(opus.children[c], opus)
                 output.write(case.report)
 
 def run_report(items = archive_list):
@@ -180,7 +165,47 @@ class Logger:
         else:
             self._stream.write(message + '\n')
 
-class Archive:
+class Table:
+    def __init__(self, spec, parent, is_leaf=False):
+        self._parent = parent
+        self._spec = spec
+        if is_leaf:
+            self._lastmod = get_lastmod(self.url)
+            self._table = None
+            self._children = None
+        else:
+            result = read_html(self.url)
+            self._lastmod = result[1]
+            self._table = pick_table(result[0])
+            if self._table is None:
+                print('Table not found:', self.url)
+            self._children = extract_table(self._table)
+
+    @property
+    def children(self):
+        return self._children
+
+    @property
+    def base(self):
+        return self._parent.base
+
+    @property
+    def url(self):
+        return self.base + self._spec[1] if self._spec is not None else None
+
+    @property
+    def id(self):
+        return self._spec[0]
+
+    @property
+    def name(self):
+        return f'{self._parent.name}/{self.id}'
+
+    @property
+    def lastmod(self):
+        return self._lastmod
+
+class Archive(Table):
     def __init__(self, tag, archives=archive_list, subarchive=subarchives[0], base=archive_base):
         self._tag = tag
         archive_name = archives[tag] if tag in archive_list else None
@@ -188,10 +213,7 @@ class Archive:
         self._name = archive_name
         self._subarchive = subarchive
         self._base = base
-        result = read_html(self.url)
-        self._lastmod = result[1]
-        self._table = pick_table(result[0])
-        self._fonds = self.get_fonds()
+        super().__init__(None, None)
 
     @property
     def tag(self):
@@ -206,17 +228,9 @@ class Archive:
         return self._subarchive
 
     @property
-    def lastmod(self):
-        return self._lastmod
-
-    @property
     def base(self):
         return self._base
     
-    @property
-    def fonds(self):
-        return self._fonds
-
     @property
     def url(self):
         return self._base + '/wiki/' + str(urllib.parse.quote(self._name))
@@ -224,139 +238,40 @@ class Archive:
     @property
     def report(self):
         return f'archive,{self.tag}/{self.subarchive},{self.lastmod}'
-    
-    def to_csv(self, stream=None):
-        to_csv(self._table, stream)
-
-    # output list of tuples: (fond_no, fond_link). If fond is redlinked then tuple is (fond_no, None).
-    def get_fonds(self, only_linked=True):
-        return extract_table(self._table, only_linked)
 
     def lookup(self, fond_id):
-        matches = [x for x in self.fonds if x[0] == fond_id]
+        matches = [x for x in self._children if x[0] == fond_id]
         return Fond(matches[0], self) if len(matches) > 0 else None
 
-class Fond:
-    def __init__(self, fond_spec, archive):
-        self._archive = archive
-        self._fond_spec = fond_spec
-        result = read_html(self.url)
-        self._lastmod = result[1]
-        self._table = pick_table(result[0])
-        if self._table is None:
-            print('Fond: table not found:', self.url)
-        self._opi = self.get_opi()
-
-    @property
-    def opi(self):
-        return self._opi
-
-    @property
-    def url(self):
-        return self._archive.base + self._fond_spec[1] if self._fond_spec is not None else None
-
-    @property
-    def id(self):
-        return self._fond_spec[0]
-
-    @property
-    def base(self):
-        return self._archive.base
-    
+class Fond(Table):
     @property
     def name(self):
-        return f'{self._archive.tag}/{self.id}'
-
-    @property
-    def lastmod(self):
-        return self._lastmod
+        return f'{self._parent.tag}/{self.id}'
 
     @property
     def report(self):
         return f'fond,{self.name},{self.lastmod}'
 
-    def to_csv(self, stream=None):
-        to_csv(self._table, stream)
-
-    def get_opi(self, only_linked=True):        
-        return extract_table(self._table, only_linked)
-
     def lookup(self, fond_id):
-        matches = [x for x in self.opi if x[0] == fond_id]
+        matches = [x for x in self._children if x[0] == fond_id]
         return Opus(matches[0], self) if len(matches) > 0 else None
 
-class Opus:
-    def __init__(self, opus_spec, fond):
-        self._fond = fond
-        self._opus_spec = opus_spec
-        result = read_html(self.url)
-        self._lastmod = result[1]
-        self._table = pick_table(result[0])
-        self._cases = self.get_cases()
-
-    @property
-    def cases(self):
-        return self._cases
-
-    @property
-    def id(self):
-        return self._opus_spec[0]
-    
-    @property
-    def base(self):
-        return self._fond.base
-
-    @property
-    def url(self):
-        return self.base + self._opus_spec[1] if self._opus_spec[1] is not None else None
-
-    @property
-    def name(self):
-        return f'{self._fond.name}/{self.id}'
-
-    @property
-    def lastmod(self):
-        return self._lastmod
-
+class Opus(Table):
     @property
     def report(self):
-        return f'opus,{self.name},{self._lastmod}'
-
-    def to_csv(self, stream=None):
-        to_csv(self._table, stream)
-
-    def get_cases(self, only_linked=True):        
-        return extract_table(self._table, only_linked)
+        return f'opus,{self.name},{self.lastmod}'
 
     def lookup(self, fond_id):
-        matches = [x for x in self.cases if x[0] == fond_id]
+        matches = [x for x in self._children if x[0] == fond_id]
         return Case(matches[0], self) if len(matches) > 0 else None
 
-class Case:
-    def __init__(self, case_spec, opus):
-        self._opus = opus
-        self._case_spec = case_spec
-        self._lastmod = get_lastmod(self.url)
-
-    @property
-    def id(self):
-        return self._case_spec[0]
-    
-    @property
-    def base(self):
-        return self._opus.base
-
-    @property
-    def url(self):
-        return self.base + self._case_spec[1] if self._case_spec[1] is not None else None
-
-    @property
-    def name(self):
-        return f'{self._opus.name}/{self.id}'
+class Case(Table):
+    def __init__(self, spec, opus):
+        super().__init__(spec, opus, is_leaf=True)
 
     @property
     def report(self):
-        return f'case,{self.name},{self._lastmod}'
+        return f'case,{self.name},{self.lastmod}'
 
 
 if __name__ == "__main__":
