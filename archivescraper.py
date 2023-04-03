@@ -3,7 +3,7 @@
 
 import pandas as pd
 import numpy as np
-import urllib.request, urllib.parse
+import urllib.request, urllib.parse, urllib.error
 import io
 import re
 import json
@@ -16,6 +16,7 @@ from time import sleep
 
 archive_base = base='https://uk.wikisource.org'
 column_names = [ '№' , 'Опис', 'Номер', 'Фонд' ]
+subarchives = ['Д', 'Р', 'П']
 
 with open('archives.json') as f:
     archive_list = json.load(f)
@@ -79,6 +80,11 @@ def open_url(url):
         result = None
         try:
             result = urllib.request.urlopen(url)
+        except urllib.error.HTTPError as e:
+            #print('HTTP error:', e.code, e.reason)
+            if e.code == 404:
+                print('404: Page not found')
+                return None
         except BaseException as e:
             print('exception in urlopen:', type(e))
         if result is not None:
@@ -114,7 +120,13 @@ def read_html(url):
     message = file.read()
     mod_date = lastmod(message)
     #print('read_html: Date:', mod_date)
-    return (pd.read_html(message, extract_links="all"), mod_date)
+    tables = None
+    try:
+        tables = pd.read_html(message, extract_links="all")
+    except ImportError as e:
+        print('ImportError encountered in read_html. Skipping...')
+        pass
+    return (tables, mod_date)
 
 def get_lastmod(url):
     if url is not None:
@@ -147,15 +159,16 @@ def run_report(items = archive_list):
     print('reporting to', out_dir)
     for item in items:
         if items[item] is not None:
-            print('scanning', item, '...')
-            try:
-                with open(f'{out_dir}/{item}.csv', 'w') as file:
-                    scan_archive(Archive(item), file)
-            except KeyboardInterrupt:
-                return
-            except BaseException as e:
-                print('... EXCEPTION occured while scanning', item)
-                print(e.with_traceback)
+            with open(f'{out_dir}/{item}.csv', 'w') as file:
+                for sub in subarchives:
+                    print(f'scanning {item}/{sub}...')
+                    try:
+                        scan_archive(Archive(item, subarchive=sub), file)
+                    except KeyboardInterrupt:
+                        return
+                    except BaseException as e:
+                        print(f'... EXCEPTION occured while scanning {item}/{sub}')
+                        print(e.with_traceback)
 
 class Logger:
     def __init__(self, output = None):
@@ -168,10 +181,12 @@ class Logger:
             self._stream.write(message + '\n')
 
 class Archive:
-    def __init__(self, tag, archives=archive_list, base=archive_base):
+    def __init__(self, tag, archives=archive_list, subarchive=subarchives[0], base=archive_base):
         self._tag = tag
         archive_name = archives[tag] if tag in archive_list else None
+        archive_name = f'{archive_name}/{subarchive}'
         self._name = archive_name
+        self._subarchive = subarchive
         self._base = base
         result = read_html(self.url)
         self._lastmod = result[1]
@@ -184,7 +199,11 @@ class Archive:
     
     @property
     def name(self):
-        return self._name[:self._name.find('/')]
+        return self._name
+
+    @property
+    def subarchive(self):
+        return self._subarchive
 
     @property
     def lastmod(self):
@@ -204,7 +223,7 @@ class Archive:
 
     @property
     def report(self):
-        return ','.join(['archive', self.tag, self.lastmod])
+        return f'archive,{self.tag}/{self.subarchive},{self.lastmod}'
     
     def to_csv(self, stream=None):
         to_csv(self._table, stream)
