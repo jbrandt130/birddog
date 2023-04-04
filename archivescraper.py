@@ -66,10 +66,11 @@ def open_url(url):
         try:
             result = urllib.request.urlopen(url)
         except urllib.error.HTTPError as e:
-            #print('HTTP error:', e.code, e.reason)
             if e.code == 404:
                 print('404: Page not found')
                 return None
+            else:
+                print('HTTP error:', e.code, e.reason)
         except BaseException as e:
             print('exception in urlopen:', type(e))
         if result is not None:
@@ -205,6 +206,18 @@ class Table:
     def lastmod(self):
         return self._lastmod
 
+    @property
+    def child_class(self):
+        return None
+
+    @property
+    def report(self):
+        return f'{self.kind},{self.name},{self.lastmod}'
+
+    def lookup(self, entry_id):
+        matches = [x for x in self._children if x[0] == entry_id]
+        return self.child_class(matches[0], self) if len(matches) > 0 else None
+
 class Archive(Table):
     def __init__(self, tag, archives=archive_list, subarchive=subarchives[0], base=archive_base):
         self._tag = tag
@@ -237,11 +250,15 @@ class Archive(Table):
 
     @property
     def report(self):
-        return f'archive,{self.tag}/{self.subarchive},{self.lastmod}'
+        return f'{self.kind},{self.tag}/{self.subarchive},{self.lastmod}'
 
-    def lookup(self, fond_id):
-        matches = [x for x in self._children if x[0] == fond_id]
-        return Fond(matches[0], self) if len(matches) > 0 else None
+    @property
+    def child_class(self):
+        return Fond
+
+    @property
+    def kind(self):
+        return 'archive'
 
 class Fond(Table):
     @property
@@ -249,29 +266,31 @@ class Fond(Table):
         return f'{self._parent.tag}/{self.id}'
 
     @property
-    def report(self):
-        return f'fond,{self.name},{self.lastmod}'
+    def child_class(self):
+        return Opus
 
-    def lookup(self, fond_id):
-        matches = [x for x in self._children if x[0] == fond_id]
-        return Opus(matches[0], self) if len(matches) > 0 else None
+    @property
+    def kind(self):
+        return 'fond'
+
 
 class Opus(Table):
     @property
-    def report(self):
-        return f'opus,{self.name},{self.lastmod}'
+    def kind(self):
+        return 'opus'
 
-    def lookup(self, fond_id):
-        matches = [x for x in self._children if x[0] == fond_id]
-        return Case(matches[0], self) if len(matches) > 0 else None
+    @property
+    def child_class(self):
+        return Case
+
 
 class Case(Table):
     def __init__(self, spec, opus):
         super().__init__(spec, opus, is_leaf=True)
 
     @property
-    def report(self):
-        return f'case,{self.name},{self.lastmod}'
+    def kind(self):
+        return 'case'
 
 
 if __name__ == "__main__":
