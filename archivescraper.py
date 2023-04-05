@@ -24,7 +24,6 @@ with open('archives.json') as f:
 with open('months.json') as f:
     uk_months = json.load(f)
 
-#print(archive_list)
 
 def pick_table(tables, column_index=0):
     if tables is None:
@@ -54,7 +53,7 @@ lastmod_pattern = re.compile('[0-9][0-9]:[0-9][0-9].+[0-9][0-9]?.+[0-9][0-9][0-9
 
 def web_throttle(scale_factor = 1):
     web_delay_limit = 2 # seconds
-    sleep(random.random() * web_delay_limit * scale_factor)
+    sleep((1. + random.random() * web_delay_limit) * scale_factor)
 
 def open_url(url):
     print('open_url:', url)
