@@ -55,6 +55,8 @@ def web_throttle(scale_factor = 1):
     web_delay_limit = 2 # seconds
     sleep((1. + random.random() * web_delay_limit) * scale_factor)
 
+request_timeout = 5
+
 def open_url(url):
     print('open_url:', url)
     tries = 1
@@ -63,8 +65,8 @@ def open_url(url):
         web_throttle(tries)
         result = None
         try:
-            result = urllib.request.urlopen(url)
-        except urllib.error.HTTPError as e:
+            result = urllib.request.urlopen(url, timeout=request_timeout)
+        except (urllib.error.HTTPError, urllib.error.URLError) as e:
             if e.code == 404:
                 print('404: Page not found')
                 return None
