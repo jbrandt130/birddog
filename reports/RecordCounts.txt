@@ -1,22 +1,22 @@
      149 DAARC.csv
      218 DACHGO.csv
-     132 DACHkO.csv
+     156 DACHkO.csv
      182 DADNO.csv
-     239 DAHO.csv
+     696 DAHO.csv
     1586 DAHeO.csv
-    2450 DAHmO.csv
+    2872 DAHmO.csv
        9 DAIFO.csv
       19 DAK.csv
-    8862 DAKO.csv
-    2134 DAKrO.csv
+    9040 DAKO.csv
+    2137 DAKrO.csv
      183 DALO.csv
       14 DALuO.csv
       75 DAMO.csv
-    1133 DAOO.csv
+    1138 DAOO.csv
      347 DAPO.csv
       63 DARO.csv
        7 DAS.csv
-    1933 DAVIO.csv
+    1935 DAVIO.csv
      440 DAVOO.csv
-    4115 DAZHO.csv
-   24290 total
+    4167 DAZHO.csv
+   25433 total
