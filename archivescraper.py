@@ -49,15 +49,11 @@ def extract_table(df, only_linked=True):
         result = filter(lambda x: x[1] is not None, result)
     return list(result)
 
-lastmod_pattern = re.compile('[0-9][0-9]:[0-9][0-9].+[0-9][0-9]?.+[0-9][0-9][0-9][0-9]')
-
 def web_throttle(scale_factor = 1):
-    web_delay_limit = 2 # seconds
+    web_delay_limit = 1 # seconds
     sleep((1. + random.random() * web_delay_limit) * scale_factor)
 
-request_timeout = 5
-
-def open_url(url):
+def open_url(url, request_timeout=5):
     print('open_url:', url)
     tries = 1
     try_limit = 3
@@ -86,6 +82,8 @@ def format_date(message, uk_months=uk_months):
     message = map(lambda x: uk_months[x] if x in uk_months else x, message)
     message = ','.join(reversed(list(message)))
     return message
+
+lastmod_pattern = re.compile('[0-9][0-9]:[0-9][0-9].+[0-9][0-9]?.+[0-9][0-9][0-9][0-9]')
 
 def lastmod(message):
     #print(message)
