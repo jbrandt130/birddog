@@ -1,3 +1,0 @@
-SHELL=/bin/bash
-MAILTO=jb@brandtfamily.org
-@daily       $HOME/root/alexweb/run_update.sh
