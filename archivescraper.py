@@ -62,12 +62,14 @@ def open_url(url, request_timeout=5):
         result = None
         try:
             result = urllib.request.urlopen(url, timeout=request_timeout)
-        except (urllib.error.HTTPError, urllib.error.URLError) as e:
+        except urllib.error.HTTPError as e:
             if e.code == 404:
                 print('404: Page not found')
                 return None
             else:
                 print('HTTP error:', e.code, e.reason)
+        except urllib.error.URLError as e:
+            print('URL error:', e.reason)
         except BaseException as e:
             print('exception in urlopen:', type(e))
         if result is not None:
@@ -153,7 +155,7 @@ def run_report(items = archive_list):
                         return
                     except BaseException as e:
                         print(f'... EXCEPTION occured while scanning {item}/{sub}')
-                        print(e.with_traceback)
+                        print(e.with_traceback())
 
 class Logger:
     def __init__(self, output = None):
