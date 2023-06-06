@@ -40,16 +40,14 @@ def form_date(df):
     return df
 
 def load_report(fname):
-    print('load_report', fname)
+    #print('load_report', fname)
     df = pd.read_csv(f'{data_dir}/{fname}', 
                      names=['type', 'id', 'year', 'month', 'day', 'hour'],
                      dtype=str)
-    print(len(df))
     df = form_date(df)
     df = df.drop(columns=['year', 'month', 'day', 'hour'])
     df = df.replace({0: ''})
     df = df.fillna('?')
-    print(len(df))
     return df.set_index(['id'])
 
 def check_changes(df1, df2):
@@ -88,13 +86,11 @@ if __name__ == "__main__":
                 target_report = load_report(f'{target}/{archive}.csv')
             except FileNotFoundError as e:
                 print(f'No target report for {archive}.')
-                print('exception:', type(e))
                 pass
             try:
                 reference_report = load_report(f'{reference}/{archive}.csv')
             except FileNotFoundError as e:
                 print(f'No reference report for {archive}.')
-                print('exception:', type(e))
                 pass
             if target_report is not None and reference_report is not None:
                 change = check_changes(reference_report, target_report)
