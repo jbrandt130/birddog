@@ -213,7 +213,8 @@ class Table:
 
     @property
     def report(self):
-        return f'{self.kind},{self.name},{self.lastmod}'
+        # make sure no commas in the name
+        return f'{self.kind},{self.name.replace(',','')},{self.lastmod}'
 
     def lookup(self, entry_id):
         matches = [x for x in self._children if x[0] == entry_id]
