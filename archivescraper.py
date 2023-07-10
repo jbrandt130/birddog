@@ -15,7 +15,7 @@ from time import sleep
 
 
 archive_base = base='https://uk.wikisource.org'
-column_names = [ '№' , 'Опис', 'Номер', 'Фонд' ]
+column_names = [ '№' , 'Опис', 'Номер', 'Фонд', '#' ]
 subarchives = ['Д', 'Р', 'П']
 
 with open('archives.json') as f:
@@ -155,7 +155,7 @@ def run_report(items = archive_list):
                         return
                     except BaseException as e:
                         print(f'... EXCEPTION occured while scanning {item}/{sub}')
-                        print(e.with_traceback())
+                        print(e)
 
 class Logger:
     def __init__(self, output = None):
