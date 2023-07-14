@@ -3,6 +3,8 @@ import json
 from bs4 import BeautifulSoup
 from openpyxl import Workbook, load_workbook
 from googletrans import Translator
+import re
+from datetime import date
 
 base = 'https://e-resource.tsdavo.gov.ua'
 
@@ -126,3 +128,77 @@ def save_object(obj, fname):
 def load_object(fname):
     with open(fname) as f:
         return json.loads(f.read())
+
+class OpusTable:
+    def __init__(self, fond_id, opus_index=1):
+        self._fond_id = fond_id
+        self._opus_index = opus_index
+        self._opus_id = f'{fond_id}-{opus_index}'
+        self._cases = None
+
+    def load(self, base=base):
+        try:
+            self._cases = load_object(f'opus{self._opus_id}.json')
+            return
+        except:
+            pass
+        fonds = load_object('fonds.json')
+        fond_index = index_fonds(fonds)
+        url = base + fond_index[self._fond_id]['link']
+        print(f'loading {self._fond_id} from {url}')
+        opi = load_fond(url)
+        url = opi[self._opus_index-1]['link']
+        print(f'loading {self._opus_id} from {url}')
+        inv = Inventory(url)
+        self._cases = inv.load_all()
+        save_object(self._cases, f'opus{self._opus_id}.json')
+
+    def format_case(self, case, base=base):
+        link = case['link']
+        num = re.sub('Case ', '', case['title'])
+        link = base + link
+        desc = case['description']
+        return (num, desc, link, case['date'])
+
+    def add_row(self, row, case, base=base):
+        num, desc, link, date = self.format_case(case, base)
+        #print(num, title, link)
+        row[0].value = num
+        row[0].hyperlink = link
+        row[0].style = 'Hyperlink'
+        row[1].value = desc
+        row[1].hyperlink = link
+        row[1].style = 'Hyperlink'
+        row[2].value = date
+
+    def export(self, fname=None):
+        if not fname:
+            fname = f'TSDAVO Opus {self._opus_id}.xlsx'
+        wb = load_workbook(filename = 'Opus Sample.xlsx')
+        sheet = wb.active
+        sheet.title = f"CDAVO {self._opus_id}"
+        sheet["A1"].value = f"Archives / CDAVO / {self._fond_id} / {self._opus_index}"
+        sheet["A2"].value = f"{self._opus_index} ..."
+        sheet["D3"].value = "URL NEEDED!"
+        sheet["D4"].value = date.today().strftime('%d %b %Y')
+        #sheet.append(['Number', 'Description', 'Date'])
+        first_row = 9
+        for i, item in enumerate(self._cases):
+            self.add_row(sheet[i + first_row], item)
+        last_row = sheet.max_row
+        #formula_row = sheet.max_row + 2
+        sheet.append([])
+        sheet.append([
+            f"=rows(A9:a{last_row})",
+            "totals",
+            "",
+            "",
+            f"=counta(E9:E{last_row})",
+            f"=counta(F9:F{last_row})",
+            f"=counta(G9:G{last_row})",
+            f"=sum(H9:H{last_row})",
+            ])
+        print(f'saving {sheet.max_row} rows to {fname}')
+        wb.save(fname)
+
+
