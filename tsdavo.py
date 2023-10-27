@@ -5,7 +5,9 @@ from openpyxl import Workbook, load_workbook
 from googletrans import Translator
 import re
 import string
+from time import sleep
 from datetime import date
+from httpcore._exceptions import ReadTimeout, ConnectTimeout
 
 base = 'https://e-resource.tsdavo.gov.ua'
 cache_dir = './cache'
@@ -17,7 +19,17 @@ def clean(msg):
 
 translator = Translator()
 def translation(text):
-    result = Translator().translate(text, src='uk', dest='en')
+    result = None
+    wait_time = 1.
+    for i in range(5):
+        try:
+            result = Translator().translate(text, src='uk', dest='en')
+            break
+        except (requests.Timeout, ReadTimeout, ConnectTimeout) as err:
+            print('translation timeout. retrying...')
+        sleep(wait_time)
+        wait_time *= 2
+    assert result is not None 
     if isinstance(text, (list, tuple)):
         return [item.text for item in result]
     else:
@@ -63,7 +75,7 @@ class FondCollection:
             return load_cached_object('fonds.json')
         except:
             result = []
-            limit = 100
+            limit = 1000
             page = 1
             while True:
                 print('loading page', page)
@@ -109,7 +121,7 @@ class Inventory:
         
     def load_all(self, translate=True):
         result = []
-        limit = 100
+        limit = 1000
         page = 1
         while True:
             print('loading page', page)
@@ -197,7 +209,7 @@ class OpusTable:
         for tag in soup.find_all('div', attrs = {'class': 'left bold'}):
             if tag.text == abstract:
                 tag = tag.find_next_sibling()
-                abstract = translation(tag.text)
+                abstract = translation(tag.text) if len(tag.text) > 0 else ''
                 #print('found abstract:', abstract)
                 return abstract
         return None
@@ -207,7 +219,11 @@ class OpusTable:
         keywords = [clean(k) for k in keywords]
         pattern = '|'.join(keywords)
         expr = re.compile(pattern, re.IGNORECASE)
-        opus_scan = re.search(expr, self._fond_description) is not None or re.search(expr, self._abstract) is not None
+        opus_scan = False
+        if self._fond_description and re.search(expr, self._fond_description):
+            opus_scan = True
+        elif self._abstract and re.search(expr, self._abstract):
+            opus_scan = True
         case_scan = [re.search(expr, case['title']) is not None or re.search(expr, case['description']) is not None for case in self._cases]
         return opus_scan, case_scan
 
