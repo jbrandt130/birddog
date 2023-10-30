@@ -17,6 +17,14 @@ def clean(msg):
     allow = string.ascii_letters + string.digits + ' ' + '-'
     return re.sub('[^%s]' % allow, '', msg)
 
+def is_english(s):
+    try:
+        s.encode(encoding='utf-8').decode('ascii')
+    except UnicodeDecodeError:
+        return False
+    else:
+        return True
+
 translator = Translator()
 def translation(text):
     result = None
@@ -41,6 +49,44 @@ def translate_field(items, field_name):
     for i, text in enumerate(batch):
         items[i][field_name] = text    
 
+def load_fond(url):
+    soup = BeautifulSoup(requests.get(url).text, 'lxml')
+    result = []
+    for tag in soup.find_all('div', attrs = {'class': 'row with-border-bottom thin-row'}):
+        title = tag.find('div', attrs = {'class': 'left'})
+        item = {'link': title.a["href"], 'title': title.text.strip()}
+        result.append(item)
+    # look for description
+    historical_reference = 'Історична довідка'
+    description = None
+    for tag in soup.find_all('div', attrs = {'class': 'left'}):
+        item = tag.text
+        if item == historical_reference:
+            tag = tag.find_next_sibling()
+            description = translation(tag.text)
+            break
+    return result, description
+
+def index_fonds(fonds):
+    index = {}
+    for item in fonds:
+        index[item['number']] = item
+    return index
+
+def save_cached_object(obj, fname):
+    fname = f'{cache_dir}/{fname}'
+    with open(fname, 'w') as f:
+        f.write(json.dumps(obj))
+
+def load_cached_object(fname):
+    fname = f'{cache_dir}/{fname}'
+    with open(fname) as f:
+        return json.loads(f.read())
+
+def clean(msg):
+    # remove all but alphanumeric, hyphen and space
+    allow = string.ascii_letters + string.digits + ' ' + '-'
+    return re.sub('[^%s]' % allow, '', msg)
 
 class FondCollection:
     def __init__(self):
@@ -48,6 +94,8 @@ class FondCollection:
         self._endpoint = '/api/v1/fonds/'
         self._sortfield = 'FondNumber'
         self._sortorder = 'asc'
+        self._fonds = None
+        self._fond_index = None
     
     def load_page(self, page=1, limit=20, translate=True):
         url = f'{self._base}{self._endpoint}?Limit={limit}&Page={page}&SortField={self._sortfield}&SortOrder={self._sortorder}'
@@ -72,7 +120,7 @@ class FondCollection:
     
     def load(self, translate=True):
         try:
-            return load_cached_object('fonds.json')
+            result = load_cached_object('fonds.json')
         except:
             result = []
             limit = 1000
@@ -85,10 +133,19 @@ class FondCollection:
                 result += chunk
                 page += 1
             save_cached_object(result, 'fonds.json')
-            return result
+        result.sort(key=lambda x: int(x['number']))
+        self._fonds = result
+        self._fond_index = index_fonds(self._fonds)
+        return result
 
+    def lookup(self, fond_name):
+        if not self._fond_index:
+            self.load()
+        return self._fond_index[fond_name]
 
-class Inventory:
+collection = FondCollection()
+
+class OpusInventory:
     def __init__(self, endpoint):
         self._base = 'https://e-resource.tsdavo.gov.ua'
         self._endpoint = '/api/v1' + endpoint
@@ -132,44 +189,66 @@ class Inventory:
             page += 1
         return result
 
-def load_fond(url):
-    soup = BeautifulSoup(requests.get(url).text, 'lxml')
-    result = []
-    for tag in soup.find_all('div', attrs = {'class': 'row with-border-bottom thin-row'}):
-        title = tag.find('div', attrs = {'class': 'left'})
-        item = {'link': title.a["href"], 'title': title.text.strip()}
-        result.append(item)
-    # look for description
-    historical_reference = 'Історична довідка'
-    description = None
-    for tag in soup.find_all('div', attrs = {'class': 'left'}):
-        item = tag.text
-        if item == historical_reference:
-            tag = tag.find_next_sibling()
-            description = translation(tag.text)
-            break
-    return result, description
+class Fond:
+    def __init__(self, name=None):
+        self._name = name
+        self._url = None
+        self._dates = None
+        self._num_opi = None
+        self._num_cases = None
+        self._description = None
+        self._opi = None
 
-def index_fonds(fonds):
-    index = {}
-    for item in fonds:
-        index[item['number']] = item
-    return index
+        if name is not None:
+            self.load()
 
-def save_cached_object(obj, fname):
-    fname = f'{cache_dir}/{fname}'
-    with open(fname, 'w') as f:
-        f.write(json.dumps(obj))
+    Fields = {
+        'Фонд':                 '_name',
+        'Дати':                 '_dates',
+        'Кількість описів':     '_num_opi',
+        'Кількість справ':      '_num_cases',
+        'Історична довідка':    '_description'
+    }
 
-def load_cached_object(fname):
-    fname = f'{cache_dir}/{fname}'
-    with open(fname) as f:
-        return json.loads(f.read())
+    StoredFields = ['_name', '_url', '_dates', '_num_opi', '_num_cases', '_description', '_opi']
 
-def clean(msg):
-    # remove all but alphanumeric, hyphen and space
-    allow = string.ascii_letters + string.digits + ' ' + '-'
-    return re.sub('[^%s]' % allow, '', msg)
+    def load(self):
+        fond_info = collection.lookup(self._name)
+        try:
+            data = load_cached_object(f'fond{self._name}.json')
+            for f in Fond.StoredFields:
+                setattr(self, f, data[f])
+            return
+        except:
+            pass
+
+        url = base + fond_info['link']
+        soup = BeautifulSoup(requests.get(url).text, 'lxml')
+        self._url = url
+
+        # load fond field values
+        description = None
+        for tag in soup.find_all('div', attrs = {'class': 'left'}):
+            item = tag.text
+            if item in Fond.Fields:
+                tag = tag.find_next_sibling()
+                value = tag.text
+                if len(value) and not is_english(value):
+                    value = translation(value)
+                setattr(self, Fond.Fields[item], value)
+
+        # load opus specifications
+        result = []
+        for tag in soup.find_all('div', attrs = {'class': 'row with-border-bottom thin-row'}):
+            title = tag.find('div', attrs = {'class': 'left'})
+            item = {'link': title.a["href"], 'title': title.text.strip()}
+            result.append(item)
+        self._opi = result
+
+        data = {}
+        for f in Fond.StoredFields:
+            data[f] = getattr(self, f)
+        save_cached_object(data, f'fond{self._name}.json')
 
 class OpusTable:
     def __init__(self, fond_id, opus_index=1):
@@ -188,14 +267,13 @@ class OpusTable:
             return
         except:
             pass
-        fonds = load_cached_object('fonds.json')
-        fond_index = index_fonds(fonds)
-        url = base + fond_index[self._fond_id]['link']
+        fond_data = collection.lookup(self._fond_id)
+        url = base + fond_data['link']
         print(f'loading {self._fond_id} from {url}')
         opi, self._fond_description = load_fond(url)
         url = opi[self._opus_index-1]['link']
         print(f'loading {self._opus_id} from {url}')
-        inv = Inventory(url)
+        inv = OpusInventory(url)
         self._cases = inv.load_all()
         self._abstract = self.load_abstract(base + url)
         save_cached_object(self._cases, f'opus{self._opus_id}.json')
