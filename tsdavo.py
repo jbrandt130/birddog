@@ -348,9 +348,15 @@ class OpusTable:
             "",
             "",
             f"=counta(E9:E{last_row})",
-            f"=counta(F9:F{last_row})",
-            f"=counta(G9:G{last_row})",
-            f"=sum(H9:H{last_row})",
+            "",
+            "",
+            "",
+            f"=counta(I9:I{last_row})",
+            f"=counta(J9:J{last_row})",
+            f"=sum(K9:K{last_row})",
+            f"=counta(L9:L{last_row})",
+            f"=counta(M9:M{last_row})",
+            f"=sum(N9:N{last_row})",
             ])
         print(f'saving {sheet.max_row} rows to {fname}')
         wb.save(fname)
