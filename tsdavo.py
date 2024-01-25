@@ -250,6 +250,23 @@ class Fond:
             data[f] = getattr(self, f)
         save_cached_object(data, f'fond{self._name}.json')
 
+def are_pages_linked(case_info):
+    # check to see if the case has linked documents or not
+    # the test is based on whether the button at the bottom of the page 
+    # says "order" which means they are not linked, 
+    # or "revision" which means they linked
+    order = 'Замовити'
+    revision = 'Перегляд'
+    url = base + case_info['link']
+    soup = BeautifulSoup(requests.get(url).text, 'lxml')
+    for tag in soup.find_all('a', attrs = {'class': 'continue-link'}):
+        item = tag.text.strip()
+        if item == revision:
+            return True
+        if item == order:
+            return False
+    return None
+
 class OpusTable:
     def __init__(self, fond_id, opus_index=1):
         self._fond_id = fond_id
@@ -258,13 +275,14 @@ class OpusTable:
         self._fond_description = None
         self._abstract = None
         self._cases = None
+        self._linked_pages = None
 
     def load(self, base=base):
         try:
             self._cases = load_cached_object(f'opus{self._opus_id}.json')
             self._fond_description = load_cached_object(f'fond{self._fond_id}_description.json')
             self._abstract = load_cached_object(f'opus{self._opus_id}_abstract.json')
-            return
+            return self
         except:
             pass
         fond_data = collection.lookup(self._fond_id)
@@ -279,6 +297,7 @@ class OpusTable:
         save_cached_object(self._cases, f'opus{self._opus_id}.json')
         save_cached_object(self._fond_description, f'fond{self._fond_id}_description.json')
         save_cached_object(self._abstract, f'opus{self._opus_id}_abstract.json')
+        return self
 
     def load_abstract(self, url):
         #print('looking for opus abstract:', url)
@@ -304,6 +323,17 @@ class OpusTable:
             opus_scan = True
         case_scan = [re.search(expr, case['title']) is not None or re.search(expr, case['description']) is not None for case in self._cases]
         return opus_scan, case_scan
+
+    def linked_pages(self):
+        if self._linked_pages is None:
+            try:
+                self._linked_pages = load_cached_object(f'opus{self._opus_id}_linked_pages.json')
+            except:
+                self.load()
+                print(f'checking {len(self._cases)} cases on the archive...')
+                self._linked_pages = [are_pages_linked(case) for case in self._cases]
+                save_cached_object(self._linked_pages, f'opus{self._opus_id}_linked_pages.json')
+        return self._linked_pages
 
     def format_case(self, case, base=base):
         link = case['link']
