@@ -332,6 +332,9 @@ class OpusTable:
                 self.load()
                 print(f'checking {len(self._cases)} cases on the archive...')
                 self._linked_pages = [are_pages_linked(case) for case in self._cases]
+                for i, link in enumerate(self._linked_pages):
+                    self._cases[i]['linked'] = link
+                save_cached_object(self._cases, f'opus{self._opus_id}.json')
                 save_cached_object(self._linked_pages, f'opus{self._opus_id}_linked_pages.json')
         return self._linked_pages
 
@@ -352,10 +355,13 @@ class OpusTable:
         row[1].hyperlink = link
         row[1].style = 'Hyperlink'
         row[2].value = date
+        linked = case['linked']
+        row[4].value = "Linked" if linked is True else "Unlinked" if linked is False else ""
 
     def export(self, fname=None, case_filter=None):
         if not fname:
             fname = f'TSDAVO Opus {self._opus_id}.xlsx'
+        self.linked_pages() # make sure linked info is loaded
         wb = load_workbook(filename = 'Opus Sample.xlsx')
         sheet = wb.active
         sheet.title = f"CDAVO {self._opus_id}"
