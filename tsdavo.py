@@ -27,21 +27,21 @@ def is_english(s):
 
 translator = Translator()
 def translation(text):
+    if isinstance(text, (list, tuple)):
+        return [translation(item) for item in text]
+    print('translating: ', text)
     result = None
     wait_time = 1.
     for i in range(5):
         try:
-            result = Translator().translate(text, src='uk', dest='en')
+            result = translator.translate(text, src='uk', dest='en')
             break
         except (requests.Timeout, ReadTimeout, ConnectTimeout) as err:
             print('translation timeout. retrying...')
         sleep(wait_time)
         wait_time *= 2
     assert result is not None 
-    if isinstance(text, (list, tuple)):
-        return [item.text for item in result]
-    else:
-        return result.text
+    return result.text
 
 def translate_field(items, field_name):
     batch = [item[field_name] for item in items]
