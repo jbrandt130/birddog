@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd $HOME/root/alexweb
+cd $HOME/code/alexweb
 log=./var/log
 python=/usr/local/anaconda3/bin/python
 mkdir -p var
