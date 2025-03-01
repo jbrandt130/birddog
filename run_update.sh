@@ -2,7 +2,7 @@
 
 cd $HOME/code/alexweb
 log=./var/log
-python=/usr/local/anaconda3/bin/python
+python=/Users/jbrandt/anaconda3/bin/python
 mkdir -p var
 touch $log
 echo starting report update: `date` >> $log
@@ -16,8 +16,8 @@ change=`git status -s reports | wc -l`
 if [ $change -gt 0 ]; then
     echo something changed >> $log
     date=`date` 
-    git commit -a -m "automated report update: $date"
-    git push
+    #git commit -a -m "automated report update: $date"
+    #git push
 else
     echo no change >> $log
 fi

@@ -277,14 +277,15 @@ class OpusTable:
         self._cases = None
         self._linked_pages = None
 
-    def load(self, base=base):
-        try:
-            self._cases = load_cached_object(f'opus{self._opus_id}.json')
-            self._fond_description = load_cached_object(f'fond{self._fond_id}_description.json')
-            self._abstract = load_cached_object(f'opus{self._opus_id}_abstract.json')
-            return self
-        except:
-            pass
+    def load(self, base=base, use_cache=True):
+        if use_cache:
+            try:
+                self._cases = load_cached_object(f'opus{self._opus_id}.json')
+                self._fond_description = load_cached_object(f'fond{self._fond_id}_description.json')
+                self._abstract = load_cached_object(f'opus{self._opus_id}_abstract.json')
+                return self
+            except:
+                pass
         fond_data = collection.lookup(self._fond_id)
         url = base + fond_data['link']
         print(f'loading {self._fond_id} from {url}')
@@ -355,7 +356,7 @@ class OpusTable:
         row[1].hyperlink = link
         row[1].style = 'Hyperlink'
         row[2].value = date
-        linked = case['linked']
+        linked = case['linked'] if 'linked' in case else ''
         row[4].value = "Linked" if linked is True else "Unlinked" if linked is False else ""
 
     def export(self, fname=None, case_filter=None):

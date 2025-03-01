@@ -50,7 +50,7 @@ def extract_table(df, only_linked=True):
     return list(result)
 
 def web_throttle(scale_factor = 1):
-    web_delay_limit = 1 # seconds
+    web_delay_limit = .25 # seconds
     sleep((1. + random.random() * web_delay_limit) * scale_factor)
 
 def open_url(url, request_timeout=5):
@@ -113,6 +113,7 @@ def read_html(url):
     except ImportError as e:
         print('ImportError encountered in read_html. Skipping...')
         pass
+    print('read_html tables:', len(tables), tables)
     return (tables, mod_date)
 
 def get_lastmod(url):
