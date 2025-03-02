@@ -1,53 +1,16 @@
 import requests
-import json
 from bs4 import BeautifulSoup
 from openpyxl import Workbook, load_workbook
-from googletrans import Translator
 import re
 import string
+import json
 from time import sleep
 from datetime import date
 from httpcore._exceptions import ReadTimeout, ConnectTimeout
+from translate import translation, translate_field, is_english
+from cache import load_cached_object, save_cached_object
 
 base = 'https://e-resource.tsdavo.gov.ua'
-cache_dir = './cache'
-
-def clean(msg):
-    # remove all but alphanumeric, hyphen and space
-    allow = string.ascii_letters + string.digits + ' ' + '-'
-    return re.sub('[^%s]' % allow, '', msg)
-
-def is_english(s):
-    try:
-        s.encode(encoding='utf-8').decode('ascii')
-    except UnicodeDecodeError:
-        return False
-    else:
-        return True
-
-translator = Translator()
-def translation(text):
-    if isinstance(text, (list, tuple)):
-        return [translation(item) for item in text]
-    print('translating: ', text)
-    result = None
-    wait_time = 1.
-    for i in range(5):
-        try:
-            result = translator.translate(text, src='uk', dest='en')
-            break
-        except (requests.Timeout, ReadTimeout, ConnectTimeout) as err:
-            print('translation timeout. retrying...')
-        sleep(wait_time)
-        wait_time *= 2
-    assert result is not None 
-    return result.text
-
-def translate_field(items, field_name):
-    batch = [item[field_name] for item in items]
-    batch = translation(batch)
-    for i, text in enumerate(batch):
-        items[i][field_name] = text    
 
 def load_fond(url):
     soup = BeautifulSoup(requests.get(url).text, 'lxml')
@@ -72,16 +35,6 @@ def index_fonds(fonds):
     for item in fonds:
         index[item['number']] = item
     return index
-
-def save_cached_object(obj, fname):
-    fname = f'{cache_dir}/{fname}'
-    with open(fname, 'w') as f:
-        f.write(json.dumps(obj))
-
-def load_cached_object(fname):
-    fname = f'{cache_dir}/{fname}'
-    with open(fname) as f:
-        return json.loads(f.read())
 
 def clean(msg):
     # remove all but alphanumeric, hyphen and space
