@@ -1,40 +1,33 @@
 #
 # Ukraine records archive scraper
 
-import pandas as pd
-import numpy as np
-import requests
-import urllib.request, urllib.parse, urllib.error
-import io
 import re
 import json
-import datetime
-import os
-import random
-from time import sleep
+import time
+import urllib.parse
+import requests
 from bs4 import BeautifulSoup
-from translate import translation, translate_field, is_english
+from translate import translation, is_english
 from cache import load_cached_object, save_cached_object
 
 #
 # global constants
 
-archive_base    = 'https://uk.wikisource.org'
-#column_names    = [ '№' , 'Опис', 'Номер', 'Фонд', '#' ]
-subarchives     = ['Д', 'Р', 'П']
-auto_translate  = True
+ARCHIVE_BASE    = 'https://uk.wikisource.org'
+SUBARCHIVES     = ['Д', 'Р', 'П']
+REQUEST_TIMEOUT = 10 # seconds
 
-with open('archives.json') as f:
+with open('archives.json', encoding="utf8") as f:
     archive_list = json.load(f)
 
 # used for standardizing dates in numerical format
-with open('months.json') as f:
+with open('months.json', encoding="utf8") as f:
     uk_months = json.load(f)
 
-
+#
 # date handling
 
-def format_date(message, uk_months=uk_months):
+def format_date(message):
     message = message.replace(',', '')
     message = message.split(' ')
     message = map(lambda x: uk_months[x] if x in uk_months else x, message)
@@ -44,43 +37,65 @@ def format_date(message, uk_months=uk_months):
 lastmod_pattern = re.compile('[0-9][0-9]:[0-9][0-9].+[0-9][0-9]?.+[0-9][0-9][0-9][0-9]')
 
 def lastmod(message):
-    #print(message)
     result = re.search(lastmod_pattern, message)
     if result is not None:
         return format_date(result.group(0))
-    else:
-        return message
+    return message
+
+#
+# multilingual support
 
 number_pattern = re.compile('[0-9]+([–-][0-9]+)?')
 def is_numeric(s):
     return re.fullmatch(number_pattern, s.strip()) is not None
 
-def translate_descriptions(table):
-    batch = []
-    for row in table:
-        for entry in row:
-            text = entry['text']
-            if text and not is_numeric(text) and not is_english(text):
-                batch.append(entry['text'])
-    print(f'batch translation - {len(batch)} items')
-    batch = translation(batch)
-    for row in table:
-        for entry in row:
-            text = entry['text']
-            if text and not is_numeric(text) and not is_english(text):
-                entry['text'] = batch.pop(0)
+def form_text_item(source_text, translate=False):
+    result = { 'uk': source_text }
+    if not source_text or is_numeric(source_text) or is_english(source_text):
+        result['en'] = source_text
+    if translate:
+        result['en'] = translation(source_text)
+    return result
 
-def get_text(element):
+def get_text(text_item):
+    return text_item['en'] if 'en' in text_item else text_item['uk']
+
+def form_element_text(element):
     text = element.text.strip() if element is not None else None
-    if text is not None and auto_translate:
-        text = translation(text)
-    return text
+    return form_text_item(text)
+
+def needs_translation(item):
+    return isinstance(item, dict) and 'uk' in item and 'en' not in item
+
+def translate_page(page):
+    batch = []
+    items = []
+
+    def queue_items(x, batch, items):
+        if needs_translation(x):
+            batch.append(x['uk'])
+            items.append(x)
+        elif isinstance(x, (list, tuple)):
+            for v in x:
+                queue_items(v, batch, items)
+        elif isinstance(x, dict):
+            for v in x.values():
+                queue_items(v, batch, items)
+
+    queue_items(page, batch, items)
+    if batch:
+        print(f'batch translation: {len(batch)} items...')
+        start = time.time()
+        batch = translation(batch)
+        elapsed = time.time() - start
+        print(f'    ...completed ({elapsed:.2f} sec.)')
+        for i, v in enumerate(batch):
+            items[i]['en'] = v
 
 # extract archive information for given page
 # return struct with page title, description, table header, table contents, and lastmod date
-# optionally translate relevant text to english from ukrainian
 def read_page(url):
-    soup = BeautifulSoup(requests.get(url).text, 'lxml')
+    soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
     title = soup.find('span', attrs = {'class': 'mw-page-title-main'})
     desc = soup.find('span', attrs = {'id': 'header_section_text'})
     table = soup.find('table', attrs = {'class': 'wikitable'})
@@ -90,24 +105,21 @@ def read_page(url):
         for tr in table.find_all('tr'):
             if not header:
                 for th in tr.find_all('th'):
-                    header.append(th.text.strip())
+                    header.append(form_element_text(th))
             item = []
             for td in tr.find_all('td'):
                 a = td.find('a')
                 url = a['href'] if a else None
-                text = td.text.strip()
+                text = form_text_item(td.text.strip())
                 item.append({'text': text, 'link': url})
             if item:
                 children.append(item)
-        if auto_translate:
-            translate_descriptions(children)
-            header = translation(header)
     footer = soup.find('li', attrs={'id': 'footer-info-lastmod'})
     last_modified = lastmod(footer.text) if footer else None
 
-    return { 
-        'title': get_text(title),
-        'description': get_text(desc),
+    return {
+        'title': form_element_text(title),
+        'description': form_element_text(desc),
         'header': header,
         'children': children,
         'lastmod': last_modified
@@ -117,8 +129,8 @@ def read_page(url):
 # for each hit, return dict with item title, link, and lastmod date
 def do_search(query_string, limit=10, offset=0):
     query_string = urllib.parse.quote(query_string, safe='', encoding=None, errors=None)
-    url = f'{archive_base}/w/index.php?limit={limit}&offset={offset}&ns0=1&sort=last_edit_desc&search={query_string}'
-    soup = BeautifulSoup(requests.get(url).text, 'lxml')
+    url = f'{ARCHIVE_BASE}/w/index.php?limit={limit}&offset={offset}&ns0=1&sort=last_edit_desc&search={query_string}'
+    soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
     results = []
     for result in soup.find_all('li', attrs = {'class': 'mw-search-result'}):
         div = result.find('div', attrs = {'class': 'mw-search-result-heading'})
@@ -127,8 +139,8 @@ def do_search(query_string, limit=10, offset=0):
         p = data.find('-')
         data = format_date(data[(p+1):].strip())
         item = {
-            'title': div.a['title'], 
-            'link': div.a['href'], 
+            'title': div.a['title'],
+            'link': div.a['href'],
             'lastmod': data
         }
         results.append(item)
@@ -159,11 +171,18 @@ class Table:
         if not self._page:
             print(f'Loading page: {self.name}')
             self._page = read_page(self.url)
-            save_cached_object(self._page, f'{self.name}.json')
+            self._update_cache()
+
+    def _update_cache(self):
+        save_cached_object(self._page, f'{self.name}.json')
 
     @property
     def children(self):
         return self._page['children']
+
+    @property
+    def description(self):
+        return get_text(self._page['description'])
 
     @property
     def base(self):
@@ -190,23 +209,31 @@ class Table:
         return None
 
     @property
+    def kind(self):
+        return 'table'
+
+    @property
     def report(self):
         # make sure no commas in the name
         return f'{self.kind},{self.name.replace(",", "")},{self.lastmod}'
 
     def lookup(self, entry_id, use_cache=True):
-        matches = [x for x in self.children if x[0]['text'] == entry_id]
-        print(matches)
+        matches = [x for x in self.children if get_text(x[0]['text']) == entry_id]
+        #print(matches)
         if matches:
             child = matches[0][0]
-            spec = (child['text'], child['link'])
+            spec = (get_text(child['text']), child['link'])
             return self.child_class(spec, self, use_cache=use_cache)
         return None
 
+    def translate(self):
+        translate_page(self._page)
+        self._update_cache()
+
 class Archive(Table):
-    def __init__(self, tag, archives=archive_list, subarchive=subarchives[0], base=archive_base, use_cache=True):
+    def __init__(self, tag, subarchive=SUBARCHIVES[0], base=ARCHIVE_BASE, use_cache=True):
         self._tag = tag
-        archive_name = archives[tag] if tag in archive_list else None
+        archive_name = archive_list[tag] if tag in archive_list else None
         archive_name = f'{archive_name}/{subarchive}'
         self._name = archive_name
         self._subarchive = subarchive
@@ -216,7 +243,7 @@ class Archive(Table):
     @property
     def tag(self):
         return self._tag
-    
+
     @property
     def name(self):
         return self._name
@@ -228,7 +255,7 @@ class Archive(Table):
     @property
     def base(self):
         return self._base
-    
+
     @property
     def url(self):
         return self._base + '/wiki/' + str(urllib.parse.quote(self._name))
@@ -275,42 +302,6 @@ class Case(Table):
         return 'case'
 
 # -----------  probably obsolete (keep for now) -------
-def scan_archive(archive, stream=None):
-    output = Logger(stream)
-    output.write(archive.report)
-    for f in range(len(archive.children)):
-        fond = Fond(archive.children[f], archive)
-        output.write(fond.report)
-        for o in range(len(fond.children)):
-            opus = Opus(fond.children[o], fond)
-            output.write(opus.report)
-            for c in range(len(opus.children)):
-                case = Case(opus.children[c], opus)
-                output.write(case.report)
-
-# -----------  probably obsolete (keep for now) -------
-def run_report(items = archive_list):
-    out_dir = './var/' + str(datetime.datetime.now())
-    try:
-        os.mkdir('var')
-    except:
-        pass
-    os.mkdir(out_dir)
-    print('reporting to', out_dir)
-    for item in items:
-        if items[item] is not None:
-            with open(f'{out_dir}/{item}.csv', 'w') as file:
-                for sub in subarchives:
-                    print(f'scanning {item}/{sub}...')
-                    try:
-                        scan_archive(Archive(item, subarchive=sub), file)
-                    except KeyboardInterrupt:
-                        return
-                    except BaseException as e:
-                        print(f'... EXCEPTION occured while scanning {item}/{sub}')
-                        print(e)
-
-# -----------  probably obsolete (keep for now) -------
 class Logger:
     def __init__(self, output = None):
         self._stream = output
@@ -320,8 +311,3 @@ class Logger:
             print(message)
         else:
             self._stream.write(message + '\n')
-
-if __name__ == "__main__":
-    print("Running archive report")
-    run_report()
-

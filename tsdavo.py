@@ -6,7 +6,6 @@ import string
 import json
 from time import sleep
 from datetime import date
-from httpcore._exceptions import ReadTimeout, ConnectTimeout
 from translate import translation, translate_field, is_english
 from cache import load_cached_object, save_cached_object
 
