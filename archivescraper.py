@@ -84,7 +84,7 @@ def translate_page(page):
 
     queue_items(page, batch, items)
     if batch:
-        print(f'batch translation: {len(batch)} items...')
+        print(f'Batch translation: {len(batch)} items...')
         start = time.time()
         batch = translation(batch)
         elapsed = time.time() - start
@@ -162,19 +162,39 @@ class Table:
         self._parent = parent
         self._spec = spec
         self._page = None
+        self._pages = None
         if use_cache:
             try:
-                self._page = load_cached_object(f'{self.name}.json')
+                self._pages = load_cached_object(f'{self.name}.json')
                 print(f'Retrieving from cache: {self.name}')
+                # sort by ascending mod date
+                self._pages.sort(key=lambda x: x['lastmod'])
+                self._page = self._pages[-1]
             except:
                 pass
         if not self._page:
             print(f'Loading page: {self.name}')
             self._page = read_page(self.url)
+            self._pages = [self._page]
             self._update_cache()
 
     def _update_cache(self):
-        save_cached_object(self._page, f'{self.name}.json')
+        #page_dict = {page['lastmod']: page for page in self._pages}
+        #page_dict[self._page['lastmod']] = self._page
+        #self._pages = list(page_dict.values())
+        self._pages.sort(key=lambda x: x['lastmod'])
+        save_cached_object(self._pages, f'{self.name}.json')
+
+    def refresh(self):
+        new_page = read_page(self.url)
+        for page in self._pages:
+            if page['lastmod'] == new_page['lastmod']:
+                print('Nothing new.')
+                return
+        print('Found new version:', new_page['lastmod'])
+        self._pages.append(new_page)
+        self._page = new_page
+        self._update_cache()
 
     @property
     def children(self):
