@@ -91,6 +91,7 @@ def translate_page(page):
         print(f'    ...completed ({elapsed:.2f} sec.)')
         for i, v in enumerate(batch):
             items[i]['en'] = v
+    return len(batch)
 
 # extract archive information for given page
 # return struct with page title, description, table header, table contents, and lastmod date
@@ -187,14 +188,14 @@ class Table:
 
     def refresh(self):
         new_page = read_page(self.url)
-        for page in self._pages:
-            if page['lastmod'] == new_page['lastmod']:
-                print('Nothing new.')
-                return
+        if next((page for page in self._pages if page['lastmod'] == new_page['lastmod']), None):
+            print('Nothing new.')
+            return False
         print('Found new version:', new_page['lastmod'])
         self._pages.append(new_page)
         self._page = new_page
         self._update_cache()
+        return True
 
     @property
     def children(self):
@@ -247,8 +248,11 @@ class Table:
         return None
 
     def translate(self):
-        translate_page(self._page)
-        self._update_cache()
+        if translate_page(self._page) > 0:
+            self._update_cache()
+            return True
+        else:
+            return False
 
 class Archive(Table):
     def __init__(self, tag, subarchive=SUBARCHIVES[0], base=ARCHIVE_BASE, use_cache=True):
