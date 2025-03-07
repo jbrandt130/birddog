@@ -7,7 +7,7 @@ import json
 from time import sleep
 from datetime import date
 from translate import translation, translate_field, is_english
-from cache import load_cached_object, save_cached_object
+from utility import load_cached_object, save_cached_object
 
 base = 'https://e-resource.tsdavo.gov.ua'
 
