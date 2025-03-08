@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 from translate import translation, is_english
 
 # global constants
@@ -44,7 +45,7 @@ with open('resources/months.json', encoding="utf8") as f:
 def format_date(message):
     message = message.replace(',', '')
     message = message.split(' ')
-    message = map(lambda x: uk_months[x] if x in uk_months else x, message)
+    message = map(lambda x: uk_months[x] if x in uk_months else f'0{x}' if len(x) == 1 else x, message)
     message = ','.join(reversed(list(message)))
     return message
 

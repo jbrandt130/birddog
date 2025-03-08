@@ -15,6 +15,7 @@ from utility import (
     load_cached_object, 
     save_cached_object,
     lastmod,
+    format_date,
     get_text,
     form_text_item,
     translate_page,
@@ -48,9 +49,9 @@ def read_page(url):
             item = []
             for td in tr.find_all('td'):
                 a = td.find('a')
-                url = a['href'] if a else None
+                child_url = a['href'] if a else None
                 text = form_text_item(td.text.strip())
-                item.append({'text': text, 'link': url})
+                item.append({'text': text, 'link': child_url})
             if item:
                 children.append(item)
     footer = soup.find('li', attrs={'id': 'footer-info-lastmod'})
@@ -61,7 +62,8 @@ def read_page(url):
         'description': form_element_text(desc),
         'header': header,
         'children': children,
-        'lastmod': last_modified
+        'lastmod': last_modified,
+        'link': url
     }
 
 # search for matching entries, sorted on last modification date
@@ -85,6 +87,20 @@ def do_search(query_string, limit=10, offset=0):
         results.append(item)
         #print(result.text)
     return results
+
+def get_page_history(page):
+    url = page.history_url
+    soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
+    result = []
+    for elem in soup.find_all('a', attrs = {'class': 'mw-changeslist-date'}):
+        date = format_date(elem.text)
+        link = elem['href']
+        result.append({
+            'modified': date,
+            'link': page.base + link,
+            #'title': elem['title']
+        })
+    return result
 
 # -------------------------------------------------------------------------------
 # class definitions for each of the page types in the archive
@@ -113,27 +129,42 @@ class Table:
                 pass
         if not self._page:
             print(f'Loading page: {self.name}')
-            self._page = read_page(self.url)
+            self._page = read_page(self.default_url)
             self._pages = [self._page]
             self._update_cache()
 
     def _update_cache(self):
-        #page_dict = {page['lastmod']: page for page in self._pages}
-        #page_dict[self._page['lastmod']] = self._page
-        #self._pages = list(page_dict.values())
         self._pages.sort(key=lambda x: x['lastmod'])
         save_cached_object(self._pages, f'{self.name}.json')
 
-    def refresh(self):
-        new_page = read_page(self.url)
-        if next((page for page in self._pages if page['lastmod'] == new_page['lastmod']), None):
+    def latest(self):
+        new_page = read_page(self.default_url)
+        cache_page = next((page for page in self._pages if page['lastmod'] == new_page['lastmod']), None)
+        if cache_page:
             print('Nothing new.')
+            self._page = cache_page
             return False
         print('Found new version:', new_page['lastmod'])
         self._pages.append(new_page)
         self._page = new_page
         self._update_cache()
         return True
+
+    def revert_to(self, date):
+        version = next((v for v in self.history if v['modified'] <= date), None)
+        if not version:
+            print('No version exists on or before', date)
+        else:
+            modified_date = version['modified']
+            cached_page = next((page for page in self._pages if page['lastmod'] == modified_date), None)
+            if cached_page:
+                self._page = cached_page
+                print(f'Retrieving from cache: {self.name}, modified: {modified_date}')
+            else:
+                print(f'Loading page: {self.name}, modified: {modified_date}')
+                self._page = read_page(version['link'])
+                self._pages.append(self._page)
+                self._update_cache()
 
     @property
     def children(self):
@@ -152,8 +183,23 @@ class Table:
         return self._parent.base
 
     @property
-    def url(self):
+    def default_url(self):
         return self.base + self._spec[1] if self._spec is not None else None
+
+    @property
+    def url(self):
+        if self._page is not None and 'link' in self._page:
+            return self._page['link']
+        return self.default_url
+
+    @property
+    def history_url(self):
+        # arbitrary cutoff of page edit history to 10000 items (not sure what the site allows)
+        return self.default_url.replace('/wiki/', '/w/index.php?action=history&limit=10000&title=')
+
+    @property
+    def history(self):
+        return get_page_history(self)
 
     @property
     def id(self):
@@ -227,7 +273,7 @@ class Archive(Table):
         return self._base
 
     @property
-    def url(self):
+    def default_url(self):
         return self._base + '/wiki/' + str(urllib.parse.quote(self._name))
 
     @property
