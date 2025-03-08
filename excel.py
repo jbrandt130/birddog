@@ -56,13 +56,20 @@ def export_page(page, dest_file=None):
     print('sheet title:', title)
     sheet.title = title
 
+    # make a list of all cells with template expressions
+    edit_cell = {}
     edits = []
     for row in sheet.iter_rows():
         for cell in row:
             check = check_cell(cell)
             if check:
                 parsed = [parse_template_expr(e) for e in check]
-                #substitution = [substitute(page, e) for e in parsed]
+                for parse in parsed:
+                    # check for formatting directives (before actually editing)
+                    if parse['expr'] == 'edit':
+                        # {edit} cells contain formatting for editing highlights
+                        #print('edit cell found:', cell.coordinate, parse['modifier'])
+                        edit_cell[parse['modifier']] = cell
                 edits.append((cell, check, parsed))
     
     first_child_row = None
@@ -76,6 +83,8 @@ def export_page(page, dest_file=None):
         for match, parse in zip(matches, parses):
             #print('processing match:', match, parse)
             if parse['expr'] == 'col':
+                # defer {col} expressions until after other substitutions are done
+                # since this fills in the table and will overwrite the {rollup} expressions
                 first_child_row = row = cell.row
                 last_child_row = first_child_row + len(page.children) - 1
                 columns.append((cell, parse))
@@ -88,9 +97,13 @@ def export_page(page, dest_file=None):
                 rollup_cell.alignment = copy(cell.alignment)
                 rollup_cell.font = copy(cell.font)
                 cell.value = ""
+            elif parse['expr'] == 'edit':
+                # {edit} cells contain formatting for editing highlights (caught above)
+                pass
             else:
+                # general case: replace template expression with substitution value
                 sub = substitute(page, parse)
-                if sub:
+                if sub is not None:
                     cell.value = cell.value.replace(match, sub)
             if parse['modifier'] == 'linked':
                 cell.hyperlink = page.url
@@ -101,14 +114,21 @@ def export_page(page, dest_file=None):
         index = parse['index']
         for child in page.children:
             child_cell = sheet.cell(row=row, column=col)
-            sub = get_text(child[int(index)]['text']) if index is not None else ''
-            child_cell.value = sub
             if child_cell.row != cell.row:
                 # propagate border, style, font, and alignment to all rows
                 child_cell.style = cell.style
                 child_cell.border = copy(cell.border)
                 child_cell.alignment = copy(cell.alignment)
                 child_cell.font = copy(cell.font)
+            if index is not None:
+                item = child[int(index)]
+                sub = get_text(item['text'])
+                if 'edit' in item:
+                    edit = item['edit']
+                    if edit in edit_cell:
+                        #print('edited:', item)
+                        child_cell.fill = copy(edit_cell[edit].fill)
+                child_cell.value = sub
             if parse['modifier'] == 'linked':
                 child_cell.hyperlink = child_url(child)
             elif parse['modifier'] == 'link_status':

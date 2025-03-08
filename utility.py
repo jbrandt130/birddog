@@ -72,6 +72,12 @@ def form_text_item(source_text, translate=False):
         result['en'] = translation(source_text)
     return result
 
+def equal_text(item1, item2):
+    if 'en' in item1 and 'en' in item2:
+        return item1['en'] == item2['en']
+    else:
+        return item1['uk'] == item2['uk']
+
 def get_text(text_item):
     return text_item['en'] if 'en' in text_item else text_item['uk']
 

@@ -19,6 +19,7 @@ from utility import (
     get_text,
     form_text_item,
     translate_page,
+    equal_text,
     )
 
 #
@@ -102,6 +103,52 @@ def get_page_history(page):
         })
     return result
 
+def check_page_changes(page, reference):
+    if isinstance(page, Table): 
+        page = page._page
+    if isinstance(reference, Table): 
+        reference = reference._page
+    
+    page['refmod'] = reference['lastmod']
+    for key in ['title', 'description']:
+        changed = not equal_text(page[key], reference[key])
+        page[key]['edit'] = 'changed' if changed else None
+    
+    ref_children = dict([(get_text(c[0]['text']), c) for c in reference['children']])
+    for child in page['children']:
+        #print(child)
+        index = get_text(child[0]['text'])
+        if index in ref_children:
+            ref_child = ref_children[index]
+            for item, ref_item in zip(child, ref_child):
+                changed = not equal_text(item['text'], ref_item['text'])
+                item['edit'] = 'changed' if changed else None
+                if 'link' in item:
+                    if 'link' in ref_item:
+                        item['link_edit'] = 'changed' if item['link'] != ref_item['link'] else None
+                    else:
+                        item['link_edit'] = 'added'
+        else:
+            for item in child:
+                item['edit'] = 'added'
+
+def report_page_changes(page):
+    if isinstance(page, Table): 
+        page = page._page
+    if 'refmod' not in page:
+        print('No changes to report. Run check_page_changes first.')
+        return
+    print(f'Change report for {get_text(page["title"])}, lastmod={page["lastmod"]}, refmod={page["refmod"]}')
+    for key in ['title', 'description']:
+        if page[key]['edit'] is not None:
+            print(f'{key}: {page[key]["edit"]}')
+    for child in page['children']:
+        #print(child)
+        index = get_text(child[0]['text'])
+        for i, item in enumerate(child):
+            if 'edit' in item and item['edit'] is not None:
+                print(f'{index}[{i}] ({item["edit"]}): {get_text(item["text"])}')
+
 # -------------------------------------------------------------------------------
 # class definitions for each of the page types in the archive
 # Table is the abstract base class that implements most of the logic
@@ -143,17 +190,18 @@ class Table:
         if cache_page:
             print('Nothing new.')
             self._page = cache_page
-            return False
-        print('Found new version:', new_page['lastmod'])
-        self._pages.append(new_page)
-        self._page = new_page
-        self._update_cache()
-        return True
+        else:
+            print('Found new version:', new_page['lastmod'])
+            self._pages.append(new_page)
+            self._page = new_page
+            self._update_cache()
+        return self
 
     def revert_to(self, date):
         version = next((v for v in self.history if v['modified'] <= date), None)
         if not version:
             print('No version exists on or before', date)
+            return None
         else:
             modified_date = version['modified']
             cached_page = next((page for page in self._pages if page['lastmod'] == modified_date), None)
@@ -165,6 +213,7 @@ class Table:
                 self._page = read_page(version['link'])
                 self._pages.append(self._page)
                 self._update_cache()
+        return self
 
     @property
     def children(self):
@@ -210,9 +259,17 @@ class Table:
         return f'{self._parent.name}/{self.id}'
 
     @property
+    def title(self):
+        return get_text(self._page['title'])
+
+    @property
     def lastmod(self):
         return self._page['lastmod']
 
+    @property
+    def refmod(self):
+        return self._page['refmod'] if 'refmod' in self._page else ''
+    
     @property
     def child_class(self):
         return None
