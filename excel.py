@@ -2,8 +2,7 @@
 import re
 import string
 from copy import copy
-from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font, Color, Border
+from openpyxl import load_workbook
 from utility import get_text, ARCHIVE_BASE
 
 
@@ -16,16 +15,19 @@ def link_status(url):
 
 EXPR_PATTERN = re.compile(r'{[^}]+}')
 
-def check_string(s):
-    if not s: return None
-    match = re.findall(EXPR_PATTERN, s)
-    if not match: return None
-    return [m for m in match]
+def check_string(text):
+    if not text:
+        return None
+    match = re.findall(EXPR_PATTERN, text)
+    if not match:
+        return None
+    return list(match)
 
 def check_cell(cell):
     return check_string(cell.value)
 
-PARSE_PATTERN = re.compile(r'{(?P<expr>[a-zA-Z0-9_.]+)(\[(?P<index>[0-9]+)\])?(\:(?P<modifier>[a-zA-Z_]+))?}')
+PARSE_PATTERN = re.compile(
+    r'{(?P<expr>[a-zA-Z0-9_.]+)(\[(?P<index>[0-9]+)\])?(\:(?P<modifier>[a-zA-Z_]+))?}')
 
 def parse_template_expr(expr):
     match = re.match(PARSE_PATTERN, expr)
@@ -41,8 +43,8 @@ def substitute(page, expr):
 def export_page(page, dest_file=None):
     template_file = f'templates/{page.kind}.xlsx'
     print(f'opening template file {template_file}...')
-    wb = load_workbook(filename = template_file)
-    sheet = wb.active
+    workbook = load_workbook(filename = template_file)
+    sheet = workbook.active
 
     # process title
     title = sheet.title
@@ -68,10 +70,9 @@ def export_page(page, dest_file=None):
                     # check for formatting directives (before actually editing)
                     if parse['expr'] == 'edit':
                         # {edit} cells contain formatting for editing highlights
-                        #print('edit cell found:', cell.coordinate, parse['modifier'])
                         edit_cell[parse['modifier']] = cell
                 edits.append((cell, check, parsed))
-    
+
     first_child_row = None
     last_child_row = None
     #rollup_font = Font(bold=True)
@@ -136,5 +137,5 @@ def export_page(page, dest_file=None):
             row += 1
 
     if dest_file:
-        wb.save(dest_file)
-    return wb
+        workbook.save(dest_file)
+    return workbook

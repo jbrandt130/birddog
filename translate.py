@@ -1,42 +1,34 @@
+"""Translation support from Ukrainian to English"""
 
-#from googletrans import Translator
+from time import sleep
+import requests
 from deep_translator import GoogleTranslator
 from httpcore._exceptions import ReadTimeout, ConnectTimeout
-import requests
 
-def is_english(s):
+def is_english(text):
+    """True if argument is decodable to ascii (misnomer?)"""
     try:
-        s.encode(encoding='utf-8').decode('ascii')
+        text.encode(encoding='utf-8').decode('ascii')
     except UnicodeDecodeError:
         return False
-    else:
-        return True
+    return True
 
-#translator = Translator()
-translator = GoogleTranslator(source='uk', target='en')
+_translator = GoogleTranslator(source='uk', target='en')
 
 def translation(text):
-        #return [translation(item) for item in text]
-    #print('translating: ', text)
+    """ Translate single text string or list/tuple of strings """
     result = None
     wait_time = 1.
-    for i in range(5):
+    for _ in range(5):
         try:
             if isinstance(text, (list, tuple)):
-                result = translator.translate_batch(text)
+                result = _translator.translate_batch(text)
             else:
-                result = translator.translate(text)
+                result = _translator.translate(text)
             break
-        except (requests.Timeout, ReadTimeout, ConnectTimeout) as err:
+        except (requests.Timeout, ReadTimeout, ConnectTimeout):
             print('translation timeout. retrying...')
         sleep(wait_time)
         wait_time *= 2
-    assert result is not None 
+    assert result is not None
     return result
-
-def translate_field(items, field_name):
-    print('translate_field', items)
-    batch = [item[field_name] for item in items]
-    batch = translation(batch)
-    for i, text in enumerate(batch):
-        items[i][field_name] = text    
