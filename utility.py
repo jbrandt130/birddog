@@ -1,3 +1,7 @@
+"""
+Utility functions for archivescraper.
+"""
+
 import json
 import os
 import re
@@ -8,50 +12,62 @@ from translate import translation, is_english
 
 ARCHIVE_BASE    = 'https://uk.wikisource.org'
 SUBARCHIVES     = ['Д', 'Р', 'П']
+CACHE_DIR       = './cache'
+UK_MONTHS       = None
+ARCHIVE_LIST    = None
 
 # cache support
 
-cache_dir = './cache'
-
-def make_path_if_needed(fname):
-    pos = fname.rfind('/')
+def make_path_if_needed(path):
+    """Make full subdirectory hierarchy for given path."""
+    pos = path.rfind('/')
     if pos >= 0:
-        os.makedirs(fname[:pos], exist_ok=True)
+        os.makedirs(path[:pos], exist_ok=True)
 
-def save_cached_object(obj, fname):
-    fname = f'{cache_dir}/{fname}'
-    make_path_if_needed(fname)
-    with open(fname, 'w') as f:
-        f.write(json.dumps(obj))
+def save_cached_object(obj, filepath):
+    """Store JSON serialized version of object at filepath location relative to CACHE_DIR"""
+    filepath = f'{CACHE_DIR}/{filepath}'
+    make_path_if_needed(filepath)
+    with open(filepath, 'w', encoding="utf8") as file:
+        file.write(json.dumps(obj))
 
-def load_cached_object(fname):
-    fname = f'{cache_dir}/{fname}'
-    with open(fname) as f:
-        return json.loads(f.read())
+def load_cached_object(filepath):
+    """Return object previously saved at filepath location relative to CACHE_DIR.
+    Raises FileNotFoundError if cache entry is missing.
+    """
+    filepath = f'{CACHE_DIR}/{filepath}'
+    with open(filepath, encoding="utf8") as file:
+        return json.loads(file.read())
 
-
-# static data resources
+# load static data resources
 
 with open('resources/archives.json', encoding="utf8") as f:
-    archive_list = json.load(f)
+    ARCHIVE_LIST = json.load(f)
 
 # used for standardizing dates in numerical format
 with open('resources/months.json', encoding="utf8") as f:
-    uk_months = json.load(f)
+    UK_MONTHS = json.load(f)
 
 #
 # date handling
 
 def format_date(message):
-    message = message.replace(',', '')
-    message = message.split(' ')
-    message = map(lambda x: uk_months[x] if x in uk_months else f'0{x}' if len(x) == 1 else x, message)
+    """Convert Ukranian date string such as "19:15, 20 травня 2023" to standard form.
+    Standard form is "YYYY,MM,DD,HH:mm"
+    """
+    message = message.replace(',', '').split(' ')
+    def date_number(num):
+        return UK_MONTHS[num] if num in UK_MONTHS else f'0{num}' if len(num) == 1 else num
+    message = map(date_number, message)
     message = ','.join(reversed(list(message)))
     return message
 
 lastmod_pattern = re.compile('[0-9][0-9]:[0-9][0-9].+[0-9][0-9]?.+[0-9][0-9][0-9][0-9]')
 
 def lastmod(message):
+    """Extract 'last modified' date string from within a section of text.
+    It is formatted in standard form: "YYYY,MM,DD,HH:mm"
+    """
     result = re.search(lastmod_pattern, message)
     if result is not None:
         return format_date(result.group(0))
@@ -61,10 +77,19 @@ def lastmod(message):
 # multilingual support
 
 number_pattern = re.compile('[0-9]+([–-][0-9]+)?')
-def is_numeric(s):
-    return re.fullmatch(number_pattern, s.strip()) is not None
+def is_numeric(text):
+    """True if string is one or more digits or a dash separated numeric range."""
+    return re.fullmatch(number_pattern, text.strip()) is not None
 
 def form_text_item(source_text, translate=False):
+    """Form a multilingual text item from a fragment of text.
+    A text item is a dict containing keys "uk" and "en", representing the
+    Ukrainian and English versions of the text, respectively.
+    If the input text is numeric or is English, then both language versions
+    will be the same. If the translate argument is True (default False), 
+    then the Ukrainian text will be automatically translated to English.
+    Otherwise, the English version of the text will be left empty.
+    """
     result = { 'uk': source_text }
     if not source_text or is_numeric(source_text) or is_english(source_text):
         result['en'] = source_text
@@ -73,31 +98,43 @@ def form_text_item(source_text, translate=False):
     return result
 
 def equal_text(item1, item2):
+    """True if both language versions of the text item are equal.
+    If the English translation is missing from either item, then only
+    the Ukrainian text is compared.
+    """
     if 'en' in item1 and 'en' in item2:
         return item1['en'] == item2['en']
-    else:
-        return item1['uk'] == item2['uk']
+    return item1['uk'] == item2['uk']
 
 def get_text(text_item):
+    """Return the English version of the text item if present, else use Ukrainian."""
     return text_item['en'] if 'en' in text_item else text_item['uk']
 
 def needs_translation(item):
+    """True if text item needs to be translated to English"""
     return isinstance(item, dict) and 'uk' in item and 'en' not in item
 
 def translate_page(page):
+    """Traverse a page and translate all untranslated text items.
+    The changes are done in place on each multilingual text item.
+    Returns the total number of items translated.
+    """
     batch = []
     items = []
 
-    def queue_items(x, batch, items):
-        if needs_translation(x):
-            batch.append(x['uk'])
-            items.append(x)
-        elif isinstance(x, (list, tuple)):
-            for v in x:
-                queue_items(v, batch, items)
-        elif isinstance(x, dict):
-            for v in x.values():
-                queue_items(v, batch, items)
+    # recursive function to traverse down dictionaries and lists
+    # to find all multilingual text items and queue them into an
+    # array for batch translation.
+    def queue_items(obj, batch, items):
+        if needs_translation(obj):
+            batch.append(obj['uk'])
+            items.append(obj)
+        elif isinstance(obj, (list, tuple)):
+            for value in obj:
+                queue_items(value, batch, items)
+        elif isinstance(obj, dict):
+            for value in obj.values():
+                queue_items(value, batch, items)
 
     queue_items(page, batch, items)
     if batch:
@@ -106,6 +143,6 @@ def translate_page(page):
         batch = translation(batch)
         elapsed = time.time() - start
         print(f'    ...completed ({elapsed:.2f} sec.)')
-        for i, v in enumerate(batch):
-            items[i]['en'] = v
+        for i, value in enumerate(batch):
+            items[i]['en'] = value
     return len(batch)

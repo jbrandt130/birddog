@@ -2,17 +2,14 @@
 # Ukraine records archive scraper
 
 import re
-import json
-import time
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
 from utility import (
     ARCHIVE_BASE,
     SUBARCHIVES,
-    uk_months, 
-    archive_list, 
-    load_cached_object, 
+    ARCHIVE_LIST,
+    load_cached_object,
     save_cached_object,
     lastmod,
     format_date,
@@ -43,15 +40,15 @@ def read_page(url):
     children = []
     header = []
     if table:
-        for tr in table.find_all('tr'):
+        for tr_elem in table.find_all('tr'):
             if not header:
-                for th in tr.find_all('th'):
-                    header.append(form_element_text(th))
+                for th_elem in tr_elem.find_all('th'):
+                    header.append(form_element_text(th_elem))
             item = []
-            for td in tr.find_all('td'):
-                a = td.find('a')
-                child_url = a['href'] if a else None
-                text = form_text_item(td.text.strip())
+            for td_elem in tr_elem.find_all('td'):
+                a_elem = td_elem.find('a')
+                child_url = a_elem['href'] if a_elem else None
+                text = form_text_item(td_elem.text.strip())
                 item.append({'text': text, 'link': child_url})
             if item:
                 children.append(item)
@@ -71,27 +68,28 @@ def read_page(url):
 # for each hit, return dict with item title, link, and lastmod date
 def do_search(query_string, limit=10, offset=0):
     query_string = urllib.parse.quote(query_string, safe='', encoding=None, errors=None)
-    url = f'{ARCHIVE_BASE}/w/index.php?limit={limit}&offset={offset}&ns0=1&sort=last_edit_desc&search={query_string}'
+    url = f'{ARCHIVE_BASE}/w/index.php?limit={limit}&offset={offset}'
+    url += f'&ns0=1&sort=last_edit_desc&search={query_string}'
     soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
     results = []
     for result in soup.find_all('li', attrs = {'class': 'mw-search-result'}):
         div = result.find('div', attrs = {'class': 'mw-search-result-heading'})
         data = result.find('div', attrs = {'class': 'mw-search-result-data'})
         data = data.text.strip()
-        p = data.find('-')
-        data = format_date(data[(p+1):].strip())
+        pos = data.find('-')
+        data = format_date(data[(pos + 1):].strip())
         item = {
             'title': div.a['title'],
             'link': div.a['href'],
             'lastmod': data
         }
         results.append(item)
-        #print(result.text)
     return results
 
 def get_page_history(page):
     url = page.history_url
     soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
+    #print(soup)
     result = []
     for elem in soup.find_all('a', attrs = {'class': 'mw-changeslist-date'}):
         date = format_date(elem.text)
@@ -103,18 +101,35 @@ def get_page_history(page):
         })
     return result
 
-def check_page_changes(page, reference):
-    if isinstance(page, Table): 
-        page = page._page
-    if isinstance(reference, Table): 
-        reference = reference._page
-    
+def report_page_changes(page):
+    if isinstance(page, Table):
+        page = page.page
+    if 'refmod' not in page:
+        print('No changes to report. Run check_page_changes first.')
+        return
+    print(
+        f'Change report for {get_text(page["title"])},' +
+        f' lastmod={page["lastmod"]}, refmod={page["refmod"]}')
+    for key in ['title', 'description']:
+        if page[key]['edit'] is not None:
+            print(f'{key}: {page[key]["edit"]}')
+    for child in page['children']:
+        #print(child)
+        index = get_text(child[0]['text'])
+        for i, item in enumerate(child):
+            if 'edit' in item and item['edit'] is not None:
+                print(f'{index}[{i}] ({item["edit"]}): {get_text(item["text"])}')
+
+def check_page_changes(page, reference, report=False):
+    if isinstance(page, Table):
+        page = page.page
+    if isinstance(reference, Table):
+        reference = reference.page
     page['refmod'] = reference['lastmod']
     for key in ['title', 'description']:
         changed = not equal_text(page[key], reference[key])
         page[key]['edit'] = 'changed' if changed else None
-    
-    ref_children = dict([(get_text(c[0]['text']), c) for c in reference['children']])
+    ref_children = dict((get_text(c[0]['text']), c) for c in reference['children'])
     for child in page['children']:
         #print(child)
         index = get_text(child[0]['text'])
@@ -131,23 +146,8 @@ def check_page_changes(page, reference):
         else:
             for item in child:
                 item['edit'] = 'added'
-
-def report_page_changes(page):
-    if isinstance(page, Table): 
-        page = page._page
-    if 'refmod' not in page:
-        print('No changes to report. Run check_page_changes first.')
-        return
-    print(f'Change report for {get_text(page["title"])}, lastmod={page["lastmod"]}, refmod={page["refmod"]}')
-    for key in ['title', 'description']:
-        if page[key]['edit'] is not None:
-            print(f'{key}: {page[key]["edit"]}')
-    for child in page['children']:
-        #print(child)
-        index = get_text(child[0]['text'])
-        for i, item in enumerate(child):
-            if 'edit' in item and item['edit'] is not None:
-                print(f'{index}[{i}] ({item["edit"]}): {get_text(item["text"])}')
+    if report:
+        report_page_changes(page)
 
 # -------------------------------------------------------------------------------
 # class definitions for each of the page types in the archive
@@ -172,7 +172,8 @@ class Table:
                 # sort by ascending mod date
                 self._pages.sort(key=lambda x: x['lastmod'])
                 self._page = self._pages[-1]
-            except:
+            except FileNotFoundError:
+                # drop through on cache miss
                 pass
         if not self._page:
             print(f'Loading page: {self.name}')
@@ -186,7 +187,9 @@ class Table:
 
     def latest(self):
         new_page = read_page(self.default_url)
-        cache_page = next((page for page in self._pages if page['lastmod'] == new_page['lastmod']), None)
+        cache_page = next(
+            (page for page in self._pages if page['lastmod'] == new_page['lastmod']),
+            None)
         if cache_page:
             print('Nothing new.')
             self._page = cache_page
@@ -202,18 +205,21 @@ class Table:
         if not version:
             print('No version exists on or before', date)
             return None
+        modified_date = version['modified']
+        cached_page = next((page for page in self._pages if page['lastmod'] == modified_date), None)
+        if cached_page:
+            self._page = cached_page
+            print(f'Retrieving from cache: {self.name}, modified: {modified_date}')
         else:
-            modified_date = version['modified']
-            cached_page = next((page for page in self._pages if page['lastmod'] == modified_date), None)
-            if cached_page:
-                self._page = cached_page
-                print(f'Retrieving from cache: {self.name}, modified: {modified_date}')
-            else:
-                print(f'Loading page: {self.name}, modified: {modified_date}')
-                self._page = read_page(version['link'])
-                self._pages.append(self._page)
-                self._update_cache()
+            print(f'Loading page: {self.name}, modified: {modified_date}')
+            self._page = read_page(version['link'])
+            self._pages.append(self._page)
+            self._update_cache()
         return self
+
+    @property
+    def page(self):
+        return self._page
 
     @property
     def children(self):
@@ -269,7 +275,7 @@ class Table:
     @property
     def refmod(self):
         return self._page['refmod'] if 'refmod' in self._page else ''
-    
+
     @property
     def child_class(self):
         return None
@@ -296,13 +302,12 @@ class Table:
         if translate_page(self._page) > 0:
             self._update_cache()
             return True
-        else:
-            return False
+        return False
 
 class Archive(Table):
     def __init__(self, tag, subarchive=SUBARCHIVES[0], base=ARCHIVE_BASE, use_cache=True):
         self._tag = tag
-        archive_name = archive_list[tag] if tag in archive_list else None
+        archive_name = ARCHIVE_LIST[tag] if tag in ARCHIVE_LIST else None
         archive_name = f'{archive_name}/{subarchive}'
         self._name = archive_name
         self._subarchive = subarchive
@@ -316,7 +321,7 @@ class Archive(Table):
     @property
     def id(self):
         return self._tag
-    
+
     @property
     def name(self):
         return self._name
@@ -376,14 +381,3 @@ class Case(Table):
     @property
     def kind(self):
         return 'case'
-
-# -----------  probably obsolete (keep for now) -------
-class Logger:
-    def __init__(self, output = None):
-        self._stream = output
-
-    def write(self, message):
-        if self._stream is None:
-            print(message)
-        else:
-            self._stream.write(message + '\n')
