@@ -350,6 +350,9 @@ class Archive(Table):
     def kind(self):
         return 'archive'
 
+    def latest_changes(self, limit=100):
+        return do_search(ARCHIVE_LIST[self._tag], limit=limit)
+
 class Fond(Table):
     @property
     def name(self):
