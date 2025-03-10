@@ -3,7 +3,7 @@ import re
 import string
 from copy import copy
 from openpyxl import load_workbook
-from utility import get_text, ARCHIVE_BASE
+from .utility import get_text, ARCHIVE_BASE
 
 
 def child_url(child):

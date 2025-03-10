@@ -5,7 +5,7 @@ import re
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
-from utility import (
+from .utility import (
     ARCHIVE_BASE,
     SUBARCHIVES,
     ARCHIVE_LIST,
@@ -23,7 +23,6 @@ from utility import (
 # global constants
 
 REQUEST_TIMEOUT = 10 # seconds
-
 
 # HTML page element processing
 def form_element_text(element):
