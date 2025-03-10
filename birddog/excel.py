@@ -3,7 +3,7 @@ import re
 import string
 from copy import copy
 from openpyxl import load_workbook
-from .utility import get_text, ARCHIVE_BASE
+from birddog.utility import get_text, ARCHIVE_BASE
 
 
 def child_url(child):
@@ -75,8 +75,6 @@ def export_page(page, dest_file=None):
 
     first_child_row = None
     last_child_row = None
-    #rollup_font = Font(bold=True)
-    #border = Border(outline=True)
     columns = []
 
     for edit in edits:

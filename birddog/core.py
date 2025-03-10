@@ -5,7 +5,7 @@ import re
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
-from .utility import (
+from birddog.utility import (
     ARCHIVE_BASE,
     SUBARCHIVES,
     ARCHIVE_LIST,
@@ -249,7 +249,9 @@ class Table:
     @property
     def history_url(self):
         # arbitrary cutoff of page edit history to 10000 items (not sure what the site allows)
-        return self.default_url.replace('/wiki/', '/w/index.php?action=history&limit=10000&title=')
+        return self.default_url.replace(
+            '/wiki/', 
+            '/w/index.php?action=history&limit=10000&title=')
 
     @property
     def history(self):
@@ -290,7 +292,6 @@ class Table:
 
     def lookup(self, entry_id, use_cache=True):
         matches = [x for x in self.children if get_text(x[0]['text']) == entry_id]
-        #print(matches)
         if matches:
             child = matches[0][0]
             spec = (get_text(child['text']), child['link'])

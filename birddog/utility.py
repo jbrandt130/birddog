@@ -6,7 +6,7 @@ import json
 import os
 import re
 import time
-from .translate import translation, is_english
+from birddog.translate import translation, is_english
 
 # global constants
 
