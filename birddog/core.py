@@ -1,5 +1,6 @@
-#
-# Ukraine records archive scraper
+"""
+Ukraine records archive monitor and scraper.
+"""
 
 import re
 import urllib.parse
@@ -26,12 +27,20 @@ REQUEST_TIMEOUT = 10 # seconds
 
 # HTML page element processing
 def form_element_text(element):
+    """Given HTML element, return multilingual text item containing the inner text"""
     text = element.text.strip() if element is not None else None
     return form_text_item(text)
 
-# extract archive information for given page
-# return struct with page title, description, table header, table contents, and lastmod date
 def read_page(url):
+    """
+    Extract archive information for given page using HTTP get.
+    Return struct with page:
+        title,
+        description,
+        table header,
+        table contents,
+        lastmod date
+    """
     soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
     title = soup.find('span', attrs = {'class': 'mw-page-title-main'})
     desc = soup.find('span', attrs = {'id': 'header_section_text'})
@@ -63,9 +72,11 @@ def read_page(url):
         'link': url
     }
 
-# search for matching entries, sorted on last modification date
-# for each hit, return dict with item title, link, and lastmod date
 def do_search(query_string, limit=10, offset=0):
+    """
+    Search archive site for matching entries, sorted on last modification date.
+    For each hit, return dict with item with keys: title, link, and lastmod.
+    """
     query_string = urllib.parse.quote(query_string, safe='', encoding=None, errors=None)
     url = f'{ARCHIVE_BASE}/w/index.php?limit={limit}&offset={offset}'
     url += f'&ns0=1&sort=last_edit_desc&search={query_string}'
@@ -86,6 +97,12 @@ def do_search(query_string, limit=10, offset=0):
     return results
 
 def get_page_history(page):
+    """
+    Return version history of given page, sorted in reverse chronological order.
+    Returns list of dicts containing keys: 
+        "modified": modification date in standard format
+        "link": url to the corresponding page version
+    """
     url = page.history_url
     soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
     #print(soup)
@@ -101,6 +118,9 @@ def get_page_history(page):
     return result
 
 def report_page_changes(page):
+    """
+    Print a report of changes detected in check_page_changes().
+    """
     if isinstance(page, Table):
         page = page.page
     if 'refmod' not in page:
@@ -120,6 +140,9 @@ def report_page_changes(page):
                 print(f'{index}[{i}] ({item["edit"]}): {get_text(item["text"])}')
 
 def check_page_changes(page, reference, report=False):
+    """
+    Compare a given page to a prior version of the same page and return any detected changes.
+    """
     if isinstance(page, Table):
         page = page.page
     if isinstance(reference, Table):
@@ -159,6 +182,7 @@ def check_page_changes(page, reference, report=False):
 # The archive is organized hierarchically as Archive->Fond->Opus->Case
 
 class Table:
+    """Abstract base clase for all page types on the archive."""
     def __init__(self, spec, parent, use_cache=True):
         self._parent = parent
         self._spec = spec
@@ -185,6 +209,7 @@ class Table:
         save_cached_object(self._pages, f'{self.name}.json')
 
     def latest(self):
+        """Set page state to the latest version."""
         new_page = read_page(self.default_url)
         cache_page = next(
             (page for page in self._pages if page['lastmod'] == new_page['lastmod']),
@@ -200,6 +225,7 @@ class Table:
         return self
 
     def revert_to(self, date):
+        """Revert page state to particular version date."""
         version = next((v for v in self.history if v['modified'] <= date), None)
         if not version:
             print('No version exists on or before', date)
@@ -218,10 +244,12 @@ class Table:
 
     @property
     def page(self):
+        """Page data"""
         return self._page
 
     @property
     def children(self):
+        """List of child page data"""
         return self._page['children']
 
     @property
@@ -305,6 +333,7 @@ class Table:
         return False
 
 class Archive(Table):
+    """Represents a top level archive page."""
     def __init__(self, tag, subarchive=SUBARCHIVES[0], base=ARCHIVE_BASE, use_cache=True):
         self._tag = tag
         archive_name = ARCHIVE_LIST[tag] if tag in ARCHIVE_LIST else None
@@ -354,6 +383,7 @@ class Archive(Table):
         return do_search(ARCHIVE_LIST[self._tag], limit=limit)
 
 class Fond(Table):
+    """Represents fond page."""
     @property
     def name(self):
         return f'{self._parent.name}/{self.id}'
@@ -368,6 +398,7 @@ class Fond(Table):
 
 
 class Opus(Table):
+    """Represents fond page."""
     @property
     def kind(self):
         return 'opus'
@@ -381,6 +412,7 @@ class Opus(Table):
         return f'{self.parent.parent.id} {self.parent.id}-{self.id}'
 
 class Case(Table):
+    """Represents case page."""
     @property
     def kind(self):
         return 'case'

@@ -31,6 +31,7 @@ class Test(unittest.TestCase):
     def test_lastmod(self):
         message = "Цю сторінку востаннє відредаговано о 19:15, 20 травня 2023."
         self.assertTrue(lastmod(message) == "2023,05,20,19:15")
+        self.assertTrue(lastmod('xyz') == 'xyz')
 
     def test_multilingual(self):
         for text in ['1', '12-13', '098-101']:
