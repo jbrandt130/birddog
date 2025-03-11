@@ -1,4 +1,0 @@
-      54 DAARC.csv
-     614 DACHGO.csv
-     298 DADNO.csv
-     966 total

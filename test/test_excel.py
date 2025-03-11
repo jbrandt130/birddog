@@ -7,6 +7,8 @@ import filecmp
 from birddog.core import Archive, Fond, Opus
 from birddog.excel import export_page
 
+UNITTEST_RESOURCE_DIR = 'test/resources'
+
 # ------------------ EXCEL UNIT TESTS ------------------ 
 class Test(unittest.TestCase):
     def test_export(self):
@@ -23,7 +25,7 @@ class Test(unittest.TestCase):
         for fname in ['unittest_DAZHO', 'unittest_DAZHO_1', 'unittest_DAZHO_1_74']:
             with open(f'var/{fname}.xlsx', 'rb') as file:
                 buffer1 = file.read()
-            with open(f'resources/unittest/{fname}.xlsx', 'rb') as file:
+            with open(f'{UNITTEST_RESOURCE_DIR}/{fname}.xlsx', 'rb') as file:
                 buffer2 = file.read()
             self.assertTrue(len(buffer1) == len(buffer2))
             # excel file contents will differ unfortunately

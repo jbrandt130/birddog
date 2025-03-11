@@ -40,8 +40,10 @@ def substitute(page, expr):
     except:
         return None
 
+TEMPLATE_DIR = 'resources/templates'
+
 def export_page(page, dest_file=None):
-    template_file = f'templates/{page.kind}.xlsx'
+    template_file = f'{TEMPLATE_DIR}/{page.kind}.xlsx'
     print(f'opening template file {template_file}...')
     workbook = load_workbook(filename = template_file)
     sheet = workbook.active
