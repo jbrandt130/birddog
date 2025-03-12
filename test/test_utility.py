@@ -2,9 +2,6 @@ import os
 from copy import copy
 import unittest
 from birddog.utility import (
-    CACHE_DIR,
-    save_cached_object,
-    load_cached_object,
     lastmod,
     is_numeric,
     form_text_item,
@@ -16,18 +13,6 @@ from birddog.utility import (
 
 # ------------------ UTILITY UNIT TESTS ------------------ 
 class Test(unittest.TestCase):
-    def test_cache(self):
-        path = 'unittest_object1.json'
-        cache_file = f'{CACHE_DIR}/{path}'
-        if os.path.isfile(cache_file):
-            os.remove(cache_file)
-        for object1 in [None, '', 123, [{'a': 1, 'b': 2}, 'abc', list(range(10))]]:
-            save_cached_object(object1, path)
-            object1_copy = load_cached_object(path)
-            self.assertTrue(object1 == object1_copy)
-        with self.assertRaises(FileNotFoundError):
-            load_cached_object('unitttest_nonexistent.json')
-        
     def test_lastmod(self):
         message = "Цю сторінку востаннє відредаговано о 19:15, 20 травня 2023."
         self.assertTrue(lastmod(message) == "2023,05,20,19:15")

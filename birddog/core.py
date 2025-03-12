@@ -10,8 +10,6 @@ from birddog.utility import (
     ARCHIVE_BASE,
     SUBARCHIVES,
     ARCHIVE_LIST,
-    load_cached_object,
-    save_cached_object,
     lastmod,
     format_date,
     get_text,
@@ -19,6 +17,7 @@ from birddog.utility import (
     translate_page,
     equal_text,
     )
+from birddog.cache import load_cached_object, save_cached_object
 
 #
 # global constants
