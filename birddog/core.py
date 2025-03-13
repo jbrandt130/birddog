@@ -17,7 +17,7 @@ from birddog.utility import (
     translate_page,
     equal_text,
     )
-from birddog.cache import load_cached_object, save_cached_object
+from birddog.cache import load_cached_object, save_cached_object, CacheMissError
 
 #
 # global constants
@@ -194,7 +194,7 @@ class Table:
                 # sort by ascending mod date
                 self._pages.sort(key=lambda x: x['lastmod'])
                 self._page = self._pages[-1]
-            except FileNotFoundError:
+            except CacheMissError:
                 # drop through on cache miss
                 pass
         if not self._page:
