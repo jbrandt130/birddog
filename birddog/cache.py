@@ -53,138 +53,73 @@ if USE_LOCAL_FILESYSTEM:
         
 else:
 
-    # AWS dynamodb interface
+    # AWS S3 interface
+    from threading import Lock
     import boto3
-    from botocore.exceptions import ClientError
 
-    CACHE_TABLE_NAME  = 'birddog_cache'
-    dynamodb    = boto3.client('dynamodb')
+    CACHE_NAME = 'birddog-cache'
+    s3 = boto3.client('s3')
+    bucket_created = False
+    bucket_creation_lock = Lock()
 
-    def _table_exists(name):
-        try:
-            dynamodb.describe_table(TableName=name)
+    def _create_bucket():
+        global bucket_created
+        if bucket_created:
             return True
-        except ClientError as e:
-            return False
-    
-    def _create_table():
-        if not _table_exists(CACHE_TABLE_NAME):
-            resource = boto3.resource('dynamodb')
-            table = resource.create_table(
-                TableName=CACHE_TABLE_NAME,
-                KeySchema=[
-                    {
-                        'AttributeName': 'path',
-                        'KeyType': 'HASH'
-                    }
-                ],
-                AttributeDefinitions=[
-                    {
-                        'AttributeName': 'path',
-                        'AttributeType': 'S'
-                    }
-                ],
-                #ProvisionedThroughput={
-                #    'ReadCapacityUnits': 5,
-                #    'WriteCapacityUnits': 5
-                #},
-                BillingMode='PAY_PER_REQUEST')
-            table.wait_until_exists()
+        with bucket_creation_lock:
+            if bucket_created:
+                return True
+            try:
+                s3.create_bucket(
+                    ACL='private',
+                    Bucket=CACHE_NAME,
+                    CreateBucketConfiguration={
+                        'LocationConstraint': 'us-east-2',
+                    },
+                )
+            except (
+                s3.exceptions.BucketAlreadyExists, 
+                s3.exceptions.BucketAlreadyOwnedByYou):
+                    # already exists
+                    pass
+            bucket_created = True
 
-    def _delete_table():
-        if _table_exists(CACHE_TABLE_NAME):
-            dynamodb.delete_table(TableName=CACHE_TABLE_NAME)
+    def _delete_bucket():
+        with bucket_creation_lock:
+            s3.delete_bucket(Bucket=CACHE_NAME)
+            bucket_created = False
 
     def _put_item(path, json_object):
         print(f'saving {path}: {len(json_object)}')
-        response = dynamodb.put_item(
-            TableName=CACHE_TABLE_NAME,
-            Item={
-                'path': {'S': path},
-                'value': {'S': json_object},
-            }
+        response = s3.put_object(
+            Bucket=CACHE_NAME,
+            Key=path,
+            Body=json_object
         )
 
     def _get_item(path):
-        response = dynamodb.get_item(
-            TableName=CACHE_TABLE_NAME,
-            Key={
-                'path': {'S': path}
-            })
-        if 'Item' in response:
-            return response['Item']['value']['S']
-        return None
+        try:
+            response = s3.get_object(Bucket=CACHE_NAME, Key=path)
+        except s3.exceptions.NoSuchKey:
+            return None
+        body = response['Body'].read().decode("utf-8")
+        return body
 
     def save_cached_object(obj, object_path):
         """Store JSON serialized version of object keyed on object_path"""
-        if not _table_exists(CACHE_TABLE_NAME):
-            _create_table()
+        _create_bucket()
         _put_item(object_path, json.dumps(obj))
 
     def load_cached_object(object_path):
         """Return object previously saved at object_path.
         Raises CacheMissError if cache entry is missing.
         """
-        if not _table_exists(CACHE_TABLE_NAME):
-            raise CacheMissError(object_path)
-
+        _create_bucket()
         item = _get_item(object_path)
         if not item:
             raise CacheMissError(object_path)
-
         return json.loads(item)
 
     def remove_cached_object(object_path):
-        if not _table_exists(CACHE_TABLE_NAME):
-            return
-        dynamodb.delete_item(
-            TableName=CACHE_TABLE_NAME,
-            Key={
-                'path': {'S': object_path},
-                }
-            )
-
-# ---------------
-
-if False:
-    from pynamodb.models import Model
-    from pynamodb.attributes import UnicodeAttribute
-    from pynamodb.exceptions import DeleteError
-
-    class Cache(Model):
-        class Meta:
-            table_name = 'BirddogCache'
-            region = "us-east-1"
-            host = 'http://localhost:8000'
-            read_capacity_units = 5
-            write_capacity_units = 5
-        path = UnicodeAttribute(hash_key=True)
-        value = UnicodeAttribute(range_key=True)
-
-    def save_cached_object(obj, object_path):
-        """Store JSON serialized version of object with key given by path"""
-        if not Cache.exists():
-            Cache.create_table()
-        item = Cache(object_path, json.dumps(obj))
-        item.save()
-
-    def load_cached_object(object_path):
-        """Return object previously saved at path key.
-        Raises CacheMissError if cache entry is missing.
-        """
-        if not Cache.exists():
-            raise CacheMissError(object_path)
-        try:
-            item = Cache.get(object_path)
-            return json.loads(item.value)
-        except Cache.DoesNotExist:
-            raise CacheMissError(object_path)
-
-    def remove_cached_object(object_path):
-        if not Cache.exists():
-            return
-        try:
-            Cache.get(object_path)
-        except Cache.DoesNotExist:
-            return
-        Cache.delete(object_path)
+        _create_bucket()
+        s3.delete_object(Bucket=CACHE_NAME, Key=object_path)
