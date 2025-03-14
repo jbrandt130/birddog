@@ -2,42 +2,17 @@
 Utility functions for archivescraper.
 """
 
-import json
-import os
 import re
 import time
+import json
 from birddog.translate import translation, is_english
 
 # global constants
 
 ARCHIVE_BASE    = 'https://uk.wikisource.org'
 SUBARCHIVES     = ['Д', 'Р', 'П']
-CACHE_DIR       = './cache'
 UK_MONTHS       = None
 ARCHIVE_LIST    = None
-
-# cache support
-
-def make_path_if_needed(path):
-    """Make full subdirectory hierarchy for given path."""
-    pos = path.rfind('/')
-    if pos >= 0:
-        os.makedirs(path[:pos], exist_ok=True)
-
-def save_cached_object(obj, filepath):
-    """Store JSON serialized version of object at filepath location relative to CACHE_DIR"""
-    filepath = f'{CACHE_DIR}/{filepath}'
-    make_path_if_needed(filepath)
-    with open(filepath, 'w', encoding="utf8") as file:
-        file.write(json.dumps(obj))
-
-def load_cached_object(filepath):
-    """Return object previously saved at filepath location relative to CACHE_DIR.
-    Raises FileNotFoundError if cache entry is missing.
-    """
-    filepath = f'{CACHE_DIR}/{filepath}'
-    with open(filepath, encoding="utf8") as file:
-        return json.loads(file.read())
 
 # load static data resources
 

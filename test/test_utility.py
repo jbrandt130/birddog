@@ -1,4 +1,3 @@
-import os
 from copy import copy
 import unittest
 from birddog.utility import (
