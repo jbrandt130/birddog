@@ -18,6 +18,7 @@ ARCHIVE_LIST    = None
 
 with open('resources/archives.json', encoding="utf8") as f:
     ARCHIVE_LIST = json.load(f)
+    ARCHIVE_LIST = {k: v for (k, v) in ARCHIVE_LIST.items() if v is not None}
 
 # used for standardizing dates in numerical format
 with open('resources/months.json', encoding="utf8") as f:

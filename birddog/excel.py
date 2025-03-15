@@ -130,6 +130,8 @@ def export_page(page, dest_file=None):
                         #print('edited:', item)
                         child_cell.fill = copy(edit_cell[edit].fill)
                 child_cell.value = sub
+            else:
+                child_cell.value = ''
             if parse['modifier'] == 'linked':
                 child_cell.hyperlink = child_url(child)
             elif parse['modifier'] == 'link_status':

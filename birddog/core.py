@@ -198,10 +198,11 @@ class Table:
                 # drop through on cache miss
                 pass
         if not self._page:
-            print(f'Loading page: {self.name}')
-            self._page = read_page(self.default_url)
-            self._pages = [self._page]
-            self._update_cache()
+            if self.default_url is not None:
+                print(f'Loading page: {self.name}')
+                self._page = read_page(self.default_url)
+                self._pages = [self._page]
+                self._update_cache()
 
     def _update_cache(self):
         self._pages.sort(key=lambda x: x['lastmod'])
@@ -265,7 +266,10 @@ class Table:
 
     @property
     def default_url(self):
-        return self.base + self._spec[1] if self._spec is not None else None
+        #print(self.base, self._spec)
+        if self._spec is not None and self._spec[1] is not None:
+            return self.base + self._spec[1]
+        return None
 
     @property
     def url(self):
@@ -292,6 +296,10 @@ class Table:
     def name(self):
         return f'{self._parent.name}/{self.id}'
 
+    @property
+    def ascii_name(self):
+        return f'{self.parent.ascii_name}/{self.id}'
+   
     @property
     def title(self):
         return get_text(self._page['title'])
@@ -353,6 +361,10 @@ class Archive(Table):
     @property
     def name(self):
         return self._name
+
+    @property
+    def ascii_name(self):
+        return self.tag
 
     @property
     def subarchive(self):
