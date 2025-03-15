@@ -5,4 +5,5 @@ var
 cache
 excel
 .coverage
+static/downloads
 

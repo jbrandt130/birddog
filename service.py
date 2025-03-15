@@ -1,3 +1,4 @@
+import os
 from urllib.parse import quote
 from flask import Flask, render_template, request, json, send_file
 import argparse
@@ -68,6 +69,7 @@ def download_file():
         if page:
             filename = f'{page.ascii_name.replace("/", "_")}.xlsx'
             filepath = f'static/downloads/{filename}'
+            os.makedirs('static/downloads', exist_ok=True)
             print(f'exporting to {filepath}')
             export_page(page, filepath)
             response = send_file(
