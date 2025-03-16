@@ -11,6 +11,7 @@ from birddog.translate import translation, is_english
 
 ARCHIVE_BASE    = 'https://uk.wikisource.org'
 SUBARCHIVES     = ['Д', 'Р', 'П']
+ASCII_SUBARCHIVES = { 'Д': 'D', 'Р': 'R', 'П':'P'}
 UK_MONTHS       = None
 ARCHIVE_LIST    = None
 

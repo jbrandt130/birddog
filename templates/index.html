@@ -42,37 +42,50 @@
               <div class="card-body">
                 <div class="row align-items-center">
 
-                    <!-- Left Side: Title + Description -->
-                    <div class="col-md-8">
-                        <!-- Breadcrumbs Container -->
-                        <nav aria-label="breadcrumb">
+                  <!-- Left Column: Breadcrumb + Title + Description -->
+                  <div class="col-md-auto">
+                      <nav aria-label="breadcrumb">
                           <ol id="breadcrumb" class="breadcrumb">
                               <!-- Breadcrumb items will be populated dynamically -->
                           </ol>
-                        </nav>
-                        <h5 id="page-title">Page Title</h5>
-                        <p id="page-description">This is the default description of the page.</p>
-                    </div>
+                      </nav>
+                      <h5 id="page-title">Page Title</h5>
+                      <p id="page-description">This is the default description of the page.</p>
+                  </div>
 
-                    <!-- Right Side: Buttons + Last Modified + Progress Bar -->
-                    <div class="col-md-4 text-end">
-                        <div class="mb-2">
-                            <a id="source-link" href="#" target="_blank" class="btn btn-primary me-2">View Source</a>
-                            <button id="translate-btn" class="btn btn-secondary" onclick="translate_page()">Translate</button>
-                            <button id="download-btn" class="btn btn-secondary" onclick="download_page()">Download</button>
+                  <!-- Right Side Wrapper (Middle + Right Columns) -->
+                  <div class="col d-flex justify-content-end gap-3">
+
+                      <!-- Middle Column: Last Modified + Compare to Version -->
+                      <div class="border rounded p-3 shadow-sm" style="display: flex; align-items: center; gap: 20px;">
+                        <div class="d-flex flex-column">
+                          <p class="text-muted mb-1">
+                              Last Modified: <span id="last-modified">-</span>
+                          </p>
+                          <div class="d-flex align-items-center">
+                              <div class="form-check me-2">
+                                  <label class="form-check-label" for="compare-checkbox">
+                                      Compare to:
+                                  </label>
+                              </div>
+                              <select id="version-select" class="form-select form-select-sm" style="width: auto;" disabled>
+                                  <option value="" selected>Select version</option>
+                                  <!-- Options populated dynamically -->
+                              </select>
+                          </div>
                         </div>
-
-                        <p class="mt-2 text-muted">Last Modified: <span id="last-modified">-</span></p>
-
-                        <!-- Progress Bar -->
-                        <!--
-                        <div class="progress mt-2">
-                            <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
-                                0%
-                            </div>
+                      </div>
+                      <!-- Right Column: Buttons -->
+                      <div class="border rounded p-3 shadow-sm" style="display: flex; align-items: center; gap: 20px;">
+                        <div class="d-flex align-items-start">
+                          <a id="source-link" href="#" target="_blank" class="btn btn-primary me-2">
+                              View Source
+                          </a>
+                          <button id="translate-btn" class="btn btn-secondary me-2" onclick="translate_page()">Translate</button>
+                          <button id="download-btn" class="btn btn-secondary" onclick="download_page()">Download</button>
                         </div>
-                        -->
-                    </div>
+                      </div>
+                  </div>
                 </div>
             </div>
         </div>

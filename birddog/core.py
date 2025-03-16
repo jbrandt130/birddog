@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 from birddog.utility import (
     ARCHIVE_BASE,
     SUBARCHIVES,
+    ASCII_SUBARCHIVES,
     ARCHIVE_LIST,
     lastmod,
     format_date,
@@ -194,15 +195,16 @@ class Table:
                 # sort by ascending mod date
                 self._pages.sort(key=lambda x: x['lastmod'])
                 self._page = self._pages[-1]
+                history = self.history
+                if history[0]['modified'] != self.lastmod:
+                    # cache is out of date - refresh
+                    self.latest()
             except CacheMissError:
-                # drop through on cache miss
-                pass
-        if not self._page:
-            if self.default_url is not None:
-                print(f'Loading page: {self.name}')
-                self._page = read_page(self.default_url)
-                self._pages = [self._page]
-                self._update_cache()
+                if self.default_url is not None:
+                    print(f'Loading page: {self.name}')
+                    self._page = read_page(self.default_url)
+                    self._pages = [self._page]
+                    self._update_cache()
 
     def _update_cache(self):
         self._pages.sort(key=lambda x: x['lastmod'])
@@ -364,7 +366,7 @@ class Archive(Table):
 
     @property
     def ascii_name(self):
-        return self.tag
+        return f'{self.tag}-{ASCII_SUBARCHIVES[self.subarchive]}'
 
     @property
     def subarchive(self):

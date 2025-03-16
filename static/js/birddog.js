@@ -21,6 +21,39 @@ function is_linked(item) {
     return item != null && !item.includes("redlink");
 }
 
+// history loader
+async function load_history() {
+    try {
+        // Default to an empty string if any parameter is null or undefined
+        url = `/history?` + 
+            `archive=${encodeURIComponent(current_page.archive ?? '')}&` + 
+            `fond=${encodeURIComponent(current_page.fond ?? '')}&` + 
+            `opus=${encodeURIComponent(current_page.opus ?? '')}&` + 
+            `case=${encodeURIComponent(current_page.case ?? '')}`;
+
+        console.log(`Fetching data from: ${url}`);
+
+         // Make the GET request
+        const response = await fetch(url, {
+            method: 'GET'
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        // Parse the JSON response
+        const history = await response.json();
+        console.log('History loaded:', history);
+
+        render_history(current_page, history);
+
+    } catch (error) {
+        console.error('Error loading page:', error.message);
+        alert(`Failed to load data: ${error.message}`);
+    }
+}
+
 // page loader
 async function load_page(archive_id, fond_id=null, opus_id=null, case_id=null, translate=false) {
     try {
@@ -54,6 +87,9 @@ async function load_page(archive_id, fond_id=null, opus_id=null, case_id=null, t
 
         current_page = data;
 
+        // populate the history dropdown
+        load_history();
+
         // Process and display the data
         render_page_data(data);
 
@@ -78,7 +114,7 @@ async function download_page() {
 
         console.log(`Fetching data from: ${url}`);
 
-         // ✅ Make the GET request
+         // Make the GET request
         const response = await fetch(url, {
             method: 'GET'
         });
@@ -87,28 +123,28 @@ async function download_page() {
             throw new Error(`HTTP error! Status: ${response.status}`);
         }
 
-        // ✅ Convert the response to a Blob
+        // Convert the response to a Blob
         const blob = await response.blob();
 
-        // ✅ Create an object URL for the Blob
+        // Create an object URL for the Blob
         const blobUrl = window.URL.createObjectURL(blob);
 
-        // ✅ Extract filename from Content-Disposition header (if available)
+        // Extract filename from Content-Disposition header (if available)
         const contentDisposition = response.headers.get('Content-Disposition');
         const filename = contentDisposition
             ? contentDisposition.split('filename=')[1]?.replace(/['"]/g, '') 
             : 'download.xlsx';
 
-        // ✅ Create a hidden <a> element to trigger the download
+        // Create a hidden <a> element to trigger the download
         const link = document.createElement('a');
         link.href = blobUrl;
         link.setAttribute('download', filename);
         document.body.appendChild(link);
 
-        // ✅ Trigger download
+        // Trigger download
         link.click();
 
-        // ✅ Clean up
+        // Clean up
         document.body.removeChild(link);
         window.URL.revokeObjectURL(blobUrl);
 
@@ -206,6 +242,36 @@ function render_page_data(data) {
     render_breadcrumbs(data);
 }
 
+function render_history(page, data) {
+
+    const selector = document.getElementById('version-select');
+
+    // Clear existing options
+    selector.innerHTML = '<option value="" selected>Select version</option>';
+    selector.disabled = false;
+
+    // Add new options dynamically
+    console.log('adding history: ', data.history.length);
+    //const history_slice = data.history.slice(1, 20);
+    data.history.forEach(item => {
+        if (item.modified != page.lastmod) {
+            const option = document.createElement('option');
+            option.value = item.modified;   // Set the value
+            option.textContent = item.modified; // Display text
+            console.log('adding select item: ', item.modified);
+            selector.appendChild(option);
+        }
+    });
+
+    selector.addEventListener('change', (event) => {
+        const version = event.target.value;
+        if (version) {
+            console.log(`Selected version: ${version}`);
+            //alert(`Comparing to version ${selectedVersion}`);
+        }
+    });
+}
+
 function handle_breadcrumb_click(parts, index) {
     archive_id = parts[0];
     fond_id = index >= 1? parts[1] : '';
@@ -240,12 +306,12 @@ function render_breadcrumbs(data) {
         li.classList.add('breadcrumb-item');
 
         if (index === parts.length - 1) {
-            // ✅ Final part - make it non-clickable (active)
+            // Final part - make it non-clickable (active)
             li.classList.add('active');
             li.setAttribute('aria-current', 'page');
             li.textContent = part;
         } else {
-            // ✅ Intermediate parts - make them clickable
+            // Intermediate parts - make them clickable
             const link = document.createElement('a');
             link.href = '#'; // Optional: Use an actual URL if needed
             link.textContent = part;

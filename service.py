@@ -30,13 +30,12 @@ def home():
 def archive_list():
     return json_response(ARCHIVE_LIST)
 
-def get_page(request):
-    archive_id = request.args.get('archive')
-    fond_id = request.args.get('fond')
-    opus_id = request.args.get('opus')
-    case_id = request.args.get('case')
-    translate = request.args.get('translate')
+def unpack_standard_args(request):
+    standard_args = ('archive', 'fond', 'opus', 'case', 'translate')
+    return (request.args.get(arg) for arg in standard_args)
 
+def get_page(request):
+    archive_id, fond_id, opus_id, case_id, translate = unpack_standard_args(request)
     result = None
     if archive_id in ARCHIVE_LIST:
         result = Archive(archive_id)
@@ -58,7 +57,7 @@ def get_page(request):
     return result
 
 @app.route("/page", methods=['GET'])
-def page():
+def page_data():
     page = get_page(request)
     return json_response(page.page if page else None)
 
@@ -85,6 +84,17 @@ def download_file():
     except Exception as e:
         print(f'Error: {e}')
         abort(500)  # Internal server error
+
+@app.route("/history", methods=['GET'])
+def history_endpoint():
+    page = get_page(request)
+    if page is not None:
+        result = { 'history': page.history }
+        page = page.page
+        for key in ('archive', 'fond', 'opus', 'case', 'kind'):
+            result[key] = page[key]
+        return json_response(result)
+    return json_response(None)
 
 # ---- MAIN -----------------------------------------------------------------------------
 
