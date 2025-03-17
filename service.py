@@ -89,7 +89,7 @@ def download_file():
 def history_endpoint():
     page = get_page(request)
     if page is not None:
-        result = { 'history': page.history }
+        result = { 'history': page.history(limit=20) }
         page = page.page
         for key in ('archive', 'fond', 'opus', 'case', 'kind'):
             result[key] = page[key]

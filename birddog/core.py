@@ -96,14 +96,42 @@ def do_search(query_string, limit=10, offset=0):
         results.append(item)
     return results
 
-def get_page_history(page):
+def history_url(page):
+    return page.default_url.replace(
+        '/wiki/', 
+        '/w/index.php?action=history&title=')
+
+def get_page_history(page, limit=None, cutoff_date=None):
     """
     Return version history of given page, sorted in reverse chronological order.
     Returns list of dicts containing keys: 
         "modified": modification date in standard format
         "link": url to the corresponding page version
     """
-    url = page.history_url
+    #print(f'get_page_history(limit={limit}, cutoff_date={cutoff_date})')
+    if cutoff_date is not None:
+        # search increasingly for cutoff date  because
+        # api does not allow for paging through search results
+        last_result_length = 0
+        attempt = 10
+        while True:
+            result = get_page_history(page, limit=attempt)
+            if len(result) == last_result_length:
+                return result # no more history to be had
+            if result[-1]['modified'] < cutoff_date:
+                for index, item in enumerate(result):
+                    if item['modified'] < cutoff_date:
+                        return result[:(index+1)]
+                return result
+            # increase limit length and try again
+            last_result_length = len(result)
+            attempt *= 2
+
+    url = history_url(page)
+    if limit is not None:
+        limit = max(limit, 1) # low limit value returns no result
+        url = f'{url}&limit={limit}'
+    #print(url)
     soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
     #print(soup)
     result = []
@@ -115,6 +143,7 @@ def get_page_history(page):
             'link': page.base + link,
             #'title': elem['title']
         })
+    #print(result)
     return result
 
 def report_page_changes(page):
@@ -187,61 +216,71 @@ class Table:
         self._parent = parent
         self._spec = spec
         self._page = None
-        self._pages = None
         if use_cache:
-            try:
-                self._pages = load_cached_object(f'{self.name}.json')
-                print(f'Retrieving from cache: {self.name}')
-                # sort by ascending mod date
-                self._pages.sort(key=lambda x: x['lastmod'])
-                self._page = self._pages[-1]
-                history = self.history
-                if history[0]['modified'] != self.lastmod:
-                    # cache is out of date - refresh
-                    self.latest()
-            except CacheMissError:
+            if not self._cache_load():
+                # not in the cache - get it
                 if self.default_url is not None:
-                    print(f'Loading page: {self.name}')
+                    print(f'Loading page: {self.name} from {self.default_url}')
                     self._page = read_page(self.default_url)
-                    self._pages = [self._page]
-                    self._update_cache()
+                    self._cache_save(as_latest=True)
 
-    def _update_cache(self):
-        self._pages.sort(key=lambda x: x['lastmod'])
-        save_cached_object(self._pages, f'{self.name}.json')
+    @property
+    def _cache_path(self):
+        return self.ascii_name # avoid unicode characters in file path
+
+    def _cache_load(self, version=None):
+        """Try to retrieve page contents from cache. Returns True if successful."""
+        if not version:
+            version = 'latest'
+        path = f'{self._cache_path}/{version}.json'
+        try:
+            self._page = load_cached_object(path)
+            print(f'Retrieved from cache: {self.name}[{version}]: {path}')
+            if version == 'latest':
+                # check if cached page is still the latest
+                history = self.history(limit=1)
+                print(f'checking currency: {history[0]["modified"]} == {self.lastmod}?')
+                if history[0]['modified'] > self.lastmod:
+                    # wikidata page has been updated - refresh
+                    self.latest()
+            return True
+        except CacheMissError:
+            pass
+        return False
+
+    def _cache_save(self, as_latest=False):
+        """Store the page contents in the cache, later retrievable under modification date.
+        If as_latest is true, then it is also saved under "latest.json"
+        """
+        path = f'{self._cache_path}/{self.lastmod}.json'
+        save_cached_object(self._page, path)
+        if as_latest:
+            path = f'{self._cache_path}/latest.json'
+            save_cached_object(self._page, path)
 
     def latest(self):
         """Set page state to the latest version."""
-        new_page = read_page(self.default_url)
-        cache_page = next(
-            (page for page in self._pages if page['lastmod'] == new_page['lastmod']),
-            None)
-        if cache_page:
-            print('Nothing new.')
-            self._page = cache_page
-        else:
-            print('Found new version:', new_page['lastmod'])
-            self._pages.append(new_page)
-            self._page = new_page
-            self._update_cache()
+        history = self.history(limit=1)
+        if history[0]['modified'] != self.lastmod:
+            if self._cache_load(version=history[0]['modified']):
+                return self
+            new_page = read_page(self.default_url)
+            self._cache_save(as_latest=True)
         return self
 
     def revert_to(self, date):
         """Revert page state to particular version date."""
-        version = next((v for v in self.history if v['modified'] <= date), None)
-        if not version:
+        history = self.history(cutoff_date=date)
+        if not history:
             print('No version exists on or before', date)
             return None
-        modified_date = version['modified']
-        cached_page = next((page for page in self._pages if page['lastmod'] == modified_date), None)
-        if cached_page:
-            self._page = cached_page
-            print(f'Retrieving from cache: {self.name}, modified: {modified_date}')
-        else:
-            print(f'Loading page: {self.name}, modified: {modified_date}')
-            self._page = read_page(version['link'])
-            self._pages.append(self._page)
-            self._update_cache()
+        version = history[-1]
+        if self._cache_load(version=version['modified']):
+            return self
+
+        print(f'Loading page: {self.name}, modified: {version["modified"]}')
+        self._page = read_page(version['link'])
+        self._cache_save()
         return self
 
     @property
@@ -280,17 +319,6 @@ class Table:
         return self.default_url
 
     @property
-    def history_url(self):
-        # arbitrary cutoff of page edit history to 10000 items (not sure what the site allows)
-        return self.default_url.replace(
-            '/wiki/', 
-            '/w/index.php?action=history&limit=10000&title=')
-
-    @property
-    def history(self):
-        return get_page_history(self)
-
-    @property
     def id(self):
         return self._spec[0]
 
@@ -323,6 +351,10 @@ class Table:
         return 'table'
 
     @property
+    def is_latest(self):
+        return self.history(limit=1)[0]['modified'] == self.lastmod
+    
+    @property
     def report(self):
         # make sure no commas in the name
         return f'{self.kind},{self.name.replace(",", "")},{self.lastmod}'
@@ -337,9 +369,12 @@ class Table:
 
     def translate(self):
         if translate_page(self._page) > 0:
-            self._update_cache()
+            self._cache_save(as_latest=self.is_latest)
             return True
         return False
+
+    def history(self, limit=None, cutoff_date=None):
+        return get_page_history(self, limit, cutoff_date)
 
 class Archive(Table):
     """Represents a top level archive page."""

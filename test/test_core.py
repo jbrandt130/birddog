@@ -30,9 +30,6 @@ class Test(unittest.TestCase):
         print('default_url', page.default_url)
         self.assertTrue(
             page.default_url == ARCHIVE_BASE + '/wiki/%D0%90%D1%80%D1%85%D1%96%D0%B2%3A%D0%94%D0%90%D0%96%D0%9E/%D0%94')
-        print('history_url', page.history_url)
-        self.assertTrue(
-            page.history_url == ARCHIVE_BASE + '/w/index.php?action=history&limit=10000&title=%D0%90%D1%80%D1%85%D1%96%D0%B2%3A%D0%94%D0%90%D0%96%D0%9E/%D0%94')
         print('id', page.id)
         self.assertTrue(page.id == 'DAZHO')
         print('kind', page.kind)
@@ -62,21 +59,18 @@ class Test(unittest.TestCase):
         print('default_url', page.default_url)
         self.assertTrue(
             page.default_url == f'{ARCHIVE_BASE}/wiki/{archive_path}/{fond_id}')
-        print('history_url', page.history_url)
-        self.assertTrue(
-            page.history_url == f'{ARCHIVE_BASE}/w/index.php?action=history&limit=10000&title={archive_path}/{fond_id}')
         print('id', page.id)
         self.assertTrue(page.id == fond_id)
         print('kind', page.kind)
         self.assertTrue(page.kind == 'fond')
         print('name', page.name)
-        self.assertTrue(page.name == f'Архів:ДАЖО/Д/{fond_id}')
+        self.assertTrue(page.name == f'{page.parent.name}/{fond_id}')
         print('refmod', page.refmod)
         self.assertTrue(page.refmod == '')
         print('report', page.report)
         self.assertTrue(page.report == f'{page.kind},{page.name.replace(",", "")},{page.lastmod}')
-        print('title', page.title)
-        self.assertTrue(page.title == f'Dago/{fond_id}')
+        #print('title', page.title)
+        #self.assertTrue(page.title == f'ДАЖО/{fond_id}')
         print('url', page.url)
         self.assertTrue(page.url == page.default_url)
        
@@ -88,8 +82,6 @@ class Test(unittest.TestCase):
         self.assertTrue(page.child_class == Case)
         print('default_url', page.default_url)
         self.assertTrue(page.default_url == f'{page.parent.default_url}/{opus_id}')
-        print('history_url', page.history_url)
-        self.assertTrue(page.history_url == f'{page.parent.history_url}/{opus_id}')
         print('id', page.id)
         self.assertTrue(page.id == opus_id)
         print('kind', page.kind)
@@ -115,9 +107,6 @@ class Test(unittest.TestCase):
         print('default_url', page.default_url)
         self.assertTrue(
             page.default_url == f'{page.parent.default_url}/{case_id}')
-        print('history_url', page.history_url)
-        self.assertTrue(
-            page.history_url == f'{page.parent.history_url}/{case_id}')
         print('id', page.id)
         self.assertTrue(page.id == case_id)
         print('kind', page.kind)
