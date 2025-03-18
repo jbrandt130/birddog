@@ -21,41 +21,8 @@ function is_linked(item) {
     return item != null && !item.includes("redlink");
 }
 
-// history loader
-async function load_history() {
-    try {
-        // Default to an empty string if any parameter is null or undefined
-        url = `/history?` + 
-            `archive=${encodeURIComponent(current_page.archive ?? '')}&` + 
-            `fond=${encodeURIComponent(current_page.fond ?? '')}&` + 
-            `opus=${encodeURIComponent(current_page.opus ?? '')}&` + 
-            `case=${encodeURIComponent(current_page.case ?? '')}`;
-
-        console.log(`Fetching data from: ${url}`);
-
-         // Make the GET request
-        const response = await fetch(url, {
-            method: 'GET'
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-
-        // Parse the JSON response
-        const history = await response.json();
-        console.log('History loaded:', history);
-
-        render_history(current_page, history);
-
-    } catch (error) {
-        console.error('Error loading page:', error.message);
-        alert(`Failed to load data: ${error.message}`);
-    }
-}
-
 // page loader
-async function load_page(archive_id, fond_id=null, opus_id=null, case_id=null, translate=false) {
+async function load_page(archive_id, fond_id=null, opus_id=null, case_id=null, translate=false, compare=null) {
     try {
         // Default to an empty string if any parameter is null or undefined
         url = `/page?` + 
@@ -63,10 +30,10 @@ async function load_page(archive_id, fond_id=null, opus_id=null, case_id=null, t
             `fond=${encodeURIComponent(fond_id ?? '')}&` + 
             `opus=${encodeURIComponent(opus_id ?? '')}&` + 
             `case=${encodeURIComponent(case_id ?? '')}`;
-
         if (translate)
             url += "&translate";
-
+        if (compare != null)
+            url += `&compare=${compare}`
         console.log(`Fetching data from: ${url}`);
 
         // Make the GET request
@@ -87,11 +54,11 @@ async function load_page(archive_id, fond_id=null, opus_id=null, case_id=null, t
 
         current_page = data;
 
-        // populate the history dropdown
-        load_history();
-
         // Process and display the data
         render_page_data(data);
+
+        // Populate the history dropdown
+        render_history(data)
 
     } catch (error) {
         console.error('Error loading page:', error.message);
@@ -193,21 +160,35 @@ function on_row_click(page_data, index) {
 
 // render a data page
 function render_page_data(data) {
+    const is_comparison = 'refmod' in data;
+    
     const title_elem = document.getElementById('page-title');
     title_elem.textContent = get_text(data.title);
     
     const desc_elem = document.getElementById('page-description');
-    desc_elem.textContent = get_text(data["description"]);
-    
+    desc_elem.textContent = get_text(data.description);
+    desc_elem.classList.remove('bg-warning', 'bg-success');
+    if (is_comparison && 'edit' in data.description) {
+        switch (data.description.edit) {
+            case 'added':
+                desc_elem.classList.add('bg-success');
+                break;
+            case 'changed':
+                desc_elem.classList.add('bg-warning');
+                break;
+            default:
+                break;
+        }
+    }
+
     const lastmod = document.getElementById('last-modified');
-    lastmod.textContent = data["lastmod"];
+    lastmod.textContent = data.lastmod;
     
     const source_link_elem = document.getElementById('source-link');
-    source_link_elem.setAttribute('href', data["link"]);
+    source_link_elem.setAttribute('href', data.link);
     
-    const children = data["children"];
-
-    const header = data["header"];
+    const children = data.children;
+    const header = data.header;
     const header_elem = document.getElementById('page_table').querySelector('thead');
     var row = '<tr>';
     header.forEach((item, index) => {
@@ -218,58 +199,74 @@ function render_page_data(data) {
     
     const body_elem = document.getElementById('page_table').querySelector('tbody');
     body_elem.innerHTML = ''; // Clear existing content
+
     children.forEach((child, index) => {
+        var any_edit = false;
         const row_elem = document.createElement('tr');
-        var row = '';
         child.forEach((item, index) => {
-            row += `<td>${get_text(item.text) || ''}</td>`;
+            const cell_elem = document.createElement('td')
+            cell_elem.textContent = get_text(item.text) || ''
+            if (is_comparison && 'edit' in item) {
+                switch (item.edit) {
+                case 'added':
+                    cell_elem.classList.add('table-success');
+                    any_edit = true;
+                    break;
+                case 'changed':
+                    cell_elem.classList.add('table-warning');
+                    any_edit = true;
+                    break;
+                default:
+                    break;
+                }
+            }
+            row_elem.appendChild(cell_elem)
         });
-        row_elem.innerHTML = row;
 
-        if (data.kind != 'case' && is_linked(child[0].link)) {
-            // Add click event listener
-            row_elem.addEventListener('click', () => on_row_click(data, index));            
-        }
-        else {
-            row_elem.classList.add('table-secondary', 'disabled');
-            row_elem.style.pointerEvents = 'none';
-            row_elem.style.opacity = '0.25'; // Dim for better visibility
-        }
+        if (!is_comparison || any_edit) {
+            // only add the row if not doing comparison or there is a change to show
+            if (data.kind != 'case' && is_linked(child[0].link)) {
+                // Add click event listener
+                row_elem.addEventListener('click', () => on_row_click(data, index));
+            }
+            else {
+                row_elem.classList.add('table-secondary', 'disabled');
+                row_elem.style.pointerEvents = 'none';
+                row_elem.style.opacity = '0.25'; // Dim for better visibility
+            }
 
-        body_elem.appendChild(row_elem);
+            body_elem.appendChild(row_elem);
+        }
     });
 
     render_breadcrumbs(data);
 }
 
-function render_history(page, data) {
+function render_history(data) {
 
     const selector = document.getElementById('version-select');
 
     // Clear existing options
-    selector.innerHTML = '<option value="" selected>Select version</option>';
+    select_header = 'refmod' in data? 'Clear Comparing' : 'Select Version';
+    selector.innerHTML = `<option value="" selected>${select_header}</option>`;
     selector.disabled = false;
 
     // Add new options dynamically
-    console.log('adding history: ', data.history.length);
+    //console.log('adding history: ', data.history.length);
     //const history_slice = data.history.slice(1, 20);
     data.history.forEach(item => {
-        if (item.modified != page.lastmod) {
+        if (item.modified != data.lastmod) {
             const option = document.createElement('option');
             option.value = item.modified;   // Set the value
             option.textContent = item.modified; // Display text
-            console.log('adding select item: ', item.modified);
+            //console.log('adding select item: ', item.modified);
             selector.appendChild(option);
         }
     });
 
-    selector.addEventListener('change', (event) => {
-        const version = event.target.value;
-        if (version) {
-            console.log(`Selected version: ${version}`);
-            //alert(`Comparing to version ${selectedVersion}`);
-        }
-    });
+    if ('refmod' in data) {
+        selector.value = data.refmod;
+    }
 }
 
 function handle_breadcrumb_click(parts, index) {
@@ -326,12 +323,29 @@ function render_breadcrumbs(data) {
     });
 }
 
+
+function bd_on_loaded() {
+    console.log('bd_on_loaded triggered!');
+    
+    // set up event listeners
+    const selector = document.getElementById('version-select');
+    selector.addEventListener('change', (event) => {
+        const version = event.target.value;
+        console.log(`Comparing to: ${version}`);
+        load_page(
+            current_page.archive, 
+            current_page.fond, 
+            current_page.opus, 
+            current_page.case, 
+            translate=false,
+            compare=version);
+        //alert(`Comparing to version ${selectedVersion}`)
+    });
+    load_page("DAZHO");
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM fully loaded and parsed');
     bd_on_loaded();
 });
 
-function bd_on_loaded() {
-    console.log('bd_on_loaded triggered!');
-    load_page("DAZHO");
-}

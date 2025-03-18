@@ -118,9 +118,9 @@ def get_page_history(page, limit=None, cutoff_date=None):
             result = get_page_history(page, limit=attempt)
             if len(result) == last_result_length:
                 return result # no more history to be had
-            if result[-1]['modified'] < cutoff_date:
+            if result[-1]['modified'] <= cutoff_date:
                 for index, item in enumerate(result):
-                    if item['modified'] < cutoff_date:
+                    if item['modified'] <= cutoff_date:
                         return result[:(index+1)]
                 return result
             # increase limit length and try again
