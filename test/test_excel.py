@@ -4,7 +4,8 @@
 import os
 import unittest
 import filecmp
-from birddog.core import Archive, Fond, Opus
+from copy import copy
+from birddog.core import Archive, Fond, Opus, check_page_changes
 from birddog.excel import export_page
 
 UNITTEST_RESOURCE_DIR = 'test/resources'
@@ -29,6 +30,19 @@ class Test(unittest.TestCase):
                 buffer2 = file.read()
             self.assertTrue(len(buffer1) == len(buffer2))
             # excel file contents will differ unfortunately
+        
+        # test difference reporting
+        opus74_copy = copy(opus74)
+        opus74.revert_to('2024')
+        opus74_copy.revert_to('2023')
+        check_page_changes(opus74, opus74_copy)
+        fname = 'unittest_DAZHO_1_74_2024_2023'
+        export_page(opus74, f'var/{fname}.xlsx')
+        with open(f'var/{fname}.xlsx', 'rb') as file:
+            buffer1 = file.read()
+        with open(f'{UNITTEST_RESOURCE_DIR}/{fname}.xlsx', 'rb') as file:
+            buffer2 = file.read()
+        self.assertTrue(len(buffer1) == len(buffer2))
 
 if __name__ == "__main__":
     unittest.main()

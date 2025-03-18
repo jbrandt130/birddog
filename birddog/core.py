@@ -226,7 +226,7 @@ class Table:
 
     @property
     def _cache_path(self):
-        return self.ascii_name # avoid unicode characters in file path
+        return self.name 
 
     def _cache_load(self, version=None):
         """Try to retrieve page contents from cache. Returns True if successful."""
@@ -324,11 +324,7 @@ class Table:
 
     @property
     def name(self):
-        return f'{self._parent.name}/{self.id}'
-
-    @property
-    def ascii_name(self):
-        return f'{self.parent.ascii_name}/{self.id}'
+        return f'{self.parent.name}/{self.id}'
    
     @property
     def title(self):
@@ -378,7 +374,9 @@ class Table:
 
 class Archive(Table):
     """Represents a top level archive page."""
-    def __init__(self, tag, subarchive=SUBARCHIVES[0], base=ARCHIVE_BASE, use_cache=True):
+    def __init__(self, tag, subarchive=None, base=ARCHIVE_BASE, use_cache=True):
+        if not subarchive:
+            subarchive = SUBARCHIVES[0]
         self._tag = tag
         archive_name = ARCHIVE_LIST[tag] if tag in ARCHIVE_LIST else None
         archive_name = f'{archive_name}/{subarchive}'
@@ -386,6 +384,14 @@ class Archive(Table):
         self._subarchive = subarchive
         self._base = base
         super().__init__(None, None, use_cache=use_cache)
+
+    @property
+    def kind(self):
+        return 'archive'
+
+    @property
+    def child_class(self):
+        return Fond
 
     @property
     def tag(self):
@@ -397,10 +403,6 @@ class Archive(Table):
 
     @property
     def name(self):
-        return self._name
-
-    @property
-    def ascii_name(self):
         return f'{self.tag}-{ASCII_SUBARCHIVES[self.subarchive]}'
 
     @property
@@ -415,35 +417,15 @@ class Archive(Table):
     def default_url(self):
         return self._base + '/wiki/' + str(urllib.parse.quote(self._name))
 
-    @property
-    def report(self):
-        return f'{self.kind},{self.tag}/{self.subarchive},{self.lastmod}'
-
-    @property
-    def child_class(self):
-        return Fond
-
-    @property
-    def kind(self):
-        return 'archive'
-
-    def latest_changes(self, limit=100):
-        return do_search(ARCHIVE_LIST[self._tag], limit=limit)
-
 class Fond(Table):
     """Represents fond page."""
-    @property
-    def name(self):
-        return f'{self._parent.name}/{self.id}'
-
-    @property
-    def child_class(self):
-        return Opus
-
     @property
     def kind(self):
         return 'fond'
 
+    @property
+    def child_class(self):
+        return Opus
 
 class Opus(Table):
     """Represents fond page."""

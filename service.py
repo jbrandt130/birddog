@@ -28,14 +28,14 @@ def home():
 # ---- HELPER FUNCTIONS -----------------------------------------------------------------
 
 def unpack_standard_args(request):
-    standard_args = ('archive', 'fond', 'opus', 'case', 'translate', 'compare')
+    standard_args = ('archive', 'subarchive', 'fond', 'opus', 'case', 'translate', 'compare')
     return (request.args.get(arg) for arg in standard_args)
 
 def get_page(request):
-    archive_id, fond_id, opus_id, case_id, translate, compare = unpack_standard_args(request)
+    archive_id, subarchive_id, fond_id, opus_id, case_id, translate, compare = unpack_standard_args(request)
     result = None
     if archive_id in ARCHIVE_LIST:
-        result = Archive(archive_id)
+        result = Archive(archive_id, subarchive=subarchive_id)
         if result is not None and fond_id:
             result = result.lookup(fond_id)
             if result is not None and opus_id:
@@ -53,6 +53,7 @@ def get_page(request):
             #report_page_changes(result)
         page = result.page
         page['archive'] = archive_id
+        page['subarchive'] = subarchive_id
         page['fond'] = fond_id
         page['opus'] = opus_id
         page['case'] = case_id
@@ -77,7 +78,7 @@ def download_file():
     try:
         page = get_page(request)
         if page:
-            filename = f'{page.ascii_name.replace("/", "_")}.xlsx'
+            filename = f'{page.name.replace("/", "_")}.xlsx'
             filepath = f'static/downloads/{filename}'
             os.makedirs('static/downloads', exist_ok=True)
             print(f'exporting to {filepath}')
