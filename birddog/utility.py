@@ -10,10 +10,14 @@ from birddog.translate import translation, is_english
 # global constants
 
 ARCHIVE_BASE    = 'https://uk.wikisource.org'
-SUBARCHIVES     = ['Д', 'Р', 'П']
-ASCII_SUBARCHIVES = { 'Д': 'D', 'Р': 'R', 'П':'P'}
+SUBARCHIVES = [
+    {'uk':'Д', 'en':'D'}, 
+    {'uk':'P', 'en':'R'}, 
+    {'uk':'П', 'en':'P'}
+    ]
 UK_MONTHS       = None
 ARCHIVE_LIST    = None
+
 
 # load static data resources
 

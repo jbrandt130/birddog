@@ -36,6 +36,7 @@ def get_page(request):
     result = None
     if archive_id in ARCHIVE_LIST:
         result = Archive(archive_id, subarchive=subarchive_id)
+        subarchive_id = result.subarchive["en"]
         if result is not None and fond_id:
             result = result.lookup(fond_id)
             if result is not None and opus_id:
@@ -58,6 +59,7 @@ def get_page(request):
         page['opus'] = opus_id
         page['case'] = case_id
         page['kind'] = result.kind
+        page['name'] = result.name
         page['history'] = result.history(limit=20)
         
     return result

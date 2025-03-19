@@ -6,6 +6,7 @@
 
 // global app state
 var current_page = null;
+var archives = null;
 
 // return translated text if present, otherwise original
 function get_text(item) {
@@ -22,11 +23,19 @@ function is_linked(item) {
 }
 
 // page loader
-async function load_page(archive_id, fond_id=null, opus_id=null, case_id=null, translate=false, compare=null) {
+async function load_page(
+        archive_id, 
+        subarchive_id=null, 
+        fond_id=null, 
+        opus_id=null, 
+        case_id=null, 
+        translate=false,
+        compare=null) {
     try {
         // Default to an empty string if any parameter is null or undefined
         url = `/page?` + 
             `archive=${encodeURIComponent(archive_id ?? '')}&` + 
+            `subarchive=${encodeURIComponent(subarchive_id ?? '')}&` + 
             `fond=${encodeURIComponent(fond_id ?? '')}&` + 
             `opus=${encodeURIComponent(opus_id ?? '')}&` + 
             `case=${encodeURIComponent(case_id ?? '')}`;
@@ -67,7 +76,13 @@ async function load_page(archive_id, fond_id=null, opus_id=null, case_id=null, t
 }
 
 function translate_page() {
-    load_page(current_page.archive, current_page.fond, current_page.opus, current_page.case, translate=true)
+    load_page(
+        current_page.archive, 
+        current_page.subarchive, 
+        current_page.fond, 
+        current_page.opus, 
+        current_page.case, 
+        translate=true)
 }
 
 async function download_page() {
@@ -75,6 +90,7 @@ async function download_page() {
         // Default to an empty string if any parameter is null or undefined
         url = `/download?` + 
             `archive=${encodeURIComponent(current_page.archive ?? '')}&` + 
+            `subarchive=${encodeURIComponent(current_page.subarchive ?? '')}&` + 
             `fond=${encodeURIComponent(current_page.fond ?? '')}&` + 
             `opus=${encodeURIComponent(current_page.opus ?? '')}&` + 
             `case=${encodeURIComponent(current_page.case ?? '')}`;
@@ -125,6 +141,7 @@ async function download_page() {
 function on_row_click(page_data, index) {
     console.log(`click on:  ${get_text(page_data.title)}[${index}]`);
     archive_id = page_data.archive;
+    subarchive_id = page_data.subarchive;
     fond_id = page_data.fond;
     opus_id = page_data.opus;
     case_id = page_data.case;
@@ -155,7 +172,7 @@ function on_row_click(page_data, index) {
             return;
     }
 
-    load_page(archive_id, fond_id, opus_id, case_id);
+    load_page(archive_id, subarchive_id, fond_id, opus_id, case_id);
 }
 
 // render a data page
@@ -163,7 +180,7 @@ function render_page_data(data) {
     const is_comparison = 'refmod' in data;
     
     const title_elem = document.getElementById('page-title');
-    title_elem.textContent = get_text(data.title);
+    title_elem.textContent = data.name;
     
     const desc_elem = document.getElementById('page-description');
     desc_elem.textContent = get_text(data.description);
@@ -240,6 +257,7 @@ function render_page_data(data) {
     });
 
     render_breadcrumbs(data);
+    update_archive_select();
 }
 
 function render_history(data) {
@@ -270,18 +288,20 @@ function render_history(data) {
 }
 
 function handle_breadcrumb_click(parts, index) {
-    archive_id = parts[0];
+    archive_id = parts[0].split('-');
+    subarchive_id = archive_id[1];
+    archive_id = archive_id[0];
     fond_id = index >= 1? parts[1] : '';
     opus_id = index >= 2? parts[2] : '';
     case_id = index >= 3? parts[3] : '';
-    load_page(archive_id, fond_id, opus_id, case_id);
+    load_page(archive_id, subarchive_id, fond_id, opus_id, case_id);
 }
 
 function render_breadcrumbs(data) {
     const breadcrumbContainer = document.getElementById('breadcrumb');
     breadcrumbContainer.innerHTML = ''; // Clear existing content
 
-    parts = [ data.archive ];
+    parts = [ `${data.archive}-${data.subarchive}` ];
     if (!empty(data.fond)) {
         parts.push(data.fond);
         if (!empty(data.opus)) {
@@ -323,17 +343,88 @@ function render_breadcrumbs(data) {
     });
 }
 
+function update_archive_select() {
+    document.getElementById('archiveSelect').value = current_page.archive;
+    document.getElementById('subarchiveSelect').value = current_page.subarchive;
+}
 
+function populate_archive_select() {
+    console.log("populate_archive_select(): ", bootstrap)
+    const archive_select_btn = document.getElementById('archive-select-btn');
+    const archive_select_modal = new bootstrap.Modal(document.getElementById('archiveSelectModal'));
+    const archive_select = document.getElementById('archiveSelect');
+    const confirm_selection_btn = document.getElementById('confirmSelectionBtn');
+
+    // Fetch archives from the server
+    async function fetch_archives() {
+        try {
+            const response = await fetch('/archives');
+            if (!response.ok) {
+                throw new Error(`Failed to fetch archives: ${response.statusText}`);
+            }
+            archives = await response.json();
+            console.log('archive list loaded:', archives);
+            populate_archive_select(archives);
+        } catch (error) {
+            console.error('Error fetching archives:', error);
+            alert('Failed to load archives. Please try again.');
+        }
+    }
+
+    // Populate the archive dropdown
+    function populate_archive_select(archives) {
+        archive_select.innerHTML = '<option value="" selected>Select an archive...</option>'; 
+        Object.keys(archives).forEach(archive => {
+            const option = document.createElement('option');
+            option.value = archive;
+            option.textContent = archive;
+            archive_select.appendChild(option);
+        });
+    }
+
+    fetch_archives();  // Fetch latest archive list when the modal opens
+
+    /*
+    // Open modal when button is clicked
+    archive_select_btn.addEventListener('click', () => {
+        fetch_archives();  // Fetch latest archive list when the modal opens
+        archive_select_modal.show();
+    });
+    */
+
+    // Handle Confirm button click
+    confirm_selection_btn.addEventListener('click', () => {
+        const selected_archive = archive_select.value;
+        const selected_subarchive = document.getElementById('subarchiveSelect').value;
+
+        if (!selected_archive) {
+            alert('Please select an archive.');
+            return;
+        }
+
+        console.log(`Selected Archive: ${selected_archive}`);
+        console.log(`Selected Subarchive: ${selected_subarchive}`);
+        if (selected_archive in archives) {
+            load_page(
+                archive_id=selected_archive, 
+                subarchive_id=selected_subarchive)
+        }
+        archive_select_modal.hide();
+    });
+}
 function bd_on_loaded() {
     console.log('bd_on_loaded triggered!');
     
     // set up event listeners
+    
+    // version select listener
     const selector = document.getElementById('version-select');
     selector.addEventListener('change', (event) => {
         const version = event.target.value;
         console.log(`Comparing to: ${version}`);
         load_page(
             current_page.archive, 
+            current_page.subarchive,
             current_page.fond, 
             current_page.opus, 
             current_page.case, 
@@ -341,6 +432,10 @@ function bd_on_loaded() {
             compare=version);
         //alert(`Comparing to version ${selectedVersion}`)
     });
+
+    // archive select listener
+    populate_archive_select();
+
     load_page("DAZHO");
 }
 

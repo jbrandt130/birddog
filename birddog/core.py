@@ -9,7 +9,6 @@ from bs4 import BeautifulSoup
 from birddog.utility import (
     ARCHIVE_BASE,
     SUBARCHIVES,
-    ASCII_SUBARCHIVES,
     ARCHIVE_LIST,
     lastmod,
     format_date,
@@ -24,6 +23,12 @@ from birddog.cache import load_cached_object, save_cached_object, CacheMissError
 # global constants
 
 REQUEST_TIMEOUT = 10 # seconds
+
+def decode_subarchive(subarchive):
+    for item in SUBARCHIVES:
+        if subarchive in item.values():
+            return item
+    return SUBARCHIVES[0]
 
 # HTML page element processing
 def form_element_text(element):
@@ -375,13 +380,10 @@ class Table:
 class Archive(Table):
     """Represents a top level archive page."""
     def __init__(self, tag, subarchive=None, base=ARCHIVE_BASE, use_cache=True):
-        if not subarchive:
-            subarchive = SUBARCHIVES[0]
         self._tag = tag
+        self._subarchive = decode_subarchive(subarchive)
         archive_name = ARCHIVE_LIST[tag] if tag in ARCHIVE_LIST else None
-        archive_name = f'{archive_name}/{subarchive}'
-        self._name = archive_name
-        self._subarchive = subarchive
+        self._archive_name = f'{archive_name}/{self._subarchive["uk"]}'
         self._base = base
         super().__init__(None, None, use_cache=use_cache)
 
@@ -403,7 +405,7 @@ class Archive(Table):
 
     @property
     def name(self):
-        return f'{self.tag}-{ASCII_SUBARCHIVES[self.subarchive]}'
+        return f'{self.tag}-{self.subarchive["en"]}'
 
     @property
     def subarchive(self):
@@ -415,7 +417,7 @@ class Archive(Table):
 
     @property
     def default_url(self):
-        return self._base + '/wiki/' + str(urllib.parse.quote(self._name))
+        return self._base + '/wiki/' + str(urllib.parse.quote(self._archive_name))
 
 class Fond(Table):
     """Represents fond page."""
