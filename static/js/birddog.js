@@ -1,12 +1,11 @@
 
-
-
-
-
-
-// global app state
+// ---------------------------------------------------------------------------
+// APP GLOBALS
 var current_page = null;
 var archives = null;
+
+// ---------------------------------------------------------------------------
+// HELPER FUNCTIONS
 
 // return translated text if present, otherwise original
 function get_text(item) {
@@ -21,6 +20,9 @@ function empty(item) {
 function is_linked(item) {
     return item != null && !item.includes("redlink");
 }
+
+// ---------------------------------------------------------------------------
+// BIRDDOG SERVICE CALLS
 
 // page loader
 async function load_page(
@@ -95,6 +97,9 @@ async function download_page() {
             `opus=${encodeURIComponent(current_page.opus ?? '')}&` + 
             `case=${encodeURIComponent(current_page.case ?? '')}`;
 
+        if ("refmod" in current_page) {
+            url += `&compare=${current_page.refmod}`
+        }
         console.log(`Fetching data from: ${url}`);
 
          // Make the GET request
@@ -136,6 +141,9 @@ async function download_page() {
         alert(`Failed to load data: ${error.message}`);
     } 
 }
+
+// ---------------------------------------------------------------------------
+// UI RENDERING AND HANDLERS
 
 // handle table row click
 function on_row_click(page_data, index) {
@@ -412,6 +420,10 @@ function populate_archive_select() {
         archive_select_modal.hide();
     });
 }
+
+// ---------------------------------------------------------------------------
+// APP INITIALIZATION
+
 function bd_on_loaded() {
     console.log('bd_on_loaded triggered!');
     

@@ -227,7 +227,7 @@ class Table:
                 if self.default_url is not None:
                     print(f'Loading page: {self.name} from {self.default_url}')
                     self._page = read_page(self.default_url)
-                    self._cache_save(as_latest=True)
+                    self._cache_save()
 
     @property
     def _cache_path(self):
@@ -236,41 +236,26 @@ class Table:
     def _cache_load(self, version=None):
         """Try to retrieve page contents from cache. Returns True if successful."""
         if not version:
-            version = 'latest'
+            history = self.history(limit=1)
+            version = history[0]["modified"]
         path = f'{self._cache_path}/{version}.json'
         try:
             self._page = load_cached_object(path)
             print(f'Retrieved from cache: {self.name}[{version}]: {path}')
-            if version == 'latest':
-                # check if cached page is still the latest
-                history = self.history(limit=1)
-                print(f'checking currency: {history[0]["modified"]} == {self.lastmod}?')
-                if history[0]['modified'] > self.lastmod:
-                    # wikidata page has been updated - refresh
-                    self.latest()
             return True
         except CacheMissError:
             pass
         return False
 
-    def _cache_save(self, as_latest=False):
+    def _cache_save(self):
         """Store the page contents in the cache, later retrievable under modification date.
-        If as_latest is true, then it is also saved under "latest.json"
         """
         path = f'{self._cache_path}/{self.lastmod}.json'
         save_cached_object(self._page, path)
-        if as_latest:
-            path = f'{self._cache_path}/latest.json'
-            save_cached_object(self._page, path)
 
     def latest(self):
         """Set page state to the latest version."""
-        history = self.history(limit=1)
-        if history[0]['modified'] != self.lastmod:
-            if self._cache_load(version=history[0]['modified']):
-                return self
-            new_page = read_page(self.default_url)
-            self._cache_save(as_latest=True)
+        self._cache_load()
         return self
 
     def revert_to(self, date):
@@ -370,7 +355,7 @@ class Table:
 
     def translate(self):
         if translate_page(self._page) > 0:
-            self._cache_save(as_latest=self.is_latest)
+            self._cache_save()
             return True
         return False
 

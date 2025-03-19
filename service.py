@@ -1,8 +1,12 @@
+# system packages
 import os
-from copy import copy
+from copy import copy, deepcopy
 from urllib.parse import quote
 from flask import Flask, render_template, request, json, send_file
 import argparse
+from cachetools import LRUCache
+
+# Birddog packages
 from birddog.core import Archive, ARCHIVE_LIST, check_page_changes, report_page_changes
 from birddog.excel import export_page
 
@@ -27,31 +31,55 @@ def home():
 
 # ---- HELPER FUNCTIONS -----------------------------------------------------------------
 
+class PageLRU:
+    def __init__(self, maxsize=10):
+        self._lru = LRUCache(maxsize=maxsize)
+
+    def _key(self, archive, subarchive, fond=None, opus=None, case=None):
+        return (archive, subarchive, fond, opus, case)
+
+    def lookup(self, archive, subarchive, fond=None, opus=None, case=None):
+        key = self._key(archive, subarchive, fond, opus, case)
+        try:
+            item = self._lru[key]
+            print(f'PageLRU.lookup({key}): hit')
+            return item
+        except KeyError:
+            print(f'PageLRU.lookup({key}): miss')
+            if not fond:
+                item = Archive(archive, subarchive=subarchive)
+            elif not opus:
+                parent = self.lookup(archive, subarchive)
+                item = parent.lookup(fond)
+            elif not case:
+                parent = self.lookup(archive, subarchive, fond)
+                item = parent.lookup(opus)
+            else:
+                parent = self.lookup(archive, subarchive, fond, opus)
+                item = parent.lookup(case)
+            self._lru[key] = item
+            return item
+
+page_lru = PageLRU(maxsize=100)
+
 def unpack_standard_args(request):
     standard_args = ('archive', 'subarchive', 'fond', 'opus', 'case', 'translate', 'compare')
     return (request.args.get(arg) for arg in standard_args)
 
 def get_page(request):
     archive_id, subarchive_id, fond_id, opus_id, case_id, translate, compare = unpack_standard_args(request)
-    result = None
-    if archive_id in ARCHIVE_LIST:
-        result = Archive(archive_id, subarchive=subarchive_id)
-        subarchive_id = result.subarchive["en"]
-        if result is not None and fond_id:
-            result = result.lookup(fond_id)
-            if result is not None and opus_id:
-                result = result.lookup(opus_id)
-                if result is not None and case_id:
-                    result = result.lookup(case_id)
+    result = page_lru.lookup(archive_id, subarchive_id, fond_id, opus_id, case_id)
     if result:
+        if result.kind == 'archive':
+            subarchive_id = result.subarchive["en"]
         if translate is not None:
             result.translate()
-        if compare is not None and compare != '':
-            #print('***** Compare to *****', compare)
-            reference = copy(result)
+        if compare:
+            # avoid making changes to cached page - work on copy instead
+            result = deepcopy(result)
+            reference = deepcopy(result)
             reference.revert_to(compare)
             check_page_changes(result, reference)
-            #report_page_changes(result)
         page = result.page
         page['archive'] = archive_id
         page['subarchive'] = subarchive_id
