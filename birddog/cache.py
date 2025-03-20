@@ -57,7 +57,7 @@ else:
     from threading import Lock
     import boto3
 
-    CACHE_NAME = 'birddog-cache'
+    CACHE_NAME = 'birddog-data'
     s3 = boto3.client('s3')
     bucket_created = False
     bucket_creation_lock = Lock()

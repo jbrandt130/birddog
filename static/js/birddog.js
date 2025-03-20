@@ -4,6 +4,8 @@
 var current_page = null;
 var archives = null;
 
+const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
 // ---------------------------------------------------------------------------
 // HELPER FUNCTIONS
 
@@ -19,6 +21,11 @@ function empty(item) {
 // check if valid link
 function is_linked(item) {
     return item != null && !item.includes("redlink");
+}
+
+function format_date(mod_date) {
+    const parsed = mod_date.split(',');
+    return `${parsed[2]} ${months[Number(parsed[1])-1]} ${parsed[0]} ${parsed[3]}`
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +214,7 @@ function render_page_data(data) {
     }
 
     const lastmod = document.getElementById('last-modified');
-    lastmod.textContent = data.lastmod;
+    lastmod.textContent = format_date(data.lastmod);
     
     const source_link_elem = document.getElementById('source-link');
     source_link_elem.setAttribute('href', data.link);
@@ -264,6 +271,14 @@ function render_page_data(data) {
         }
     });
 
+    // watch button is only visible for archive level pages
+    const eye_elem = document.getElementById('archive-watch-btn');
+    if (data.kind == 'archive') {
+        eye_elem.classList.remove('d-none');
+    }
+    else {
+        eye_elem.classList.add('d-none');
+    }
     render_breadcrumbs(data);
     update_archive_select();
 }
@@ -274,6 +289,8 @@ function render_history(data) {
 
     // Clear existing options
     select_header = 'refmod' in data? 'Clear Comparing' : 'Select Version';
+    if (data.history.length <= 1)
+        select_header = '-';
     selector.innerHTML = `<option value="" selected>${select_header}</option>`;
     selector.disabled = false;
 
@@ -284,8 +301,8 @@ function render_history(data) {
         if (item.modified != data.lastmod) {
             const option = document.createElement('option');
             option.value = item.modified;   // Set the value
-            option.textContent = item.modified; // Display text
-            //console.log('adding select item: ', item.modified);
+            option.textContent = format_date(item.modified); // Display text
+            //console.log('adding select item: ', item.modified, format_date(item.modified));
             selector.appendChild(option);
         }
     });
@@ -392,14 +409,6 @@ function populate_archive_select() {
 
     fetch_archives();  // Fetch latest archive list when the modal opens
 
-    /*
-    // Open modal when button is clicked
-    archive_select_btn.addEventListener('click', () => {
-        fetch_archives();  // Fetch latest archive list when the modal opens
-        archive_select_modal.show();
-    });
-    */
-
     // Handle Confirm button click
     confirm_selection_btn.addEventListener('click', () => {
         const selected_archive = archive_select.value;
@@ -424,35 +433,86 @@ function populate_archive_select() {
 // ---------------------------------------------------------------------------
 // APP INITIALIZATION
 
-function bd_on_loaded() {
-    console.log('bd_on_loaded triggered!');
-    
+function on_loaded() {
     // set up event listeners
     
-    // version select listener
-    const selector = document.getElementById('version-select');
-    selector.addEventListener('change', (event) => {
-        const version = event.target.value;
-        console.log(`Comparing to: ${version}`);
-        load_page(
-            current_page.archive, 
-            current_page.subarchive,
-            current_page.fond, 
-            current_page.opus, 
-            current_page.case, 
-            translate=false,
-            compare=version);
-        //alert(`Comparing to version ${selectedVersion}`)
-    });
+    // Login form submit button
+    const login = document.getElementById('loginForm');
+    if (login) {
+        login.addEventListener('submit', async (event) => {
+            event.preventDefault();
 
-    // archive select listener
-    populate_archive_select();
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
 
-    load_page("DAZHO");
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ email, password })
+            });
+
+            if (response.ok) {
+                window.location.reload();  // Reload the page to reflect logged-in state
+            } else {
+                const data = await response.json();
+                document.getElementById('loginError').innerText = data.message;
+            }
+        });
+    }
+
+    // signup form submit button
+    const signup = document.getElementById('signupForm');
+    if (signup) {
+        signup.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const name = document.getElementById('signupName').value;
+            const email = document.getElementById('signupEmail').value;
+            const password = document.getElementById('signupPassword').value;
+
+            const response = await fetch('/signup', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name, email, password })
+            });
+
+            if (response.ok) {
+                window.location.reload();  // Refresh page to reflect logged-in state
+            } else {
+                const data = await response.json();
+                document.getElementById('signupError').innerText = data.message;
+            }
+        });
+    }
+
+    // if user is logged in, then start loading the page data
+    const user_data_elem = document.getElementById('user-data');
+    if (user_data_elem) {
+        // version select listener
+        const selector = document.getElementById('version-select');
+        selector.addEventListener('change', (event) => {
+            const version = event.target.value;
+            console.log(`Comparing to: ${version}`);
+            load_page(
+                current_page.archive, 
+                current_page.subarchive,
+                current_page.fond, 
+                current_page.opus, 
+                current_page.case, 
+                translate=false,
+                compare=version);
+            //alert(`Comparing to version ${selectedVersion}`)
+        });
+
+        // archive select listener
+        populate_archive_select();
+
+        load_page("DAZHO");
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM fully loaded and parsed');
-    bd_on_loaded();
+    on_loaded();
 });
 

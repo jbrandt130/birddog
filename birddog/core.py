@@ -231,7 +231,7 @@ class Table:
 
     @property
     def _cache_path(self):
-        return self.name 
+        return f'page_cache/{self.name}'
 
     def _cache_load(self, version=None):
         """Try to retrieve page contents from cache. Returns True if successful."""
@@ -403,6 +403,9 @@ class Archive(Table):
     @property
     def default_url(self):
         return self._base + '/wiki/' + str(urllib.parse.quote(self._archive_name))
+
+    def latest_changes(self, limit=100):
+        return do_search(ARCHIVE_LIST[self._tag], limit=limit)
 
 class Fond(Table):
     """Represents fond page."""
