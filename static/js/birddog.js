@@ -1,10 +1,15 @@
 
 // ---------------------------------------------------------------------------
 // APP GLOBALS
-var current_page = null;
-var archives = null;
+var current_page            = null;
+var archives                = null;
+var watchlist               = null;
+var unresolved_updates      = {};
 
-const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+const months                = [
+    'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 
+    'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'
+    ];
 
 // ---------------------------------------------------------------------------
 // HELPER FUNCTIONS
@@ -33,6 +38,38 @@ function format_date(mod_date) {
     return result;
 }
 
+function show(elem_id) {
+    document.getElementById(elem_id).classList.remove('d-none');
+}
+
+function hide(elem_id) {
+    document.getElementById(elem_id).classList.add('d-none');
+}
+
+function show_if(elem_id, visible)
+{
+    if (visible)
+        show(elem_id);
+    else
+        hide(elem_id);
+}
+
+function enable_if(elem_id, enabled)
+{
+    if (enabled)
+        document.getElementById(elem_id).classList.remove('disabled');
+    else
+        document.getElementById(elem_id).classList.add('disabled');
+}
+
+function needs_resolve(page) {
+    const key = `${page.archive}-${page.subarchive}`
+    if (!(key in unresolved_updates))
+        return false;
+    const name = [page.archive, page.subarchive, page.fond || '', page.opus || '', page.case || ''].join(',');
+    return unresolved_updates[key].some(item => item.name == name);
+}
+
 // ---------------------------------------------------------------------------
 // BIRDDOG SERVICE CALLS
 
@@ -59,6 +96,10 @@ async function load_page(
             url += `&compare=${compare}`
         console.log(`Fetching data from: ${url}`);
 
+        // Show the spinner
+        show('loading-spinner');
+        hide('browse-page-content');
+        
         // Make the GET request
         const response = await fetch(url, {
             method: 'GET',
@@ -68,6 +109,8 @@ async function load_page(
         });
 
         if (!response.ok) {
+            hide('loading-spinner');
+            show('browse-page-content');
             throw new Error(`HTTP error! Status: ${response.status}`);
         }
 
@@ -83,6 +126,9 @@ async function load_page(
         // Populate the history dropdown
         render_history(data)
 
+        // Hide the spinner after loading
+        hide('loading-spinner');
+        show('browse-page-content');
     } catch (error) {
         console.error('Error loading page:', error.message);
         alert(`Failed to load data: ${error.message}`);
@@ -90,13 +136,15 @@ async function load_page(
 }
 
 function translate_page() {
+    console.log('translate', current_page.refmod);
     load_page(
         current_page.archive, 
         current_page.subarchive, 
         current_page.fond, 
         current_page.opus, 
         current_page.case, 
-        translate=true)
+        translate=true,
+        compare=current_page.refmod ?? null);
 }
 
 async function download_page() {
@@ -277,43 +325,43 @@ function render_page_data(data) {
     });
 
     // watch button is only visible for archive level pages
-    const eye_elem = document.getElementById('archive-watch-btn');
-    if (data.kind == 'archive') {
-        eye_elem.classList.remove('d-none');
-    }
-    else {
-        eye_elem.classList.add('d-none');
-    }
+    show_if('archive-watch-btn', data.kind == 'archive')
+
+    // resolve button is visible if page is currently unresolved
+    //show_if("resolve-btn", needs_resolve(data));
+    enable_if("resolve-btn", needs_resolve(data));
+    
     render_breadcrumbs(data);
     update_archive_select();
 }
 
 function render_history(data) {
 
-    const selector = document.getElementById('version-select');
+    if (data.history.length <= 1) {
+        hide('history-selection-box');
+    }
+    else {
+        show('history-selection-box');
+        const selector = document.getElementById('version-select');
+        // Clear existing options
+        select_header = 'refmod' in data? 'Stop Comparing' : 'Select Version';
+        selector.innerHTML = `<option value="" selected>${select_header}</option>`;
+        selector.disabled = false;
 
-    // Clear existing options
-    select_header = 'refmod' in data? 'Clear Comparing' : 'Select Version';
-    if (data.history.length <= 1)
-        select_header = '-';
-    selector.innerHTML = `<option value="" selected>${select_header}</option>`;
-    selector.disabled = false;
-
-    // Add new options dynamically
-    //console.log('adding history: ', data.history.length);
-    //const history_slice = data.history.slice(1, 20);
-    data.history.forEach(item => {
-        if (item.modified != data.lastmod) {
-            const option = document.createElement('option');
-            option.value = item.modified;   // Set the value
-            option.textContent = format_date(item.modified); // Display text
-            //console.log('adding select item: ', item.modified, format_date(item.modified));
-            selector.appendChild(option);
+        // Add new options dynamically
+        //console.log('adding history: ', data.history.length);
+        data.history.forEach(item => {
+            if (item.modified != data.lastmod) {
+                const option = document.createElement('option');
+                option.value = item.modified;   // Set the value
+                option.textContent = format_date(item.modified); // Display text
+                //console.log('adding select item: ', item.modified, format_date(item.modified));
+                selector.appendChild(option);
+            }
+        });
+        if ('refmod' in data) {
+            selector.value = data.refmod;
         }
-    });
-
-    if ('refmod' in data) {
-        selector.value = data.refmod;
     }
 }
 
@@ -442,6 +490,8 @@ function populate_archive_select() {
 async function load_watchlist() {
     const response = await fetch('/watchlist');
     const data = await response.json();
+    console.log('watchlist:', data)
+    watchlist = data;
 
     const table_body = document.getElementById('watchlist-body');
     table_body.innerHTML = '';
@@ -454,12 +504,12 @@ async function load_watchlist() {
                 <td>${format_date(item.last_checked_date)}</td>
                 <td>${format_date(item.cutoff_date)}</td>
                 <td>
-                    <button class="btn btn-primary" onclick="check_watchlist('${item.archive}', '${item.subarchive}')">
+                    <button class="btn btn-primary" title="Check for Updates" onclick="check_watchlist('${item.archive}', '${item.subarchive}')">
                         <i class="bi bi-arrow-clockwise"></i>
                     </button>
                 </td>
                 <td>
-                    <button class="btn btn-primary" onclick="remove_from_watchlist('${item.archive}', '${item.subarchive}')">
+                    <button class="btn btn-primary" title="Remove from Watchlist" onclick="remove_from_watchlist('${item.archive}', '${item.subarchive}')">
                         <i class="bi bi-x-square"></i>
                     </button>
                 </td>
@@ -474,8 +524,68 @@ async function remove_from_watchlist(archive, subarchive) {
     load_watchlist(); // Refresh after deletion
 }
 
-function resolve_page_update(page_name) {
-    console.log('resolve:', page_name)
+function render_unresolved_items() {
+    const table_body = document.getElementById('unresolved-updates-body');
+    table_body.innerHTML = '';
+
+    const all_unresolved = Object.values(unresolved_updates)
+        .flat()
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    //console.log(data.unresolved);
+    all_unresolved.forEach(item => {
+        let name = item.name.split(',');
+        name = `${name[0]}-${name[1]}/${name[2]}/${name[3]}/${name[4]}`.replace(/\/+$/, '');
+        //console.log(name);
+        const row = `
+            <tr data-page-id="${item.name}" data-last-resolved="${item.last_resolved}">
+                <td>${name}</td>
+                <td>${format_date(item.modified)}</td>
+                <td>${format_date(item.last_resolved)}</td>
+                <td>
+                    <button class="btn btn-primary" title="Mark Resolved" onclick="event.stopPropagation(); resolve_page_update('${item.name}')">
+                        <i class="bi bi-check-square"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+        table_body.innerHTML += row;
+    });
+}
+
+async function resolve_page_update(page_name) {
+    try {
+        const path = page_name.replace(/,+$/, '').replace(/,/g, '/');
+        console.log('Resolving:', path);
+        const response = await fetch(`/resolve/${path}`);
+        if (!response.ok) {
+            throw new Error(`Failed to resolve: ${response.statusText}`);
+        }
+
+        // update unresolved item table
+        const data = await response.json();
+        const parsed_path = path.split('/');
+        console.log('resolve result:', data);
+        unresolved_updates[`${parsed_path[0]}-${parsed_path[1]}`] = data.unresolved;
+
+        render_unresolved_items();
+    } catch (error) {
+        console.error('Error during resolve:', error);
+        alert('Failed to resolve.');
+    }
+}
+
+
+function resolve_page() {
+    const page_name = [
+        current_page.archive, 
+        current_page.subarchive, 
+        current_page.fond || '', 
+        current_page.opus || '', 
+        current_page.case || ''].join(',');
+    //alert('resolve page');
+    resolve_page_update(page_name);
+    enable_if("resolve-btn", false);
 }
 
 async function check_watchlist(archive, subarchive) {
@@ -487,32 +597,20 @@ async function check_watchlist(archive, subarchive) {
         }
 
         const data = await response.json();
+        console.log('unresolved items:', data);
+        unresolved_updates[`${archive}-${subarchive}`] = data.unresolved;
+        render_unresolved_items();
 
-        const table_body = document.getElementById('unresolved-updates-body');
-        table_body.innerHTML = '';
-
-        console.log(data.unresolved);
-        data.unresolved.forEach(item => {
-            let name = item.name.split(',');
-            console.log(name);
-            const row = `
-                <tr data-page-id="${item.name}" data-last-resolved="${item.last_resolved}">
-                    <td>${name[0]}-${name[1]}/${name[2]}/${name[3]}/${name[4]}</td>
-                    <td>${format_date(item.modified)}</td>
-                    <td>${format_date(item.last_resolved)}</td>
-                    <td>
-                        <button class="btn btn-primary" onclick="event.stopPropagation(); resolve_page_update('${item.name}')">
-                            <i class="bi bi-check-square"></i>
-                        </button>
-                    </td>
-                </tr>
-            `;
-            table_body.innerHTML += row;
-        });
     } catch (error) {
         console.error('Error checking updates:', error);
         alert('Failed to check updates.');
     }
+}
+
+async function check_all_watchlists() {
+    watchlist.forEach(item => {
+        check_watchlist(item.archive, item.subarchive);
+    });
 }
 
 async function add_to_watchlist() {
@@ -664,13 +762,20 @@ function on_loaded() {
             unresolved_updates_body.addEventListener('click', (event) => {
                 const row = event.target.closest('tr');
                 if (row) {
-                    const page_id = row.dataset.pageId; // Accesses data-page-id
+                    const page_id = row.dataset.pageId.split(','); // Accesses data-page-id
                     const last_resolved = row.dataset.lastResolved; // Accesses data-last-resolved
                     console.log(`Page ID: ${page_id}, Last Resolved: ${last_resolved}`);
-            
-                    //if (page_id) {
-                    //    window.location.href = `/diff/${page_id}`;
-                    //}
+                    try {
+                        // load the selected page
+                        load_page(page_id[0], page_id[1], page_id[2], page_id[3], page_id[4], 
+                            translate=false, compare=last_resolved);
+                        // Switch to the browse tab
+                        const browse_tab = new bootstrap.Tab(document.getElementById('nav-browse-tab'));
+                        browse_tab.show();
+                    } catch (error) {
+                        console.error('Error fetching archives:', error);
+                        alert('Failed to load', page_id);
+                    }
                 }
             });
         }
@@ -684,7 +789,11 @@ function on_loaded() {
                 const subarchive = row.dataset.subarchive;
                 if (archive && subarchive) {
                     console.log(`browse: ${archive}-${subarchive}`)
-                    //browse_archive(archive, subarchive);
+                    // load the selected page
+                    load_page(archive, subarchive, '', '');
+                    // Switch to the browse tab
+                    const browse_tab = new bootstrap.Tab(document.getElementById('nav-browse-tab'));
+                    browse_tab.show();
                 }
             }
         });

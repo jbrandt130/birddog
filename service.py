@@ -313,6 +313,48 @@ def check_watchlist_item(archive, subarchive):
     except CacheMissError:
         return jsonify({'error': 'User data not found'}), 404
 
+@app.route('/resolve/<archive>/<subarchive>', methods=['POST', 'GET'])
+@app.route('/resolve/<archive>/<subarchive>/<fond>', methods=['POST', 'GET'])
+@app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>', methods=['POST', 'GET'])
+@app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['POST', 'GET'])
+def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
+    user = session.get('user')
+    if not user:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    email = user['email']
+
+    try:
+        # Load user data and watchlist
+        user_data = load_cached_object(f'users/{email}.json')
+        watchlist = user_data.get('watchlist', {})
+
+        key = _watchlist_key(archive, subarchive)
+        if key not in watchlist:
+            return jsonify({'error': 'Watchlist item not found'}), 404
+        
+        # load user's watcher for this archive
+        cache_path = _watcher_cache_path(email, archive, subarchive)
+        try:
+            watcher_data = load_cached_object(cache_path)
+        except CacheMissError:
+            return jsonify({'error': 'No watcher found'}), 404
+        watcher = ArchiveWatcher.load(watcher_data)
+
+        # resolve the item
+        key = ArchiveWatcher.key(archive, subarchive, fond, opus, case)
+        print(f'Resolving {key}')
+        watcher.resolve(key)
+
+        # save the watcher state
+        save_cached_object(watcher.save(), cache_path)
+
+        # return updated list of unresolved items
+        result = [{'name': key, **value} for key, value in watcher.unresolved.items()]
+        return jsonify({'success': True, 'unresolved': result}), 200
+
+    except CacheMissError:
+        return jsonify({'error': 'Exception during resolve'}), 404
 
 # ---- MAIN -------------------------------------------------------------------
 

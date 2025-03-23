@@ -279,6 +279,8 @@ class Page:
         """Try to retrieve page contents from cache. Returns True if successful."""
         if not version:
             history = self.history(limit=1)
+            if not history:
+                return False # bad page?
             version = history[0]["modified"]
         path = f'{self._cache_path}/{version}.json'
         try:
@@ -480,6 +482,15 @@ class Case(Page):
         return 'case'
 
 class PageLRU:
+    class NotFoundError(Exception):
+        def __init__(self, address):
+            self._address = address
+            super().__init__(f"Page not found: {address}")
+        
+        @property
+        def address(self):
+            return self._address
+
     def __init__(self, maxsize=10, reset_limit=60 * 60):
         self._reset_limit = reset_limit # seconds
         self._timer_start = time.time()
@@ -513,6 +524,8 @@ class PageLRU:
             else:
                 parent = self.lookup(archive, subarchive, fond, opus)
                 item = parent.lookup(case)
+            if not item:
+                raise PageLRU.NotFoundError(key)
             self._lru[key] = item
             return item
 
@@ -539,6 +552,10 @@ class ArchiveWatcher:
         watcher._resolved = data['resolved']
         watcher._unresolved = data['unresolved']
         return watcher
+
+    @staticmethod
+    def key(archive, subarchive, fond=None, opus=None, case=None):
+        return ','.join((archive, subarchive, fond or '', opus or '', case or ''))
 
     def _last_resolved_date(self, item):
         return self._resolved.get(item, self._cutoff_date)

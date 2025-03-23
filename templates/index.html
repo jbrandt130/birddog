@@ -35,41 +35,46 @@
 
 <!-- Home Panel -->
 <div class="tab-pane fade show active" id="nav-home" role="tabpanel">
-  
+
   {% if user %}
   <!-- Home screen if user is logged in -->
   <div id="user-data" data-user="{{ user | tojson | safe }}"></div> <!-- store user data -->
   <h2>Welcome, {{ user.name }}!</h2>
   
- <!-- Unresolved Updates Section -->
-<div class="card mb-4">
-  <div class="card-body">
-    <h4>Your Unresolved Page Changes:</h4>
-    <div style="max-height: 400px; overflow-y: auto;">
-      <table class="table table-striped table-hover">
-        <thead>
-          <tr>
-            <th>Page Name</th>
-            <th>Latest Update</th>
-            <th>Last Resolved</th>
-            <th>Resolve</th>
-          </tr>
-        </thead>
-        <tbody id="unresolved-updates-body">
-          <!-- Rows populated dynamically -->
-        </tbody>
-      </table>
+  <!-- Unresolved Updates Section -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <h4>Your Unresolved Page Changes:</h4>
+      <div style="max-height: 400px; overflow-y: auto;">
+        <table class="table table-striped table-hover">
+          <thead>
+            <tr>
+              <th>Page Name</th>
+              <th>Latest Update</th>
+              <th>Last Resolved</th>
+              <th>Resolve</th>
+            </tr>
+          </thead>
+          <tbody id="unresolved-updates-body">
+            <!-- Rows populated dynamically -->
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
-</div>
 
 <!-- Watchlist Section -->
 <div class="card mb-4">
   <div class="card-body">
     <h4>Your Watch List:</h4>
-    <button class="btn btn-primary mb-2" data-bs-toggle="modal" data-bs-target="#addWatchlistModal">
-      <i class="bi bi-plus-square"></i>
-    </button>
+    <div class="d-flex mb-2">
+      <button class="btn btn-primary me-2" title="Add to Watchlist" data-bs-toggle="modal" data-bs-target="#addWatchlistModal">
+        <i class="bi bi-plus-square"></i>
+      </button>
+      <button class="btn btn-primary" title="Check All Updates" onclick="check_all_watchlists();">
+        <i class="bi bi-arrow-clockwise"></i>
+      </button>
+    </div>
     <table class="table table-striped table-hover">
       <thead>
         <tr>
@@ -77,7 +82,7 @@
           <th>Subarchive</th>
           <th>Last Checked Date</th>
           <th>Cutoff Date</th>
-          <th>Refresh</th>
+          <th>Check Updates</th>
           <th>Remove</th>
         </tr>
       </thead>
@@ -89,154 +94,154 @@
 </div>
 
 
-  <a href="{{ url_for('logout') }}" class="btn btn-danger mt-3">Logout</a>
-  {% else %}
+<a href="{{ url_for('logout') }}" class="btn btn-danger mt-3">Logout</a>
+{% else %}
 
-  <!-- Home screen if user is not logged in -->
-  <h2>Welcome to Bird Dog!</h2>
-  <div class="row">
-    <!-- Login Form -->
-    <div class="col-md-6">
-      <h3>Login</h3>
-      <form id="loginForm">
-        <div class="mb-3">
-          <input type="email" class="form-control" id="loginEmail" placeholder="Email" required>
-        </div>
-        <div class="mb-3">
-          <input type="password" class="form-control" id="loginPassword" placeholder="Password" required>
-        </div>
-        <button type="submit" class="btn btn-primary">Login</button>
-      </form>
-      <div id="loginError" class="text-danger mt-2"></div>
-    </div>
-
-    <!-- Signup Form -->
-    <div class="col-md-6">
-      <h3>Create a Profile</h3>
-      <form id="signupForm">
-        <div class="mb-3">
-          <input type="text" class="form-control" id="signupName" placeholder="Name" required>
-        </div>
-        <div class="mb-3">
-          <input type="email" class="form-control" id="signupEmail" placeholder="Email" required>
-        </div>
-        <div class="mb-3">
-          <input type="password" class="form-control" id="signupPassword" placeholder="Password" required>
-        </div>
-        <button type="submit" class="btn btn-success">Sign Up</button>
-      </form>
-      <div id="signupError" class="text-danger mt-2"></div>
-    </div>
+<!-- Home screen if user is not logged in -->
+<h2>Welcome to Bird Dog!</h2>
+<div class="row">
+  <!-- Login Form -->
+  <div class="col-md-6">
+    <h3>Login</h3>
+    <form id="loginForm">
+      <div class="mb-3">
+        <input type="email" class="form-control" id="loginEmail" placeholder="Email" required>
+      </div>
+      <div class="mb-3">
+        <input type="password" class="form-control" id="loginPassword" placeholder="Password" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Login</button>
+    </form>
+    <div id="loginError" class="text-danger mt-2"></div>
   </div>
-  {% endif %}
+
+  <!-- Signup Form -->
+  <div class="col-md-6">
+    <h3>Create a Profile</h3>
+    <form id="signupForm">
+      <div class="mb-3">
+        <input type="text" class="form-control" id="signupName" placeholder="Name" required>
+      </div>
+      <div class="mb-3">
+        <input type="email" class="form-control" id="signupEmail" placeholder="Email" required>
+      </div>
+      <div class="mb-3">
+        <input type="password" class="form-control" id="signupPassword" placeholder="Password" required>
+      </div>
+      <button type="submit" class="btn btn-success">Sign Up</button>
+    </form>
+    <div id="signupError" class="text-danger mt-2"></div>
+  </div>
+</div>
+{% endif %}
 </div>
 
 </div>
 
 <!-- Browse Panel -->
 <div class="tab-pane fade" id="nav-browse" role="tabpanel">
-  <div class="card mb-4">
-    <div class="card-body">
-      <div class="row align-items-center">
-
-        <!-- Left Column: Breadcrumb + Title + Description -->
-        <div class="col-md-auto">
-          <div class="row align-items-center g-2">
-            <!-- Left Column: Button -->
-            <div class="col-auto">
-              <button type="button" id="archive-select-btn" class="btn btn-primary" title="Select Archive" data-bs-toggle="modal" data-bs-target="#archiveSelectModal">
-                <i class="bi bi-book"></i>
-              </button>
-              <button type="button" id="archive-watch-btn" class="btn btn-secondary" title="Watch this Archive">
-                <i class="bi bi-eye-slash"></i>
-              </button>
-            </div>
-            <!-- Right Column: Breadcrumb -->
-            <div class="col">
-              <nav aria-label="breadcrumb">
-                <ol id="breadcrumb" class="breadcrumb mb-0">
-                  <!-- Breadcrumb items will be populated dynamically -->
-                </ol>
-              </nav>
-            </div>
-          </div>
-          <h5 id="page-title">Page Title</h5>
-          <p id="page-description">This is the default description of the page.</p>
-        </div>
-
-        <!-- Right Side Wrapper (Middle + Right Columns) -->
-        <div class="col d-flex justify-content-end gap-3">
-
-          <!-- Middle Column: Last Modified + Compare to Version -->
-          <div class="border rounded p-3 shadow-sm" style="display: flex; align-items: center; gap: 20px;">
-            <div class="d-flex flex-column">
-              <p class="text-muted mb-1">
-                Last Modified: <span id="last-modified">-</span>
-              </p>
-              <div class="d-flex align-items-center">
-                <div class="text-muted form-check me-2">
-                  <label class="form-check-label" for="compare-checkbox">
-                    Compare to:
-                  </label>
-                </div>
-                <select id="version-select" class="form-select form-select-sm" style="width: auto;" disabled>
-                  <option value="" selected>Select version</option>
-                  <!-- Options populated dynamically -->
-                </select>
+  <!-- browse page spinner -->
+  <div id="loading-spinner" class="d-none text-center mt-4">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+  </div>
+  <div id="browse-page-content">
+    <div class="card mb-4">
+      <div class="card-body">
+        <div class="row align-items-center">
+          <!-- Left Column: Breadcrumb + Title + Description -->
+          <div class="col-md-auto">
+            <div class="row align-items-center g-2">
+              <!-- Left Column: Button -->
+              <div class="col-auto">
+                <button type="button" id="archive-select-btn" class="btn btn-primary" title="Select Archive" data-bs-toggle="modal" data-bs-target="#archiveSelectModal">
+                  <i class="bi bi-book"></i>
+                </button>
+                <button type="button" id="archive-watch-btn" class="btn btn-secondary" title="Watch this Archive">
+                  <i class="bi bi-eye-slash"></i>
+                </button>
+              </div>
+              <!-- Right Column: Breadcrumb -->
+              <div class="col">
+                <nav aria-label="breadcrumb">
+                  <ol id="breadcrumb" class="breadcrumb mb-0">
+                    <!-- Breadcrumb items will be populated dynamically -->
+                  </ol>
+                </nav>
               </div>
             </div>
+            <h5 id="page-title">Page Title</h5>
+            <p id="page-description">This is the default description of the page.</p>
           </div>
-          <!-- Right Column: Buttons -->
-          <!-- Right Column: Buttons and Progress Bar -->
-          <div class="border rounded p-3 shadow-sm">
-            <!-- Button Group -->
-            <div class="d-flex align-items-center gap-2 mb-3">
-              <a id="source-link" href="#" target="_blank" class="btn btn-primary" title="View Source">
-                <i class="bi bi-box-arrow-up-right"></i>
-              </a>
-              <button id="translate-btn" class="btn btn-primary" onclick="translate_page()" title="Translate">
-                <i class="bi bi-translate"></i>
-              </button>
-              <button id="download-btn" class="btn btn-primary" onclick="download_page()" title="Download Spreadsheet">
-                <i class="bi bi-download"></i>
-              </button>
-            </div>
 
-            <!-- Progress Bar -->
-            <div class="progress d-none" style="height: 20px;">
-              <div class="progress-bar" role="progressbar" style="width: 25%;" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">25%</div>
+          <!-- Right Side Wrapper (Middle + Right Columns) -->
+          <div class="col d-flex justify-content-end gap-3">
+
+            <!-- Middle Column: Last Modified + Compare to Version -->
+            <div class="border rounded p-3 shadow-sm" style="display: flex; align-items: center; gap: 20px;">
+              <div class="d-flex flex-column">
+                <p class="text-muted mb-1">
+                  Last Modified: <span id="last-modified">-</span>
+                </p>
+                <div id="history-selection-box" class="d-flex align-items-center">
+                  <div class="text-muted form-check me-2">
+                    <label class="form-check-label" for="compare-checkbox">
+                      Compare to:
+                    </label>
+                  </div>
+                  <select id="version-select" class="form-select form-select-sm" style="width: auto;" disabled>
+                    <option value="" selected>Select version</option>
+                    <!-- Options populated dynamically -->
+                  </select>
+                </div>
+              </div>
+            </div>
+            <!-- Right Column: Buttons -->
+            <!-- Right Column: Buttons and Progress Bar -->
+            <div class="border rounded p-3 shadow-sm">
+              <!-- Button Group -->
+              <div class="d-flex align-items-center gap-2 mb-3">
+                <a id="source-link" href="#" target="_blank" class="btn btn-primary" title="View Source">
+                  <i class="bi bi-box-arrow-up-right"></i>
+                </a>
+                <button id="translate-btn" class="btn btn-primary" onclick="translate_page()" title="Translate">
+                  <i class="bi bi-translate"></i>
+                </button>
+                <button id="download-btn" class="btn btn-primary" onclick="download_page()" title="Download Spreadsheet">
+                  <i class="bi bi-download"></i>
+                </button>
+                <button id="resolve-btn" class="btn btn-primary" onclick="resolve_page()" title="Mark Resolved">
+                  <i class="bi bi-check-square"></i>
+                </button>
+              </div>
+
+              <!-- Progress Bar -->
+              <div class="progress d-none" style="height: 20px;">
+                <div class="progress-bar" role="progressbar" style="width: 25%;" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">25%</div>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
-  <div class="container mt-4">
-    <table id="page_table" class="table table-striped table-hover">
-      <thead>
-        <tr>
-          <th>Index</th>
-          <th>Description</th>
-          <th>Year Range</th>
-          <th>Comments</th>
-        </tr>
-      </thead>
-      <tbody>
-        <!-- Rows will be populated dynamically -->
-      </tbody>
-    </table>
+    <div class="container mt-4">
+      <table id="page_table" class="table table-striped table-hover">
+        <thead>
+          <tr>
+            <th>Index</th>
+            <th>Description</th>
+            <th>Year Range</th>
+            <th>Comments</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Rows will be populated dynamically -->
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
-
-      <!--
-      <div class="tab-pane fade" id="nav-alerts" role="tabpanel">
-          <h2>Alerts</h2>
-      </div>
-      
-      <div class="tab-pane fade" id="nav-subscribe" role="tabpanel">
-          <h2>Subscribe</h2>
-      </div>
--->
 
 </div> <!-- end tab content -->
 
