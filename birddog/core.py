@@ -3,9 +3,12 @@ Ukraine records archive monitor and scraper.
 """
 
 import re
+import time
 import urllib.parse
 import requests
+from cachetools import LRUCache
 from bs4 import BeautifulSoup
+
 from birddog.utility import (
     ARCHIVE_BASE,
     SUBARCHIVES,
@@ -85,6 +88,7 @@ def do_search(query_string, limit=10, offset=0):
     query_string = urllib.parse.quote(query_string, safe='', encoding=None, errors=None)
     url = f'{ARCHIVE_BASE}/w/index.php?limit={limit}&offset={offset}'
     url += f'&ns0=1&sort=last_edit_desc&search={query_string}'
+    #print(url)
     soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
     results = []
     for result in soup.find_all('li', attrs = {'class': 'mw-search-result'}):
@@ -155,7 +159,7 @@ def report_page_changes(page):
     """
     Print a report of changes detected in check_page_changes().
     """
-    if isinstance(page, Table):
+    if isinstance(page, Page):
         page = page.page
     if 'refmod' not in page:
         print('No changes to report. Run check_page_changes first.')
@@ -177,9 +181,9 @@ def check_page_changes(page, reference, report=False):
     """
     Compare a given page to a prior version of the same page and return any detected changes.
     """
-    if isinstance(page, Table):
+    if isinstance(page, Page):
         page = page.page
-    if isinstance(reference, Table):
+    if isinstance(reference, Page):
         reference = reference.page
     page['refmod'] = reference['lastmod']
     for key in ['title', 'description']:
@@ -205,17 +209,55 @@ def check_page_changes(page, reference, report=False):
     if report:
         report_page_changes(page)
 
+def _page_update_summary(archive, change_list):
+    assert isinstance(archive, Archive)
+    archive_prefix = archive.url[:archive.url.rfind('/')]
+    archive_prefix = archive_prefix.replace(ARCHIVE_BASE, '')
+    archive_prefix = archive_prefix.replace('%3A', ':')
+    #print('looking for link prefix:', archive_prefix)
+    result = {}
+    for item in change_list:
+        page_spec = item["title"].split('/')
+        address = (archive.tag, archive.subarchive["en"])
+        address += tuple(entry for entry in page_spec[1:])
+        address = (address + ("",) * 3)[:5]
+        address = ','.join(address)
+        mod_date = item["lastmod"]
+        if item["link"].startswith(archive_prefix):
+            #print(f'{address}: {mod_date}')
+            if address in result:
+                result[address] = max(mod_date, result["address"])
+            else:
+                result[address] = mod_date
+        #else:
+            #print('unrecognized link:', address, item["link"])
+    return result
+
+def check_page_updates(archive, cutoff_date):
+    assert isinstance(archive, Archive)
+    change_list = []
+    batch_size = 50
+    offset = 0
+    while True:
+        changes = archive.latest_changes(limit=batch_size, offset=offset)
+        change_list += changes
+        if not changes or changes[-1]["lastmod"] < cutoff_date:
+            break
+        offset += batch_size
+    change_list = [item for item in change_list if item["lastmod"] >= cutoff_date]
+    return _page_update_summary(archive, change_list)
+
 # -------------------------------------------------------------------------------
 # class definitions for each of the page types in the archive
-# Table is the abstract base class that implements most of the logic
-#     subclasses of Table are:
+# Page is the abstract base class that implements most of the logic
+#     subclasses of Page are:
 #        Archive
 #        Fond
 #        Opus
 #        Case
 # The archive is organized hierarchically as Archive->Fond->Opus->Case
 
-class Table:
+class Page:
     """Abstract base clase for all page types on the archive."""
     def __init__(self, spec, parent, use_cache=True):
         self._parent = parent
@@ -362,7 +404,7 @@ class Table:
     def history(self, limit=None, cutoff_date=None):
         return get_page_history(self, limit, cutoff_date)
 
-class Archive(Table):
+class Archive(Page):
     """Represents a top level archive page."""
     def __init__(self, tag, subarchive=None, base=ARCHIVE_BASE, use_cache=True):
         self._tag = tag
@@ -404,10 +446,10 @@ class Archive(Table):
     def default_url(self):
         return self._base + '/wiki/' + str(urllib.parse.quote(self._archive_name))
 
-    def latest_changes(self, limit=100):
-        return do_search(ARCHIVE_LIST[self._tag], limit=limit)
+    def latest_changes(self, limit=100, offset=0):
+        return do_search(ARCHIVE_LIST[self._tag], limit=limit, offset=offset)
 
-class Fond(Table):
+class Fond(Page):
     """Represents fond page."""
     @property
     def kind(self):
@@ -417,7 +459,7 @@ class Fond(Table):
     def child_class(self):
         return Opus
 
-class Opus(Table):
+class Opus(Page):
     """Represents fond page."""
     @property
     def kind(self):
@@ -431,8 +473,101 @@ class Opus(Table):
     def shortname(self):
         return f'{self.parent.parent.id} {self.parent.id}-{self.id}'
 
-class Case(Table):
+class Case(Page):
     """Represents case page."""
     @property
     def kind(self):
         return 'case'
+
+class PageLRU:
+    def __init__(self, maxsize=10, reset_limit=60 * 60):
+        self._reset_limit = reset_limit # seconds
+        self._timer_start = time.time()
+        self._lru = LRUCache(maxsize=maxsize)
+
+    def _key(self, archive, subarchive, fond=None, opus=None, case=None):
+        return (archive or '', subarchive or '', fond or '', opus or '', case or '')
+
+    def lookup(self, archive, subarchive, fond=None, opus=None, case=None):
+        # periodically flush the lru to ensure the pages don't become stale
+        if time.time() - self._timer_start >= self._reset_limit:
+            print('PageLRU: flushing all entries')
+            self._lru.clear()
+            self._timer_start = time.time()
+
+        key = self._key(archive, subarchive, fond, opus, case)
+        try:
+            item = self._lru[key]
+            print(f'PageLRU.lookup({key}): hit')
+            return item
+        except KeyError:
+            print(f'PageLRU.lookup({key}): miss')
+            if not fond:
+                item = Archive(archive, subarchive=subarchive)
+            elif not opus:
+                parent = self.lookup(archive, subarchive)
+                item = parent.lookup(fond)
+            elif not case:
+                parent = self.lookup(archive, subarchive, fond)
+                item = parent.lookup(opus)
+            else:
+                parent = self.lookup(archive, subarchive, fond, opus)
+                item = parent.lookup(case)
+            self._lru[key] = item
+            return item
+
+class ArchiveWatcher:
+    def __init__(self, archive, cutoff_date):
+        self._archive = archive
+        self._cutoff_date = cutoff_date
+        self._resolved = {}
+        self._unresolved = {}
+    
+    def save(self):
+        return {
+            'archive': self._archive.tag,
+            'subarchive': self._archive.subarchive["en"],
+            'cutoff_date': self._cutoff_date,
+            'resolved': self._resolved,
+            'unresolved': self._unresolved
+        }
+
+    @staticmethod
+    def load(data):
+        archive = Archive(data['archive'], subarchive=data['subarchive'])
+        watcher = ArchiveWatcher(archive, data['cutoff_date'])
+        watcher._resolved = data['resolved']
+        watcher._unresolved = data['unresolved']
+        return watcher
+
+    def _last_resolved_date(self, item):
+        return self._resolved.get(item, self._cutoff_date)
+                                  
+    @property
+    def resolved(self):
+        return self._resolved
+    
+    @property
+    def unresolved(self):
+        return self._unresolved
+    
+    @property
+    def cutoff_date(self):
+        return self._cutoff_date
+
+    def check(self):
+        updates = check_page_updates(self._archive, self._cutoff_date)
+        if updates:
+            for item, mod_date in updates.items():
+                #print(item, mod_date)
+                if item not in self._resolved or mod_date > self._resolved[item]:
+                    self._unresolved[item] = {
+                        "modified": mod_date, 
+                        "last_resolved": self._last_resolved_date(item)
+                    }
+            self._cutoff_date = max(updates.values())
+            
+    def resolve(self, item):
+        if item in self._unresolved:
+            self._resolved[item] = self._unresolved.pop(item)["modified"]
+

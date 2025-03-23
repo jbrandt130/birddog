@@ -1,32 +1,28 @@
 # system packages
 import os
-import time
 from copy import copy, deepcopy
 from urllib.parse import quote
+from datetime import datetime
 from flask import Flask, render_template, request, json, send_file, redirect, url_for, session, jsonify
 #from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 
 from werkzeug.security import generate_password_hash, check_password_hash
 import argparse
-from cachetools import LRUCache
 
 # Birddog packages
-from birddog.core import Archive, ARCHIVE_LIST, check_page_changes, report_page_changes
+from birddog.core import (
+    ARCHIVE_LIST, 
+    PageLRU, 
+    ArchiveWatcher, 
+    check_page_changes, 
+    report_page_changes)
 from birddog.excel import export_page
 from birddog.cache import load_cached_object, save_cached_object, CacheMissError
 
 app = Flask(__name__)
 app.secret_key = 'whats_the_worst_that_could_happen'  # For session management
 
-# ---- UTILITY FUNCTIONS ------------------------------------------------------
-
 # ---- USER MANAGEMENT --------------------------------------------------------
-
-# Mock user storage (replace with a database)
-# users = {}
-alerts = {
-    'test@example.com': ['Alert 1', 'Alert 2', 'Alert 3']
-}
 
 class Users:
     def __init__(self, session):
@@ -67,6 +63,11 @@ class Users:
 users = Users(session)
 
 # ---- FRONT END PAGES --------------------------------------------------------
+
+# Mock user storage (replace with a database)
+alerts = {
+    'test@example.com': ['Alert 1', 'Alert 2', 'Alert 3']
+}
 
 # Home Route (Shows the landing page)
 @app.route('/')
@@ -112,43 +113,6 @@ def logout():
     return redirect(url_for('home'))
 
 # ---- HELPER FUNCTIONS -------------------------------------------------------
-
-class PageLRU:
-    def __init__(self, maxsize=10):
-        self._reset_limit = 60 * 60 # seconds
-        self._timer_start = time.time()
-        self._lru = LRUCache(maxsize=maxsize)
-
-    def _key(self, archive, subarchive, fond=None, opus=None, case=None):
-        return (archive or '', subarchive or '', fond or '', opus or '', case or '')
-
-    def lookup(self, archive, subarchive, fond=None, opus=None, case=None):
-        # periodically flush the lru to ensure the pages don't become stale
-        if time.time() - self._timer_start >= self._reset_limit:
-            print('PageLRU: flushing all entries')
-            self._lru.clear()
-            self._timer_start = time.time()
-
-        key = self._key(archive, subarchive, fond, opus, case)
-        try:
-            item = self._lru[key]
-            print(f'PageLRU.lookup({key}): hit')
-            return item
-        except KeyError:
-            print(f'PageLRU.lookup({key}): miss')
-            if not fond:
-                item = Archive(archive, subarchive=subarchive)
-            elif not opus:
-                parent = self.lookup(archive, subarchive)
-                item = parent.lookup(fond)
-            elif not case:
-                parent = self.lookup(archive, subarchive, fond)
-                item = parent.lookup(opus)
-            else:
-                parent = self.lookup(archive, subarchive, fond, opus)
-                item = parent.lookup(case)
-            self._lru[key] = item
-            return item
 
 page_lru = PageLRU(maxsize=100)
 
@@ -217,6 +181,138 @@ def download_file():
     except Exception as e:
         print(f'Error: {e}')
         abort(500)  # Internal server error
+
+def _watchlist_key(archive, subarchive):
+    return f'{archive}-{subarchive}'
+
+## Get user's watchlist
+@app.route('/watchlist', methods=['GET'])
+def get_watchlist():
+    user = session.get('user')
+    if not user:
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    email = user['email']
+    try:
+        user_data = load_cached_object(f'users/{email}.json')
+        watchlist = user_data.get('watchlist', {})
+        # Convert to list format for frontend compatibility
+        result = [
+            {
+                'archive': k.split('-')[0],
+                'subarchive': k.split('-')[1],
+                'last_checked_date': v['last_checked_date'],
+                'cutoff_date': v['cutoff_date']
+            }
+            for k, v in watchlist.items()
+        ]
+        print(f'watchlist for {email}: {result}')
+        return jsonify(result)
+    except CacheMissError:
+        return jsonify([])
+
+def _watcher_cache_path(email, archive, subarchive):
+    return f'watchers/{email}/{archive}-{subarchive}.json'
+
+# Add to user's watchlist
+@app.route('/watchlist', methods=['POST'])
+def add_to_watchlist():
+    user = session.get('user')
+    if not user:
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    data = request.json
+    email = user['email']
+    
+    try:
+        user_data = load_cached_object(f'users/{email}.json')
+    except CacheMissError:
+        user_data = {}
+
+    watchlist = user_data.get('watchlist', {})
+    
+    key = _watchlist_key(data['archive'], data['subarchive'])
+    watchlist[key] = {
+        'last_checked_date': '',
+        'cutoff_date': data['cutoff_date']
+    }
+    
+    user_data['watchlist'] = watchlist
+    save_cached_object(user_data, f'users/{email}.json')
+
+    watcher = ArchiveWatcher(
+        page_lru.lookup(data['archive'], data['subarchive']), data['cutoff_date'])
+    watcher.check()
+    watcher_path = _watcher_cache_path(email, data['archive'], data['subarchive'])
+    save_cached_object(watcher.save(), watcher_path)
+    return jsonify({'success': True}), 201
+
+# Remove from user's watchlist
+@app.route('/watchlist/<archive>/<subarchive>', methods=['DELETE'])
+def remove_from_watchlist(archive, subarchive):
+    user = session.get('user')
+    if not user:
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    email = user['email']
+    
+    try:
+        user_data = load_cached_object(f'users/{email}.json')
+        watchlist = user_data.get('watchlist', {})
+        key = _watchlist_key(archive, subarchive)
+        if key in watchlist:
+            del watchlist[key]
+            user_data['watchlist'] = watchlist
+            save_cached_object(user_data, f'users/{email}.json')
+            return '', 204
+        else:
+            return jsonify({'error': 'Entry not found'}), 404
+    except CacheMissError:
+        return jsonify({'error': 'User data not found'}), 404
+
+# Check for updates on a specific watchlist item
+@app.route('/watchlist/<archive>/<subarchive>/check', methods=['GET'])
+def check_watchlist_item(archive, subarchive):
+    user = session.get('user')
+    if not user:
+        return jsonify({'error': 'Not logged in'}), 401
+    
+    email = user['email']
+
+    try:
+        # Load user data and watchlist
+        user_data = load_cached_object(f'users/{email}.json')
+        watchlist = user_data.get('watchlist', {})
+
+        key = _watchlist_key(archive, subarchive)
+        if key not in watchlist:
+            return jsonify({'error': 'Watchlist item not found'}), 404
+        
+        # load user's watcher for this archive
+        cache_path = _watcher_cache_path(email, archive, subarchive)
+        try:
+            watcher_data = load_cached_object(cache_path)
+        except CacheMissError:
+            return jsonify({'error': 'No watcher found'}), 404
+        watcher = ArchiveWatcher.load(watcher_data)
+        # check for updates
+        watcher.check()
+        print('watcher check:', watcher.unresolved)
+
+        # save the watcher state
+        save_cached_object(watcher.save(), cache_path)
+
+        # record last check date in user data
+        watchlist[key]['last_checked_date'] = datetime.now().strftime('%Y,%m,%d,%H:%M')
+        user_data['watchlist'] = watchlist
+        save_cached_object(user_data, f'users/{email}.json')
+
+        result = [{'name': key, **value} for key, value in watcher.unresolved.items()]
+        return jsonify({'success': True, 'unresolved': result}), 200
+
+    except CacheMissError:
+        return jsonify({'error': 'User data not found'}), 404
+
 
 # ---- MAIN -------------------------------------------------------------------
 

@@ -25,7 +25,12 @@ function is_linked(item) {
 
 function format_date(mod_date) {
     const parsed = mod_date.split(',');
-    return `${parsed[2]} ${months[Number(parsed[1])-1]} ${parsed[0]} ${parsed[3]}`
+    if (parsed.length <= 1)
+        return mod_date;
+    result = `${parsed[2]} ${months[Number(parsed[1])-1]} ${parsed[0]}`;
+    if (parsed.length > 3)
+         result += ` ${parsed[3]}`;
+    return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -389,7 +394,8 @@ function populate_archive_select() {
             }
             archives = await response.json();
             console.log('archive list loaded:', archives);
-            populate_archive_select(archives);
+            populate_archive_select_dropdown(archives);
+            populate_watchlist_archive_select(archives);
         } catch (error) {
             console.error('Error fetching archives:', error);
             alert('Failed to load archives. Please try again.');
@@ -397,7 +403,7 @@ function populate_archive_select() {
     }
 
     // Populate the archive dropdown
-    function populate_archive_select(archives) {
+    function populate_archive_select_dropdown(archives) {
         archive_select.innerHTML = '<option value="" selected>Select an archive...</option>'; 
         Object.keys(archives).forEach(archive => {
             const option = document.createElement('option');
@@ -428,6 +434,154 @@ function populate_archive_select() {
         }
         archive_select_modal.hide();
     });
+}
+
+// ---------------------------------------------------------------------------
+// WATCHLIST MANAGEMENT
+
+async function load_watchlist() {
+    const response = await fetch('/watchlist');
+    const data = await response.json();
+
+    const table_body = document.getElementById('watchlist-body');
+    table_body.innerHTML = '';
+
+    data.forEach(item => {
+        const row = `
+            <tr data-archive="${item.archive}" data-subarchive="${item.subarchive}">
+                <td>${item.archive}</td>
+                <td>${item.subarchive}</td>
+                <td>${format_date(item.last_checked_date)}</td>
+                <td>${format_date(item.cutoff_date)}</td>
+                <td>
+                    <button class="btn btn-primary" onclick="check_watchlist('${item.archive}', '${item.subarchive}')">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </td>
+                <td>
+                    <button class="btn btn-primary" onclick="remove_from_watchlist('${item.archive}', '${item.subarchive}')">
+                        <i class="bi bi-x-square"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+        table_body.innerHTML += row;
+    });
+}
+
+async function remove_from_watchlist(archive, subarchive) {
+    await fetch(`/watchlist/${archive}/${subarchive}`, { method: 'DELETE' });
+    load_watchlist(); // Refresh after deletion
+}
+
+function resolve_page_update(page_name) {
+    console.log('resolve:', page_name)
+}
+
+async function check_watchlist(archive, subarchive) {
+    console.log(`Checking ${archive}-${subarchive}...`);
+    try {
+        const response = await fetch(`/watchlist/${archive}/${subarchive}/check`);
+        if (!response.ok) {
+            throw new Error(`Failed to check updates: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        const table_body = document.getElementById('unresolved-updates-body');
+        table_body.innerHTML = '';
+
+        console.log(data.unresolved);
+        data.unresolved.forEach(item => {
+            let name = item.name.split(',');
+            console.log(name);
+            const row = `
+                <tr data-page-id="${item.name}" data-last-resolved="${item.last_resolved}">
+                    <td>${name[0]}-${name[1]}/${name[2]}/${name[3]}/${name[4]}</td>
+                    <td>${format_date(item.modified)}</td>
+                    <td>${format_date(item.last_resolved)}</td>
+                    <td>
+                        <button class="btn btn-primary" onclick="event.stopPropagation(); resolve_page_update('${item.name}')">
+                            <i class="bi bi-check-square"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+            table_body.innerHTML += row;
+        });
+    } catch (error) {
+        console.error('Error checking updates:', error);
+        alert('Failed to check updates.');
+    }
+}
+
+async function add_to_watchlist() {
+    const archive = prompt("Enter Archive Name:");
+    const subarchive = prompt("Enter Subarchive:");
+    const last_checked_date = prompt("Enter Last Checked Date (yyyy,MM,dd,hh:mm):");
+    const cut_off_date = prompt("Enter Cutoff Date (yyyy,MM,dd,hh:mm):");
+
+    if (archive && subarchive && last_checked_date && cut_off_date) {
+        await fetch('/watchlist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                archive,
+                subarchive,
+                last_checked_date,
+                cut_off_date
+            })
+        });
+        load_watchlist(); // Refresh after adding
+    }
+}
+
+// Populate the archive select dropdown
+async function populate_watchlist_archive_select(archives) {
+    const archive_select = document.getElementById('watchlistArchiveSelect');
+    archive_select.innerHTML = '<option value="" selected>Select an archive...</option>';
+
+    try {
+        Object.keys(archives).forEach(archive => {
+            const option = document.createElement('option');
+            option.value = archive;
+            option.textContent = archive;
+            archive_select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error fetching archives:', error);
+        alert('Failed to load archives.');
+    }
+}
+
+// Confirm adding to the watchlist
+async function confirm_add_to_watchlist() {
+    const archive = document.getElementById('watchlistArchiveSelect').value;
+    const subarchive = document.getElementById('watchlistSubarchiveSelect').value;
+    const cutoff_date = document.getElementById('watchlistCutoffDate').value.replace(/-/g, ',');
+    
+    console.log(archive, subarchive, cutoff_date);
+    if (!archive || !subarchive || !cutoff_date) {
+        alert('All fields are required.');
+        return;
+    }
+
+    await fetch('/watchlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            archive: archive,
+            subarchive: subarchive,
+            cutoff_date: cutoff_date
+        })
+    });
+
+    // Close the modal using Bootstrap API
+    const modal = bootstrap.Modal.getInstance(document.getElementById('addWatchlistModal'));
+    modal.hide();
+
+    // Refresh table
+    load_watchlist();
 }
 
 // ---------------------------------------------------------------------------
@@ -503,6 +657,39 @@ function on_loaded() {
                 compare=version);
             //alert(`Comparing to version ${selectedVersion}`)
         });
+
+        // Handle Unresolved Updates Row Click
+        const unresolved_updates_body = document.getElementById('unresolved-updates-body');
+        if (unresolved_updates_body) {
+            unresolved_updates_body.addEventListener('click', (event) => {
+                const row = event.target.closest('tr');
+                if (row) {
+                    const page_id = row.dataset.pageId; // Accesses data-page-id
+                    const last_resolved = row.dataset.lastResolved; // Accesses data-last-resolved
+                    console.log(`Page ID: ${page_id}, Last Resolved: ${last_resolved}`);
+            
+                    //if (page_id) {
+                    //    window.location.href = `/diff/${page_id}`;
+                    //}
+                }
+            });
+        }
+
+        // Attach click event to the whole table body
+        const watchlist_body = document.getElementById('watchlist-body');
+        watchlist_body.addEventListener('click', (event) => {
+            const row = event.target.closest('tr');
+            if (row && !event.target.closest('button')) {
+                const archive = row.dataset.archive;
+                const subarchive = row.dataset.subarchive;
+                if (archive && subarchive) {
+                    console.log(`browse: ${archive}-${subarchive}`)
+                    //browse_archive(archive, subarchive);
+                }
+            }
+        });
+
+        load_watchlist();
 
         // archive select listener
         populate_archive_select();
