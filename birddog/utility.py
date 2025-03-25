@@ -5,19 +5,19 @@ Utility functions for archivescraper.
 import re
 import time
 import json
+import requests
+from bs4 import BeautifulSoup
+
 from birddog.translate import translation, is_english
+
+# INITIALIZATION --------------------------------------------------------------
 
 # global constants
 
 ARCHIVE_BASE    = 'https://uk.wikisource.org'
-SUBARCHIVES = [
-    {'uk':'Д', 'en':'D'}, 
-    {'uk':'P', 'en':'R'}, 
-    {'uk':'П', 'en':'P'}
-    ]
 UK_MONTHS       = None
 ARCHIVE_LIST    = None
-
+ARCHIVES        = None
 
 # load static data resources
 
@@ -28,6 +28,43 @@ with open('resources/archives.json', encoding="utf8") as f:
 # used for standardizing dates in numerical format
 with open('resources/months.json', encoding="utf8") as f:
     UK_MONTHS = json.load(f)
+
+with open('resources/archives_master.json', encoding="utf8") as f:
+    ARCHIVES = json.load(f)
+
+def _inventory_subarchives(archives):
+    subarchives = {}
+    for arc_key, arc in archives.items():
+        for sub in arc.values():
+            subarchives[sub['subarchive']['uk']] = sub['subarchive']
+    return list(subarchives.values())
+
+SUBARCHIVES = _inventory_subarchives(ARCHIVES)
+#print('SUBARCHIVES:\n', SUBARCHIVES)
+
+#
+# subarchive sniffer
+
+def find_subarchives(archive):
+    url = f'{ARCHIVE_BASE}/wiki/{archive}'
+    result = {}
+    soup = BeautifulSoup(requests.get(url).text, 'lxml')
+    for div in soup.find_all('div', attrs = {'id': 'mw-content-text'}):
+        for item in div.find_all('a'):
+            if item.has_attr('title'):
+                if item['title'].startswith(archive):
+                    if 'redlink' not in item['href']:
+                        parsed = item['title'].split('/')
+                        if len(parsed) == 2 and parsed[1] != 'видання':
+                            subarchive = parsed[1]
+                            result[subarchive] = {
+                                'title': form_text_item(item['title']),
+                                'archive': form_text_item(parsed[0]),
+                                'subarchive': form_text_item(parsed[1]),
+                                'description': form_text_item(item.text),
+                                'link': item['href'],
+                                }
+    return result
 
 #
 # date handling
@@ -95,7 +132,7 @@ def needs_translation(item):
     """True if text item needs to be translated to English"""
     return isinstance(item, dict) and 'uk' in item and 'en' not in item
 
-def translate_page(page):
+def translate_page(page, dry_run=False):
     """Traverse a page and translate all untranslated text items.
     The changes are done in place on each multilingual text item.
     Returns the total number of items translated.
@@ -118,7 +155,7 @@ def translate_page(page):
                 queue_items(value, batch, items)
 
     queue_items(page, batch, items)
-    if batch:
+    if batch and not dry_run:
         print(f'Batch translation: {len(batch)} items...')
         start = time.time()
         batch = translation(batch)

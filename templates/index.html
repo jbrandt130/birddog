@@ -41,21 +41,61 @@
   <div id="user-data" data-user="{{ user | tojson | safe }}"></div> <!-- store user data -->
   <h2>Welcome, {{ user.name }}!</h2>
   
-  <!-- Unresolved Updates Section -->
-  <div class="card mb-4">
-    <div class="card-body">
-      <h4>Your Unresolved Page Changes:</h4>
-      <div style="max-height: 400px; overflow-y: auto;">
+  <!-- home page spinner -->
+  <div id="home-spinner" class="d-none text-center mt-4">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+  </div>
+  
+  <div id="home-page-content">
+
+    <!-- Unresolved Updates Section -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h4>Your Unresolved Page Changes:</h4>
+        <div style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-striped table-hover">
+            <thead>
+              <tr>
+                <th>Page Name</th>
+                <th>Latest Update</th>
+                <th>Last Resolved</th>
+                <th>Resolve</th>
+              </tr>
+            </thead>
+            <tbody id="unresolved-updates-body">
+              <!-- Rows populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Watchlist Section -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h4>Your Watch List:</h4>
+        <div class="d-flex mb-2">
+          <button class="btn btn-primary me-2" title="Add to Watchlist" data-bs-toggle="modal" data-bs-target="#addWatchlistModal">
+            <i class="bi bi-plus-square"></i>
+          </button>
+          <button class="btn btn-primary" title="Check All Updates" onclick="check_all_watchlists();">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </div>
         <table class="table table-striped table-hover">
           <thead>
             <tr>
-              <th>Page Name</th>
-              <th>Latest Update</th>
-              <th>Last Resolved</th>
-              <th>Resolve</th>
+              <th>Archive Name</th>
+              <th>Subarchive</th>
+              <th>Last Checked Date</th>
+              <th>Cutoff Date</th>
+              <th>Check Updates</th>
+              <th>Remove</th>
             </tr>
           </thead>
-          <tbody id="unresolved-updates-body">
+          <tbody id="watchlist-body">
             <!-- Rows populated dynamically -->
           </tbody>
         </table>
@@ -63,39 +103,9 @@
     </div>
   </div>
 
-<!-- Watchlist Section -->
-<div class="card mb-4">
-  <div class="card-body">
-    <h4>Your Watch List:</h4>
-    <div class="d-flex mb-2">
-      <button class="btn btn-primary me-2" title="Add to Watchlist" data-bs-toggle="modal" data-bs-target="#addWatchlistModal">
-        <i class="bi bi-plus-square"></i>
-      </button>
-      <button class="btn btn-primary" title="Check All Updates" onclick="check_all_watchlists();">
-        <i class="bi bi-arrow-clockwise"></i>
-      </button>
-    </div>
-    <table class="table table-striped table-hover">
-      <thead>
-        <tr>
-          <th>Archive Name</th>
-          <th>Subarchive</th>
-          <th>Last Checked Date</th>
-          <th>Cutoff Date</th>
-          <th>Check Updates</th>
-          <th>Remove</th>
-        </tr>
-      </thead>
-      <tbody id="watchlist-body">
-        <!-- Rows populated dynamically -->
-      </tbody>
-    </table>
-  </div>
-</div>
 
-
-<a href="{{ url_for('logout') }}" class="btn btn-danger mt-3">Logout</a>
-{% else %}
+  <a href="{{ url_for('logout') }}" class="btn btn-danger mt-3">Logout</a>
+  {% else %}
 
 <!-- Home screen if user is not logged in -->
 <h2>Welcome to Bird Dog!</h2>
@@ -141,7 +151,7 @@
 <!-- Browse Panel -->
 <div class="tab-pane fade" id="nav-browse" role="tabpanel">
   <!-- browse page spinner -->
-  <div id="loading-spinner" class="d-none text-center mt-4">
+  <div id="browse-spinner" class="d-none text-center mt-4">
     <div class="spinner-border text-primary" role="status">
       <span class="visually-hidden">Loading...</span>
     </div>
@@ -264,6 +274,7 @@
         </div>
 
         <!-- Subarchive Select -->
+        <!--
         <div class="mb-3">
           <label for="subarchiveSelect" class="form-label">Choose Subarchive:</label>
           <select id="subarchiveSelect" class="form-select">
@@ -272,6 +283,7 @@
             <option value="R">R</option>
           </select>
         </div>
+        -->
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -299,6 +311,7 @@
         </div>
 
         <!-- Subarchive Select -->
+        <!--
         <div class="mb-3">
           <label for="watchlistSubarchiveSelect" class="form-label">Subarchive:</label>
           <select id="watchlistSubarchiveSelect" class="form-select">
@@ -307,6 +320,7 @@
             <option value="R">R</option>
           </select>
         </div>
+        -->
 
         <!-- Cutoff Date Picker -->
         <div class="mb-3">

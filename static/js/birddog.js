@@ -29,6 +29,8 @@ function is_linked(item) {
 }
 
 function format_date(mod_date) {
+    if (!mod_date)
+        return '';
     const parsed = mod_date.split(',');
     if (parsed.length <= 1)
         return mod_date;
@@ -97,7 +99,7 @@ async function load_page(
         console.log(`Fetching data from: ${url}`);
 
         // Show the spinner
-        show('loading-spinner');
+        show('browse-spinner');
         hide('browse-page-content');
         
         // Make the GET request
@@ -109,7 +111,7 @@ async function load_page(
         });
 
         if (!response.ok) {
-            hide('loading-spinner');
+            hide('browse-spinner');
             show('browse-page-content');
             throw new Error(`HTTP error! Status: ${response.status}`);
         }
@@ -127,7 +129,7 @@ async function load_page(
         render_history(data)
 
         // Hide the spinner after loading
-        hide('loading-spinner');
+        hide('browse-spinner');
         show('browse-page-content');
     } catch (error) {
         console.error('Error loading page:', error.message);
@@ -422,12 +424,19 @@ function render_breadcrumbs(data) {
 }
 
 function update_archive_select() {
-    document.getElementById('archiveSelect').value = current_page.archive;
-    document.getElementById('subarchiveSelect').value = current_page.subarchive;
+    console.log('update_archive_select:', current_page.archive, current_page.subarchive);
+    document.getElementById('archiveSelect').value = -1;
+    archives.forEach((archive, index) => {
+        if (archive[0] == current_page.archive && archive[1] == current_page.subarchive) {
+            console.log('archive select:', index)
+            document.getElementById('archiveSelect').value = index;
+        }
+
+    });
 }
 
 function populate_archive_select() {
-    console.log("populate_archive_select(): ", bootstrap)
+    //console.log("populate_archive_select(): ", bootstrap)
     const archive_select_btn = document.getElementById('archive-select-btn');
     const archive_select_modal = new bootstrap.Modal(document.getElementById('archiveSelectModal'));
     const archive_select = document.getElementById('archiveSelect');
@@ -452,11 +461,13 @@ function populate_archive_select() {
 
     // Populate the archive dropdown
     function populate_archive_select_dropdown(archives) {
-        archive_select.innerHTML = '<option value="" selected>Select an archive...</option>'; 
-        Object.keys(archives).forEach(archive => {
+        archive_select.innerHTML = '<option value="-1" selected>Select an archive...</option>'; 
+        archives.forEach((archive, index) => {
+            //console.log(archive);
             const option = document.createElement('option');
-            option.value = archive;
-            option.textContent = archive;
+            value = `${archive[0]}-${archive[1]}`
+            option.value = index;
+            option.textContent = value;
             archive_select.appendChild(option);
         });
     }
@@ -465,21 +476,16 @@ function populate_archive_select() {
 
     // Handle Confirm button click
     confirm_selection_btn.addEventListener('click', () => {
-        const selected_archive = archive_select.value;
-        const selected_subarchive = document.getElementById('subarchiveSelect').value;
-
-        if (!selected_archive) {
+        const archive_index = archive_select.value;
+        if (!archive_index || archive_index < 0 || archive_index >= archives.length) {
             alert('Please select an archive.');
             return;
         }
-
-        console.log(`Selected Archive: ${selected_archive}`);
-        console.log(`Selected Subarchive: ${selected_subarchive}`);
-        if (selected_archive in archives) {
-            load_page(
-                archive_id=selected_archive, 
-                subarchive_id=selected_subarchive)
-        }
+        const selected_archive = archives[archive_index];
+        console.log(`Selected Archive: ${selected_archive[0]}-${selected_archive[1]}`);
+        load_page(
+            archive_id=selected_archive[0], 
+            subarchive_id=selected_archive[1])
         archive_select_modal.hide();
     });
 }
@@ -591,17 +597,32 @@ function resolve_page() {
 async function check_watchlist(archive, subarchive) {
     console.log(`Checking ${archive}-${subarchive}...`);
     try {
+         // Show the spinner
+        show('home-spinner');
+        hide('home-page-content');
+
         const response = await fetch(`/watchlist/${archive}/${subarchive}/check`);
         if (!response.ok) {
+            // Hide the spinner
+            show('home-page-content');
+            hide('home-spinner');
             throw new Error(`Failed to check updates: ${response.statusText}`);
         }
-
         const data = await response.json();
+
+        // Hide the spinner
+        show('home-page-content');
+        hide('home-spinner');
+
         console.log('unresolved items:', data);
         unresolved_updates[`${archive}-${subarchive}`] = data.unresolved;
         render_unresolved_items();
-
+        if (data.unresolved.length == 0)
+            alert(`No new updates for ${archive}-${subarchive}.`);
     } catch (error) {
+        // Hide the spinner
+        show('home-page-content');
+        hide('home-spinner');
         console.error('Error checking updates:', error);
         alert('Failed to check updates.');
     }
@@ -640,10 +661,11 @@ async function populate_watchlist_archive_select(archives) {
     archive_select.innerHTML = '<option value="" selected>Select an archive...</option>';
 
     try {
-        Object.keys(archives).forEach(archive => {
+        archives.forEach(archive => {
             const option = document.createElement('option');
-            option.value = archive;
-            option.textContent = archive;
+            value = `${archive[0]}-${archive[1]}`
+            option.value = value;
+            option.textContent = value;
             archive_select.appendChild(option);
         });
     } catch (error) {
@@ -654,15 +676,24 @@ async function populate_watchlist_archive_select(archives) {
 
 // Confirm adding to the watchlist
 async function confirm_add_to_watchlist() {
-    const archive = document.getElementById('watchlistArchiveSelect').value;
-    const subarchive = document.getElementById('watchlistSubarchiveSelect').value;
+    var archive = document.getElementById('watchlistArchiveSelect').value.split('-');
+    //const subarchive = document.getElementById('watchlistSubarchiveSelect').value;
     const cutoff_date = document.getElementById('watchlistCutoffDate').value.replace(/-/g, ',');
-    
+    const subarchive = archive[1];
+    archive = archive[0];
     console.log(archive, subarchive, cutoff_date);
     if (!archive || !subarchive || !cutoff_date) {
         alert('All fields are required.');
         return;
     }
+
+    // Close the modal using Bootstrap API
+    const modal = bootstrap.Modal.getInstance(document.getElementById('addWatchlistModal'));
+    modal.hide();
+
+    // Show the spinner
+    show('home-spinner');
+    hide('home-page-content');
 
     await fetch('/watchlist', {
         method: 'POST',
@@ -674,9 +705,9 @@ async function confirm_add_to_watchlist() {
         })
     });
 
-    // Close the modal using Bootstrap API
-    const modal = bootstrap.Modal.getInstance(document.getElementById('addWatchlistModal'));
-    modal.hide();
+    // Hide the spinner
+    show('home-page-content');
+    hide('home-spinner');
 
     // Refresh table
     load_watchlist();

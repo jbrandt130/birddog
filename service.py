@@ -11,16 +11,17 @@ import argparse
 
 # Birddog packages
 from birddog.core import (
-    ARCHIVE_LIST, 
     PageLRU, 
     ArchiveWatcher, 
     check_page_changes, 
     report_page_changes)
 from birddog.excel import export_page
 from birddog.cache import load_cached_object, save_cached_object, CacheMissError
+from birddog.utility import ARCHIVES
+
 
 app = Flask(__name__)
-app.secret_key = 'whats_the_worst_that_could_happen'  # For session management
+app.secret_key = os.getenv('BIRDDOG_SECRET_KEY', '')  # For session management
 
 # ---- USER MANAGEMENT --------------------------------------------------------
 
@@ -148,10 +149,13 @@ def get_page(request):
 
 # ---- SERVICE API ------------------------------------------------------------
 
+archive_master_list = [(arc, sub['subarchive']['en']) for arc, archive in ARCHIVES.items() for sub in archive.values()]
+print(archive_master_list)
+
 # List all archives
 @app.route("/archives", methods=['GET'])
 def archive_list():
-    return jsonify(ARCHIVE_LIST)
+    return jsonify(archive_master_list)
 
 @app.route("/page", methods=['GET'])
 def page_data():
@@ -257,6 +261,7 @@ def remove_from_watchlist(archive, subarchive):
     email = user['email']
     
     try:
+        print(f'Removing watcher[{email}]: {archive}-{subarchive}')
         user_data = load_cached_object(f'users/{email}.json')
         watchlist = user_data.get('watchlist', {})
         key = _watchlist_key(archive, subarchive)

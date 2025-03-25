@@ -30,6 +30,7 @@ REQUEST_TIMEOUT = 10 # seconds
 def decode_subarchive(subarchive):
     for item in SUBARCHIVES:
         if subarchive in item.values():
+            #print('decode_subarchive:', item)
             return item
     return SUBARCHIVES[0]
 
@@ -215,16 +216,20 @@ def _page_update_summary(archive, change_list):
     archive_prefix = archive_prefix.replace(ARCHIVE_BASE, '')
     archive_prefix = archive_prefix.replace('%3A', ':')
     #print('looking for link prefix:', archive_prefix)
+    # Form list of fonds belonging to this archive
+    fond_list={get_text(c[0]['text']) for c in archive.children}
     result = {}
     for item in change_list:
         page_spec = item["title"].split('/')
         address = (archive.tag, archive.subarchive["en"])
         address += tuple(entry for entry in page_spec[1:])
         address = (address + ("",) * 3)[:5]
+        fond = address[2]
         address = ','.join(address)
         mod_date = item["lastmod"]
-        if item["link"].startswith(archive_prefix):
-            #print(f'{address}: {mod_date}')
+        # Confirm that the item belongs to the selected archive
+        if fond in fond_list and item["link"].startswith(archive_prefix):
+            print(f'{address}: {mod_date}, {item["link"]}')
             if address in result:
                 result[address] = max(mod_date, result["address"])
             else:
@@ -280,6 +285,7 @@ class Page:
         if not version:
             history = self.history(limit=1)
             if not history:
+                print(f'{self.name}: no history')
                 return False # bad page?
             version = history[0]["modified"]
         path = f'{self._cache_path}/{version}.json'
@@ -294,8 +300,9 @@ class Page:
     def _cache_save(self):
         """Store the page contents in the cache, later retrievable under modification date.
         """
-        path = f'{self._cache_path}/{self.lastmod}.json'
-        save_cached_object(self._page, path)
+        if self.lastmod:
+            path = f'{self._cache_path}/{self.lastmod}.json'
+            save_cached_object(self._page, path)
 
     def latest(self):
         """Set page state to the latest version."""

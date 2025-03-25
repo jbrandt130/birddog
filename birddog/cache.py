@@ -3,7 +3,7 @@
 import json
 import os
 
-USE_LOCAL_FILESYSTEM    = False # True
+USE_LOCAL_FILESYSTEM    = True # True
 
 class CacheMissError(Exception):
     """Exception raised on cache miss.
