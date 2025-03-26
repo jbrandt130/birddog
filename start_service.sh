@@ -1,4 +1,30 @@
-#!/bin/bash -f
+#!/bin/bash
 
-python3 service.py $*
+DEBUG_MODE=false
+PORT=2002
+EXTRA_ARGS=()
 
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --debug)
+      DEBUG_MODE=true
+      shift
+      ;;
+    *)
+      EXTRA_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if $DEBUG_MODE; then
+  echo "!!! STARTING BIRDDOG IN DEBUG MODE !!!"
+  export BIRDDOG_USE_LOCAL_CACHE=True
+  EXTRA_ARGS+=("--debug")
+  PORT=2003
+fi
+
+echo "Starting Flask service on port $PORT..."
+echo "Environment BIRDDOG_USE_LOCAL_CACHE=${BIRDDOG_USE_LOCAL_CACHE:-false}"
+python3 service.py --port "$PORT" "${EXTRA_ARGS[@]}"

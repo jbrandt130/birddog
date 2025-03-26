@@ -7,7 +7,6 @@ from flask import Flask, render_template, request, json, send_file, redirect, ur
 #from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 
 from werkzeug.security import generate_password_hash, check_password_hash
-import argparse
 
 # Birddog packages
 from birddog.core import (
@@ -16,7 +15,11 @@ from birddog.core import (
     check_page_changes, 
     report_page_changes)
 from birddog.excel import export_page
-from birddog.cache import load_cached_object, save_cached_object, CacheMissError
+from birddog.cache import (
+    load_cached_object, 
+    save_cached_object, 
+    remove_cached_object, 
+    CacheMissError)
 from birddog.utility import ARCHIVES
 
 
@@ -266,9 +269,13 @@ def remove_from_watchlist(archive, subarchive):
         watchlist = user_data.get('watchlist', {})
         key = _watchlist_key(archive, subarchive)
         if key in watchlist:
+            # remove from user's wathchlist
             del watchlist[key]
             user_data['watchlist'] = watchlist
             save_cached_object(user_data, f'users/{email}.json')
+            # remove user's watcher data
+            watcher_path = _watcher_cache_path(email, archive, subarchive)
+            remove_cached_object(watcher_path)
             return '', 204
         else:
             return jsonify({'error': 'Entry not found'}), 404
@@ -364,9 +371,15 @@ def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
 # ---- MAIN -------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Birddog Service')
-    #parser.add_argument('-c', '--clear', action='store_true', help='clear results on startup')
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--debug", action="store_true", help="Run in debug mode")
+    parser.add_argument("--port", type=int, default=2002, help="Port to run the server on")
     args = parser.parse_args()
 
-    app.config['TEMPLATES_AUTO_RELOAD'] = True
-    app.run(host='0.0.0.0', port=2002, debug=True)
+    app.run(
+        debug=args.debug,
+        port=args.port,
+        host="0.0.0.0"  # Allow external connections
+    )

@@ -493,16 +493,21 @@ function populate_archive_select() {
 // ---------------------------------------------------------------------------
 // WATCHLIST MANAGEMENT
 
-async function load_watchlist() {
+async function load_watchlist(render=false) {
     const response = await fetch('/watchlist');
     const data = await response.json();
     console.log('watchlist:', data)
     watchlist = data;
 
+    if (render)
+        render_watchlist();
+}
+
+function render_watchlist() {
     const table_body = document.getElementById('watchlist-body');
     table_body.innerHTML = '';
 
-    data.forEach(item => {
+    watchlist.forEach(item => {
         const row = `
             <tr data-archive="${item.archive}" data-subarchive="${item.subarchive}">
                 <td>${item.archive}</td>
@@ -527,7 +532,7 @@ async function load_watchlist() {
 
 async function remove_from_watchlist(archive, subarchive) {
     await fetch(`/watchlist/${archive}/${subarchive}`, { method: 'DELETE' });
-    load_watchlist(); // Refresh after deletion
+    load_watchlist(true); // Refresh after deletion
 }
 
 function render_unresolved_items() {
@@ -594,7 +599,7 @@ function resolve_page() {
     enable_if("resolve-btn", false);
 }
 
-async function check_watchlist(archive, subarchive) {
+async function check_watchlist(archive, subarchive, quiet=false) {
     console.log(`Checking ${archive}-${subarchive}...`);
     try {
          // Show the spinner
@@ -610,6 +615,9 @@ async function check_watchlist(archive, subarchive) {
         }
         const data = await response.json();
 
+        // Refresh table
+        //load_watchlist();
+
         // Hide the spinner
         show('home-page-content');
         hide('home-spinner');
@@ -617,7 +625,7 @@ async function check_watchlist(archive, subarchive) {
         console.log('unresolved items:', data);
         unresolved_updates[`${archive}-${subarchive}`] = data.unresolved;
         render_unresolved_items();
-        if (data.unresolved.length == 0)
+        if (!quiet && data.unresolved.length == 0)
             alert(`No new updates for ${archive}-${subarchive}.`);
     } catch (error) {
         // Hide the spinner
@@ -630,7 +638,7 @@ async function check_watchlist(archive, subarchive) {
 
 async function check_all_watchlists() {
     watchlist.forEach(item => {
-        check_watchlist(item.archive, item.subarchive);
+        check_watchlist(item.archive, item.subarchive, quiet=true);
     });
 }
 
@@ -651,7 +659,7 @@ async function add_to_watchlist() {
                 cut_off_date
             })
         });
-        load_watchlist(); // Refresh after adding
+        load_watchlist(true); // Refresh after adding
     }
 }
 
@@ -710,7 +718,7 @@ async function confirm_add_to_watchlist() {
     hide('home-spinner');
 
     // Refresh table
-    load_watchlist();
+    load_watchlist(true);
 }
 
 // ---------------------------------------------------------------------------
@@ -829,7 +837,8 @@ function on_loaded() {
             }
         });
 
-        load_watchlist();
+        load_watchlist(true);
+        //check_all_watchlists();
 
         // archive select listener
         populate_archive_select();
