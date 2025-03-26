@@ -10,6 +10,8 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body>
+
+  <!-- nav bar -->
   <nav class="navbar navbar-expand-lg bg-body-tertiary" id="nav-brand-tab" role="tablist">
     <div class="container-fluid">
       <a class="navbar-brand" href="#">
@@ -18,15 +20,18 @@
       <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNavAltMarkup" aria-controls="navbarNavAltMarkup" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
-      <div class="collapse navbar-collapse" id="navbarNavAltMarkup">
+
+      <div class="collapse navbar-collapse justify-content-between" id="navbarNavAltMarkup">
         <div class="navbar-nav">
           <a class="nav-link active" id="nav-home-tab" data-bs-toggle="tab" href="#nav-home" role="tab">Home</a>
           <a class="nav-link" id="nav-browse-tab" data-bs-toggle="tab" href="#nav-browse" role="tab">Browse</a>
-            <!--
-            <a class="nav-link disabled" aria-disabled="true" id="nav-alerts-tab" data-bs-toggle="tab" href="#nav-alerts" role="tab">Alerts</a>
-            <a class="nav-link disabled" aria-disabled="true" id="nav-subscribe-tab" data-bs-toggle="tab" href="#nav-subscribe" role="tab">Subscribe</a>
-          -->
         </div>
+
+        {% if debug %}
+        <div class="d-flex align-items-center">
+          <span class="badge bg-danger fs-6">DEBUG</span>
+        </div>
+        {% endif %}
       </div>
     </div>
   </nav>
@@ -167,7 +172,7 @@
                 <button type="button" id="archive-select-btn" class="btn btn-primary" title="Select Archive" data-bs-toggle="modal" data-bs-target="#archiveSelectModal">
                   <i class="bi bi-book"></i>
                 </button>
-                <button type="button" id="archive-watch-btn" class="btn btn-secondary" title="Watch this Archive">
+                <button type="button" id="archive-watch-btn" class="btn btn-secondary d-none" title="Watch this Archive">
                   <i class="bi bi-eye-slash"></i>
                 </button>
               </div>
@@ -178,6 +183,12 @@
                     <!-- Breadcrumb items will be populated dynamically -->
                   </ol>
                 </nav>
+              </div>
+              <div id="browse-info" class="col align-items-center">
+                <span id="new-page-badge" class="badge bg-success fs-6">NEW PAGE</span>
+                <span id="empty-page-badge" class="badge bg-warning fs-6">EMPTY PAGE</span>
+                <span id="comparing-badge" class="badge bg-success fs-6">COMPARING TO PAST VERSION</span>
+                <span id="no-differences-badge" class="badge bg-warning fs-6">NO DIFFERENCES</span>
               </div>
             </div>
             <h5 id="page-title">Page Title</h5>
@@ -206,7 +217,6 @@
                 </div>
               </div>
             </div>
-            <!-- Right Column: Buttons -->
             <!-- Right Column: Buttons and Progress Bar -->
             <div class="border rounded p-3 shadow-sm">
               <!-- Button Group -->
@@ -272,17 +282,6 @@
           </select>
         </div>
 
-        <!-- Subarchive Select -->
-        <!--
-        <div class="mb-3">
-          <label for="subarchiveSelect" class="form-label">Choose Subarchive:</label>
-          <select id="subarchiveSelect" class="form-select">
-            <option value="D">D</option>
-            <option value="P">P</option>
-            <option value="R">R</option>
-          </select>
-        </div>
-        -->
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -308,18 +307,6 @@
             <option value="" selected>Select an archive...</option>
           </select>
         </div>
-
-        <!-- Subarchive Select -->
-        <!--
-        <div class="mb-3">
-          <label for="watchlistSubarchiveSelect" class="form-label">Subarchive:</label>
-          <select id="watchlistSubarchiveSelect" class="form-select">
-            <option value="D">D</option>
-            <option value="P">P</option>
-            <option value="R">R</option>
-          </select>
-        </div>
-        -->
 
         <!-- Cutoff Date Picker -->
         <div class="mb-3">

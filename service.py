@@ -68,19 +68,11 @@ users = Users(session)
 
 # ---- FRONT END PAGES --------------------------------------------------------
 
-# Mock user storage (replace with a database)
-alerts = {
-    'test@example.com': ['Alert 1', 'Alert 2', 'Alert 3']
-}
-
 # Home Route (Shows the landing page)
 @app.route('/')
 def home():
     user = session.get('user')
-    if user:
-        user_alerts = alerts.get(user['email'], [])
-        return render_template('index.html', user=user, alerts=user_alerts)
-    return render_template('index.html', user=None)
+    return render_template('index.html', user=user, debug=app.debug)
 
 # ---- SESSION MANAGEMENT -----------------------------------------------------
 
@@ -146,7 +138,15 @@ def get_page(request):
         page['case'] = case_id
         page['kind'] = result.kind
         page['name'] = result.name
-        page['history'] = result.history(limit=20)
+        history = result.history(cutoff_date='2023')
+        # compress history to have one update per day
+        hist_by_day = {}
+        for h in history:
+            day = h['modified'][:10]
+            if day not in hist_by_day:
+                hist_by_day[day] = copy(h)
+        hist_by_day = sorted(hist_by_day.values(), key=lambda x: x['modified'], reverse=True)
+        page['history'] = hist_by_day
         
     return result
 

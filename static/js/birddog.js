@@ -252,6 +252,7 @@ function render_page_data(data) {
     const title_elem = document.getElementById('page-title');
     title_elem.textContent = data.name;
     
+    var any_edit = false;
     const desc_elem = document.getElementById('page-description');
     desc_elem.textContent = get_text(data.description);
     desc_elem.classList.remove('bg-warning', 'bg-success');
@@ -259,9 +260,11 @@ function render_page_data(data) {
         switch (data.description.edit) {
             case 'added':
                 desc_elem.classList.add('bg-success');
+                any_edit = true;
                 break;
             case 'changed':
                 desc_elem.classList.add('bg-warning');
+                any_edit = true;
                 break;
             default:
                 break;
@@ -287,8 +290,9 @@ function render_page_data(data) {
     const body_elem = document.getElementById('page_table').querySelector('tbody');
     body_elem.innerHTML = ''; // Clear existing content
 
+    var row_added = false;
     children.forEach((child, index) => {
-        var any_edit = false;
+        var row_edited = false;
         const row_elem = document.createElement('tr');
         child.forEach((item, index) => {
             const cell_elem = document.createElement('td')
@@ -297,11 +301,11 @@ function render_page_data(data) {
                 switch (item.edit) {
                 case 'added':
                     cell_elem.classList.add('table-success');
-                    any_edit = true;
+                    row_edited = true;
                     break;
                 case 'changed':
                     cell_elem.classList.add('table-warning');
-                    any_edit = true;
+                    row_edited = true;
                     break;
                 default:
                     break;
@@ -309,8 +313,9 @@ function render_page_data(data) {
             }
             row_elem.appendChild(cell_elem)
         });
-
-        if (!is_comparison || any_edit) {
+        if (row_edited)
+            any_edit = true;
+        if (!is_comparison || row_edited) {
             // only add the row if not doing comparison or there is a change to show
             if (data.kind != 'case' && is_linked(child[0].link)) {
                 // Add click event listener
@@ -323,11 +328,16 @@ function render_page_data(data) {
             }
 
             body_elem.appendChild(row_elem);
+            row_added = true;
         }
     });
 
     // watch button is only visible for archive level pages
     show_if('archive-watch-btn', data.kind == 'archive')
+
+    show_if('comparing-badge', is_comparison);
+    show_if('no-differences-badge', is_comparison && !any_edit);
+    show_if('empty-page-badge', !row_added);
 
     // resolve button is visible if page is currently unresolved
     //show_if("resolve-btn", needs_resolve(data));
@@ -341,9 +351,12 @@ function render_history(data) {
 
     if (data.history.length <= 1) {
         hide('history-selection-box');
+        show('new-page-badge');
     }
     else {
         show('history-selection-box');
+        hide('new-page-badge');
+
         const selector = document.getElementById('version-select');
         // Clear existing options
         select_header = 'refmod' in data? 'Stop Comparing' : 'Select Version';
