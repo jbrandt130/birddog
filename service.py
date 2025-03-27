@@ -1,24 +1,34 @@
 # system packages
 import os
+import threading
 from copy import copy, deepcopy
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 from datetime import datetime
-from flask import Flask, render_template, request, json, send_file, redirect, url_for, session, jsonify
-#from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from time import sleep
+from flask import (
+    Flask,
+    render_template,
+    request,
+    json,
+    send_file,
+    redirect,
+    url_for,
+    session,
+    jsonify)
 
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # Birddog packages
 from birddog.core import (
-    PageLRU, 
-    ArchiveWatcher, 
-    check_page_changes, 
+    PageLRU,
+    ArchiveWatcher,
+    check_page_changes,
     report_page_changes)
 from birddog.excel import export_page
 from birddog.cache import (
-    load_cached_object, 
-    save_cached_object, 
-    remove_cached_object, 
+    load_cached_object,
+    save_cached_object,
+    remove_cached_object,
     CacheMissError)
 from birddog.utility import ARCHIVES
 
@@ -47,7 +57,7 @@ class Users:
             return False
         print('Creating new user:', name, email)
         user = {
-            'name': name, 
+            'name': name,
             'password': generate_password_hash(password)
             }
         save_cached_object(user, f'{self._path}/{email}.json')
@@ -86,7 +96,7 @@ def signup():
 
     if not users.create(email, name, password):
         return jsonify({'success': False, 'message': 'Email already exists'}), 400
-    print('Creating new user:', name, email)   
+    print('Creating new user:', name, email)
     return jsonify({'success': True})
 
 # Login Route
@@ -123,7 +133,8 @@ def get_page(request):
         if result.kind == 'archive':
             subarchive_id = result.subarchive["en"]
         if translate is not None:
-            result.translate()
+            #result.translate()
+            start_translation(result)
         if compare:
             # avoid making changes to cached page - work on copy instead
             result = deepcopy(result)
@@ -138,6 +149,7 @@ def get_page(request):
         page['case'] = case_id
         page['kind'] = result.kind
         page['name'] = result.name
+        page['needs_translation'] = result.needs_translation
         history = result.history(cutoff_date='2023')
         # compress history to have one update per day
         hist_by_day = {}
@@ -147,7 +159,7 @@ def get_page(request):
                 hist_by_day[day] = copy(h)
         hist_by_day = sorted(hist_by_day.values(), key=lambda x: x['modified'], reverse=True)
         page['history'] = hist_by_day
-        
+
     return result
 
 # ---- SERVICE API ------------------------------------------------------------
@@ -198,7 +210,7 @@ def get_watchlist():
     user = session.get('user')
     if not user:
         return jsonify({'error': 'Not logged in'}), 401
-    
+
     email = user['email']
     try:
         user_data = load_cached_object(f'users/{email}.json')
@@ -227,23 +239,23 @@ def add_to_watchlist():
     user = session.get('user')
     if not user:
         return jsonify({'error': 'Not logged in'}), 401
-    
+
     data = request.json
     email = user['email']
-    
+
     try:
         user_data = load_cached_object(f'users/{email}.json')
     except CacheMissError:
         user_data = {}
 
     watchlist = user_data.get('watchlist', {})
-    
+
     key = _watchlist_key(data['archive'], data['subarchive'])
     watchlist[key] = {
         'last_checked_date': '',
         'cutoff_date': data['cutoff_date']
     }
-    
+
     user_data['watchlist'] = watchlist
     save_cached_object(user_data, f'users/{email}.json')
 
@@ -260,9 +272,9 @@ def remove_from_watchlist(archive, subarchive):
     user = session.get('user')
     if not user:
         return jsonify({'error': 'Not logged in'}), 401
-    
+
     email = user['email']
-    
+
     try:
         print(f'Removing watcher[{email}]: {archive}-{subarchive}')
         user_data = load_cached_object(f'users/{email}.json')
@@ -288,7 +300,6 @@ def check_watchlist_item(archive, subarchive):
     user = session.get('user')
     if not user:
         return jsonify({'error': 'Not logged in'}), 401
-    
     email = user['email']
 
     try:
@@ -299,7 +310,7 @@ def check_watchlist_item(archive, subarchive):
         key = _watchlist_key(archive, subarchive)
         if key not in watchlist:
             return jsonify({'error': 'Watchlist item not found'}), 404
-        
+
         # load user's watcher for this archive
         cache_path = _watcher_cache_path(email, archive, subarchive)
         try:
@@ -325,10 +336,10 @@ def check_watchlist_item(archive, subarchive):
     except CacheMissError:
         return jsonify({'error': 'User data not found'}), 404
 
-@app.route('/resolve/<archive>/<subarchive>', methods=['POST', 'GET'])
-@app.route('/resolve/<archive>/<subarchive>/<fond>', methods=['POST', 'GET'])
-@app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>', methods=['POST', 'GET'])
-@app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['POST', 'GET'])
+@app.route('/resolve/<archive>/<subarchive>', methods=['GET'])
+@app.route('/resolve/<archive>/<subarchive>/<fond>', methods=['GET'])
+@app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
+@app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
 def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
     user = session.get('user')
     if not user:
@@ -344,7 +355,7 @@ def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
         key = _watchlist_key(archive, subarchive)
         if key not in watchlist:
             return jsonify({'error': 'Watchlist item not found'}), 404
-        
+
         # load user's watcher for this archive
         cache_path = _watcher_cache_path(email, archive, subarchive)
         try:
@@ -367,6 +378,89 @@ def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
 
     except CacheMissError:
         return jsonify({'error': 'Exception during resolve'}), 404
+
+# ---- TRANSLATION MANAGEMENT -------------------------------------------------
+
+_translation_tasks = {}
+_task_id_map = {}
+_translation_lock = threading.RLock()
+
+def _add_user_task(email, task_id):
+    with _translation_lock:
+        if not email in _task_id_map:
+            _task_id_map[email] = []
+        if task_id not in _task_id_map[email]:
+            _task_id_map[email].append(task_id)
+
+def _active_translations(email):
+    with _translation_lock:
+        user_tasks = _task_id_map.get(email, [])
+        return [{
+            'page_name': _translation_tasks[tid]['page'].name,
+            'progress': _translation_tasks[tid]['progress'],
+            'total': _translation_tasks[tid]['total'],
+            'running': _translation_tasks[tid]['running']
+        } for tid in user_tasks]
+
+def _translation_progress(task_id, progress, total):
+    with _translation_lock:
+        item = _translation_tasks[task_id]
+        page = item['page']
+        item['progress'] = progress
+        item['total'] = total
+        item['running'] = True
+    print(f'translation progress: {page.name} {progress}/{total} {float(progress)/float(total)*100.:.1f}%')
+
+def _translation_completion(task_id, results):
+    with _translation_lock:
+        item = _translation_tasks[task_id]
+        item['running'] = False
+        for user, tasks in _task_id_map.items():
+            _task_id_map[user] = [task for task in tasks if task != task_id]
+        if task_id in _translation_tasks:
+            del _translation_tasks[task_id]
+    print(f'translation completed: {item["page"].name}')
+
+def _start_translation(email, page):
+    with _translation_lock:
+        task_id = next((k for k, v in _translation_tasks.items() if v["page"].name == page.name), None)
+        if not task_id:
+            task_id = page.translate(
+                asynchronous=True,
+                progress_callback=_translation_progress,
+                completion_callback=_translation_completion)
+            if task_id:
+                print(f'translation started ({email}): {page.name}')
+                _translation_tasks[task_id] = {
+                    'page': page,
+                    'progress': 0,
+                    'total': 1,
+                    'running': True,
+                }
+                _add_user_task(email, task_id)
+        else:
+            # page is already being translated, possibly by another user
+            # add to users tasks so user gets progress/completion
+            _add_user_task(email, task_id)
+
+@app.route('/translate', methods=['GET'])
+@app.route('/translate/<archive>/<subarchive>', methods=['GET'])
+@app.route('/translate/<archive>/<subarchive>/<fond>', methods=['GET'])
+@app.route('/translate/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
+@app.route('/translate/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
+def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=None):
+    user = session.get('user')
+    if not user:
+        return jsonify({'error': 'Not logged in'}), 401
+    email = user['email']
+    if archive:
+        page = page_lru.lookup(archive, subarchive, fond, opus, case)
+        if page:
+            # start new translation
+            _start_translation(email, page)
+    return jsonify({
+        'success': True,
+        'translations': _active_translations(email)}), 200
 
 # ---- MAIN -------------------------------------------------------------------
 

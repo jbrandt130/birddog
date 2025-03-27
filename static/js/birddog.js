@@ -7,7 +7,7 @@ var watchlist               = null;
 var unresolved_updates      = {};
 
 const months                = [
-    'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 
+    'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
     'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'
     ];
 
@@ -72,25 +72,78 @@ function needs_resolve(page) {
     return unresolved_updates[key].some(item => item.name == name);
 }
 
+async function update_translation_progress(data) {
+    console.log('translate result:', data);
+    const translations = data.translations || [];
+
+    hide('progress-container');
+    hide('translating-badge');
+
+    for (const item of translations) {
+        console.log(item.page_name, current_page.name);
+        if (item.page_name == current_page.name) {
+            const progress_bar = document.getElementById("progress-bar");
+            if (progress_bar) {
+                const percent = (item.progress / item.total * 100).toFixed(1);
+                console.log(`Updating progress for ${item.page_name}: ${percent}%`);
+                progress_bar.style.width = `${percent}%`;
+                progress_bar.setAttribute("aria-valuenow", percent);
+                progress_bar.textContent = `${percent}%`;
+            }
+            show('progress-container');
+            show('translating-badge');
+            enable_if("translate-btn", false);
+            break;
+        }
+    }
+
+    if (translations.length > 0) {
+        // Continue polling after 1 second
+        setTimeout(async () => {
+            try {
+                const response = await fetch('/translate');
+                if (!response.ok) {
+                    throw new Error(`Polling failed: ${response.statusText}`);
+                }
+                const new_data = await response.json();
+                update_translation_progress(new_data);
+            } catch (err) {
+                console.error("Polling error:", err);
+            }
+        }, 1000);
+    }
+    else {
+        // reload in case we're on the translated page
+        // FIXME: don't do this if not on a translated page
+        load_page(
+            current_page.archive,
+            current_page.subarchive,
+            current_page.fond,
+            current_page.opus,
+            current_page.case,
+            compare=current_page.refmod ?? null);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // BIRDDOG SERVICE CALLS
 
 // page loader
 async function load_page(
-        archive_id, 
-        subarchive_id=null, 
-        fond_id=null, 
-        opus_id=null, 
-        case_id=null, 
+        archive_id,
+        subarchive_id=null,
+        fond_id=null,
+        opus_id=null,
+        case_id=null,
         translate=false,
         compare=null) {
     try {
         // Default to an empty string if any parameter is null or undefined
-        url = `/page?` + 
-            `archive=${encodeURIComponent(archive_id ?? '')}&` + 
-            `subarchive=${encodeURIComponent(subarchive_id ?? '')}&` + 
-            `fond=${encodeURIComponent(fond_id ?? '')}&` + 
-            `opus=${encodeURIComponent(opus_id ?? '')}&` + 
+        url = `/page?` +
+            `archive=${encodeURIComponent(archive_id ?? '')}&` +
+            `subarchive=${encodeURIComponent(subarchive_id ?? '')}&` +
+            `fond=${encodeURIComponent(fond_id ?? '')}&` +
+            `opus=${encodeURIComponent(opus_id ?? '')}&` +
             `case=${encodeURIComponent(case_id ?? '')}`;
         if (translate)
             url += "&translate";
@@ -101,7 +154,7 @@ async function load_page(
         // Show the spinner
         show('browse-spinner');
         hide('browse-page-content');
-        
+
         // Make the GET request
         const response = await fetch(url, {
             method: 'GET',
@@ -122,6 +175,10 @@ async function load_page(
 
         current_page = data;
 
+        // start receiving translation events
+        if (translate)
+            watch_translation(current_page.name);
+
         // Process and display the data
         render_page_data(data);
 
@@ -137,26 +194,33 @@ async function load_page(
     }
 }
 
-function translate_page() {
-    console.log('translate', current_page.refmod);
-    load_page(
-        current_page.archive, 
-        current_page.subarchive, 
-        current_page.fond, 
-        current_page.opus, 
-        current_page.case, 
-        translate=true,
-        compare=current_page.refmod ?? null);
+async function translate_page() {
+    //console.log('translate', current_page.name);
+    const path = [
+        current_page.archive,
+        current_page.subarchive,
+        current_page.fond || '',
+        current_page.opus || '',
+        current_page.case || '']
+        .join('/').replace(/\/+$/, '');
+    console.log('translating:', path);
+    const response = await fetch(`/translate/${path}`);
+    if (!response.ok) {
+        throw new Error(`Failed to resolve: ${response.statusText}`);
+    }
+    const data = await response.json();
+    console.log('translate_page:', data)
+    update_translation_progress(data);
 }
 
 async function download_page() {
     try {
         // Default to an empty string if any parameter is null or undefined
-        url = `/download?` + 
-            `archive=${encodeURIComponent(current_page.archive ?? '')}&` + 
-            `subarchive=${encodeURIComponent(current_page.subarchive ?? '')}&` + 
-            `fond=${encodeURIComponent(current_page.fond ?? '')}&` + 
-            `opus=${encodeURIComponent(current_page.opus ?? '')}&` + 
+        url = `/download?` +
+            `archive=${encodeURIComponent(current_page.archive ?? '')}&` +
+            `subarchive=${encodeURIComponent(current_page.subarchive ?? '')}&` +
+            `fond=${encodeURIComponent(current_page.fond ?? '')}&` +
+            `opus=${encodeURIComponent(current_page.opus ?? '')}&` +
             `case=${encodeURIComponent(current_page.case ?? '')}`;
 
         if ("refmod" in current_page) {
@@ -182,7 +246,7 @@ async function download_page() {
         // Extract filename from Content-Disposition header (if available)
         const contentDisposition = response.headers.get('Content-Disposition');
         const filename = contentDisposition
-            ? contentDisposition.split('filename=')[1]?.replace(/['"]/g, '') 
+            ? contentDisposition.split('filename=')[1]?.replace(/['"]/g, '')
             : 'download.xlsx';
 
         // Create a hidden <a> element to trigger the download
@@ -201,7 +265,7 @@ async function download_page() {
     } catch (error) {
         console.error('Error loading page:', error.message);
         alert(`Failed to load data: ${error.message}`);
-    } 
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -248,10 +312,10 @@ function on_row_click(page_data, index) {
 // render a data page
 function render_page_data(data) {
     const is_comparison = 'refmod' in data;
-    
+
     const title_elem = document.getElementById('page-title');
     title_elem.textContent = data.name;
-    
+
     var any_edit = false;
     const desc_elem = document.getElementById('page-description');
     desc_elem.textContent = get_text(data.description);
@@ -273,10 +337,10 @@ function render_page_data(data) {
 
     const lastmod = document.getElementById('last-modified');
     lastmod.textContent = format_date(data.lastmod);
-    
+
     const source_link_elem = document.getElementById('source-link');
     source_link_elem.setAttribute('href', data.link);
-    
+
     const children = data.children;
     const header = data.header;
     const header_elem = document.getElementById('page_table').querySelector('thead');
@@ -286,7 +350,7 @@ function render_page_data(data) {
     });
     row += '</tr>';
     header_elem.innerHTML = row;
-    
+
     const body_elem = document.getElementById('page_table').querySelector('tbody');
     body_elem.innerHTML = ''; // Clear existing content
 
@@ -338,11 +402,15 @@ function render_page_data(data) {
     show_if('comparing-badge', is_comparison);
     show_if('no-differences-badge', is_comparison && !any_edit);
     show_if('empty-page-badge', !row_added);
+    //show_if('translating-badge', data.translating ?? false);
+    //show_if('progress-container', data.translating ?? false);
 
-    // resolve button is visible if page is currently unresolved
-    //show_if("resolve-btn", needs_resolve(data));
+
+
+    // set button enables
     enable_if("resolve-btn", needs_resolve(data));
-    
+    enable_if("translate-btn", data.needs_translation);
+
     render_breadcrumbs(data);
     update_archive_select();
 }
@@ -404,7 +472,7 @@ function render_breadcrumbs(data) {
             }
         }
     }
-    
+
     //console.log('parts = ', parts);
     if (parts.length == 1) {
         // no need for breadcrumbs
@@ -474,7 +542,7 @@ function populate_archive_select() {
 
     // Populate the archive dropdown
     function populate_archive_select_dropdown(archives) {
-        archive_select.innerHTML = '<option value="-1" selected>Select an archive...</option>'; 
+        archive_select.innerHTML = '<option value="-1" selected>Select an archive...</option>';
         archives.forEach((archive, index) => {
             //console.log(archive);
             const option = document.createElement('option');
@@ -497,7 +565,7 @@ function populate_archive_select() {
         const selected_archive = archives[archive_index];
         console.log(`Selected Archive: ${selected_archive[0]}-${selected_archive[1]}`);
         load_page(
-            archive_id=selected_archive[0], 
+            archive_id=selected_archive[0],
             subarchive_id=selected_archive[1])
         archive_select_modal.hide();
     });
@@ -602,10 +670,10 @@ async function resolve_page_update(page_name) {
 
 function resolve_page() {
     const page_name = [
-        current_page.archive, 
-        current_page.subarchive, 
-        current_page.fond || '', 
-        current_page.opus || '', 
+        current_page.archive,
+        current_page.subarchive,
+        current_page.fond || '',
+        current_page.opus || '',
         current_page.case || ''].join(',');
     //alert('resolve page');
     resolve_page_update(page_name);
@@ -739,7 +807,7 @@ async function confirm_add_to_watchlist() {
 
 function on_loaded() {
     // set up event listeners
-    
+
     // Login form submit button
     const login = document.getElementById('loginForm');
     if (login) {
@@ -798,11 +866,11 @@ function on_loaded() {
             const version = event.target.value;
             console.log(`Comparing to: ${version}`);
             load_page(
-                current_page.archive, 
+                current_page.archive,
                 current_page.subarchive,
-                current_page.fond, 
-                current_page.opus, 
-                current_page.case, 
+                current_page.fond,
+                current_page.opus,
+                current_page.case,
                 translate=false,
                 compare=version);
             //alert(`Comparing to version ${selectedVersion}`)
@@ -819,7 +887,7 @@ function on_loaded() {
                     console.log(`Page ID: ${page_id}, Last Resolved: ${last_resolved}`);
                     try {
                         // load the selected page
-                        load_page(page_id[0], page_id[1], page_id[2], page_id[3], page_id[4], 
+                        load_page(page_id[0], page_id[1], page_id[2], page_id[3], page_id[4],
                             translate=false, compare=last_resolved);
                         // Switch to the browse tab
                         const browse_tab = new bootstrap.Tab(document.getElementById('nav-browse-tab'));

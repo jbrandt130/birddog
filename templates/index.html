@@ -184,11 +184,12 @@
                   </ol>
                 </nav>
               </div>
-              <div id="browse-info" class="col align-items-center">
-                <span id="new-page-badge" class="badge bg-success fs-6">NEW PAGE</span>
-                <span id="empty-page-badge" class="badge bg-warning fs-6">EMPTY PAGE</span>
-                <span id="comparing-badge" class="badge bg-success fs-6">COMPARING TO PAST VERSION</span>
-                <span id="no-differences-badge" class="badge bg-warning fs-6">NO DIFFERENCES</span>
+              <div id="browse-info" class="col d-flex flex-wrap justify-content-end gap-2 align-items-center">
+                <span id="new-page-badge" class="badge bg-success small d-none">NEW PAGE</span>
+                <span id="empty-page-badge" class="badge bg-warning small d-none">EMPTY PAGE</span>
+                <span id="comparing-badge" class="badge bg-success small d-none">COMPARING TO PAST VERSION</span>
+                <span id="no-differences-badge" class="badge bg-warning small d-none">NO DIFFERENCES</span>
+                <span id="translating-badge" class="badge bg-info small d-none">TRANSLATING</span>
               </div>
             </div>
             <h5 id="page-title">Page Title</h5>
@@ -236,9 +237,12 @@
               </div>
 
               <!-- Progress Bar -->
-              <div class="progress d-none" style="height: 20px;">
-                <div class="progress-bar" role="progressbar" style="width: 25%;" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">25%</div>
+              <div id="progress-container" class="progress d-none" style="height: 20px;">
+                <div id="progress-bar" class="progress-bar" role="progressbar"
+                style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                0%
               </div>
+            </div>
             </div>
           </div>
         </div>

@@ -8,7 +8,12 @@ import json
 import requests
 from bs4 import BeautifulSoup
 
-from birddog.translate import translation, is_english
+from birddog.translate import (
+    translation,
+    is_english,
+    queue_translation,
+    is_translation_running,
+    )
 
 # INITIALIZATION --------------------------------------------------------------
 
@@ -104,7 +109,7 @@ def form_text_item(source_text, translate=False):
     A text item is a dict containing keys "uk" and "en", representing the
     Ukrainian and English versions of the text, respectively.
     If the input text is numeric or is English, then both language versions
-    will be the same. If the translate argument is True (default False), 
+    will be the same. If the translate argument is True (default False),
     then the Ukrainian text will be automatically translated to English.
     Otherwise, the English version of the text will be left empty.
     """
@@ -132,7 +137,12 @@ def needs_translation(item):
     """True if text item needs to be translated to English"""
     return isinstance(item, dict) and 'uk' in item and 'en' not in item
 
-def translate_page(page, dry_run=False):
+def translate_page(
+    page,
+    dry_run=False,
+    asynchronous=False,
+    progress_callback=None,
+    completion_callback=None):
     """Traverse a page and translate all untranslated text items.
     The changes are done in place on each multilingual text item.
     Returns the total number of items translated.
@@ -154,13 +164,24 @@ def translate_page(page, dry_run=False):
             for value in obj.values():
                 queue_items(value, batch, items)
 
-    queue_items(page, batch, items)
-    if batch and not dry_run:
-        print(f'Batch translation: {len(batch)} items...')
-        start = time.time()
-        batch = translation(batch)
-        elapsed = time.time() - start
-        print(f'    ...completed ({elapsed:.2f} sec.)')
+    def store_result(items, batch):
         for i, value in enumerate(batch):
             items[i]['en'] = value
+
+    queue_items(page, batch, items)
+
+    if batch and not dry_run:
+        if asynchronous:
+            def completion_cb(task_id, result):
+                store_result(items, result)
+                if completion_callback:
+                    completion_callback(task_id, result)
+            return queue_translation(batch, progress_callback, completion_cb)
+        else:
+            print(f'Batch translation: {len(batch)} items...')
+            start = time.time()
+            batch = translation(batch)
+            elapsed = time.time() - start
+            print(f'    ...completed ({elapsed:.2f} sec.)')
+            store_result(items, batch)
     return len(batch)

@@ -108,13 +108,13 @@ def do_search(query_string, limit=10, offset=0):
 
 def history_url(page):
     return page.default_url.replace(
-        '/wiki/', 
+        '/wiki/',
         '/w/index.php?action=history&title=')
 
 def get_page_history(page, limit=None, cutoff_date=None):
     """
     Return version history of given page, sorted in reverse chronological order.
-    Returns list of dicts containing keys: 
+    Returns list of dicts containing keys:
         "modified": modification date in standard format
         "link": url to the corresponding page version
     """
@@ -366,7 +366,7 @@ class Page:
     @property
     def name(self):
         return f'{self.parent.name}/{self.id}'
-   
+
     @property
     def title(self):
         return get_text(self._page['title'])
@@ -390,7 +390,7 @@ class Page:
     @property
     def is_latest(self):
         return self.history(limit=1)[0]['modified'] == self.lastmod
-    
+
     @property
     def report(self):
         # make sure no commas in the name
@@ -404,7 +404,22 @@ class Page:
             return self.child_class(spec, self, use_cache=use_cache)
         return None
 
-    def translate(self):
+    @property
+    def needs_translation(self):
+        return translate_page(self._page, dry_run=True) > 0
+
+    def translate(self, asynchronous=False, progress_callback=None, completion_callback=None):
+        if asynchronous:
+            if not self.needs_translation:
+                return False # nothing to translate
+            def completion_cb(task_id, results):
+                # set up completion callback to update the cache
+                if results:
+                    self._cache_save()
+                # chain to caller
+                if completion_callback:
+                    completion_callback(task_id, results)
+            return translate_page(self._page, asynchronous=True, progress_callback=progress_callback, completion_callback=completion_cb)
         if translate_page(self._page) > 0:
             self._cache_save()
             return True
@@ -493,7 +508,7 @@ class PageLRU:
         def __init__(self, address):
             self._address = address
             super().__init__(f"Page not found: {address}")
-        
+
         @property
         def address(self):
             return self._address
@@ -542,7 +557,7 @@ class ArchiveWatcher:
         self._cutoff_date = cutoff_date
         self._resolved = {}
         self._unresolved = {}
-    
+
     def save(self):
         return {
             'archive': self._archive.tag,
@@ -566,15 +581,15 @@ class ArchiveWatcher:
 
     def _last_resolved_date(self, item):
         return self._resolved.get(item, self._cutoff_date)
-                                  
+
     @property
     def resolved(self):
         return self._resolved
-    
+
     @property
     def unresolved(self):
         return self._unresolved
-    
+
     @property
     def cutoff_date(self):
         return self._cutoff_date
@@ -586,11 +601,11 @@ class ArchiveWatcher:
                 #print(item, mod_date)
                 if item not in self._resolved or mod_date > self._resolved[item]:
                     self._unresolved[item] = {
-                        "modified": mod_date, 
+                        "modified": mod_date,
                         "last_resolved": self._last_resolved_date(item)
                     }
             self._cutoff_date = max(updates.values())
-            
+
     def resolve(self, item):
         if item in self._unresolved:
             self._resolved[item] = self._unresolved.pop(item)["modified"]

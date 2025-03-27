@@ -40,7 +40,7 @@ def translation(text):
 # --- Async Queue Infrastructure ---
 
 _NUM_WORKERS = 8
-_BATCH_SIZE = 10
+_BATCH_SIZE = 5
 
 _task_queue = queue.Queue()
 _task_registry = {}
