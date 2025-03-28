@@ -367,13 +367,16 @@ def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
         # resolve the item
         key = ArchiveWatcher.key(archive, subarchive, fond, opus, case)
         print(f'Resolving {key}')
-        watcher.resolve(key)
+        watcher.resolve(key, deep=request.args.get('tree', False))
 
         # save the watcher state
         save_cached_object(watcher.save(), cache_path)
 
         # return updated list of unresolved items
-        result = [{'name': key, **value} for key, value in watcher.unresolved.items()]
+        if request.args.get('tree') is not None:
+            result = watcher.unresolved_tree
+        else:
+            result = [{'name': key, **value} for key, value in watcher.unresolved.items()]
         return jsonify({'success': True, 'unresolved': result}), 200
 
     except CacheMissError:

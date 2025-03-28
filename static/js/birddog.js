@@ -64,14 +64,6 @@ function enable_if(elem_id, enabled)
         document.getElementById(elem_id).classList.add('disabled');
 }
 
-function needs_resolve(page) {
-    const key = `${page.archive}-${page.subarchive}`
-    if (!(key in unresolved_updates))
-        return false;
-    const name = [page.archive, page.subarchive, page.fond || '', page.opus || '', page.case || ''].join(',');
-    return unresolved_updates[key].some(item => item.name == name);
-}
-
 async function update_translation_progress(data) {
     //console.log('translate result:', data);
     const translations = data.translations || [];
@@ -594,7 +586,13 @@ function render_watchlist() {
     const table_body = document.getElementById('watchlist-body');
     table_body.innerHTML = '';
 
-    watchlist.forEach(item => {
+    // Sort by archive, then subarchive
+    const sorted_watchlist = [...watchlist].sort((a, b) => {
+        const archive_cmp = a.archive.localeCompare(b.archive);
+        return archive_cmp !== 0 ? archive_cmp : a.subarchive.localeCompare(b.subarchive);
+    });
+
+    sorted_watchlist.forEach(item => {
         const row = `
             <tr data-archive="${item.archive}" data-subarchive="${item.subarchive}">
                 <td>${item.archive}</td>
@@ -625,51 +623,6 @@ async function remove_from_watchlist(archive, subarchive) {
         delete unresolved_updates[key];
         render_unresolved_items();
     }
-}
-
-function render_unresolved_items() {
-    //console.log('unresolved_updates:', unresolved_updates);
-    document.getElementById('tree-container').innerHTML = ''; 
-    const all_unresolved = Object.values(unresolved_updates);
-    all_unresolved.forEach(item => {
-        //console.log(item);
-        render_tree_to_dom(item, 'tree-container');
-    });
-}
-
-async function resolve_page_update(page_name) {
-    try {
-        const path = page_name.replace(/,+$/, '').replace(/,/g, '/');
-        console.log('Resolving:', path);
-        const response = await fetch(`/resolve/${path}`);
-        if (!response.ok) {
-            throw new Error(`Failed to resolve: ${response.statusText}`);
-        }
-
-        // update unresolved item table
-        const data = await response.json();
-        const parsed_path = path.split('/');
-        console.log('resolve result:', data);
-        unresolved_updates[`${parsed_path[0]}-${parsed_path[1]}`] = data.unresolved;
-
-        render_unresolved_items();
-    } catch (error) {
-        console.error('Error during resolve:', error);
-        alert('Failed to resolve.');
-    }
-}
-
-
-function resolve_page() {
-    const page_name = [
-        current_page.archive,
-        current_page.subarchive,
-        current_page.fond || '',
-        current_page.opus || '',
-        current_page.case || ''].join(',');
-    //alert('resolve page');
-    resolve_page_update(page_name);
-    enable_if("resolve-btn", false);
 }
 
 async function check_watchlist(archive, subarchive, quiet=false) {
@@ -755,7 +708,6 @@ async function populate_watchlist_archive_select(archives) {
 // Confirm adding to the watchlist
 async function confirm_add_to_watchlist() {
     var archive = document.getElementById('watchlistArchiveSelect').value.split('-');
-    //const subarchive = document.getElementById('watchlistSubarchiveSelect').value;
     const cutoff_date = document.getElementById('watchlistCutoffDate').value.replace(/-/g, ',');
     const subarchive = archive[1];
     archive = archive[0];
@@ -794,6 +746,24 @@ async function confirm_add_to_watchlist() {
 // ---------------------------------------------------------------------------
 // UNRESOLVED UPDATES TREE NAVIGATOR
 
+var node_map = null;
+var path_to_node = null;
+
+function page_path(page) {
+    const archive = `${page.archive}-${page.subarchive}`;
+    return [archive, page.fond, page.opus, page.case]
+        .filter(Boolean)
+        .join('/');
+}
+
+function needs_resolve(page) {
+    if (!path_to_node) 
+        return false;
+    const path = page_path(page);
+    //console.log('needs_resolve:', path);
+    return path in path_to_node;
+}
+
 function build_tree(data_list) {
     const root = {};
     for (const [path, meta] of data_list) {
@@ -826,17 +796,77 @@ function view_changes(full_path, modified, last_resolved) {
     browse_tab.show();
 }
 
-function mark_resolved(full_path) {
-    console.log("Marking resolved:", full_path);
-    // Your logic here
+
+async function resolve_page_update(page_name, deep=false) {
+    try {
+        const path = page_name.replace(/,+$/, '').replace(/,/g, '/');
+        console.log('Resolving:', path);
+        var url = `/resolve/${path}?tree=1`;
+        if (deep)
+            url += '&deep=1';
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to resolve: ${response.statusText}`);
+        }
+
+        // update unresolved item table
+        const data = await response.json();
+        const parsed_path = path.split('/');
+        console.log('resolve result:', data);
+        unresolved_updates[`${parsed_path[0]}-${parsed_path[1]}`] = data.unresolved;
+
+        render_unresolved_items();
+    } catch (error) {
+        console.error('Error during resolve:', error);
+        alert('Failed to resolve.');
+    }
 }
 
+function mark_resolved(node_id) {
+    // full_path.replace(/'/g, "\\'")
+    //console.log(full_path)
+    const node = node_map[node_id];
+    const has_children = Object.keys(node).some(key => !key.startsWith('_'));
+    const full_path = node._full_path || name;
+    var deep = false;
+    if (has_children) {
+        if (confirm(`${full_path} has unresolved subsidiary pages. Resolve all subsidiaries?`)) {
+            console.log('resolving all children');
+            deep = true;
+        }
+        else {
+            console.log('resolve cancelled by user');
+            return;
+        }
+    }
+    const path = full_path.split('/');
+    const archive = path[0].split('-');
+    const new_path = archive.concat(path.slice(1)).join(',')
+    console.log("Marking resolved:", new_path);
+    resolve_page_update(new_path, deep=deep);
+}
+
+// called from resolve button on browse page
+function resolve_page() {
+    const path = page_path(current_page);
+    if (!path_to_node) 
+        return false;
+    const node = path_to_node[path];
+    mark_resolved(node._id);
+    enable_if("resolve-btn", false);
+}
+
+const closed_icon = "bi-plus-circle-fill";
+const open_icon = "bi-dash-circle-fill";
 
 function render_node(name, node) {
     const node_id = 'id_' + Math.random().toString(36).substring(2, 10);
+    node._id = node_id;
+    node_map[node_id] = node;
     const has_children = Object.keys(node).some(key => !key.startsWith('_'));
     const meta = node._meta;
     const full_path = node._full_path || name;
+    path_to_node[full_path] = node;
     const modified = meta? meta.modified : '';
     const last_resolved = meta? meta.last_resolved : '';
     //console.log(last_resolved);
@@ -849,14 +879,14 @@ function render_node(name, node) {
         '${full_path.replace(/'/g, "\\'")}', '${modified}', '${last_resolved}')">
           <i class="bi bi-eye"></i>
         </button>
-        <button class="btn btn-sm btn-primary" title="Mark Resolved" onclick="mark_resolved('${full_path.replace(/'/g, "\\'")}')">
+        <button class="btn btn-sm btn-primary" title="Mark Resolved" onclick="mark_resolved('${node_id}')">
           <i class="bi bi-check-square"></i>
     </button>`;
 
 
     const name_html = has_children
     ? `<a data-bs-toggle="collapse" href="#${node_id}" role="button" aria-expanded="false" aria-controls="${node_id}">
-            <span class="arrow" data-arrow="closed">▸</span>
+            <i class="bi ${closed_icon} arrow" data-arrow="closed"></i>
             <span class="tree-label ms-1" data-path="${full_path}">${name}</span>
     </a>`
     : `<span class="tree-label" data-path="${full_path}">${name}</span>`;
@@ -883,9 +913,9 @@ function render_node(name, node) {
     }
 
     const children_html = Object.entries(node)
-    .filter(([key]) => !key.startsWith('_'))
-    .map(([child_name, child_node]) => render_node(child_name, child_node))
-    .join('');
+        .filter(([key]) => !key.startsWith('_'))
+        .map(([child_name, child_node]) => render_node(child_name, child_node))
+        .join('');
 
     return `
     <li class="list-group-item">
@@ -901,8 +931,8 @@ function render_node(name, node) {
 
 function render_tree(tree) {
     const top_level = Object.entries(tree)
-    .map(([name, node]) => render_node(name, node))
-    .join('');
+        .map(([name, node]) => render_node(name, node))
+        .join('');
     return `<ul class="list-group">${top_level}</ul>`;
 }
 
@@ -924,13 +954,19 @@ function render_tree_to_dom(data_list, container_id) {
     // Attach arrow toggles and label click handlers as before...
     wrapper.querySelectorAll('.collapse').forEach(collapse => {
         collapse.addEventListener('show.bs.collapse', e => {
-          const arrow = wrapper.querySelector(`a[href="#${collapse.id}"] .arrow`);
-          if (arrow) arrow.textContent = '▼';
-      });
+            const arrow = wrapper.querySelector(`a[href="#${collapse.id}"] .arrow`);
+            if (arrow) {
+                arrow.classList.remove(closed_icon);
+                arrow.classList.add(open_icon);
+            }
+        });
         collapse.addEventListener('hide.bs.collapse', e => {
-          const arrow = wrapper.querySelector(`a[href="#${collapse.id}"] .arrow`);
-          if (arrow) arrow.textContent = '▸';
-      });
+            const arrow = wrapper.querySelector(`a[href="#${collapse.id}"] .arrow`);
+            if (arrow) {
+                arrow.classList.remove(open_icon);
+                arrow.classList.add(closed_icon);
+            }
+        });
     });
 
     wrapper.querySelectorAll('.tree-label').forEach(label => {
@@ -943,14 +979,54 @@ function render_tree_to_dom(data_list, container_id) {
     });
 }
 
-function test_tree() {
-    fetch('/static/tree_test.json')
-          .then(res => res.json())
-          .then(data => {
-            console.log('Loaded JSON:', data);
-            render_tree_to_dom(data, 'tree-container')
-          })
-          .catch(err => console.error('Failed to load JSON:', err));
+function get_expanded_nodes(container_id) {
+    const expanded = [];
+    document.querySelectorAll(`#${container_id} .collapse.show`).forEach(el => {
+        const trigger = document.querySelector(`a[href="#${el.id}"] .tree-label`);
+        if (trigger) {
+            expanded.push(trigger.getAttribute('data-path'));
+        }
+    });
+    return expanded;
+}
+
+function restore_expanded_nodes(container_id, expanded_paths) {
+    const container = document.getElementById(container_id);
+    if (!container) return;
+
+    expanded_paths.forEach(path => {
+        const label = container.querySelector(`.tree-label[data-path="${path}"]`);
+        if (label) {
+            const link = label.closest('a');
+            if (link && link.getAttribute('href')?.startsWith('#')) {
+                const collapse_id = link.getAttribute('href').slice(1);
+                const collapse_el = document.getElementById(collapse_id);
+                if (collapse_el) {
+                    const collapse = new bootstrap.Collapse(collapse_el, { toggle: false });
+                    collapse.show();
+                }
+            }
+        }
+    });
+}
+
+function render_unresolved_items() {
+    const container_id = 'tree-container';
+    const expanded_paths = get_expanded_nodes(container_id);
+
+    node_map = {};
+    path_to_node = {};
+    document.getElementById(container_id).innerHTML = ''; 
+
+    // Sort by keys in unresolved_updates
+    const sorted_keys = Object.keys(unresolved_updates).sort(); // alphabetical sort
+
+    sorted_keys.forEach(key => {
+        const item = unresolved_updates[key];
+        render_tree_to_dom(item, 'tree-container');
+    });
+
+    restore_expanded_nodes(container_id, expanded_paths);
 }
 
 // ---------------------------------------------------------------------------

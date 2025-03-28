@@ -672,7 +672,15 @@ class ArchiveWatcher:
                     }
             self._cutoff_date = max(updates.values())
 
-    def resolve(self, item):
+    def resolve(self, item, deep=False):
+        if deep:
+            # resolve item and all its subsidiaries
+            print('ArchiveWatcher: deep resolve:', item)
+            item = item.rstrip(',')
+            # iterate over a copy of the keys to avoid problem mutating dict inside the loop
+            for key in list(self.unresolved.keys()):
+                if key.startswith(item):
+                    self._resolved[key] = self._unresolved.pop(key)["modified"]
         if item in self._unresolved:
             self._resolved[item] = self._unresolved.pop(item)["modified"]
 
