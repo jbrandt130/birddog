@@ -133,6 +133,11 @@ def get_text(text_item):
     """Return the English version of the text item if present, else use Ukrainian."""
     return text_item['en'] if 'en' in text_item else text_item['uk']
 
+def match_text(text_item, text):
+    """Check if the given text matches either the Ukrainian or English version
+    of a multilingual text item."""
+    return text == text_item.get('uk') or text == text_item.get('en')
+
 def needs_translation(item):
     """True if text item needs to be translated to English"""
     return isinstance(item, dict) and 'uk' in item and 'en' not in item

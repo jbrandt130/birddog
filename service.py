@@ -132,9 +132,6 @@ def get_page(request):
     if result:
         if result.kind == 'archive':
             subarchive_id = result.subarchive["en"]
-        if translate is not None:
-            #result.translate()
-            start_translation(result)
         if compare:
             # avoid making changes to cached page - work on copy instead
             result = deepcopy(result)
@@ -320,7 +317,7 @@ def check_watchlist_item(archive, subarchive):
         watcher = ArchiveWatcher.load(watcher_data)
         # check for updates
         watcher.check()
-        print('watcher check:', watcher.unresolved)
+        #print('watcher check:', watcher.unresolved)
 
         # save the watcher state
         save_cached_object(watcher.save(), cache_path)
@@ -330,7 +327,10 @@ def check_watchlist_item(archive, subarchive):
         user_data['watchlist'] = watchlist
         save_cached_object(user_data, f'users/{email}.json')
 
-        result = [{'name': key, **value} for key, value in watcher.unresolved.items()]
+        if request.args.get('tree') is not None:
+            result = watcher.unresolved_tree
+        else:
+            result = [{'name': key, **value} for key, value in watcher.unresolved.items()]
         return jsonify({'success': True, 'unresolved': result}), 200
 
     except CacheMissError:

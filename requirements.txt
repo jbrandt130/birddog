@@ -5,4 +5,5 @@ deep-translator
 Flask
 cachetools
 werkzeug
+regex
 

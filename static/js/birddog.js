@@ -28,14 +28,14 @@ function is_linked(item) {
     return item != null && !item.includes("redlink");
 }
 
-function format_date(mod_date) {
+function format_date(mod_date, strip_time=false) {
     if (!mod_date)
         return '';
     const parsed = mod_date.split(',');
     if (parsed.length <= 1)
         return mod_date;
     result = `${parsed[2]} ${months[Number(parsed[1])-1]} ${parsed[0]}`;
-    if (parsed.length > 3)
+    if (parsed.length > 3 && !strip_time)
          result += ` ${parsed[3]}`;
     return result;
 }
@@ -73,22 +73,22 @@ function needs_resolve(page) {
 }
 
 async function update_translation_progress(data) {
-    console.log('translate result:', data);
+    //console.log('translate result:', data);
     const translations = data.translations || [];
 
     hide('progress-container');
     hide('translating-badge');
 
     for (const item of translations) {
-        console.log(item.page_name, current_page.name);
+        //console.log(item.page_name, current_page.name);
         if (item.page_name == current_page.name) {
             const progress_bar = document.getElementById("progress-bar");
             if (progress_bar) {
                 const percent = (item.progress / item.total * 100).toFixed(1);
-                console.log(`Updating progress for ${item.page_name}: ${percent}%`);
+                //console.log(`Updating progress for ${item.page_name}: ${percent}%`);
                 progress_bar.style.width = `${percent}%`;
                 progress_bar.setAttribute("aria-valuenow", percent);
-                progress_bar.textContent = `${percent}%`;
+                progress_bar.textContent = ''; //`${percent}%`;
             }
             show('progress-container');
             show('translating-badge');
@@ -135,7 +135,6 @@ async function load_page(
         fond_id=null,
         opus_id=null,
         case_id=null,
-        translate=false,
         compare=null) {
     try {
         // Default to an empty string if any parameter is null or undefined
@@ -145,8 +144,6 @@ async function load_page(
             `fond=${encodeURIComponent(fond_id ?? '')}&` +
             `opus=${encodeURIComponent(opus_id ?? '')}&` +
             `case=${encodeURIComponent(case_id ?? '')}`;
-        if (translate)
-            url += "&translate";
         if (compare != null)
             url += `&compare=${compare}`
         console.log(`Fetching data from: ${url}`);
@@ -174,10 +171,6 @@ async function load_page(
         console.log('Data loaded:', data);
 
         current_page = data;
-
-        // start receiving translation events
-        if (translate)
-            watch_translation(current_page.name);
 
         // Process and display the data
         render_page_data(data);
@@ -228,12 +221,19 @@ async function download_page() {
         }
         console.log(`Fetching data from: ${url}`);
 
-         // Make the GET request
+        // Show the spinner
+        show('browse-spinner');
+        hide('browse-page-content');
+
+        // Make the GET request
         const response = await fetch(url, {
             method: 'GET'
         });
 
         if (!response.ok) {
+            // Hide the spinner after loading
+            hide('browse-spinner');
+            show('browse-page-content');
             throw new Error(`HTTP error! Status: ${response.status}`);
         }
 
@@ -262,7 +262,15 @@ async function download_page() {
         document.body.removeChild(link);
         window.URL.revokeObjectURL(blobUrl);
 
+        // Hide the spinner after loading
+        hide('browse-spinner');
+        show('browse-page-content');
+
     } catch (error) {
+        // Hide the spinner after loading
+        hide('browse-spinner');
+        show('browse-page-content');
+
         console.error('Error loading page:', error.message);
         alert(`Failed to load data: ${error.message}`);
     }
@@ -311,7 +319,7 @@ function on_row_click(page_data, index) {
 
 // render a data page
 function render_page_data(data) {
-    const is_comparison = 'refmod' in data;
+    const is_comparison = 'refmod' in data && data.refmod != data.lastmod;
 
     const title_elem = document.getElementById('page-title');
     title_elem.textContent = data.name;
@@ -574,14 +582,12 @@ function populate_archive_select() {
 // ---------------------------------------------------------------------------
 // WATCHLIST MANAGEMENT
 
-async function load_watchlist(render=false) {
+async function load_watchlist() {
     const response = await fetch('/watchlist');
     const data = await response.json();
     console.log('watchlist:', data)
     watchlist = data;
-
-    if (render)
-        render_watchlist();
+    render_watchlist();
 }
 
 function render_watchlist() {
@@ -613,35 +619,21 @@ function render_watchlist() {
 
 async function remove_from_watchlist(archive, subarchive) {
     await fetch(`/watchlist/${archive}/${subarchive}`, { method: 'DELETE' });
-    load_watchlist(true); // Refresh after deletion
+    load_watchlist(); // Refresh after deletion
+    const key = `${archive}-${subarchive}`
+    if (key in unresolved_updates) {
+        delete unresolved_updates[key];
+        render_unresolved_items();
+    }
 }
 
 function render_unresolved_items() {
-    const table_body = document.getElementById('unresolved-updates-body');
-    table_body.innerHTML = '';
-
-    const all_unresolved = Object.values(unresolved_updates)
-        .flat()
-        .sort((a, b) => a.name.localeCompare(b.name));
-
-    //console.log(data.unresolved);
+    //console.log('unresolved_updates:', unresolved_updates);
+    document.getElementById('tree-container').innerHTML = ''; 
+    const all_unresolved = Object.values(unresolved_updates);
     all_unresolved.forEach(item => {
-        let name = item.name.split(',');
-        name = `${name[0]}-${name[1]}/${name[2]}/${name[3]}/${name[4]}`.replace(/\/+$/, '');
-        //console.log(name);
-        const row = `
-            <tr data-page-id="${item.name}" data-last-resolved="${item.last_resolved}">
-                <td>${name}</td>
-                <td>${format_date(item.modified)}</td>
-                <td>${format_date(item.last_resolved)}</td>
-                <td>
-                    <button class="btn btn-primary" title="Mark Resolved" onclick="event.stopPropagation(); resolve_page_update('${item.name}')">
-                        <i class="bi bi-check-square"></i>
-                    </button>
-                </td>
-            </tr>
-        `;
-        table_body.innerHTML += row;
+        //console.log(item);
+        render_tree_to_dom(item, 'tree-container');
     });
 }
 
@@ -687,7 +679,7 @@ async function check_watchlist(archive, subarchive, quiet=false) {
         show('home-spinner');
         hide('home-page-content');
 
-        const response = await fetch(`/watchlist/${archive}/${subarchive}/check`);
+        const response = await fetch(`/watchlist/${archive}/${subarchive}/check?tree`);
         if (!response.ok) {
             // Hide the spinner
             show('home-page-content');
@@ -695,9 +687,6 @@ async function check_watchlist(archive, subarchive, quiet=false) {
             throw new Error(`Failed to check updates: ${response.statusText}`);
         }
         const data = await response.json();
-
-        // Refresh table
-        //load_watchlist();
 
         // Hide the spinner
         show('home-page-content');
@@ -740,7 +729,7 @@ async function add_to_watchlist() {
                 cut_off_date
             })
         });
-        load_watchlist(true); // Refresh after adding
+        load_watchlist(); // Refresh after adding
     }
 }
 
@@ -799,15 +788,175 @@ async function confirm_add_to_watchlist() {
     hide('home-spinner');
 
     // Refresh table
-    load_watchlist(true);
+    load_watchlist();
+}
+
+// ---------------------------------------------------------------------------
+// UNRESOLVED UPDATES TREE NAVIGATOR
+
+function build_tree(data_list) {
+    const root = {};
+    for (const [path, meta] of data_list) {
+        const parts = path.split('/');
+        let current = root;
+        for (const part of parts) {
+            if (!current[part]) current[part] = {};
+                current = current[part];
+        }
+        current._meta = meta;
+        current._full_path = path;
+    }
+    return root;
+}
+
+function view_changes(full_path, modified, last_resolved) {
+    console.log("Viewing changes for", full_path, last_resolved);
+    const path = full_path.split('/');
+    const archive = path[0].split('-');
+    compare = last_resolved ?? null;
+    load_page(
+        archive[0],
+        subarchive_id=archive[1],
+        fond_id=path.length > 1? path[1] : null,
+        opus_id=path.length > 2? path[2] : null,
+        case_id=path.length > 3? path[3] : null,
+        compare=compare);
+    // Switch to the browse tab
+    const browse_tab = new bootstrap.Tab(document.getElementById('nav-browse-tab'));
+    browse_tab.show();
+}
+
+function mark_resolved(full_path) {
+    console.log("Marking resolved:", full_path);
+    // Your logic here
+}
+
+
+function render_node(name, node) {
+    const node_id = 'id_' + Math.random().toString(36).substring(2, 10);
+    const has_children = Object.keys(node).some(key => !key.startsWith('_'));
+    const meta = node._meta;
+    const full_path = node._full_path || name;
+    const modified = meta? meta.modified : '';
+    const last_resolved = meta? meta.last_resolved : '';
+    //console.log(last_resolved);
+
+    const update_text = meta ? `Latest Update: ${format_date(meta.modified, true)}` : '';
+    const resolved_text = meta ? `Last Resolved: ${format_date(meta.last_resolved, true)}` : '';
+
+    const button_html =
+    `<button class="btn btn-sm btn-primary" title="View Changes" onclick="view_changes(
+        '${full_path.replace(/'/g, "\\'")}', '${modified}', '${last_resolved}')">
+          <i class="bi bi-eye"></i>
+        </button>
+        <button class="btn btn-sm btn-primary" title="Mark Resolved" onclick="mark_resolved('${full_path.replace(/'/g, "\\'")}')">
+          <i class="bi bi-check-square"></i>
+    </button>`;
+
+
+    const name_html = has_children
+    ? `<a data-bs-toggle="collapse" href="#${node_id}" role="button" aria-expanded="false" aria-controls="${node_id}">
+            <span class="arrow" data-arrow="closed">▸</span>
+            <span class="tree-label ms-1" data-path="${full_path}">${name}</span>
+    </a>`
+    : `<span class="tree-label" data-path="${full_path}">${name}</span>`;
+
+    const meta_html = meta
+    ? `<div class="text-muted small">
+             <div>${update_text}</div>
+             <div>${resolved_text}</div>
+    </div>`
+    : '';
+
+    const row_layout = `
+    <div class="d-flex align-items-center justify-content-between">
+      <div class="d-flex flex-column flex-grow-1">
+        ${name_html}
+        ${meta_html}
+      </div>
+      <div class="ms-3">${button_html}</div>
+    </div>
+    `;
+
+    if (!has_children) {
+        return `<li class="list-group-item">${row_layout}</li>`;
+    }
+
+    const children_html = Object.entries(node)
+    .filter(([key]) => !key.startsWith('_'))
+    .map(([child_name, child_node]) => render_node(child_name, child_node))
+    .join('');
+
+    return `
+    <li class="list-group-item">
+      ${row_layout}
+      <div class="collapse ms-3 mt-1" id="${node_id}">
+        <ul class="list-group">
+          ${children_html}
+        </ul>
+      </div>
+    </li>
+    `;
+}
+
+function render_tree(tree) {
+    const top_level = Object.entries(tree)
+    .map(([name, node]) => render_node(name, node))
+    .join('');
+    return `<ul class="list-group">${top_level}</ul>`;
+}
+
+function render_tree_to_dom(data_list, container_id) {
+    const tree = build_tree(data_list);
+    const html = render_tree(tree);
+
+    const container = document.getElementById(container_id);
+    const wrapper = document.createElement('div'); // Optional: separates each tree visually
+    //wrapper.classList.add('mb-3');
+    wrapper.innerHTML = html;
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.appendChild(wrapper);
+    //td.innerHTML = html;
+    tr.appendChild(td);
+    container.appendChild(tr);
+
+    // Attach arrow toggles and label click handlers as before...
+    wrapper.querySelectorAll('.collapse').forEach(collapse => {
+        collapse.addEventListener('show.bs.collapse', e => {
+          const arrow = wrapper.querySelector(`a[href="#${collapse.id}"] .arrow`);
+          if (arrow) arrow.textContent = '▼';
+      });
+        collapse.addEventListener('hide.bs.collapse', e => {
+          const arrow = wrapper.querySelector(`a[href="#${collapse.id}"] .arrow`);
+          if (arrow) arrow.textContent = '▸';
+      });
+    });
+
+    wrapper.querySelectorAll('.tree-label').forEach(label => {
+        label.addEventListener('click', e => {
+          const path = label.getAttribute('data-path');
+          console.log('Node clicked:', path);
+          wrapper.querySelectorAll('.tree-label').forEach(el => el.classList.remove('selected'));
+          label.classList.add('selected');
+      });
+    });
+}
+
+function test_tree() {
+    fetch('/static/tree_test.json')
+          .then(res => res.json())
+          .then(data => {
+            console.log('Loaded JSON:', data);
+            render_tree_to_dom(data, 'tree-container')
+          })
+          .catch(err => console.error('Failed to load JSON:', err));
 }
 
 // ---------------------------------------------------------------------------
 // APP INITIALIZATION
 
 function on_loaded() {
-    // set up event listeners
-
     // Login form submit button
     const login = document.getElementById('loginForm');
     if (login) {
@@ -871,7 +1020,6 @@ function on_loaded() {
                 current_page.fond,
                 current_page.opus,
                 current_page.case,
-                translate=false,
                 compare=version);
             //alert(`Comparing to version ${selectedVersion}`)
         });
@@ -888,7 +1036,7 @@ function on_loaded() {
                     try {
                         // load the selected page
                         load_page(page_id[0], page_id[1], page_id[2], page_id[3], page_id[4],
-                            translate=false, compare=last_resolved);
+                            compare=last_resolved);
                         // Switch to the browse tab
                         const browse_tab = new bootstrap.Tab(document.getElementById('nav-browse-tab'));
                         browse_tab.show();
@@ -918,12 +1066,13 @@ function on_loaded() {
             }
         });
 
-        load_watchlist(true);
-        //check_all_watchlists();
+        // Populate the interface
+        load_watchlist();
 
         // archive select listener
         populate_archive_select();
 
+        // start with a default browse page (FIXME: remember user's last page)
         load_page("DAZHO");
     }
 }

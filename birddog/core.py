@@ -2,11 +2,11 @@
 Ukraine records archive monitor and scraper.
 """
 
-import re
 import time
 import urllib.parse
 import requests
 from cachetools import LRUCache
+import regex
 from bs4 import BeautifulSoup
 
 from birddog.utility import (
@@ -16,6 +16,7 @@ from birddog.utility import (
     lastmod,
     format_date,
     get_text,
+    match_text,
     form_text_item,
     translate_page,
     equal_text,
@@ -229,7 +230,7 @@ def _page_update_summary(archive, change_list):
         mod_date = item["lastmod"]
         # Confirm that the item belongs to the selected archive
         if fond in fond_list and item["link"].startswith(archive_prefix):
-            print(f'{address}: {mod_date}, {item["link"]}')
+            #print(f'{address}: {mod_date}, {item["link"]}')
             if address in result:
                 result[address] = max(mod_date, result["address"])
             else:
@@ -275,6 +276,13 @@ class Page:
                     print(f'Loading page: {self.name} from {self.default_url}')
                     self._page = read_page(self.default_url)
                     self._cache_save()
+
+    class LookupError(LookupError):
+        def __init__(self, page_name, key):
+            self.page_name = page_name
+            self.key = key
+            message = f"Lookup failed for key '{key}' in page '{page_name}'"
+            super().__init__(message)
 
     @property
     def _cache_path(self):
@@ -340,7 +348,7 @@ class Page:
 
     @property
     def description(self):
-        return re.sub(r"^[0-9]+.? *", "", get_text(self._page['description']))
+        return regex.sub(r"^\p{N}+\p{P}?\p{Zs}*", "", get_text(self._page['description']))
 
     @property
     def base(self):
@@ -397,12 +405,12 @@ class Page:
         return f'{self.kind},{self.name.replace(",", "")},{self.lastmod}'
 
     def lookup(self, entry_id, use_cache=True):
-        matches = [x for x in self.children if get_text(x[0]['text']) == entry_id]
+        matches = [x for x in self.children if match_text(x[0]['text'], entry_id)]
         if matches:
             child = matches[0][0]
             spec = (get_text(child['text']), child['link'])
             return self.child_class(spec, self, use_cache=use_cache)
-        return None
+        raise LookupError(self.name, entry_id)
 
     @property
     def needs_translation(self):
@@ -551,6 +559,60 @@ class PageLRU:
             self._lru[key] = item
             return item
 
+# ----------------------------------------------------------------------------
+# Update watcher
+
+# Unicode-aware parsing
+_DASH_CHARS = r"\-\u2010\u2011\u2012\u2013\u2014"
+_ALPHA_DASH = fr"[\p{{L}}{_DASH_CHARS}]*"
+_pattern = regex.compile(fr"^({_ALPHA_DASH})(\d+)({_ALPHA_DASH})$")
+
+def _parse_string(s):
+    match = _pattern.fullmatch(s)
+    if match:
+        prefix, number, suffix = match.groups()
+        return (int(number), prefix, suffix)
+    else:
+        return (float('inf'), s, '')
+
+def _sort_keys(keys):
+    return sorted(keys, key=_parse_string)
+
+def _flatten_hierarchy(d, prefix=None):
+    result = []
+    prefix = prefix or []
+
+    children = [k for k in d if k != 'unresolved']
+    sorted_children = _sort_keys(children)
+
+    for key in sorted_children:
+        current_path = prefix + [key]
+        full_path_str = '/'.join(current_path)
+
+        value = d[key]
+        unresolved = value.get('unresolved') if isinstance(value, dict) else None
+
+        result.append((full_path_str, unresolved))
+
+        if isinstance(value, dict):
+            result.extend(_flatten_hierarchy(value, current_path))
+
+    return result
+
+def _make_tree(unresolved):
+    root = {}
+    for key, value in unresolved.items():
+        address = key.rstrip(',')
+        address = address.replace(",", "-", 1)
+        address = address.split(',')
+        pos = root
+        for i, item in enumerate(address):
+            if item not in pos:
+                pos[item] = {}
+            pos = pos[item]
+        pos['unresolved'] = value
+    return root
+
 class ArchiveWatcher:
     def __init__(self, archive, cutoff_date):
         self._archive = archive
@@ -593,6 +655,10 @@ class ArchiveWatcher:
     @property
     def cutoff_date(self):
         return self._cutoff_date
+
+    @property
+    def unresolved_tree(self):
+        return _flatten_hierarchy(_make_tree(self.unresolved))
 
     def check(self):
         updates = check_page_updates(self._archive, self._cutoff_date)
