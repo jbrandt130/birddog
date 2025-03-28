@@ -574,11 +574,13 @@ function populate_archive_select() {
 // ---------------------------------------------------------------------------
 // WATCHLIST MANAGEMENT
 
-async function load_watchlist() {
+async function load_watchlist(check_all=false) {
     const response = await fetch('/watchlist');
     const data = await response.json();
     console.log('watchlist:', data)
     watchlist = data;
+    if (check_all)
+        check_all_watchlists();
     render_watchlist();
 }
 
@@ -1143,7 +1145,7 @@ function on_loaded() {
         });
 
         // Populate the interface
-        load_watchlist();
+        load_watchlist(check_all=true);
 
         // archive select listener
         populate_archive_select();
