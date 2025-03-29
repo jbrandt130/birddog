@@ -29,11 +29,10 @@ When running in debug mode, the local filesystem is used as persistent storage. 
 
 ## Directory Structure
 
-- `service.py` – Flask app entry point
+- `birddog/` - Python modules implementing Birddog
 - `templates/` – Jinja2 HTML templates (Bootstrap-based)
-- `static/` – Static assets
-- `resources/` – YAML configuration for sources
-- `reports/` – Output spreadsheet/report files
+- `static/` – Static Flask app assets
+- `resources/` – auxilliary data, including master list of archives and spreadsheet templates
 - `notebooks/` – Legacy and exploratory Jupyter notebooks
 - `test/` – Unit tests
 - `start_service.sh` – Startup script for the web service
