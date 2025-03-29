@@ -1,3 +1,6 @@
+# (c) 2025 Jonathan Brandt
+# Licensed under the MIT License. See LICENSE file in the project root.
+
 """Translation support from Ukrainian to English with async queue"""
 
 from time import sleep
