@@ -1,6 +1,6 @@
 # Birddog
 
-**Birddog** is a Flask-based web app for tracking changes to Ukrainian records on [Wikisource](https://uk.wikisource.org) and building structured tracking spreadsheets for archival documents from [TSDAVO](https://e-resource.tsdavo.gov.ua).
+**Birddog** is a Flask-based web app for tracking changes to Ukrainian records on [Wikisource](https://uk.wikisource.org) and building structured tracking spreadsheets for archival documents processing.
 
 Originally a set of Python scripts and Jupyter notebooks, Birddog is evolving into a full web application using Flask and Bootstrap to provide a more user-friendly interface and persistent tracking.
 
@@ -9,7 +9,7 @@ Originally a set of Python scripts and Jupyter notebooks, Birddog is evolving in
 - Monitor updates to historical Ukrainian document pages
 - Scrape metadata and revisions from government archives
 - Generate and manage tracking spreadsheets
-- Web UI for report browsing (in development)
+- Web UI for report browsing
 
 ## Installation
 
@@ -22,14 +22,10 @@ pip install -r requirements.txt
 ## Running the Web App
 
 ```bash
-./start_service.sh
+./start_service.sh [--debug]
 ```
 
-Or manually:
-```bash
-export FLASK_APP=service.py
-flask run
-```
+When running in debug mode, the local filesystem is used as persistent storage. When not in debug mode, data is stored on AWS S3.
 
 ## Directory Structure
 
