@@ -645,46 +645,51 @@ async function remove_from_watchlist(archive, subarchive) {
     }
 }
 
-async function check_watchlist(archive, subarchive, quiet=false) {
+async function check_watchlist(archive, subarchive, quiet=false, render=true) {
     console.log(`Checking ${archive}-${subarchive}...`);
     try {
-         // Show the spinner
-        show('home-spinner');
-        hide('home-page-content');
+        // Show the spinner
+        show('unresolved-updates-loading-spinner');
+        hide('unresolved-updates-container');
 
         const response = await fetch(`/watchlist/${archive}/${subarchive}/check?tree`);
         if (!response.ok) {
             // Hide the spinner
-            show('home-page-content');
-            hide('home-spinner');
+            show('unresolved-updates-container');
+            hide('unresolved-updates-loading-spinner');
             throw new Error(`Failed to check updates: ${response.statusText}`);
         }
         const data = await response.json();
 
         // Hide the spinner
-        show('home-page-content');
-        hide('home-spinner');
+        show('unresolved-updates-container');
+        hide('unresolved-updates-loading-spinner');
 
-        console.log('unresolved items:', data);
+        console.log(`Checking ${archive}-${subarchive}: unresolved items: ${data}`);
         unresolved_updates[`${archive}-${subarchive}`] = data.unresolved;
-        render_unresolved_items();
+        if (render)
+            render_unresolved_items();
         if (!quiet && data.unresolved.length == 0)
             alert(`No new updates for ${archive}-${subarchive}.`);
     } catch (error) {
         // Hide the spinner
-        show('home-page-content');
-        hide('home-spinner');
+        show('unresolved-updates-container');
+        hide('unresolved-updates-loading-spinner');
         console.error('Error checking updates:', error);
         alert('Failed to check updates.');
     }
 }
 
 async function check_all_watchlists() {
-    watchlist.forEach(item => {
-        check_watchlist(item.archive, item.subarchive, quiet=true);
-    });
-}
+    const promises = watchlist.map(item =>
+        check_watchlist(item.archive, item.subarchive, true, false)
+    );
 
+    await Promise.all(promises);
+
+    console.log('check_all_watchlists: render_unresolved');
+    render_unresolved_items();
+}
 
 // Populate the archive select dropdown
 async function populate_watchlist_archive_select(archives) {
@@ -722,8 +727,8 @@ async function confirm_add_to_watchlist() {
     modal.hide();
 
     // Show the spinner
-    show('home-spinner');
-    hide('home-page-content');
+    show('watchlist-loading-spinner');
+    hide('watchlist-container');
 
     await fetch('/watchlist', {
         method: 'POST',
@@ -735,12 +740,11 @@ async function confirm_add_to_watchlist() {
         })
     });
 
+    hide('watchlist-loading-spinner');
+    show('watchlist-container');
+
     // Refresh table
     load_watchlist(check_all=true);
-
-    // Hide the spinner
-    show('home-page-content');
-    hide('home-spinner');
 }
 
 // ---------------------------------------------------------------------------

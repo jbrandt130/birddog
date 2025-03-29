@@ -71,7 +71,7 @@ class Users:
 
     def login(self, email, password):
         user = self.lookup(email)
-        if user and check_password_hash(user['password'], password):
+        if user and 'password' in user and check_password_hash(user['password'], password):
             self._session['user'] = self._session_user(user['name'], email)
             return True
         return False
@@ -151,7 +151,7 @@ def _compress_history(history, max_entries=30):
 
     return compressed
 
-page_lru = PageLRU(maxsize=100)
+page_lru = PageLRU(maxsize=500)
 
 def unpack_standard_args(request):
     standard_args = ('archive', 'subarchive', 'fond', 'opus', 'case', 'translate', 'compare')
@@ -332,6 +332,7 @@ def check_watchlist_item(archive, subarchive):
 
         key = _watchlist_key(archive, subarchive)
         if key not in watchlist:
+            print(f'watchlist check: {key} not present')
             return jsonify({'error': 'Watchlist item not found'}), 404
 
         # load user's watcher for this archive
@@ -339,6 +340,7 @@ def check_watchlist_item(archive, subarchive):
         try:
             watcher_data = load_cached_object(cache_path)
         except CacheMissError:
+            print(f'watcher load failed: {cache_path}')
             return jsonify({'error': 'No watcher found'}), 404
         watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
         # check for updates
@@ -360,6 +362,7 @@ def check_watchlist_item(archive, subarchive):
         return jsonify({'success': True, 'unresolved': result}), 200
 
     except CacheMissError:
+        print(f'user data load failed: {email}')
         return jsonify({'error': 'User data not found'}), 404
 
 @app.route('/resolve/<archive>/<subarchive>', methods=['GET'])

@@ -524,7 +524,7 @@ class PageLRU:
         def address(self):
             return self._address
 
-    def __init__(self, maxsize=10, reset_limit=60 * 60):
+    def __init__(self, maxsize=500, reset_limit=60 * 60):
         self._reset_limit = reset_limit # seconds
         self._timer_start = time.time()
         self._lru = LRUCache(maxsize=maxsize)
@@ -664,28 +664,6 @@ class ArchiveWatcher:
     @property
     def unresolved_tree(self):
         return _flatten_hierarchy(_make_tree(self.unresolved))
-
-    def _sniff_ancestors(self, updates):
-        def add_result(kwargs):
-            page = lru.lookup(**kwargs)
-            key = self.key(**kwargs)
-            if key not in result:
-                result[key] = page.history(limit=1)[0]
-
-        result = {}
-        for item in updates:
-            address = item.split(',')
-            kwargs = {
-                "archive": address[0],
-                "subarchive": address[1],
-            }
-            add_result(kwargs)
-            kwargs["fond"] = address[2]
-            add_result(kwargs)
-            kwargs["opus"] = address[3]
-            add_result(kwargs)
-            kwargs["case"] = address[4]
-            add_result(kwargs)
     
     def check(self):
         def _check_ancestors(changes):
@@ -700,21 +678,27 @@ class ArchiveWatcher:
                     if not key in result or value > result[key]:
                         result[key] = value
                 return result
-            
+
             result = {}
-            for item in changes:
-                address = item.split(',')
-                kwargs = {
-                    "archive": address[0],
-                    "subarchive": address[1],
-                }
-                _add_result(kwargs)
-                kwargs["fond"] = address[2]
-                _add_result(kwargs)
-                kwargs["opus"] = address[3]
-                _add_result(kwargs)
-                kwargs["case"] = address[4]
-                _add_result(kwargs)
+            quick = True
+            if quick:
+                key = ArchiveWatcher.key(self._archive.tag, self._archive.subarchive['en'])
+                result = {key: self._archive.history(limit=1)[0]['modified']}
+            else:
+                # could take a while to search all ancestors...
+                for item in changes:
+                    address = item.split(',')
+                    kwargs = {
+                        "archive": address[0],
+                        "subarchive": address[1],
+                    }
+                    _add_result(kwargs)
+                    kwargs["fond"] = address[2]
+                    _add_result(kwargs)
+                    kwargs["opus"] = address[3]
+                    _add_result(kwargs)
+                    kwargs["case"] = address[4]
+                    _add_result(kwargs)
             return _merge_result(result, changes)
 
         updates = check_page_updates(self._archive, self._cutoff_date)
