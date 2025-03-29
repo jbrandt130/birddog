@@ -120,6 +120,32 @@ def logout():
 
 # ---- HELPER FUNCTIONS -------------------------------------------------------
 
+from copy import copy
+from collections import defaultdict
+
+def _compress_history(history, max_entries=30):
+    if len(history) <= max_entries:
+        return history
+
+    # Sort oldest to newest
+    history = sorted(history, key=lambda x: x['modified'])
+
+    hist_by_day = {}
+    for h in history:
+        day = h['modified'][:10]
+        # only keep the first seen entry per day (oldest)
+        if day not in hist_by_day:
+            hist_by_day[day] = copy(h)
+
+    compressed = list(hist_by_day.values())
+    compressed = sorted(compressed, key=lambda x: x['modified'], reverse=True)
+
+    # If still too many, drop oldest until we're within the limit
+    if len(compressed) > max_entries:
+        compressed = compressed[:max_entries]
+
+    return compressed
+
 page_lru = PageLRU(maxsize=100)
 
 def unpack_standard_args(request):
@@ -147,15 +173,7 @@ def get_page(request):
         page['kind'] = result.kind
         page['name'] = result.name
         page['needs_translation'] = result.needs_translation
-        history = result.history(cutoff_date='2023')
-        # compress history to have one update per day
-        hist_by_day = {}
-        for h in history:
-            day = h['modified'][:10]
-            if day not in hist_by_day:
-                hist_by_day[day] = copy(h)
-        hist_by_day = sorted(hist_by_day.values(), key=lambda x: x['modified'], reverse=True)
-        page['history'] = hist_by_day
+        page['history'] = _compress_history(result.history(cutoff_date='2023'))
 
     return result
 
@@ -257,7 +275,10 @@ def add_to_watchlist():
     save_cached_object(user_data, f'users/{email}.json')
 
     watcher = ArchiveWatcher(
-        page_lru.lookup(data['archive'], data['subarchive']), data['cutoff_date'])
+        data['archive'], 
+        data['subarchive'], 
+        data['cutoff_date'],
+        lru=page_lru)
     watcher.check()
     watcher_path = _watcher_cache_path(email, data['archive'], data['subarchive'])
     save_cached_object(watcher.save(), watcher_path)
@@ -314,7 +335,7 @@ def check_watchlist_item(archive, subarchive):
             watcher_data = load_cached_object(cache_path)
         except CacheMissError:
             return jsonify({'error': 'No watcher found'}), 404
-        watcher = ArchiveWatcher.load(watcher_data)
+        watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
         # check for updates
         watcher.check()
         #print('watcher check:', watcher.unresolved)
@@ -362,7 +383,7 @@ def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
             watcher_data = load_cached_object(cache_path)
         except CacheMissError:
             return jsonify({'error': 'No watcher found'}), 404
-        watcher = ArchiveWatcher.load(watcher_data)
+        watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
 
         # resolve the item
         key = ArchiveWatcher.key(archive, subarchive, fond, opus, case)

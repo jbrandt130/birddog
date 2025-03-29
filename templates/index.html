@@ -8,6 +8,14 @@
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <!-- make active tab obvious -->
+  <style>
+    .nav-link.active {
+      border-bottom: 3px solid #0d6efd;
+      color: #0d6efd !important;
+      font-weight: bold;
+    }
+  </style>
 </head>
 <body>
 
@@ -71,7 +79,10 @@
     </div>
 
     <div class="collapse show" id="unresolved-collapse">
-      <div style="max-height: 400px; overflow-y: auto;">
+      <button class="btn btn-primary" title="Check All Updates" onclick="check_all_watchlists();">
+        <i class="bi bi-arrow-clockwise"></i>
+      </button>
+      <div style="max-height: 600px; overflow-y: auto;">
         <table class="table table-striped table-hover">
           <thead><tr><td>&nbsp;</td></tr></thead>
           <tbody id="tree-container">
@@ -106,9 +117,6 @@
       <div class="d-flex mb-2">
         <button class="btn btn-primary me-2" title="Add to Watchlist" data-bs-toggle="modal" data-bs-target="#addWatchlistModal">
           <i class="bi bi-plus-square"></i>
-        </button>
-        <button class="btn btn-primary" title="Check All Updates" onclick="check_all_watchlists();">
-          <i class="bi bi-arrow-clockwise"></i>
         </button>
       </div>
       <table class="table table-striped table-hover">
@@ -217,13 +225,14 @@
               </div>
               <div id="browse-info" class="col d-flex flex-wrap justify-content-end gap-2 align-items-center">
                 <span id="new-page-badge" class="badge bg-success small d-none">NEW PAGE</span>
-                <span id="empty-page-badge" class="badge bg-warning small d-none">EMPTY PAGE</span>
-                <span id="comparing-badge" class="badge bg-success small d-none">COMPARING TO PAST VERSION</span>
-                <span id="no-differences-badge" class="badge bg-warning small d-none">NO DIFFERENCES</span>
                 <span id="translating-badge" class="badge bg-info small d-none">
                   <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
                     TRANSLATING
                 </span>
+                <span id="needs-resolve-badge" class="badge bg-info small d-none">RESOLVE PENDING</span>
+                <span id="empty-page-badge" class="badge bg-warning small d-none">EMPTY PAGE</span>
+                <span id="comparing-badge" class="badge bg-warning small d-none">COMPARING TO PAST VERSION</span>
+                <span id="no-differences-badge" class="badge bg-warning small d-none">NO DIFFERENCES</span>
               </div>
             </div>
             <h5 id="page-title">Page Title</h5>

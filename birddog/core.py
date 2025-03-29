@@ -614,8 +614,9 @@ def _make_tree(unresolved):
     return root
 
 class ArchiveWatcher:
-    def __init__(self, archive, cutoff_date):
-        self._archive = archive
+    def __init__(self, archive, subarchive, cutoff_date, lru=None):
+        self._lru = lru if lru else PageLRU()
+        self._archive = self._lru.lookup(archive, subarchive)
         self._cutoff_date = cutoff_date
         self._resolved = {}
         self._unresolved = {}
@@ -630,9 +631,10 @@ class ArchiveWatcher:
         }
 
     @staticmethod
-    def load(data):
-        archive = Archive(data['archive'], subarchive=data['subarchive'])
-        watcher = ArchiveWatcher(archive, data['cutoff_date'])
+    def load(data, lru=None):
+        if not lru:
+            lru = PageLRU()
+        watcher = ArchiveWatcher(data['archive'], data['subarchive'], data['cutoff_date'], lru=lru)
         watcher._resolved = data['resolved']
         watcher._unresolved = data['unresolved']
         return watcher
@@ -660,17 +662,70 @@ class ArchiveWatcher:
     def unresolved_tree(self):
         return _flatten_hierarchy(_make_tree(self.unresolved))
 
+    def _sniff_ancestors(self, updates):
+        def add_result(kwargs):
+            page = lru.lookup(**kwargs)
+            key = self.key(**kwargs)
+            if key not in result:
+                result[key] = page.history(limit=1)[0]
+
+        result = {}
+        for item in updates:
+            address = item.split(',')
+            kwargs = {
+                "archive": address[0],
+                "subarchive": address[1],
+            }
+            add_result(kwargs)
+            kwargs["fond"] = address[2]
+            add_result(kwargs)
+            kwargs["opus"] = address[3]
+            add_result(kwargs)
+            kwargs["case"] = address[4]
+            add_result(kwargs)
+    
     def check(self):
+        def _check_ancestors(changes):
+            def _add_result(kwargs):
+                page = self._lru.lookup(**kwargs)
+                key = ArchiveWatcher.key(**kwargs)
+                if key not in result:
+                    result[key] = page.history(limit=1)[0]['modified']
+
+            def _merge_result(result, changes):
+                for key, value in changes.items():
+                    if not key in result or value > result[key]:
+                        result[key] = value
+                return result
+            
+            result = {}
+            for item in changes:
+                address = item.split(',')
+                kwargs = {
+                    "archive": address[0],
+                    "subarchive": address[1],
+                }
+                _add_result(kwargs)
+                kwargs["fond"] = address[2]
+                _add_result(kwargs)
+                kwargs["opus"] = address[3]
+                _add_result(kwargs)
+                kwargs["case"] = address[4]
+                _add_result(kwargs)
+            return _merge_result(result, changes)
+
         updates = check_page_updates(self._archive, self._cutoff_date)
         if updates:
+            updates = _check_ancestors(updates)
             for item, mod_date in updates.items():
                 #print(item, mod_date)
-                if item not in self._resolved or mod_date > self._resolved[item]:
-                    self._unresolved[item] = {
-                        "modified": mod_date,
-                        "last_resolved": self._last_resolved_date(item)
-                    }
-            self._cutoff_date = max(updates.values())
+                if mod_date >= self.cutoff_date:
+                    if item not in self._resolved or mod_date > self._resolved[item]:
+                        self._unresolved[item] = {
+                            "modified": mod_date,
+                            "last_resolved": self._last_resolved_date(item)
+                        }
+            #self._cutoff_date = max(updates.values())
 
     def resolve(self, item, deep=False):
         if deep:

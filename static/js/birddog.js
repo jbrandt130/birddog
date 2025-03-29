@@ -375,6 +375,21 @@ function render_page_data(data) {
                     break;
                 }
             }
+            if (is_comparison && 'link_edit' in item) {
+                // FIXME: visual cue that link changed?
+                switch (item.link_edit) {
+                case 'added':
+                    cell_elem.classList.add('table-success');
+                    row_edited = true;
+                    break;
+                case 'changed':
+                    cell_elem.classList.add('table-warning');
+                    row_edited = true;
+                    break;
+                default:
+                    break;
+                }
+            }
             row_elem.appendChild(cell_elem)
         });
         if (row_edited)
@@ -402,6 +417,7 @@ function render_page_data(data) {
     show_if('comparing-badge', is_comparison);
     show_if('no-differences-badge', is_comparison && !any_edit);
     show_if('empty-page-badge', !row_added);
+    show_if('needs-resolve-badge', needs_resolve(data));
     //show_if('translating-badge', data.translating ?? false);
     //show_if('progress-container', data.translating ?? false);
 
@@ -667,26 +683,6 @@ async function check_all_watchlists() {
     });
 }
 
-async function add_to_watchlist() {
-    const archive = prompt("Enter Archive Name:");
-    const subarchive = prompt("Enter Subarchive:");
-    const last_checked_date = prompt("Enter Last Checked Date (yyyy,MM,dd,hh:mm):");
-    const cut_off_date = prompt("Enter Cutoff Date (yyyy,MM,dd,hh:mm):");
-
-    if (archive && subarchive && last_checked_date && cut_off_date) {
-        await fetch('/watchlist', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                archive,
-                subarchive,
-                last_checked_date,
-                cut_off_date
-            })
-        });
-        load_watchlist(); // Refresh after adding
-    }
-}
 
 // Populate the archive select dropdown
 async function populate_watchlist_archive_select(archives) {
@@ -737,12 +733,12 @@ async function confirm_add_to_watchlist() {
         })
     });
 
+    // Refresh table
+    load_watchlist(check_all=true);
+
     // Hide the spinner
     show('home-page-content');
     hide('home-spinner');
-
-    // Refresh table
-    load_watchlist();
 }
 
 // ---------------------------------------------------------------------------
@@ -838,7 +834,7 @@ function mark_resolved(node_id) {
         }
         else {
             console.log('resolve cancelled by user');
-            return;
+            return false;
         }
     }
     const path = full_path.split('/');
@@ -846,6 +842,7 @@ function mark_resolved(node_id) {
     const new_path = archive.concat(path.slice(1)).join(',')
     console.log("Marking resolved:", new_path);
     resolve_page_update(new_path, deep=deep);
+    return true;
 }
 
 // called from resolve button on browse page
@@ -854,8 +851,10 @@ function resolve_page() {
     if (!path_to_node) 
         return false;
     const node = path_to_node[path];
-    mark_resolved(node._id);
-    enable_if("resolve-btn", false);
+    if (mark_resolved(node._id)) {
+        enable_if("resolve-btn", false);
+        hide('needs-resolve-badge');
+    }
 }
 
 const closed_icon = "bi-plus-circle-fill";
