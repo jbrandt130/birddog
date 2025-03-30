@@ -405,7 +405,7 @@ function render_page_data(data) {
             else {
                 row_elem.classList.add('table-secondary', 'disabled');
                 row_elem.style.pointerEvents = 'none';
-                row_elem.style.opacity = '0.25'; // Dim for better visibility
+                row_elem.style.opacity = '0.4'; // Dim for better visibility
             }
 
             body_elem.appendChild(row_elem);
@@ -661,14 +661,14 @@ async function check_watchlist(archive, subarchive, quiet=false, render=true) {
         }
         const data = await response.json();
 
-        // Hide the spinner
-        show('unresolved-updates-container');
-        hide('unresolved-updates-loading-spinner');
-
         console.log(`Checking ${archive}-${subarchive}: unresolved items: ${data}`);
         unresolved_updates[`${archive}-${subarchive}`] = data.unresolved;
-        if (render)
+        if (render) {
+            // Hide the spinner
+            show('unresolved-updates-container');
+            hide('unresolved-updates-loading-spinner');       
             render_unresolved_items();
+        }
         if (!quiet && data.unresolved.length == 0)
             alert(`No new updates for ${archive}-${subarchive}.`);
     } catch (error) {
@@ -681,12 +681,17 @@ async function check_watchlist(archive, subarchive, quiet=false, render=true) {
 }
 
 async function check_all_watchlists() {
+    show('unresolved-updates-loading-spinner');
+    hide('unresolved-updates-container');
+
     const promises = watchlist.map(item =>
         check_watchlist(item.archive, item.subarchive, true, false)
     );
 
     await Promise.all(promises);
 
+    show('unresolved-updates-container');
+    hide('unresolved-updates-loading-spinner');       
     console.log('check_all_watchlists: render_unresolved');
     render_unresolved_items();
 }
@@ -833,21 +838,21 @@ function mark_resolved(node_id) {
     const has_children = Object.keys(node).some(key => !key.startsWith('_'));
     const full_path = node._full_path || name;
     var deep = false;
-    if (has_children) {
-        if (confirm(`${full_path} has unresolved subsidiary pages. Resolve all subsidiaries?`)) {
-            console.log('resolving all children');
-            deep = true;
-        }
-        else {
-            console.log('resolve cancelled by user');
-            return false;
-        }
+    const confirm_message = has_children?
+        `${full_path} has unresolved subsidiary pages. Resolve all subsidiaries?` : 
+        `Resolve ${full_path}?`; 
+    if (confirm(confirm_message)) {
+        console.log('resolving all children');
+    }
+    else {
+        console.log('resolve cancelled by user');
+        return false;
     }
     const path = full_path.split('/');
     const archive = path[0].split('-');
     const new_path = archive.concat(path.slice(1)).join(',')
     console.log("Marking resolved:", new_path);
-    resolve_page_update(new_path, deep=deep);
+    resolve_page_update(new_path, deep=has_children);
     return true;
 }
 

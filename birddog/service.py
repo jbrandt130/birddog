@@ -5,6 +5,7 @@ from copy import copy, deepcopy
 from urllib.parse import quote, unquote
 from datetime import datetime
 from time import sleep
+import logging
 from flask import (
     Flask,
     render_template,
@@ -60,7 +61,7 @@ class Users:
     def create(self, email, name, password):
         if self.lookup(email):
             return False
-        print('Creating new user:', name, email)
+        logger.info(f"Storing new user: {name}, {email}")
         user = {
             'name': name,
             'password': generate_password_hash(password)
@@ -101,7 +102,7 @@ def signup():
 
     if not users.create(email, name, password):
         return jsonify({'success': False, 'message': 'Email already exists'}), 400
-    print('Creating new user:', name, email)
+    logger.info(f"Creating new user: {name} {email}")
     return jsonify({'success': True})
 
 # Login Route
@@ -113,7 +114,7 @@ def login():
 
     if users.login(email, password):
         return jsonify({'success': True})
-    print('Login failed:', email)
+    logger.info(f"Login failed: {email}")
     return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
 
 
@@ -185,7 +186,6 @@ def get_page(request):
 # ---- SERVICE API ------------------------------------------------------------
 
 archive_master_list = [(arc, sub['subarchive']['en']) for arc, archive in ARCHIVES.items() for sub in archive.values()]
-print(archive_master_list)
 
 # List all archives
 @app.route("/archives", methods=['GET'])
@@ -197,29 +197,40 @@ def page_data():
     page = get_page(request)
     return jsonify(page.page if page else None)
 
+import re
+import unicodedata
+
+def ascii_filename(name):
+    # Normalize and strip non-ASCII characters
+    name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+    # Replace slashes and anything else problematic
+    name = re.sub(r'[^\w\-_.]', '_', name)
+    return name or "download"
+
 @app.route('/download', methods=['GET'])
 def download_file():
     try:
         page = get_page(request)
         if page:
-            filename = f'{page.name.replace("/", "_")}.xlsx'
-            filepath = f'static/downloads/{filename}'
-            os.makedirs('static/downloads', exist_ok=True)
-            print(f'exporting to {filepath}')
+            clean_name = ascii_filename(page.name if page.name else "unnamed")
+            filename = f'{clean_name}.xlsx'
+            filepath = os.path.join(BASE_DIR, 'static', 'downloads', filename)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            logger.info(f'exporting spreadsheet to {filepath}')
             export_page(page, filepath)
-            response = send_file(
+
+            return send_file(
                 filepath,
                 as_attachment=True,
                 download_name=filename,
-                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'  # Correct MIME type for Excel
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
-            response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
-            return response
     except FileNotFoundError:
-        abort(404)  # Return a 404 error if the file is missing
+        logger.exception(f'File not found: {filepath}')
+        return jsonify({'error': 'File not found'}), 404
     except Exception as e:
-        print(f'Error: {e}')
-        abort(500)  # Internal server error
+        logger.exception(f'Error: {e}')
+        return jsonify({'error': 'Internal server error'}), 500
 
 def _watchlist_key(archive, subarchive):
     return f'{archive}-{subarchive}'
@@ -245,7 +256,7 @@ def get_watchlist():
             }
             for k, v in watchlist.items()
         ]
-        print(f'watchlist for {email}: {result}')
+        logger.info(f'watchlist for {email}: {result}')
         return jsonify(result)
     except CacheMissError:
         return jsonify([])
@@ -299,7 +310,7 @@ def remove_from_watchlist(archive, subarchive):
     email = user['email']
 
     try:
-        print(f'Removing watcher[{email}]: {archive}-{subarchive}')
+        logger.info(f'Removing watcher[{email}]: {archive}-{subarchive}')
         user_data = load_cached_object(f'users/{email}.json')
         watchlist = user_data.get('watchlist', {})
         key = _watchlist_key(archive, subarchive)
@@ -332,28 +343,33 @@ def check_watchlist_item(archive, subarchive):
 
         key = _watchlist_key(archive, subarchive)
         if key not in watchlist:
-            print(f'watchlist check: {key} not present')
+            logger.error(f'watchlist check: {key} not present')
             return jsonify({'error': 'Watchlist item not found'}), 404
 
         # load user's watcher for this archive
         cache_path = _watcher_cache_path(email, archive, subarchive)
+        logger.info(f"ArchiveWatcher.load: {cache_path}")
         try:
             watcher_data = load_cached_object(cache_path)
         except CacheMissError:
-            print(f'watcher load failed: {cache_path}')
+            logger.error(f'watcher load failed: {cache_path}')
             return jsonify({'error': 'No watcher found'}), 404
+        logger.info(f"ArchiveWatcher.loaded: {cache_path}")
         watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
-        # check for updates
+        # check for updates, 404
+        logger.info(f"ArchiveWatcher constructed {cache_path}")
         watcher.check()
-        #print('watcher check:', watcher.unresolved)
+        logger.info(f"ArchiveWatcher check done {cache_path}")
 
         # save the watcher state
         save_cached_object(watcher.save(), cache_path)
+        logger.info(f"ArchiveWatcher saved {cache_path}")
 
         # record last check date in user data
         watchlist[key]['last_checked_date'] = datetime.now().strftime('%Y,%m,%d,%H:%M')
         user_data['watchlist'] = watchlist
         save_cached_object(user_data, f'users/{email}.json')
+        logger.info(f"ArchiveWatcher watchlist saved {email}")
 
         if request.args.get('tree') is not None:
             result = watcher.unresolved_tree
@@ -362,7 +378,7 @@ def check_watchlist_item(archive, subarchive):
         return jsonify({'success': True, 'unresolved': result}), 200
 
     except CacheMissError:
-        print(f'user data load failed: {email}')
+        logger.error(f'user data load failed: {email}')
         return jsonify({'error': 'User data not found'}), 404
 
 @app.route('/resolve/<archive>/<subarchive>', methods=['GET'])
@@ -395,7 +411,7 @@ def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
 
         # resolve the item
         key = ArchiveWatcher.key(archive, subarchive, fond, opus, case)
-        print(f'Resolving {key}')
+        logger.info(f'Resolving {key}')
         watcher.resolve(key, deep=request.args.get('tree', False))
 
         # save the watcher state
@@ -441,7 +457,7 @@ def _translation_progress(task_id, progress, total):
         item['progress'] = progress
         item['total'] = total
         item['running'] = True
-    print(f'translation progress: {page.name} {progress}/{total} {float(progress)/float(total)*100.:.1f}%')
+    logger.info(f'translation progress: {page.name} {progress}/{total} {float(progress)/float(total)*100.:.1f}%')
 
 def _translation_completion(task_id, results):
     with _translation_lock:
@@ -451,7 +467,7 @@ def _translation_completion(task_id, results):
             _task_id_map[user] = [task for task in tasks if task != task_id]
         if task_id in _translation_tasks:
             del _translation_tasks[task_id]
-    print(f'translation completed: {item["page"].name}')
+    logger.info(f'translation completed: {item["page"].name}')
 
 def _start_translation(email, page):
     with _translation_lock:
@@ -462,7 +478,7 @@ def _start_translation(email, page):
                 progress_callback=_translation_progress,
                 completion_callback=_translation_completion)
             if task_id:
-                print(f'translation started ({email}): {page.name}')
+                logger.info(f'translation started ({email}): {page.name}')
                 _translation_tasks[task_id] = {
                     'page': page,
                     'progress': 0,
@@ -498,11 +514,17 @@ def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=Non
 
 if __name__ == "__main__":
     import argparse
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--debug", action="store_true", help="Run in debug mode")
     parser.add_argument("--port", type=int, default=2002, help="Port to run the server on")
     args = parser.parse_args()
+
+    # Configure the logging system
+    logging.basicConfig(
+        level=logging.INFO,  # Change to DEBUG for more detailed logs
+        format="%(asctime)s [%(levelname)s] %(message)s"
+    )
+    logger = logging.getLogger(__name__)
 
     app.run(
         debug=args.debug,

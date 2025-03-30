@@ -248,12 +248,16 @@ def check_page_updates(archive, cutoff_date):
     batch_size = 50
     offset = 0
     while True:
+        print('check_page_updates:', archive.name, batch_size, offset)
         changes = archive.latest_changes(limit=batch_size, offset=offset)
+        #print(changes[-1]["lastmod"])
         change_list += changes
         if not changes or changes[-1]["lastmod"] < cutoff_date:
             break
         offset += batch_size
+        batch_size *= 2 # search geometrically longer history 
     change_list = [item for item in change_list if item["lastmod"] >= cutoff_date]
+    print('check_page_updates', len(change_list), 'changes found')
     return _page_update_summary(archive, change_list)
 
 # -------------------------------------------------------------------------------
