@@ -8,6 +8,8 @@ from copy import copy
 from openpyxl import load_workbook
 from birddog.utility import get_text, ARCHIVE_BASE
 
+import logging
+logger = logging.getLogger(__name__)
 
 def child_url(child):
     link = child[0]["link"]
@@ -47,7 +49,7 @@ TEMPLATE_DIR = 'resources/templates'
 
 def export_page(page, dest_file=None):
     template_file = f'{TEMPLATE_DIR}/{page.kind}.xlsx'
-    print(f'opening template file {template_file}...')
+    logger.info(f"{f'opening template file {template_file}...'}")
     workbook = load_workbook(filename = template_file)
     sheet = workbook.active
 
@@ -60,7 +62,6 @@ def export_page(page, dest_file=None):
             sub = substitute(page, parsed)
             if sub:
                 title = title.replace(expr, sub)
-    print('sheet title:', title)
     sheet.title = title
 
     # make a list of all cells with template expressions
@@ -85,7 +86,6 @@ def export_page(page, dest_file=None):
     for edit in edits:
         cell, matches, parses = edit
         for match, parse in zip(matches, parses):
-            #print('processing match:', match, parse)
             if parse['expr'] == 'col':
                 # defer {col} expressions until after other substitutions are done
                 # since this fills in the table and will overwrite the {rollup} expressions
@@ -130,7 +130,6 @@ def export_page(page, dest_file=None):
                 if 'edit' in item:
                     edit = item['edit']
                     if edit in edit_cell:
-                        #print('edited:', item)
                         child_cell.fill = copy(edit_cell[edit].fill)
                 child_cell.value = sub
             else:

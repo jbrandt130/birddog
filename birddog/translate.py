@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 # (c) 2025 Jonathan Brandt
 # Licensed under the MIT License. See LICENSE file in the project root.
 
@@ -35,7 +37,7 @@ def translation(text):
                 result = _translator.translate(text)
             break
         except (requests.Timeout, ReadTimeout, ConnectTimeout):
-            print('translation timeout. retrying...')
+            logger.info(f"translation timeout. retrying...")
         sleep(wait_time)
         wait_time *= 2
     return result
@@ -66,7 +68,7 @@ class TranslationTask:
         total = len(self.batch)
         for i in range(0, total, chunk_size):
             if self.cancelled.is_set():
-                print(f"Task {self.task_id} cancelled.")
+                logger.info(f"Task {self.task_id} cancelled.")
                 return
             chunk = self.batch[i:i+chunk_size]
             chunk_result = translation(chunk)

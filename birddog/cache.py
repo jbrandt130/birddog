@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 # (c) 2025 Jonathan Brandt
 # Licensed under the MIT License. See LICENSE file in the project root.
 
@@ -22,7 +24,7 @@ if USE_LOCAL_FILESYSTEM:
 
     CACHE_DIR       = './cache'
 
-    print(f'Using local folder {CACHE_DIR} for storage.')
+    logger.info(f"{f'Using local folder {CACHE_DIR} for storage.'}")
 
     def _cache_path(object_path):
         return f'{CACHE_DIR}/{object_path}'
@@ -67,7 +69,7 @@ else:
     bucket_created = False
     bucket_creation_lock = Lock()
 
-    print(f'Using AWS S3 bucket {CACHE_NAME} for storage.')
+    logger.info(f"{f'Using AWS S3 bucket {CACHE_NAME} for storage.'}")
 
     def _create_bucket():
         global bucket_created
@@ -97,7 +99,7 @@ else:
             bucket_created = False
 
     def _put_item(path, json_object):
-        print(f'saving {path}: {len(json_object)}')
+        logger.info(f"{f'saving {path}: {len(json_object)}'}")
         response = s3.put_object(
             Bucket=CACHE_NAME,
             Key=path,

@@ -18,6 +18,9 @@ from birddog.translate import (
     is_translation_running,
     )
 
+import logging
+logger = logging.getLogger(__name__)
+
 # INITIALIZATION --------------------------------------------------------------
 
 # global constants
@@ -48,7 +51,6 @@ def _inventory_subarchives(archives):
     return list(subarchives.values())
 
 SUBARCHIVES = _inventory_subarchives(ARCHIVES)
-#print('SUBARCHIVES:\n', SUBARCHIVES)
 
 #
 # subarchive sniffer
@@ -186,10 +188,10 @@ def translate_page(
                     completion_callback(task_id, result)
             return queue_translation(batch, progress_callback, completion_cb)
         else:
-            print(f'Batch translation: {len(batch)} items...')
+            logger.info(f'Batch translation: {len(batch)} items...')
             start = time.time()
             batch = translation(batch)
             elapsed = time.time() - start
-            print(f'    ...completed ({elapsed:.2f} sec.)')
+            logger.info(f'    ...completed ({elapsed:.2f} sec.)')
             store_result(items, batch)
     return len(batch)
