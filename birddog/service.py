@@ -7,6 +7,9 @@ from urllib.parse import quote, unquote
 from datetime import datetime
 from time import sleep
 import logging
+from itsdangerous import URLSafeTimedSerializer
+import smtplib
+from email.message import EmailMessage
 from flask import (
     Flask,
     render_template,
@@ -42,6 +45,12 @@ STATIC_DIR = os.path.join(BASE_DIR, 'static')
 
 app = Flask(__name__, template_folder=TEMPLATES_DIR, static_folder=STATIC_DIR)
 app.secret_key = os.getenv('BIRDDOG_SECRET_KEY', '')  # For session management
+serializer = URLSafeTimedSerializer(app.secret_key)
+
+SMTP_SERVER = os.getenv('BIRDDOG_SMTP_SERVER', '')  # For password reset
+SMTP_PORT = os.getenv('BIRDDOG_SMTP_PORT', '')  # For password reset
+SMTP_USERNAME = os.getenv('BIRDDOG_SMTP_USERNAME', '')  # For password reset
+SMTP_PASSWORD = os.getenv('BIRDDOG_SMTP_PASSWORD', '')  # For password reset
 
 # ---- USER MANAGEMENT --------------------------------------------------------
 
@@ -80,6 +89,18 @@ class Users:
 
     def logout(self):
         self._session.pop('user', None)
+
+    def change_password(self, email, current_password, new_password):
+        user = self.lookup(email)
+        if not user:
+            return False, 'User not found'
+
+        if not check_password_hash(user.get('password', ''), current_password):
+            return False, 'Current password is incorrect'
+
+        user['password'] = generate_password_hash(new_password)
+        save_cached_object(user, f'{self._path}/{email}.json')
+        return True, 'Password changed successfully'
 
 users = Users(session)
 
@@ -124,6 +145,67 @@ def login():
 def logout():
     users.logout()
     return redirect(url_for('home'))
+
+# Change Password Route
+@app.route('/change_password', methods=['POST'])
+def change_password():
+    user_session = session.get('user')
+    if not user_session:
+        return jsonify(success=False, message='Not logged in'), 401
+
+    email = user_session['email']
+    data = request.get_json()
+    current_pw = data.get('current')
+    new_pw = data.get('new')
+
+    success, message = users.change_password(email, current_pw, new_pw)
+    status = 200 if success else 403
+    return jsonify(success=success, message=message), status
+
+@app.route('/reset_password', methods=['POST'])
+def reset_password_request():
+
+    def _send_reset_email(to_email, token):
+        reset_url = url_for('reset_with_token', token=token, _external=True)
+        msg = EmailMessage()
+        msg['Subject'] = 'Reset your Bird Dog password'
+        msg['From'] = 'birddogpound2025@gmail.com'
+        msg['To'] = to_email
+        msg.set_content(f'Click the link to reset your password: {reset_url}')
+
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.send_message(msg)
+
+    data = request.get_json()
+    email = data.get('email')
+    user = users.lookup(email)
+    if not user:
+        return jsonify(success=True, message='If that email is registered, a reset link was sent.')
+
+    token = serializer.dumps(email, salt='reset-password')
+    logger.info(f'sending password reset to {email}, {token}')
+    _send_reset_email(email, token)
+    return jsonify(success=True, message='Check your email for a reset link.')
+
+@app.route('/reset_password/<token>', methods=['GET', 'POST'])
+def reset_with_token(token):
+    try:
+        email = serializer.loads(token, salt='reset-password', max_age=3600)
+    except Exception:
+        return render_template('reset_password_expired.html')
+
+    if request.method == 'POST':
+        new_pw = request.form.get('password')
+        user = users.lookup(email)
+        if not user:
+            return render_template('reset_password_expired.html')
+        user['password'] = generate_password_hash(new_pw)
+        save_cached_object(user, f'{users._path}/{email}.json')
+        return redirect(url_for('home'))
+
+    return render_template('reset_password_form.html', token=token)
 
 # ---- HELPER FUNCTIONS -------------------------------------------------------
 

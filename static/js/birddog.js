@@ -66,6 +66,12 @@ function enable_if(elem_id, enabled)
         document.getElementById(elem_id).classList.add('disabled');
 }
 
+function show_tab(tab_id) {
+    console.log(`showing tab: ${tab_id}`);
+    const tab = new bootstrap.Tab(document.getElementById(tab_id));
+    tab.show();
+}
+
 async function update_translation_progress(data) {
     //console.log('translate result:', data);
     const translations = data.translations || [];
@@ -826,8 +832,7 @@ function view_changes(full_path, modified, last_resolved) {
         case_id=path.length > 3? path[3] : null,
         compare=compare);
     // Switch to the browse tab
-    const browse_tab = new bootstrap.Tab(document.getElementById('nav-browse-tab'));
-    browse_tab.show();
+    show_tab('nav-browse-tab');
 }
 
 
@@ -1119,6 +1124,27 @@ function on_loaded() {
         });
     }
 
+    // reset password submit
+    const reset_password = document.getElementById('resetPasswordModal');
+    if (reset_password) {
+        reset_password.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const email = document.getElementById('resetEmail').value;
+            console.log('reset password:', email)
+            
+            const response = await fetch('/reset_password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ email })
+            });
+            const data = await response.json();
+            alert(data.message);
+            window.location.reload();  // Refresh page
+        });
+    }
+
+
     // if user is logged in, then start loading the page data
     const user_data_elem = document.getElementById('user-data');
     if (user_data_elem) {
@@ -1151,8 +1177,7 @@ function on_loaded() {
                         load_page(page_id[0], page_id[1], page_id[2], page_id[3], page_id[4],
                             compare=last_resolved);
                         // Switch to the browse tab
-                        const browse_tab = new bootstrap.Tab(document.getElementById('nav-browse-tab'));
-                        browse_tab.show();
+                        show_tab('nav-browse-tab');
                     } catch (error) {
                         console.error('Error fetching archives:', error);
                         alert('Failed to load', page_id);
@@ -1173,11 +1198,42 @@ function on_loaded() {
                     // load the selected page
                     load_page(archive, subarchive, '', '');
                     // Switch to the browse tab
-                    const browse_tab = new bootstrap.Tab(document.getElementById('nav-browse-tab'));
-                    browse_tab.show();
+                    show_tab('nav-browse-tab');
                 }
             }
         });
+
+        // handler for change password form
+        document.getElementById('change-password-form')?.addEventListener('submit', async (e) => {
+          e.preventDefault();
+
+          const current = document.getElementById('currentPassword').value;
+          const newPass = document.getElementById('newPassword').value;
+          const confirm = document.getElementById('confirmPassword').value;
+          const msgBox = document.getElementById('password-change-message');
+
+          if (newPass !== confirm) {
+            msgBox.textContent = 'New passwords do not match.';
+            msgBox.className = 'text-danger';
+            return;
+          }
+
+          try {
+            const res = await fetch('/change_password', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ current, new: newPass }),
+            });
+
+            const result = await res.json();
+            msgBox.textContent = result.message;
+            msgBox.className = result.success ? 'text-success' : 'text-danger';
+          } catch (err) {
+            msgBox.textContent = 'Error changing password.';
+            msgBox.className = 'text-danger';
+          }
+        });
+
 
         // Populate the interface
         load_watchlist(check_all=true, initial_load=true);
