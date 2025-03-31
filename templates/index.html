@@ -16,46 +16,68 @@
       font-weight: bold;
     }
   </style>
-</head>
-<body>
-
-<style>
+  <style>
   body {
     padding-top: 70px; /* Adjust based on navbar height */
   }
 </style>
+<style>
+  #browse-page-content {
+    position: relative;
+  }
 
-  <!-- nav bar -->
-  <nav class="navbar navbar-expand-lg bg-body-tertiary fixed-top" id="nav-brand-tab" role="tablist">
-    <div class="container-fluid">
-      <a class="navbar-brand" href="#">
-        <img src="static/birddog.png" alt="Bird Dog" width="48" height="48">
-      </a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNavAltMarkup" aria-controls="navbarNavAltMarkup" aria-expanded="false" aria-label="Toggle navigation">
-        <span class="navbar-toggler-icon"></span>
-      </button>
+  /* Sticky header card inside Browse view */
+  #browse-header-card {
+    position: sticky;
+    top: 70px; /* height of fixed navbar */
+    z-index: 1050;
+    background: white;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
 
-      <div class="collapse navbar-collapse justify-content-between" id="navbarNavAltMarkup">
-        <div class="navbar-nav">
-          <a class="nav-link active" id="nav-home-tab" data-bs-toggle="tab" href="#nav-home" role="tab">Home</a>
-          <a class="nav-link" id="nav-browse-tab" data-bs-toggle="tab" href="#nav-browse" role="tab">Browse</a>
-        </div>
+  /* Ensure the table head is sticky too */
+  #page_table thead {
+    position: sticky;
+    top: 170px; /* navbar (70px) + header card (100px) */
+    background-color: white;
+    z-index: 1040;
+  }
+</style>
 
-        {% if debug %}
-        <div class="d-flex align-items-center">
-          <span class="badge bg-danger fs-6">===== DEBUG =====</span>
-        </div>
-        {% endif %}
+</head>
+<body>
 
-        <div class="d-flex align-items-center">
-          <!-- Logout Button -->
-          <a href="{{ url_for('logout') }}" class="btn btn-danger mt-3">Logout</a>
-        </div>
+<!-- nav bar -->
+<nav class="navbar navbar-expand-lg bg-body-tertiary fixed-top" id="nav-brand-tab" role="tablist">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="#">
+      <img src="static/birddog.png" alt="Bird Dog" width="48" height="48">
+    </a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNavAltMarkup" aria-controls="navbarNavAltMarkup" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse justify-content-between" id="navbarNavAltMarkup">
+      <div class="navbar-nav">
+        <a class="nav-link active" id="nav-home-tab" data-bs-toggle="tab" href="#nav-home" role="tab">Home</a>
+        <a class="nav-link" id="nav-browse-tab" data-bs-toggle="tab" href="#nav-browse" role="tab">Browse</a>
+      </div>
+
+      {% if debug %}
+      <div class="d-flex align-items-center">
+        <span class="badge bg-danger fs-6">===== DEBUG =====</span>
+      </div>
+      {% endif %}
+
+      <div class="d-flex align-items-center">
+        <!-- Logout Button -->
+        <a href="{{ url_for('logout') }}" class="btn btn-danger mt-3">Logout</a>
       </div>
     </div>
-  </nav>
+  </div>
+</nav>
 
-  <div class="tab-content mt-4">
+<div class="tab-content mt-4">
 
 <!-- Home Panel -->
 <div class="tab-pane fade show active" id="nav-home" role="tabpanel">
@@ -219,7 +241,7 @@
     </div>
   </div>
   <div id="browse-page-content">
-    <div class="card mb-4">
+    <div id="browse-header-card" class="card mb-4" >
       <div class="card-body">
         <div class="row align-items-center">
           <!-- Left Column: Breadcrumb + Title + Description -->
@@ -326,8 +348,6 @@
     </div>
   </div>
 </div>
-
-</div> <!-- end tab content -->
 
 <!-- Archive Selection Modal -->
 <div class="modal fade bd-example-modal-sm" id="archiveSelectModal" tabindex="-1" role="dialog" aria-labelledby="archiveSelectModalLabel" aria-hidden="true">

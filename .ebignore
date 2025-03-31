@@ -1,0 +1,14 @@
+.DS_Store
+.ebignore
+.elasticbeanstalk
+.git
+.gitignore
+.python-version
+LICENSE
+README.md
+cache
+doc
+notebooks
+static
+templates
+venv

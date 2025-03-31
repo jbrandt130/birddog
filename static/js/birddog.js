@@ -361,8 +361,9 @@ function render_page_data(data) {
         var row_edited = false;
         const row_elem = document.createElement('tr');
         child.forEach((item, index) => {
-            const cell_elem = document.createElement('td')
-            cell_elem.textContent = get_text(item.text) || ''
+            const cell_elem = document.createElement('td');
+            var cell_content = '';
+            cell_content += get_text(item.text) || '';
             if (is_comparison && 'edit' in item) {
                 switch (item.edit) {
                 case 'added':
@@ -378,20 +379,28 @@ function render_page_data(data) {
                 }
             }
             if (is_comparison && 'link_edit' in item) {
-                // FIXME: visual cue that link changed?
                 switch (item.link_edit) {
                 case 'added':
-                    cell_elem.classList.add('table-success');
+                    console.log('link added:', cell_content);
+                    cell_content = 
+                        `<button class="btn btn-success btn-sm" style="opacity: 0.5;">
+                            <i class="bi bi-link-45deg"></i>
+                        </button> &nbsp;` + cell_content;
                     row_edited = true;
                     break;
                 case 'changed':
-                    cell_elem.classList.add('table-warning');
+                    console.log('link changed:', cell_content);
+                    cell_content = 
+                        `<button class="btn btn-warning btn-sm" style="opacity: 0.5;">
+                            <i class="bi bi-link-45deg"></i>
+                        </button> &nbsp;` + cell_content;
                     row_edited = true;
                     break;
                 default:
                     break;
                 }
             }
+            cell_elem.innerHTML = cell_content;
             row_elem.appendChild(cell_elem)
         });
         if (row_edited)
@@ -633,6 +642,9 @@ function render_watchlist() {
         `;
         table_body.innerHTML += row;
     });
+
+    // scroll to top automatically
+    document.getElementById('nav-home').scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 async function remove_from_watchlist(archive, subarchive) {

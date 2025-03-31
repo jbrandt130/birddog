@@ -1,9 +1,15 @@
-.ipynb_checkpoints
-__pycache__
-var
 .DS_Store
+.coverage
+.ipynb_checkpoints
+.python-version
+__pycache__
 cache
 excel
-.coverage
 static/downloads
+var
+venv
 
+# Elastic Beanstalk Files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml

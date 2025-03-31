@@ -512,6 +512,13 @@ def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=Non
 
 # ---- MAIN -------------------------------------------------------------------
 
+# Configure the logging system
+logging.basicConfig(
+    level=logging.INFO,  # Change to DEBUG for more detailed logs
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+logger = logging.getLogger(__name__)
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
@@ -519,15 +526,10 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=2002, help="Port to run the server on")
     args = parser.parse_args()
 
-    # Configure the logging system
-    logging.basicConfig(
-        level=logging.INFO,  # Change to DEBUG for more detailed logs
-        format="%(asctime)s [%(levelname)s] %(message)s"
-    )
-    logger = logging.getLogger(__name__)
-
     app.run(
         debug=args.debug,
         port=args.port,
         host="0.0.0.0"  # Allow external connections
     )
+
+
