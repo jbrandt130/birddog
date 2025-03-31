@@ -1,5 +1,6 @@
 # system packages
 import os
+import sys
 import threading
 from copy import copy, deepcopy
 from urllib.parse import quote, unquote
@@ -515,7 +516,10 @@ def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=Non
 # Configure the logging system
 logging.basicConfig(
     level=logging.INFO,  # Change to DEBUG for more detailed logs
-    format="%(asctime)s [%(levelname)s] %(message)s"
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout)  # <-- Critical for EB log capture
+    ]
 )
 logger = logging.getLogger(__name__)
 

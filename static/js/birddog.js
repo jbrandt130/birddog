@@ -601,14 +601,27 @@ function populate_archive_select() {
 // ---------------------------------------------------------------------------
 // WATCHLIST MANAGEMENT
 
-async function load_watchlist(check_all=false) {
+async function load_watchlist(check_all=false, initial_load=false) {
     const response = await fetch('/watchlist');
     const data = await response.json();
     console.log('watchlist:', data)
     watchlist = data;
+    
+    // Check if the watchlist is empty on initial load
+    if (initial_load && watchlist.length == 0) {
+        open_add_to_watchlist_dialog();
+        return;
+    }
+
     if (check_all)
         check_all_watchlists();
     render_watchlist();
+}
+
+function open_add_to_watchlist_dialog() {
+    // show the modal
+    var add_watchlist_modal = new bootstrap.Modal(document.getElementById('addWatchlistModal'));
+    add_watchlist_modal.show();
 }
 
 function render_watchlist() {
@@ -1167,7 +1180,7 @@ function on_loaded() {
         });
 
         // Populate the interface
-        load_watchlist(check_all=true);
+        load_watchlist(check_all=true, initial_load=true);
 
         // archive select listener
         populate_archive_select();
