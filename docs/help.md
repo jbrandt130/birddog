@@ -1,10 +1,6 @@
 ![Bird Dog](images/birddog.png)
 
-# Bird Dog Help
-
-Welcome to the Bird Dog help page!
-
-## What is Bird Dog?
+# Welcome to Bird Dog!
 
 Bird Dog is a web-based navigator and translator for Ukrainian documents hosted on [WikiSource](https://uk.wikisource.org). It allows users to track and evaluate changes to Wiki page content and export spreadsheet updates for further downstream processing by the Ukranian Data Acquisition team at Jewish Gen.
 
@@ -38,7 +34,17 @@ Your first step is to let Bird Dog know which Archives you want to monitor. Simp
 
 #### ![Reload](images/reload_button.png) Check this archive for any new updates.
  
-## Explore Page Cha)nges
+## Explore Page Changes
+
+Any page changes are organized into a tree navigator that enables you to traverse down to any fond, opus, or case of interest. If there has been a change to one of the Wiki pages, then the date and time of the most recent change, as well as the last resolved time is displayed. You can resolve any changes (and removed them from the unresolved list by clicking the check button. If you want to examine the changes more closely, then use the "eye" button to view the page content in the Browse panel.
+
+### Unresolved Page Change Controls
+
+#### ![View](images/eye_button.png) View the page updates in the Browse panel.
+
+#### ![Resolve](images/check_button.png) Resolve this change. (All unresolved changes in subsidiary pages are also resolved.)
+
+#### ![Reload](images/reload_button.png) Check all watch list archives for updates. (This is done automatically whenever you login or reload Bird Dog.)
 
 ## Browse Archive Pages
 
