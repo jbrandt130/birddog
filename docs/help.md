@@ -8,7 +8,7 @@ Bird Dog is a web-based navigator and translator for Ukrainian documents hosted 
 
 1. [Create a profile or log in](#create-profile-or-login)
 3. [Add archives to your watchlist](#add-archives-to-your-watchlist) (Bird Dog will notify you of new documents as they appear.)
-5. [Explore page change notifications](#explore-page-changes)
+5. [Explore page change notifications](#explore-unresolved-page-changes)
 6. [Examine page details through the Browse panel](#browse-archive-pages)
 
 ## Create Profile or Login
@@ -34,7 +34,7 @@ Your first step is to let Bird Dog know which Archives you want to monitor. Simp
 
 #### ![Reload](images/reload_button.png) Check this archive for any new updates.
  
-## Explore Page Changes
+## Explore Unresolved Page Changes
 
 ![Unresolved Page Changes](images/unresolved_changes.png)
 
