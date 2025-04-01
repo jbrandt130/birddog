@@ -8,8 +8,7 @@ Bird Dog is a web-based navigator and translator for Ukrainian documents hosted 
 
 ## Getting Started
 
-1. Visit the [Bird Dog web app](https://your-app-url).
-2. Create a profile or log in.
+1. Create a profile or log in.
 3. Add archives to your watchlist.
 4. Bird Dog will notify you of new documents as they appear.
 5. Explore and resolve page change notifications.
