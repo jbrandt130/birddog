@@ -4,6 +4,7 @@
 
 import re
 import string
+from pathlib import Path
 from copy import copy
 from openpyxl import load_workbook
 from birddog.utility import get_text, ARCHIVE_BASE
@@ -11,12 +12,28 @@ from birddog.utility import get_text, ARCHIVE_BASE
 import logging
 logger = logging.getLogger(__name__)
 
+def is_linked(url):
+    return url and not "redlink" in url
+
+def link_status(url):
+    return "linked" if is_linked(url) else "unlinked"
+
 def child_url(child):
     link = child[0]["link"]
     return ARCHIVE_BASE + link if link is not None else None
 
-def link_status(url):
-    return "unlinked" if url is None or "redlink" in url else "linked"
+def child_doc_url(parent, child, lru=None):
+    #logger.info(f'child_doc_url: child_url {child_url(child)}')
+    if not child or not is_linked(child_url(child)):
+        #logger.info(f'child_doc_url: {parent.name}: unlinked {get_text(child[0]["text"])}')
+        return None
+    child_id = get_text(child[0]['text'])
+    #logger.info(f'child_doc_url: {parent.name}: looking up {child_id}')
+    if lru:
+        child = lru.lookup_child(parent, child_id)
+    else:
+        child = parent[child_id]
+    return child.doc_url if child else None
 
 EXPR_PATTERN = re.compile(r'{[^}]+}')
 
@@ -45,9 +62,9 @@ def substitute(page, expr):
     except:
         return None
 
-TEMPLATE_DIR = 'resources/templates'
+TEMPLATE_DIR = Path(__file__).resolve().parent.parent / 'resources/xlsx_templates'
 
-def export_page(page, dest_file=None):
+def export_page(page, dest_file=None, lru=None):
     template_file = f'{TEMPLATE_DIR}/{page.kind}.xlsx'
     logger.info(f"{f'opening template file {template_file}...'}")
     workbook = load_workbook(filename = template_file)
@@ -93,6 +110,7 @@ def export_page(page, dest_file=None):
                 last_child_row = first_child_row + len(page.children) - 1
                 columns.append((cell, parse))
             elif parse['expr'] == 'rollup':
+                # generate a formula based on rollup expression
                 rollup_cell = sheet.cell(row=cell.row - 1 + len(page.children), column=cell.column)
                 col = cell.column_letter
                 rollup_cell.value = f'={parse["modifier"]}({col}{first_child_row}:{col}{last_child_row})'
@@ -112,6 +130,7 @@ def export_page(page, dest_file=None):
             if parse['modifier'] == 'linked':
                 cell.hyperlink = page.url
 
+    # now expand each of the {col...} expressions
     for cell, parse in columns:
         row = cell.row
         col = cell.column
@@ -136,6 +155,8 @@ def export_page(page, dest_file=None):
                 child_cell.value = ''
             if parse['modifier'] == 'linked':
                 child_cell.hyperlink = child_url(child)
+            elif parse['modifier'] == 'doc_link':
+                child_cell.hyperlink = child_doc_url(page, child, lru)
             elif parse['modifier'] == 'link_status':
                 child_cell.value = link_status(child_url(child))
             row += 1

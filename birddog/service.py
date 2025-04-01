@@ -1,6 +1,5 @@
 # system packages
 import os
-import sys
 import threading
 from copy import copy, deepcopy
 from urllib.parse import quote, unquote
@@ -35,7 +34,7 @@ from birddog.cache import (
     save_cached_object,
     remove_cached_object,
     CacheMissError)
-from birddog.utility import ARCHIVES
+from birddog.utility import ARCHIVES, get_logger
 
 # ---- FLASK INITIALIZATION  --------------------------------------------------
 
@@ -300,7 +299,7 @@ def download_file():
             filepath = os.path.join(BASE_DIR, 'static', 'downloads', filename)
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             logger.info(f'exporting spreadsheet to {filepath}')
-            export_page(page, filepath)
+            export_page(page, filepath, lru=page_lru)
 
             return send_file(
                 filepath,
@@ -595,15 +594,7 @@ def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=Non
 
 # ---- MAIN -------------------------------------------------------------------
 
-# Configure the logging system
-logging.basicConfig(
-    level=logging.INFO,  # Change to DEBUG for more detailed logs
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)  # <-- Critical for EB log capture
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 if __name__ == "__main__":
     import argparse
@@ -617,5 +608,3 @@ if __name__ == "__main__":
         port=args.port,
         host="0.0.0.0"  # Allow external connections
     )
-
-

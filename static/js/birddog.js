@@ -449,34 +449,37 @@ function render_page_data(data) {
 }
 
 function render_history(data) {
-
     if (data.history.length <= 1) {
         hide('history-selection-box');
         show('new-page-badge');
-    }
-    else {
+    } else {
         show('history-selection-box');
         hide('new-page-badge');
 
         const selector = document.getElementById('version-select');
-        // Clear existing options
-        select_header = 'refmod' in data? 'Stop Comparing' : 'Select Version';
+        const select_header = 'refmod' in data ? 'Stop Comparing' : 'Select Version';
         selector.innerHTML = `<option value="" selected>${select_header}</option>`;
         selector.disabled = false;
 
-        // Add new options dynamically
-        //console.log('adding history: ', data.history.length);
-        data.history.forEach(item => {
-            if (item.modified != data.lastmod) {
-                const option = document.createElement('option');
-                option.value = item.modified;   // Set the value
-                option.textContent = format_date(item.modified); // Display text
-                //console.log('adding select item: ', item.modified, format_date(item.modified));
-                selector.appendChild(option);
-            }
+        // Create a sorted list of eligible history items (excluding current lastmod)
+        const eligible_history = data.history
+            .filter(item => item.modified !== data.lastmod)
+            .sort((a, b) => b.modified.localeCompare(a.modified)); // descending
+
+        // Add options to the dropdown
+        eligible_history.forEach(item => {
+            const option = document.createElement('option');
+            option.value = item.modified;
+            option.textContent = format_date(item.modified);
+            selector.appendChild(option);
         });
+
         if ('refmod' in data) {
-            selector.value = data.refmod;
+            // Find the latest item <= refmod
+            const best_match = eligible_history.find(item => item.modified <= data.refmod);
+            if (best_match) {
+                selector.value = best_match.modified;
+            }
         }
     }
 }

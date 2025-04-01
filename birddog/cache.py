@@ -7,6 +7,9 @@ logger = logging.getLogger(__name__)
 
 import json
 import os
+from pathlib import Path
+from birddog.utility import get_logger
+logger = get_logger()
 
 USE_LOCAL_FILESYSTEM = os.getenv("BIRDDOG_USE_LOCAL_CACHE", False) in ("true", "True", "1")
 
@@ -22,8 +25,7 @@ class CacheMissError(Exception):
 
 if USE_LOCAL_FILESYSTEM:
 
-    CACHE_DIR       = './cache'
-
+    CACHE_DIR       = Path(__file__).resolve().parent.parent / '.cache'
     logger.info(f"{f'Using local folder {CACHE_DIR} for storage.'}")
 
     def _cache_path(object_path):

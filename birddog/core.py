@@ -23,11 +23,11 @@ from birddog.utility import (
     form_text_item,
     translate_page,
     equal_text,
+    get_logger
     )
 from birddog.cache import load_cached_object, save_cached_object, CacheMissError
 
-import logging
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 #
 # global constants
@@ -54,7 +54,9 @@ def read_page(url):
         description,
         table header,
         table contents,
-        lastmod date
+        lastmod date,
+        doc_link [only for case pages],
+        thumb_link [only for case pages],
     """
     soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
     title = soup.find('span', attrs = {'class': 'mw-page-title-main'})
@@ -70,11 +72,21 @@ def read_page(url):
             item = []
             for td_elem in tr_elem.find_all('td'):
                 a_elem = td_elem.find('a')
-                child_url = a_elem['href'] if a_elem else None
+                child_url = a_elem.get('href') if a_elem else None
                 text = form_text_item(td_elem.text.strip())
                 item.append({'text': text, 'link': child_url})
             if item:
                 children.append(item)
+
+    # check for document thumbnail
+    doc_info = soup.find('figure', attrs = {'typeof': 'mw:File/Thumb'})
+    doc_url = None
+    thumb_url = None
+    if doc_info:
+        a_tag = doc_info.find('a')
+        doc_url = a_tag.get('href')
+        thumb_elem = a_tag.find('img')
+        thumb_url = thumb_elem.get('src') if thumb_elem else None
     footer = soup.find('li', attrs={'id': 'footer-info-lastmod'})
     last_modified = lastmod(footer.text) if footer else None
 
@@ -84,7 +96,9 @@ def read_page(url):
         'header': header,
         'children': children,
         'lastmod': last_modified,
-        'link': url
+        'link': url,
+        'doc_link': doc_url,
+        'thumb_link': thumb_url,
     }
 
 def do_search(query_string, limit=10, offset=0):
@@ -286,6 +300,8 @@ class Page:
 
     def _cache_load(self, version=None):
         """Try to retrieve page contents from cache. Returns True if successful."""
+        if not self.default_url:
+            return False
         if not version:
             history = self.history(limit=1)
             if not history:
@@ -339,6 +355,10 @@ class Page:
         return self._page['children']
 
     @property
+    def child_ids(self):
+        return [get_text(child[0]['text']) for child in self.children]
+
+    @property
     def parent(self):
         return self._parent
 
@@ -387,6 +407,16 @@ class Page:
         return None
 
     @property
+    def doc_url(self):
+        url = self._page.get('doc_link')
+        return self.base + url if url else None
+
+    @property
+    def thumb_url(self):
+        url = self._page.get('thumb_link')
+        return self.base + url if url else None
+
+    @property
     def kind(self):
         return 'table'
 
@@ -399,13 +429,17 @@ class Page:
         # make sure no commas in the name
         return f'{self.kind},{self.name.replace(",", "")},{self.lastmod}'
 
+    def get_child_row(self, entry_id):
+        return next((x for x in self.children if match_text(x[0]['text'], entry_id)), None)
+
     def lookup(self, entry_id, use_cache=True):
-        matches = [x for x in self.children if match_text(x[0]['text'], entry_id)]
-        if matches:
-            child = matches[0][0]
-            spec = (get_text(child['text']), child['link'])
-            return self.child_class(spec, self, use_cache=use_cache)
+        row = self.get_child_row(entry_id)
+        if row:
+            return self.child_class((get_text(row[0]['text']), row[0]['link']), self, use_cache=use_cache)
         raise LookupError(self.name, entry_id)
+
+    def __getitem__(self, key):
+        return self.lookup(key)
 
     @property
     def needs_translation(self):
@@ -523,6 +557,14 @@ class PageLRU:
 
     def _key(self, archive, subarchive, fond=None, opus=None, case=None):
         return (archive or '', subarchive or '', fond or '', opus or '', case or '')
+
+    def _page_key(self, page):
+        a, rest = page.name.split('-', 1)
+        parts = rest.split('/')
+        return (a, *parts)
+
+    def lookup_child(self, page, child_id):
+        return self.lookup(*(*self._page_key(page), child_id))
 
     def lookup(self, archive, subarchive, fond=None, opus=None, case=None):
         # periodically flush the lru to ensure the pages don't become stale

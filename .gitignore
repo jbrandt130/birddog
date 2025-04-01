@@ -3,11 +3,11 @@
 .ipynb_checkpoints
 .python-version
 __pycache__
-cache
+.cache
 excel
 static/downloads
 var
-venv
+venv*
 
 # Elastic Beanstalk Files
 .elasticbeanstalk/*

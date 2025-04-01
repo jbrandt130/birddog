@@ -18,8 +18,24 @@ from birddog.translate import (
     is_translation_running,
     )
 
+#
+# standard logger
+
 import logging
-logger = logging.getLogger(__name__)
+import sys
+
+def get_logger():
+# Configure the logging system
+    logging.basicConfig(
+        level=logging.INFO,  # Change to DEBUG for more detailed logs
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout)  # <-- Critical for EB log capture
+        ]
+    )
+    return logging.getLogger(__name__)
+
+logger = get_logger()
 
 # INITIALIZATION --------------------------------------------------------------
 
@@ -136,7 +152,7 @@ def equal_text(item1, item2):
 
 def get_text(text_item):
     """Return the English version of the text item if present, else use Ukrainian."""
-    return text_item['en'] if 'en' in text_item else text_item['uk']
+    return text_item.get('en', text_item.get('uk' '')) if isinstance(text_item, dict) else ''
 
 def match_text(text_item, text):
     """Check if the given text matches either the Ukrainian or English version

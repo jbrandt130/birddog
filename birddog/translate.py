@@ -1,5 +1,3 @@
-import logging
-logger = logging.getLogger(__name__)
 # (c) 2025 Jonathan Brandt
 # Licensed under the MIT License. See LICENSE file in the project root.
 
@@ -12,6 +10,10 @@ from httpcore._exceptions import ReadTimeout, ConnectTimeout
 import threading
 import uuid
 import queue
+
+# don't import from utility (dependent)
+import logging
+logger = logging.getLogger(__name__)
 
 # --- Basic Translation Logic ---
 
