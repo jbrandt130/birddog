@@ -36,6 +36,8 @@ Your first step is to let Bird Dog know which Archives you want to monitor. Simp
  
 ## Explore Page Changes
 
+![Unresolved Page Changes](images/unresolved_pages.png)
+
 Any page changes are organized into a tree navigator that enables you to traverse down to any fond, opus, or case of interest. If there has been a change to one of the Wiki pages, then the date and time of the most recent change, as well as the last resolved time is displayed. You can resolve any changes (and removed them from the unresolved list by clicking the check button. If you want to examine the changes more closely, then use the "eye" button to view the page content in the Browse panel.
 
 ### Unresolved Page Change Controls
