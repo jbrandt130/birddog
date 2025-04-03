@@ -278,7 +278,7 @@ class Page:
     def __init__(self, spec, parent, use_cache=True):
         self._parent = parent
         self._spec = spec
-        self._page = None
+        self._page = {}
         if use_cache:
             if not self._cache_load():
                 # not in the cache - get it
@@ -352,7 +352,7 @@ class Page:
     @property
     def children(self):
         """List of child page data"""
-        return self._page['children']
+        return self._page.get('children')
 
     @property
     def child_ids(self):
@@ -364,7 +364,7 @@ class Page:
 
     @property
     def description(self):
-        return regex.sub(r"^\p{N}+\p{P}?\p{Zs}*", "", get_text(self._page['description']))
+        return regex.sub(r"^\p{N}+\p{P}?\p{Zs}*", "", get_text(self._page.get('description')))
 
     @property
     def base(self):
@@ -379,7 +379,7 @@ class Page:
     @property
     def url(self):
         if self._page is not None and 'link' in self._page:
-            return self._page['link']
+            return self._page.get('link')
         return self.default_url
 
     @property
@@ -392,15 +392,15 @@ class Page:
 
     @property
     def title(self):
-        return get_text(self._page['title'])
+        return get_text(self._page.get('title'))
 
     @property
     def lastmod(self):
-        return self._page['lastmod']
+        return self._page.get('lastmod', '')
 
     @property
     def refmod(self):
-        return self._page['refmod'] if 'refmod' in self._page else ''
+        return self._page.get('refmod', '')
 
     @property
     def child_class(self):
@@ -655,6 +655,7 @@ class ArchiveWatcher:
         self._lru = lru if lru else PageLRU()
         self._archive = self._lru.lookup(archive, subarchive)
         self._cutoff_date = cutoff_date
+        self._last_checked_date = cutoff_date
         self._resolved = {}
         self._unresolved = {}
 
@@ -664,7 +665,8 @@ class ArchiveWatcher:
             'subarchive': self._archive.subarchive["en"],
             'cutoff_date': self._cutoff_date,
             'resolved': self._resolved,
-            'unresolved': self._unresolved
+            'unresolved': self._unresolved,
+            'last_checked_date': self._last_checked_date
         }
 
     @staticmethod
@@ -674,6 +676,7 @@ class ArchiveWatcher:
         watcher = ArchiveWatcher(data['archive'], data['subarchive'], data['cutoff_date'], lru=lru)
         watcher._resolved = data['resolved']
         watcher._unresolved = data['unresolved']
+        watcher._last_checked_date = data.get('last_checked_date', watcher._cutoff_date)
         return watcher
 
     @staticmethod
@@ -735,17 +738,17 @@ class ArchiveWatcher:
                     _add_result(kwargs)
             return _merge_result(result, changes)
 
-        updates = check_page_updates(self._archive, self._cutoff_date)
+        updates = check_page_updates(self._archive, self._last_checked_date)
         if updates:
             updates = _check_ancestors(updates)
             for item, mod_date in updates.items():
-                if mod_date >= self.cutoff_date:
+                if mod_date >= self._last_checked_date:
                     if item not in self._resolved or mod_date > self._resolved[item]:
                         self._unresolved[item] = {
                             "modified": mod_date,
                             "last_resolved": self._last_resolved_date(item)
                         }
-            #self._cutoff_date = max(updates.values())
+            self._last_checked_date = max(max(updates.values()), self._last_checked_date)
 
     def resolve(self, item, deep=False):
         if deep:
