@@ -429,7 +429,7 @@ function render_page_data(data) {
     });
 
     // watch button is only visible for archive level pages
-    show_if('archive-watch-btn', data.kind == 'archive')
+    //show_if('archive-watch-btn', data.kind == 'archive')
 
     show_if('comparing-badge', is_comparison);
     show_if('no-differences-badge', is_comparison && !any_edit);
@@ -694,6 +694,7 @@ async function check_watchlist(archive, subarchive, quiet=false, render=true) {
             throw new Error(`Failed to check updates: ${response.statusText}`);
         }
         const data = await response.json();
+        console.log('check_watchlist:', data);
 
         console.log(`Checking ${archive}-${subarchive}: unresolved items: ${data}`);
         unresolved_updates[`${archive}-${subarchive}`] = data.unresolved;
@@ -705,6 +706,8 @@ async function check_watchlist(archive, subarchive, quiet=false, render=true) {
         }
         if (!quiet && data.unresolved.length == 0)
             alert(`No new updates for ${archive}-${subarchive}.`);
+        watchlist = data.watchlist;
+        render_watchlist();
     } catch (error) {
         // Hide the spinner
         show('unresolved-updates-container');
@@ -769,7 +772,7 @@ async function confirm_add_to_watchlist() {
     show('watchlist-loading-spinner');
     hide('watchlist-container');
 
-    await fetch('/watchlist', {
+    const response = await fetch('/watchlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -782,8 +785,13 @@ async function confirm_add_to_watchlist() {
     hide('watchlist-loading-spinner');
     show('watchlist-container');
 
+    const data = await response.json();
+    console.log('watchlist:', data)
+    watchlist = data;
+    render_watchlist();
+
     // Refresh table
-    load_watchlist(check_all=true);
+    //load_watchlist(check_all=true);
 }
 
 // ---------------------------------------------------------------------------

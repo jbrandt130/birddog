@@ -66,6 +66,7 @@
         {% if user %}
           <a class="nav-link" id="nav-browse-tab" data-bs-toggle="tab" href="#nav-browse" role="tab">Browse</a>
           <a class="nav-link" id="nav-profile-tab" data-bs-toggle="tab" href="#nav-profile" role="tab">Profile</a>
+          <a class="nav-link" id="nav-profile-tab" href="https://github.com/jbrandt130/birddog/blob/main/docs/help.md" target="_blank">Help</a>
         {% endif %}
       </div>
 
@@ -286,9 +287,11 @@
                 <button type="button" id="archive-select-btn" class="btn btn-primary" title="Select Archive" data-bs-toggle="modal" data-bs-target="#archiveSelectModal">
                   <i class="bi bi-book"></i>
                 </button>
+                <!--
                 <button type="button" id="archive-watch-btn" class="btn btn-secondary d-none" title="Watch this Archive">
                   <i class="bi bi-eye-slash"></i>
                 </button>
+                -->
               </div>
               <!-- Right Column: Breadcrumb -->
               <div class="col">
@@ -305,7 +308,7 @@
                     TRANSLATING
                 </span>
                 <span id="needs-resolve-badge" class="badge bg-info small d-none">RESOLVE PENDING</span>
-                <span id="empty-page-badge" class="badge bg-warning small d-none">EMPTY PAGE</span>
+                <span id="empty-page-badge" class="badge bg-warning small d-none">NO SUB-PAGES</span>
                 <span id="comparing-badge" class="badge bg-warning small d-none">COMPARING TO PAST VERSION</span>
                 <span id="no-differences-badge" class="badge bg-warning small d-none">NO DIFFERENCES</span>
               </div>

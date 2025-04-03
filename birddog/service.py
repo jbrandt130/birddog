@@ -317,6 +317,16 @@ def download_file():
 def _watchlist_key(archive, subarchive):
     return f'{archive}-{subarchive}'
 
+def _format_watchlist(watchlist):
+    return [
+        {
+            'archive': k.split('-')[0],
+            'subarchive': k.split('-')[1],
+            'last_checked_date': v['last_checked_date'],
+            'cutoff_date': v['cutoff_date']
+        }
+        for k, v in watchlist.items() ]
+
 ## Get user's watchlist
 @app.route('/watchlist', methods=['GET'])
 def get_watchlist():
@@ -329,15 +339,7 @@ def get_watchlist():
         user_data = load_cached_object(f'users/{email}.json')
         watchlist = user_data.get('watchlist', {})
         # Convert to list format for frontend compatibility
-        result = [
-            {
-                'archive': k.split('-')[0],
-                'subarchive': k.split('-')[1],
-                'last_checked_date': v['last_checked_date'],
-                'cutoff_date': v['cutoff_date']
-            }
-            for k, v in watchlist.items()
-        ]
+        result = _format_watchlist(watchlist)
         logger.info(f'watchlist for {email}: {result}')
         return jsonify(result)
     except CacheMissError:
@@ -372,15 +374,8 @@ def add_to_watchlist():
     user_data['watchlist'] = watchlist
     save_cached_object(user_data, f'users/{email}.json')
 
-    watcher = ArchiveWatcher(
-        data['archive'], 
-        data['subarchive'], 
-        data['cutoff_date'],
-        lru=page_lru)
-    watcher.check()
-    watcher_path = _watcher_cache_path(email, data['archive'], data['subarchive'])
-    save_cached_object(watcher.save(), watcher_path)
-    return jsonify({'success': True}), 201
+    # return updated watchlist
+    return jsonify(_format_watchlist(watchlist)), 201
 
 # Remove from user's watchlist
 @app.route('/watchlist/<archive>/<subarchive>', methods=['DELETE'])
@@ -433,13 +428,17 @@ def check_watchlist_item(archive, subarchive):
         logger.info(f"ArchiveWatcher.load: {cache_path}")
         try:
             watcher_data = load_cached_object(cache_path)
+            logger.info(f"ArchiveWatcher.loaded: {cache_path}")
+            watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
+            logger.info(f"ArchiveWatcher loaded {cache_path}")
         except CacheMissError:
-            logger.error(f'watcher load failed: {cache_path}')
-            return jsonify({'error': 'No watcher found'}), 404
-        logger.info(f"ArchiveWatcher.loaded: {cache_path}")
-        watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
-        # check for updates, 404
-        logger.info(f"ArchiveWatcher constructed {cache_path}")
+            # first time: make a new one
+            watcher = ArchiveWatcher(
+                archive, subarchive, 
+                watchlist[key]['cutoff_date'], lru=page_lru)
+            logger.info(f"ArchiveWatcher loaded {cache_path}")
+
+        # check for updates
         watcher.check()
         logger.info(f"ArchiveWatcher check done {cache_path}")
 
@@ -457,7 +456,10 @@ def check_watchlist_item(archive, subarchive):
             result = watcher.unresolved_tree
         else:
             result = [{'name': key, **value} for key, value in watcher.unresolved.items()]
-        return jsonify({'success': True, 'unresolved': result}), 200
+        return jsonify({
+            'success': True, 
+            'unresolved': result, 
+            'watchlist': _format_watchlist(watchlist)}), 200
 
     except CacheMissError:
         logger.error(f'user data load failed: {email}')
