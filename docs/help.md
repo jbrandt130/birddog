@@ -50,13 +50,23 @@ Any page changes are organized into a tree navigator that enables you to travers
 
 ## Browse Archive Pages
 
+TBD
+
 ### Translate Page
 
-Click the “Translate” button on any document page to initiate machine translation. You can monitor progress in real time.
-
+TBD
 ### Download Spreadsheet
 
+TBD
+
 ### Resolve Updates
+
+TBD
+
+### Badges
+
+TBD
+
 
 ## Questions?
 
