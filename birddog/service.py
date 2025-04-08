@@ -183,54 +183,6 @@ class User:
             is_hashed=True
         )
 
-class Users_old:
-    def __init__(self, session):
-        self._path = 'users'
-        self._session = session
-
-    def _session_user(self, name, email):
-        return {'name': name, 'email': email}
-
-    def lookup(self, email):
-        try:
-            return load_cached_object(f'{self._path}/{email}.json')
-        except CacheMissError:
-            return None
-
-    def create(self, email, name, password):
-        if self.lookup(email):
-            return False
-        logger.info(f"Storing new user: {name}, {email}")
-        user = {
-            'name': name,
-            'password': generate_password_hash(password)
-            }
-        save_cached_object(user, f'{self._path}/{email}.json')
-        self._session['user'] = self._session_user(name, email)
-        return True
-
-    def login(self, email, password):
-        user = self.lookup(email)
-        if user and 'password' in user and check_password_hash(user['password'], password):
-            self._session['user'] = self._session_user(user['name'], email)
-            return True
-        return False
-
-    def logout(self):
-        self._session.pop('user', None)
-
-    def change_password(self, email, current_password, new_password):
-        user = self.lookup(email)
-        if not user:
-            return False, 'User not found'
-
-        if not check_password_hash(user.get('password', ''), current_password):
-            return False, 'Current password is incorrect'
-
-        user['password'] = generate_password_hash(new_password)
-        save_cached_object(user, f'{self._path}/{email}.json')
-        return True, 'Password changed successfully'
-
 class Users:
     def __init__(self, session, max_users=10):
         self._path = 'users'
