@@ -5,6 +5,8 @@ from copy import copy, deepcopy
 from urllib.parse import quote, unquote
 from datetime import datetime
 from time import sleep
+from cachetools import LRUCache
+from collections import defaultdict
 import logging
 from itsdangerous import URLSafeTimedSerializer
 import smtplib
@@ -53,7 +55,135 @@ SMTP_PASSWORD = os.getenv('BIRDDOG_SMTP_PASSWORD', '')  # For password reset
 
 # ---- USER MANAGEMENT --------------------------------------------------------
 
-class Users:
+
+def _watcher_cache_path(email, archive, subarchive):
+    return f'watchers/{email}/{archive}-{subarchive}.json'
+
+class User:
+    def __init__(self, name, email, password, watchlist=None, is_hashed=False):
+        self.name = name
+        self.email = email
+        self.password_hash = password if is_hashed else generate_password_hash(password)
+        self.watchlist = watchlist or {}
+        self._lock = threading.RLock()
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def change_password(self, current_password, new_password):
+        with self._lock:
+            if not self.check_password(current_password):
+                return False
+            self.password_hash = generate_password_hash(new_password)
+            self.save()
+            return True
+
+    def set_password(self, new_password):
+        with self._lock:
+            self.password_hash = generate_password_hash(new_password)
+            self.save()
+
+    def add_to_watchlist(self, archive, subarchive, cutoff_date):
+        key = _watchlist_key(archive, subarchive)
+        with self._lock:
+            self.watchlist[key] = {
+                'last_checked_date': '',
+                'cutoff_date': cutoff_date
+            }
+            self.save()
+
+    def remove_from_watchlist(self, archive, subarchive):
+        key = _watchlist_key(archive, subarchive)
+        with self._lock:
+            if key not in self.watchlist:
+                return False
+            del self.watchlist[key]
+            self.save()
+
+        # Remove associated watcher file (outside lock)
+        watcher_path = _watcher_cache_path(self.email, archive, subarchive)
+        try:
+            remove_cached_object(watcher_path)
+        except CacheMissError:
+            pass  # it's already gone
+        return True
+
+    def check_archive(self, archive, subarchive, page_lru, tree=False):
+        key = _watchlist_key(archive, subarchive)
+        with self._lock:
+            if key not in self.watchlist:
+                raise KeyError(f"Watchlist item not found: {key}")
+
+            path = _watcher_cache_path(self.email, archive, subarchive)
+            try:
+                watcher_data = load_cached_object(path)
+                watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
+            except CacheMissError:
+                watcher = ArchiveWatcher(
+                    archive, subarchive,
+                    self.watchlist[key]['cutoff_date'], lru=page_lru
+                )
+
+            watcher.check()
+            save_cached_object(watcher.save(), path)
+
+            self.watchlist[key]['last_checked_date'] = datetime.now().strftime('%Y,%m,%d,%H:%M')
+            self.save()
+
+            # Return just the result, not the watcher itself
+            if tree:
+                return watcher.unresolved_tree
+            else:
+                return [{'name': k, **v} for k, v in watcher.unresolved.items()]
+
+    def resolve_item(self, archive, subarchive, fond=None, opus=None, case=None, page_lru=None, tree=False):
+        key = _watchlist_key(archive, subarchive)
+
+        with self._lock:
+            if key not in self.watchlist:
+                raise KeyError('Watchlist item not found')
+
+            path = _watcher_cache_path(self.email, archive, subarchive)
+            try:
+                watcher_data = load_cached_object(path)
+            except CacheMissError:
+                raise FileNotFoundError('No watcher found')
+
+            watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
+
+            resolve_key = ArchiveWatcher.key(archive, subarchive, fond, opus, case)
+            logger.info(f'Resolving {resolve_key}')
+            watcher.resolve(resolve_key, deep=tree)
+
+            save_cached_object(watcher.save(), path)
+
+            if tree:
+                return watcher.unresolved_tree
+            else:
+                return [{'name': k, **v} for k, v in watcher.unresolved.items()]
+
+    def save(self):
+        with self._lock:
+            save_cached_object(self.to_dict(), f'users/{self.email}.json')
+
+    def to_dict(self):
+        return {
+            'name': self.name,
+            'password': self.password_hash,
+            'watchlist': self.watchlist
+        }
+
+    @classmethod
+    def from_dict(cls, email, d):
+        return cls(
+            name=d['name'],
+            email=email,
+            password=d['password'],
+            watchlist=d.get('watchlist', {}),
+            is_hashed=True
+        )
+
+class Users_old:
     def __init__(self, session):
         self._path = 'users'
         self._session = session
@@ -101,6 +231,49 @@ class Users:
         save_cached_object(user, f'{self._path}/{email}.json')
         return True, 'Password changed successfully'
 
+class Users:
+    def __init__(self, session, max_users=10):
+        self._path = 'users'
+        self._session = session
+        self._cache = LRUCache(maxsize=max_users)
+        self._locks = defaultdict(threading.Lock)
+
+    def _session_user(self, name, email):
+        return {'name': name, 'email': email}
+
+    def lookup(self, email):
+        with self._locks[email]:
+            if email in self._cache:
+                return self._cache[email]
+            try:
+                data = load_cached_object(f'{self._path}/{email}.json')
+                user = User.from_dict(email, data)
+                self._cache[email] = user
+                return user
+            except CacheMissError:
+                return None
+
+    def create(self, email, name, password):
+        if self.lookup(email):
+            return False
+        logger.info(f"Storing new user: {name}, {email}")
+        user = User(name, email, password)
+        with self._locks[email]:
+            user.save()
+            self._cache[email] = user
+        self._session['user'] = self._session_user(name, email)
+        return True
+
+    def login(self, email, password):
+        user = self.lookup(email)
+        if user and user.check_password(password):
+            self._session['user'] = self._session_user(user.name, email)
+            return True
+        return False
+
+    def logout(self):
+        self._session.pop('user', None)
+
 users = Users(session)
 
 # ---- FRONT END PAGES --------------------------------------------------------
@@ -138,7 +311,6 @@ def login():
     logger.info(f"Login failed: {email}")
     return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
 
-
 # Logout Route
 @app.route('/logout')
 def logout():
@@ -157,9 +329,14 @@ def change_password():
     current_pw = data.get('current')
     new_pw = data.get('new')
 
-    success, message = users.change_password(email, current_pw, new_pw)
-    status = 200 if success else 403
-    return jsonify(success=success, message=message), status
+    user = users.lookup(email)
+    if not user:
+        return jsonify(success=False, message='User not found'), 404
+
+    if user.change_password(current_pw, new_pw):
+        return jsonify(success=True, message='Password changed successfully'), 200
+    else:
+        return jsonify(success=False, message='Current password is incorrect'), 403
 
 @app.route('/reset_password', methods=['POST'])
 def reset_password_request():
@@ -195,13 +372,16 @@ def reset_with_token(token):
     except Exception:
         return render_template('reset_password_expired.html')
 
+    user = users.lookup(email)
+    if not user:
+        return render_template('reset_password_expired.html')
+
     if request.method == 'POST':
         new_pw = request.form.get('password')
-        user = users.lookup(email)
-        if not user:
-            return render_template('reset_password_expired.html')
-        user['password'] = generate_password_hash(new_pw)
-        save_cached_object(user, f'{users._path}/{email}.json')
+        if not new_pw:
+            return render_template('reset_password_form.html', token=token, error="Password is required")
+
+        user.set_password(new_pw)
         return redirect(url_for('home'))
 
     return render_template('reset_password_form.html', token=token)
@@ -264,6 +444,18 @@ def get_page(request):
         page['history'] = _compress_history(result.history(cutoff_date='2023'))
 
     return result
+
+def get_current_user():
+    user_session = session.get('user')
+    if not user_session:
+        return None, jsonify({'error': 'Not logged in'}), 401
+
+    email = user_session.get('email')
+    user = users.lookup(email)
+    if not user:
+        return None, jsonify({'error': 'User not found'}), 404
+
+    return user, None, None
 
 # ---- SERVICE API ------------------------------------------------------------
 
@@ -330,186 +522,93 @@ def _format_watchlist(watchlist):
 ## Get user's watchlist
 @app.route('/watchlist', methods=['GET'])
 def get_watchlist():
-    user = session.get('user')
-    if not user:
-        return jsonify({'error': 'Not logged in'}), 401
+    user, error_response, status = get_current_user()
+    if error_response:
+        return error_response, status
 
-    email = user['email']
-    try:
-        user_data = load_cached_object(f'users/{email}.json')
-        watchlist = user_data.get('watchlist', {})
-        # Convert to list format for frontend compatibility
-        result = _format_watchlist(watchlist)
-        logger.info(f'watchlist for {email}: {result}')
-        return jsonify(result)
-    except CacheMissError:
-        return jsonify([])
-
-def _watcher_cache_path(email, archive, subarchive):
-    return f'watchers/{email}/{archive}-{subarchive}.json'
+    result = _format_watchlist(user.watchlist)
+    logger.info(f'watchlist for {user.email}: {result}')
+    return jsonify(result)
 
 # Add to user's watchlist
 @app.route('/watchlist', methods=['POST'])
 def add_to_watchlist():
-    user = session.get('user')
-    if not user:
-        return jsonify({'error': 'Not logged in'}), 401
+    user, error_response, status = get_current_user()
+    if error_response:
+        return error_response, status
 
     data = request.json
-    email = user['email']
+    user.add_to_watchlist(
+        archive=data['archive'],
+        subarchive=data['subarchive'],
+        cutoff_date=data['cutoff_date']
+    )
 
-    try:
-        user_data = load_cached_object(f'users/{email}.json')
-    except CacheMissError:
-        user_data = {}
-
-    watchlist = user_data.get('watchlist', {})
-
-    key = _watchlist_key(data['archive'], data['subarchive'])
-    watchlist[key] = {
-        'last_checked_date': '',
-        'cutoff_date': data['cutoff_date']
-    }
-
-    user_data['watchlist'] = watchlist
-    save_cached_object(user_data, f'users/{email}.json')
-
-    # return updated watchlist
-    return jsonify(_format_watchlist(watchlist)), 201
+    return jsonify(_format_watchlist(user.watchlist)), 201
 
 # Remove from user's watchlist
 @app.route('/watchlist/<archive>/<subarchive>', methods=['DELETE'])
 def remove_from_watchlist(archive, subarchive):
-    user = session.get('user')
-    if not user:
-        return jsonify({'error': 'Not logged in'}), 401
+    user, error_response, status = get_current_user()
+    if error_response:
+        return error_response, status
 
-    email = user['email']
+    logger.info(f'Removing watcher[{user.email}]: {archive}-{subarchive}')
+    success = user.remove_from_watchlist(archive, subarchive)
 
-    try:
-        logger.info(f'Removing watcher[{email}]: {archive}-{subarchive}')
-        user_data = load_cached_object(f'users/{email}.json')
-        watchlist = user_data.get('watchlist', {})
-        key = _watchlist_key(archive, subarchive)
-        if key in watchlist:
-            # remove from user's wathchlist
-            del watchlist[key]
-            user_data['watchlist'] = watchlist
-            save_cached_object(user_data, f'users/{email}.json')
-            # remove user's watcher data
-            watcher_path = _watcher_cache_path(email, archive, subarchive)
-            remove_cached_object(watcher_path)
-            return '', 204
-        else:
-            return jsonify({'error': 'Entry not found'}), 404
-    except CacheMissError:
-        return jsonify({'error': 'User data not found'}), 404
+    if success:
+        return '', 204
+    else:
+        return jsonify({'error': 'Entry not found'}), 404
 
 # Check for updates on a specific watchlist item
 @app.route('/watchlist/<archive>/<subarchive>/check', methods=['GET'])
 def check_watchlist_item(archive, subarchive):
-    user = session.get('user')
-    if not user:
-        return jsonify({'error': 'Not logged in'}), 401
-    email = user['email']
+    user, error_response, status = get_current_user()
+    if error_response:
+        return error_response, status
 
     try:
-        # Load user data and watchlist
-        user_data = load_cached_object(f'users/{email}.json')
-        watchlist = user_data.get('watchlist', {})
+        tree = request.args.get('tree') is not None
+        result = user.check_archive(archive, subarchive, page_lru, tree=tree)
 
-        key = _watchlist_key(archive, subarchive)
-        if key not in watchlist:
-            logger.error(f'watchlist check: {key} not present')
-            return jsonify({'error': 'Watchlist item not found'}), 404
-
-        # load user's watcher for this archive
-        cache_path = _watcher_cache_path(email, archive, subarchive)
-        logger.info(f"ArchiveWatcher.load: {cache_path}")
-        try:
-            watcher_data = load_cached_object(cache_path)
-            logger.info(f"ArchiveWatcher.loaded: {cache_path}")
-            watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
-            logger.info(f"ArchiveWatcher loaded {cache_path}")
-        except CacheMissError:
-            # first time: make a new one
-            watcher = ArchiveWatcher(
-                archive, subarchive, 
-                watchlist[key]['cutoff_date'], lru=page_lru)
-            logger.info(f"ArchiveWatcher loaded {cache_path}")
-
-        # check for updates
-        watcher.check()
-        logger.info(f"ArchiveWatcher check done {cache_path}")
-
-        # save the watcher state
-        save_cached_object(watcher.save(), cache_path)
-        logger.info(f"ArchiveWatcher saved {cache_path}")
-
-        # record last check date in user data
-        watchlist[key]['last_checked_date'] = datetime.now().strftime('%Y,%m,%d,%H:%M')
-        user_data['watchlist'] = watchlist
-        save_cached_object(user_data, f'users/{email}.json')
-        logger.info(f"ArchiveWatcher watchlist saved {email}")
-
-        if request.args.get('tree') is not None:
-            result = watcher.unresolved_tree
-        else:
-            result = [{'name': key, **value} for key, value in watcher.unresolved.items()]
         return jsonify({
-            'success': True, 
-            'unresolved': result, 
-            'watchlist': _format_watchlist(watchlist)}), 200
+            'success': True,
+            'unresolved': result,
+            'watchlist': _format_watchlist(user.watchlist)
+        }), 200
 
-    except CacheMissError:
-        logger.error(f'user data load failed: {email}')
-        return jsonify({'error': 'User data not found'}), 404
+    except KeyError:
+        return jsonify({'error': 'Watchlist item not found'}), 404
 
 @app.route('/resolve/<archive>/<subarchive>', methods=['GET'])
 @app.route('/resolve/<archive>/<subarchive>/<fond>', methods=['GET'])
 @app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
 @app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
 def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
-    user = session.get('user')
-    if not user:
-        return jsonify({'error': 'Not logged in'}), 401
+    user, error_response, status = get_current_user()
+    if error_response:
+        return error_response, status
 
-    email = user['email']
+    tree = request.args.get('tree') is not None
 
+    logger.info(f'resolve_update: {archive}, {subarchive}, {fond}, {opus}, {case}')
     try:
-        # Load user data and watchlist
-        user_data = load_cached_object(f'users/{email}.json')
-        watchlist = user_data.get('watchlist', {})
+        result = user.resolve_item(
+            archive, subarchive,
+            fond=fond, opus=opus, case=case,
+            page_lru=page_lru, tree=tree
+        )
 
-        key = _watchlist_key(archive, subarchive)
-        if key not in watchlist:
-            return jsonify({'error': 'Watchlist item not found'}), 404
-
-        # load user's watcher for this archive
-        cache_path = _watcher_cache_path(email, archive, subarchive)
-        try:
-            watcher_data = load_cached_object(cache_path)
-        except CacheMissError:
-            return jsonify({'error': 'No watcher found'}), 404
-        watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
-
-        # resolve the item
-        key = ArchiveWatcher.key(archive, subarchive, fond, opus, case)
-        logger.info(f'Resolving {key}')
-        watcher.resolve(key, deep=request.args.get('tree', False))
-
-        # save the watcher state
-        save_cached_object(watcher.save(), cache_path)
-
-        # return updated list of unresolved items
-        if request.args.get('tree') is not None:
-            result = watcher.unresolved_tree
-        else:
-            result = [{'name': key, **value} for key, value in watcher.unresolved.items()]
         return jsonify({'success': True, 'unresolved': result}), 200
 
-    except CacheMissError:
-        return jsonify({'error': 'Exception during resolve'}), 404
+    except KeyError:
+        return jsonify({'error': 'Watchlist item not found'}), 404
+    except FileNotFoundError:
+        return jsonify({'error': 'No watcher found'}), 404
+    except Exception as e:
+        logger.exception("Error during resolve")
+        return jsonify({'error': 'Exception during resolve'}), 500
 
 # ---- TRANSLATION MANAGEMENT -------------------------------------------------
 
@@ -581,18 +680,17 @@ def _start_translation(email, page):
 @app.route('/translate/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
 @app.route('/translate/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
 def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=None):
-    user = session.get('user')
-    if not user:
-        return jsonify({'error': 'Not logged in'}), 401
-    email = user['email']
+    user, error_response, status = get_current_user()
+    if error_response:
+        return error_response, status
     if archive:
         page = page_lru.lookup(archive, subarchive, fond, opus, case)
         if page:
             # start new translation
-            _start_translation(email, page)
+            _start_translation(user.email, page)
     return jsonify({
         'success': True,
-        'translations': _active_translations(email)}), 200
+        'translations': _active_translations(user.email)}), 200
 
 # ---- MAIN -------------------------------------------------------------------
 
