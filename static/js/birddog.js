@@ -1085,6 +1085,27 @@ function render_unresolved_items() {
 // ---------------------------------------------------------------------------
 // APP INITIALIZATION
 
+function setup_back_button_interceptor() {
+    // Ensure we don't double-push or stack redundant entries
+    if (!history.state || history.state.page !== 'guard') {
+        history.pushState({ page: 'guard' }, '', window.location.pathname + window.location.search);
+    }
+
+    window.addEventListener('popstate', function (event) {
+        if (event.state && event.state.page === 'guard') {
+            const should_leave = confirm('Are you sure you want to go back? Unsaved changes may be lost.');
+            if (!should_leave) {
+                // Re-push the guard entry
+                history.pushState({ page: 'guard' }, '', window.location.pathname + window.location.search);
+            } else {
+                // Remove listener to prevent it firing again
+                window.removeEventListener('popstate', arguments.callee);
+                history.back(); // allow back navigation
+            }
+        }
+    });
+}
+
 function on_loaded() {
     // Login form submit button
     const login = document.getElementById('loginForm');
@@ -1245,6 +1266,7 @@ function on_loaded() {
           }
         });
 
+        setup_back_button_interceptor();
 
         // Populate the interface
         load_watchlist(check_all=true, initial_load=true);

@@ -260,7 +260,7 @@ def check_page_updates(archive, cutoff_date):
         offset += batch_size
         batch_size *= 2 # search geometrically longer history 
     change_list = [item for item in change_list if item["lastmod"] >= cutoff_date]
-    logger.info(f"check_page_updates, len(change_list), changes found")
+    logger.info(f"check_page_updates, {len(change_list)}, changes found")
     return _page_update_summary(archive, change_list)
 
 # -------------------------------------------------------------------------------
