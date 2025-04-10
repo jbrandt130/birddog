@@ -159,16 +159,20 @@ def get_page_history(page, limit=None, cutoff_date=None):
     if limit is not None:
         limit = max(limit, 1) # low limit value returns no result
         url = f'{url}&limit={limit}'
-    soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
-    result = []
-    for elem in soup.find_all('a', attrs = {'class': 'mw-changeslist-date'}):
-        date = format_date(elem.text)
-        link = elem['href']
-        result.append({
-            'modified': date,
-            'link': page.base + link,
-        })
-    return result
+    logger.info(f'get_page_history: {url}')
+    try:
+        soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
+        result = []
+        for elem in soup.find_all('a', attrs = {'class': 'mw-changeslist-date'}):
+            date = format_date(elem.text)
+            link = elem['href']
+            result.append({
+                'modified': date,
+                'link': page.base + link,
+            })
+        return result
+    except:
+        return None
 
 def report_page_changes(page):
     """
@@ -284,9 +288,12 @@ class Page:
                 # not in the cache - get it
                 if self.default_url is not None:
                     logger.info(f"{f'Loading page: {self.name} from {self.default_url}'}")
-                    self._page = read_page(self.default_url)
-                    self._cache_save()
-
+                    try:
+                        self._page = read_page(self.default_url)
+                        self._cache_save()
+                    except:
+                        # FIXME: bad page
+                        pass
     class LookupError(LookupError):
         def __init__(self, page_name, key):
             self.page_name = page_name
@@ -373,7 +380,10 @@ class Page:
     @property
     def default_url(self):
         if self._spec is not None and self._spec[1] is not None:
-            return self.base + self._spec[1]
+            url = self._spec[1]
+            if url.startswith('http://') or url.startswith('https://'):
+                return url
+            return self.base + url
         return None
 
     @property

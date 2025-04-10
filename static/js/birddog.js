@@ -443,6 +443,7 @@ function render_page_data(data) {
     // set button enables
     enable_if("resolve-btn", needs_resolve(data));
     enable_if("translate-btn", data.needs_translation);
+    enable_if("download-btn", data.kind != 'case');
 
     render_breadcrumbs(data);
     update_archive_select();

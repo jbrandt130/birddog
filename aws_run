@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# If eb is missing do this one-time initialization:
+#       brew install awsebcli
+
+set -e  # Exit on error
+
+APP_NAME="birddog"
+ENV_NAME="birddog-env"
+REGION="us-east-1"
+PLATFORM="Python 3.12"
+
+function init() {
+  echo "🔧 Running EB init setup..."
+  eb init "$APP_NAME" --platform "$PLATFORM" --region "$REGION"
+  echo "✅ Setup complete."
+}
+
+function deploy_app() {
+  if eb list | grep -Fxq "$ENV_NAME"; then
+    echo "🚀 Environment '$ENV_NAME' already exists. Skipping creation."
+  else
+    echo "🚀 Creating Elastic Beanstalk environment: $ENV_NAME..."
+    eb create "$ENV_NAME"
+    echo "✅ Environment created."
+  fi
+
+  echo "🔐 Setting environment variables from shell..."
+  eb setenv \
+    AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+    AWS_DEFAULT_REGION="$AWS_DEFAULT_REGION" \
+    AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+    BIRDDOG_SECRET_KEY="$BIRDDOG_SECRET_KEY" \
+    BIRDDOG_SMTP_PASSWORD="$BIRDDOG_SMTP_PASSWORD" \
+    BIRDDOG_SMTP_PORT="$BIRDDOG_SMTP_PORT" \
+    BIRDDOG_SMTP_SERVER="$BIRDDOG_SMTP_SERVER" \
+    BIRDDOG_SMTP_USERNAME="$BIRDDOG_SMTP_USERNAME"
+
+  echo "📦 Deploying application..."
+  eb deploy
+
+  echo "📊 Checking environment status..."
+  eb status
+
+  echo "✅ Deployment complete."
+}
+
+function terminate_env() {
+  echo "🔥 Terminating environment: $ENV_NAME"
+  eb terminate "$ENV_NAME" --force 
+  echo "✅ Environment terminated."
+}
+
+case "$1" in
+  init)
+    init
+    ;;
+  deploy)
+    deploy_app
+    ;;
+  terminate)
+    terminate_env
+    ;;
+  open)
+    eb open
+    ;;
+  status)
+    eb status
+    ;;
+  *)
+    echo "Usage: $0 {init|deploy|open|status|terminate}"
+    exit 1
+    ;;
+esac

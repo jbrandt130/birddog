@@ -62,11 +62,15 @@ def substitute(page, expr):
     except:
         return None
 
-TEMPLATE_DIR = Path(__file__).resolve().parent.parent / 'resources/xlsx_templates'
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TEMPLATE_DIR = PROJECT_ROOT / 'resources' / 'xlsx_templates'
+#TEMPLATE_DIR = Path(__file__).resolve().parent.parent / 'resources/xlsx_templates'
 
 def export_page(page, dest_file=None, lru=None):
     template_file = f'{TEMPLATE_DIR}/{page.kind}.xlsx'
-    logger.info(f"{f'opening template file {template_file}...'}")
+    logger.info(f'opening template file {template_file}...')
+    logger.info(f'.   PROJECT_ROOT={PROJECT_ROOT}')
+    logger.info(f'.   TEMPLATE_DIR={TEMPLATE_DIR}')
     workbook = load_workbook(filename = template_file)
     sheet = workbook.active
 
