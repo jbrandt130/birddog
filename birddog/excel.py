@@ -8,6 +8,8 @@ from copy import copy
 from openpyxl import load_workbook
 from openpyxl.worksheet.formula import ArrayFormula
 from openpyxl.formula.translate import Translator
+from openpyxl.utils.cell import get_column_letter
+
 from birddog.utility import get_text, ARCHIVE_BASE
 
 import logging
@@ -30,7 +32,7 @@ def _child_sheetname(page, child):
         return f'Fund {get_text(child[0]["text"])}'
     elif page.kind == 'fond':
         return f'{page.parent.id} {page.id}-{get_text(child[0]["text"])}'
-    return f'sheetname-{get_text(child[0]['text'])}'
+    return f'sheetname-{get_text(child[0]["text"])}'
 
 def _child_doc_url(parent, child, lru=None):
     #_logger.info(f'_child_doc_url: _child_url {_child_url(child)}')
@@ -93,7 +95,7 @@ def _process_formula(sheet, cell, first_child_row, last_child_row):
     if isinstance(text, str) and text[0] == '=':
         # formula detected
         column_range = f'{cell.column_letter}{first_child_row}:{cell.column_letter}{last_child_row}'
-        new_formula = f'={text[1:].replace('__COL__', column_range)}'
+        new_formula = f'={text[1:].replace("__COL__", column_range)}'
         #_logger.info(f'formula found: {cell.column_letter}{cell.row}: {text[1:]} --> {new_formula}')
         cell.value = new_formula
         if cell.row == first_child_row:
@@ -148,6 +150,19 @@ def _process_table_column(page, lru, edit_cell, sheet, cell, parse, match, first
             child_cell.value = ''
         row += 1
 
+def _locate_first_child_row(sheet):
+    for row in sheet.iter_rows():
+        for cell in row:
+            check = _check_cell(cell)
+            if check:
+                # form list of parsed template expressions for each in the cell
+                parsed = [_parse_template_expr(e) for e in check]
+                for parse in parsed:
+                    # look for child cell expression
+                    if parse['expr'] in ['empty', 'child']:
+                        return cell.row
+    return None
+
 # ------------ EXPORT PAGE ---------------
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -161,7 +176,7 @@ def export_page(page, dest_file=None, lru=None):
     sheet = workbook.active
     max_row = sheet.max_row
     max_col = sheet.max_column
-    max_col_letter = None
+    max_col_letter = get_column_letter(max_col)
     _logger.info(f'sheet dimensions: {max_row} rows, {max_col} cols')
 
     # process title
@@ -176,27 +191,10 @@ def export_page(page, dest_file=None, lru=None):
     sheet.title = title
 
     num_children = len(page.children)
-    first_child_row = None
-    last_child_row = None
-
-    # first pass - locate table row template expressions
-    for row in sheet.iter_rows():
-        if first_child_row is not None:
-            break
-        for cell in row:
-            if cell.column == max_col:
-                max_col_letter = cell.column_letter
-            check = _check_cell(cell)
-            if check:
-                # form list of parsed template expressions for each in the cell
-                parsed = [_parse_template_expr(e) for e in check]
-                for parse in parsed:
-                    if parse['expr'] in ['empty', 'child']:
-                        first_child_row = cell.row
-                        break
+    first_child_row = _locate_first_child_row(sheet)
+    last_child_row = first_child_row + num_children - 1
 
     # move rows below the table downward to make room for table rows
-    last_child_row = first_child_row + num_children - 1
     footer_range = f'A{first_child_row+1}:{max_col_letter}{max_row}'
     _logger.info(f'moving cell range: {footer_range}')
     sheet.move_range(footer_range, rows=num_children, cols=0, translate=False)
@@ -206,7 +204,7 @@ def export_page(page, dest_file=None, lru=None):
     edits = []
     formulas = []
 
-    # second pass - make a list of all cells with template expressions
+    # make a list of all cells with template expressions
     # (now that cells have been relocated to their final positions)
     for row in sheet.iter_rows():
         for cell in row:
