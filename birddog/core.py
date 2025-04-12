@@ -374,6 +374,10 @@ class Page:
         return regex.sub(r"^\p{N}+\p{P}?\p{Zs}*", "", get_text(self._page.get('description')))
 
     @property
+    def header(self):
+        return self._page['header']
+        
+    @property
     def base(self):
         return self._parent.base
 

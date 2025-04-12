@@ -11,6 +11,7 @@ from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import get_column_letter
 
 from birddog.utility import get_text, ARCHIVE_BASE
+from birddog.ai import classify_table_columns
 
 import logging
 _logger = logging.getLogger(__name__)
@@ -66,8 +67,11 @@ def _get_cell_text(cell):
 def _check_cell(cell):
     return _check_string(_get_cell_text(cell))
 
+def _is_integer(text):
+    return text is not None and text.isdigit()
+
 _PARSE_PATTERN = re.compile(
-    r'{(?P<expr>[a-zA-Z0-9_.]+)(\[(?P<index>[0-9]+)\])?(\:(?P<modifier>[a-zA-Z_]+))?}')
+    r'{(?P<expr>[a-zA-Z0-9_.]+)(\[(?P<index>[a-zA-Z_][a-zA-Z0-9_]*|\d+)\])?(\:(?P<modifier>[a-zA-Z_]+))?}')
 
 def _parse_template_expr(expr):
     match = re.match(_PARSE_PATTERN, expr)
@@ -106,7 +110,15 @@ def _process_formula(sheet, cell, first_child_row, last_child_row):
                 child_cell.value = Translator(
                     new_formula, origin=cell.coordinate).translate_formula(child_cell.coordinate)
 
-def _process_table_column(page, lru, edit_cell, sheet, cell, parse, match, first_child_row, last_child_row):
+def _map_index(column_header_map, index):
+    assert index is not None
+    if isinstance(index, int):
+        return index
+    if _is_integer(index):
+        return int(index)
+    return column_header_map.get(index)
+
+def _process_table_column(page, lru, column_header_map, edit_cell, sheet, cell, parse, match, first_child_row, last_child_row):
     row = cell.row
     col = cell.column
     index = parse['index']
@@ -118,6 +130,7 @@ def _process_table_column(page, lru, edit_cell, sheet, cell, parse, match, first
             _copy_cell_properties(cell, child_cell)
         if parse['expr'] == 'child':
             if index is not None:
+                index = _map_index(column_header_map, index)
                 item = child[int(index)]
                 sub = get_text(item['text'])
                 if 'edit' in item:
@@ -163,6 +176,17 @@ def _locate_first_child_row(sheet):
                         return cell.row
     return None
 
+def _process_title(page, sheet):
+    title = sheet.title
+    check = _check_string(title)
+    if check:
+        for expr in check:
+            parsed = _parse_template_expr(expr)
+            sub = _substitute(page, parsed)
+            if sub:
+                title = title.replace(expr, sub)
+    sheet.title = title
+
 # ------------ EXPORT PAGE ---------------
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -179,33 +203,20 @@ def export_page(page, dest_file=None, lru=None):
     max_col_letter = get_column_letter(max_col)
     _logger.info(f'sheet dimensions: {max_row} rows, {max_col} cols')
 
-    # process title
-    title = sheet.title
-    check = _check_string(title)
-    if check:
-        for expr in check:
-            parsed = _parse_template_expr(expr)
-            sub = _substitute(page, parsed)
-            if sub:
-                title = title.replace(expr, sub)
-    sheet.title = title
+    _process_title(page, sheet)
 
+    # move rows below the table downward to make room for table rows
     num_children = len(page.children)
     first_child_row = _locate_first_child_row(sheet)
     last_child_row = first_child_row + num_children - 1
-
-    # move rows below the table downward to make room for table rows
     footer_range = f'A{first_child_row+1}:{max_col_letter}{max_row}'
     _logger.info(f'moving cell range: {footer_range}')
     sheet.move_range(footer_range, rows=num_children, cols=0, translate=False)
 
-    columns = []
-    edit_cell = {}
-    edits = []
-    formulas = []
-
     # make a list of all cells with template expressions
     # (now that cells have been relocated to their final positions)
+    edit_cell = {} # saves cells containing edit and formatting prototypes
+    edits = [] # list of edits to be processed
     for row in sheet.iter_rows():
         for cell in row:
             check = _check_cell(cell)
@@ -224,12 +235,17 @@ def export_page(page, dest_file=None, lru=None):
                 # check for and handle a formula
                 _process_formula(sheet, cell, first_child_row, last_child_row)
 
+    # form mapping from column header type to column index
+    column_header_map = {}
+    for i, col_type in enumerate(classify_table_columns(page)):
+        column_header_map[col_type] = i
+
     # process all the edit expressions
     for edit in edits:
         cell, matches, parses = edit
         for match, parse in zip(matches, parses):
             if parse['expr'] in ['empty', 'child']:
-                _process_table_column(page, lru, edit_cell, sheet, cell, parse, match, first_child_row, last_child_row)
+                _process_table_column(page, lru, column_header_map, edit_cell, sheet, cell, parse, match, first_child_row, last_child_row)
             elif parse['expr'] == 'edit':
                 # {edit} cells contain formatting for editing highlights (caught above)
                 pass

@@ -29,4 +29,6 @@ fi
 
 echo "Starting Flask service on port $PORT..."
 echo "Environment BIRDDOG_USE_LOCAL_CACHE=${BIRDDOG_USE_LOCAL_CACHE:-false}"
+(sleep 5; open "http://127.0.0.1:$PORT") &
 python3 -m birddog.service --port "$PORT" "${EXTRA_ARGS[@]}"
+
