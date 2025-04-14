@@ -5,6 +5,8 @@ import re
 import string
 from pathlib import Path
 from copy import copy
+from datetime import datetime
+
 from openpyxl import load_workbook
 from openpyxl.worksheet.formula import ArrayFormula
 from openpyxl.formula.translate import Translator
@@ -17,6 +19,18 @@ import logging
 _logger = logging.getLogger(__name__)
 
 # ------------ HELPER FUNCTIONS ---------------
+
+def _format_date(date_str):
+    """
+    Converts a date string from 'YYYY,MM,DD,hh:mm' to 'DD Mon YYYY'.
+    
+    Example:
+        format_date('2024,04,14,07:30') -> '14 Apr 2024'
+    """
+    if not date_str:
+        return ''
+    dt = datetime.strptime(date_str, "%Y,%m,%d,%H:%M")
+    return dt.strftime("%d %b %Y")
 
 def _is_linked(url):
     return url and not "redlink" in url
@@ -256,6 +270,9 @@ def export_page(page, dest_file=None, lru=None):
                     cell.value = cell.value.replace(match, sub)
                 if parse['modifier'] == 'linked':
                     cell.hyperlink = page.url
+                    cell.font = copy(edit_cell['linked'].font)
+                if parse['modifier'] == 'date':
+                    cell.value = _format_date(cell.value)
 
     # all done, save and return
     if dest_file:
