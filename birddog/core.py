@@ -23,11 +23,12 @@ from birddog.utility import (
     form_text_item,
     translate_page,
     equal_text,
-    get_logger
+    get_logger,
+    now
     )
 from birddog.cache import load_cached_object, save_cached_object, CacheMissError
 
-logger = get_logger()
+_logger = get_logger()
 
 #
 # global constants
@@ -39,6 +40,9 @@ def decode_subarchive(subarchive):
         if subarchive in item.values():
             return item
     return SUBARCHIVES[0]
+
+#
+# WikiSource archive scraping
 
 # HTML page element processing
 def form_element_text(element):
@@ -144,7 +148,11 @@ def get_page_history(page, limit=None, cutoff_date=None):
         attempt = 10
         while True:
             result = get_page_history(page, limit=attempt)
+            if not result:
+                _logger.info(f'get_page_history({page.name}, cutoff_date={cutoff_date}): empty history')
+                return []
             if len(result) == last_result_length:
+                result[-1]['created'] = True
                 return result # no more history to be had
             if result[-1]['modified'] <= cutoff_date:
                 for index, item in enumerate(result):
@@ -159,7 +167,7 @@ def get_page_history(page, limit=None, cutoff_date=None):
     if limit is not None:
         limit = max(limit, 1) # low limit value returns no result
         url = f'{url}&limit={limit}'
-    logger.info(f'get_page_history: {url}')
+    _logger.info(f'get_page_history: {url}')
     try:
         soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
         result = []
@@ -170,6 +178,7 @@ def get_page_history(page, limit=None, cutoff_date=None):
                 'modified': date,
                 'link': page.base + link,
             })
+        _logger.info(f'get_page_history({page.name}, limit={limit}): len(result)={len(result)}')
         return result
     except:
         return None
@@ -181,19 +190,19 @@ def report_page_changes(page):
     if isinstance(page, Page):
         page = page.page
     if 'refmod' not in page:
-        logger.info(f"No changes to report. Run check_page_changes first.")
+        _logger.info(f"No changes to report. Run check_page_changes first.")
         return
-    logger.info(
+    _logger.info(
         f'Change report for {get_text(page["title"])},' +
         f' lastmod={page["lastmod"]}, refmod={page["refmod"]}')
     for key in ['title', 'description']:
         if page[key]['edit'] is not None:
-            logger.info(f'{key}: {page[key]["edit"]}')
+            _logger.info(f'{key}: {page[key]["edit"]}')
     for child in page['children']:
         index = get_text(child[0]['text'])
         for i, item in enumerate(child):
             if 'edit' in item and item['edit'] is not None:
-                logger.info(f'{index}[{i}] ({item["edit"]}): {get_text(item["text"])}')
+                _logger.info(f'{index}[{i}] ({item["edit"]}): {get_text(item["text"])}')
 
 def check_page_changes(page, reference, report=False):
     """
@@ -256,7 +265,7 @@ def check_page_updates(archive, cutoff_date):
     batch_size = 50
     offset = 0
     while True:
-        logger.info(f'check_page_updates: {archive.name}, {batch_size}, {offset}')
+        _logger.info(f'check_page_updates: {archive.name}, {batch_size}, {offset}')
         changes = archive.latest_changes(limit=batch_size, offset=offset)
         change_list += changes
         if not changes or changes[-1]["lastmod"] < cutoff_date:
@@ -264,7 +273,7 @@ def check_page_updates(archive, cutoff_date):
         offset += batch_size
         batch_size *= 2 # search geometrically longer history 
     change_list = [item for item in change_list if item["lastmod"] >= cutoff_date]
-    logger.info(f"check_page_updates, {len(change_list)}, changes found")
+    _logger.info(f"check_page_updates, {len(change_list)}, changes found")
     return _page_update_summary(archive, change_list)
 
 # -------------------------------------------------------------------------------
@@ -287,7 +296,7 @@ class Page:
             if not self._cache_load():
                 # not in the cache - get it
                 if self.default_url is not None:
-                    logger.info(f"{f'Loading page: {self.name} from {self.default_url}'}")
+                    _logger.info(f"{f'Loading page: {self.name} from {self.default_url}'}")
                     try:
                         self._page = read_page(self.default_url)
                         self._cache_save()
@@ -312,13 +321,13 @@ class Page:
         if not version:
             history = self.history(limit=1)
             if not history:
-                logger.info(f"{f'{self.name}: no history'}")
+                _logger.info(f"{f'{self.name}: no history'}")
                 return False # bad page?
             version = history[0]["modified"]
         path = f'{self._cache_path}/{version}.json'
         try:
             self._page = load_cached_object(path)
-            logger.info(f"{f'Retrieved from cache: {self.name}[{version}]: {path}'}")
+            _logger.info(f"{f'Retrieved from cache: {self.name}[{version}]: {path}'}")
             return True
         except CacheMissError:
             pass
@@ -340,13 +349,13 @@ class Page:
         """Revert page state to particular version date."""
         history = self.history(cutoff_date=date)
         if not history:
-            logger.info(f'No version exists on or before {date}')
+            _logger.info(f'No version exists on or before {date}')
             return None
         version = history[-1]
         if self._cache_load(version=version['modified']):
             return self
 
-        logger.info(f'Loading page: {self.name}, modified: {version["modified"]}')
+        _logger.info(f'Loading page: {self.name}, modified: {version["modified"]}')
         self._page = read_page(version['link'])
         self._cache_save()
         return self
@@ -376,7 +385,7 @@ class Page:
     @property
     def header(self):
         return self._page['header']
-        
+
     @property
     def base(self):
         return self._parent.base
@@ -477,7 +486,26 @@ class Page:
         return False
 
     def history(self, limit=None, cutoff_date=None):
-        return get_page_history(self, limit, cutoff_date)
+        today = now()[:-6]
+        cached_history = self._page.get('cached_history')
+        #_logger.info(f'page({self.name}).history: cache={cached_history}')
+        if cached_history:
+            # is our cached history current enough?
+            if today == cached_history['last_checked']:
+                # do we have enough history cached?
+                if limit and len(cached_history['history']) >= limit:
+                    return cached_history['history'][:limit]
+                if cached_history['history']:
+                    last = cached_history['history'][-1]
+                    if cutoff_date and (last['modified'] <= cutoff_date or last.get('created')):
+                        return cached_history['history']
+        _logger.info(f'page({self.name}).history: refreshing cache: limit={limit}, cutoff_date={cutoff_date}')
+        self._page['cached_history'] = {
+            'history': get_page_history(self, limit, cutoff_date),
+            'last_checked': today
+        }
+        self._cache_save()
+        return self._page['cached_history']['history']
 
 class Archive(Page):
     """Represents a top level archive page."""
@@ -583,17 +611,17 @@ class PageLRU:
     def lookup(self, archive, subarchive, fond=None, opus=None, case=None):
         # periodically flush the lru to ensure the pages don't become stale
         if time.time() - self._timer_start >= self._reset_limit:
-            logger.info(f"PageLRU: flushing all entries")
+            _logger.info(f"PageLRU: flushing all entries")
             self._lru.clear()
             self._timer_start = time.time()
 
         key = self._key(archive, subarchive, fond, opus, case)
         try:
             item = self._lru[key]
-            logger.info(f"{f'PageLRU.lookup({key}): hit'}")
+            _logger.info(f"{f'PageLRU.lookup({key}): hit'}")
             return item
         except KeyError:
-            logger.info(f"{f'PageLRU.lookup({key}): miss'}")
+            _logger.info(f"{f'PageLRU.lookup({key}): miss'}")
             if not fond:
                 item = Archive(archive, subarchive=subarchive)
             elif not opus:
@@ -767,7 +795,7 @@ class ArchiveWatcher:
     def resolve(self, item, deep=False):
         if deep:
             # resolve item and all its subsidiaries
-            logger.info(f'ArchiveWatcher: deep resolve: {item}')
+            _logger.info(f'ArchiveWatcher: deep resolve: {item}')
             item = item.rstrip(',')
             # iterate over a copy of the keys to avoid problem mutating dict inside the loop
             for key in list(self.unresolved.keys()):

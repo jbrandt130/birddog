@@ -433,7 +433,7 @@ function render_page_data(data) {
 
     show_if('comparing-badge', is_comparison);
     show_if('no-differences-badge', is_comparison && !any_edit);
-    show_if('empty-page-badge', !row_added);
+    show_if('empty-page-badge', children.length == 0);
     show_if('needs-resolve-badge', needs_resolve(data));
     //show_if('translating-badge', data.translating ?? false);
     //show_if('progress-container', data.translating ?? false);

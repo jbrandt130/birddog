@@ -8,7 +8,8 @@ import json
 import logging
 _logger = logging.getLogger(__name__)
 
-_ai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+_key = os.getenv("OPENAI_API_KEY")
+_ai_client = OpenAI(api_key=_key) if _key else None
 
 def table_column_classifier(headers, class_descriptions, sample_rows=None, max_rows=3):
     """

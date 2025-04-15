@@ -36,6 +36,7 @@ function deploy_app() {
     BIRDDOG_SMTP_PORT="$BIRDDOG_SMTP_PORT" \
     BIRDDOG_SMTP_SERVER="$BIRDDOG_SMTP_SERVER" \
     BIRDDOG_SMTP_USERNAME="$BIRDDOG_SMTP_USERNAME"
+  eb printenv
 
   echo "📦 Deploying application..."
   eb deploy

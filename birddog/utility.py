@@ -9,6 +9,8 @@ import re
 import time
 import json
 import requests
+from datetime import datetime
+
 from bs4 import BeautifulSoup
 
 from birddog.translate import (
@@ -94,6 +96,9 @@ def find_subarchives(archive):
 
 #
 # date handling
+
+def now():
+    return datetime.now().strftime('%Y,%m,%d,%H:%M')
 
 def format_date(message):
     """Convert Ukranian date string such as "19:15, 20 травня 2023" to standard form.
