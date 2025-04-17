@@ -36,9 +36,10 @@ from birddog.cache import (
     save_cached_object,
     remove_cached_object,
     CacheMissError)
-from birddog.utility import ARCHIVES, get_logger
+from birddog.utility import get_logger
+from birddog.wiki import ARCHIVES
 
-# ---- FLASK INITIALIZATION  --------------------------------------------------
+# ---- INITIALIZATION  --------------------------------------------------
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATES_DIR = os.path.join(BASE_DIR, 'templates')
@@ -52,6 +53,8 @@ SMTP_SERVER = os.getenv('BIRDDOG_SMTP_SERVER', '')  # For password reset
 SMTP_PORT = os.getenv('BIRDDOG_SMTP_PORT', '')  # For password reset
 SMTP_USERNAME = os.getenv('BIRDDOG_SMTP_USERNAME', '')  # For password reset
 SMTP_PASSWORD = os.getenv('BIRDDOG_SMTP_PASSWORD', '')  # For password reset
+
+logger = get_logger()
 
 # ---- USER MANAGEMENT --------------------------------------------------------
 
@@ -644,9 +647,19 @@ def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=Non
         'success': True,
         'translations': _active_translations(user.email)}), 200
 
-# ---- MAIN -------------------------------------------------------------------
+# ---- LOG ACCESS ---------------------------------------------------------------
 
-logger = get_logger()
+from birddog.utility import get_log_buffer
+
+@app.route('/log')
+def get_log():
+    user, error_response, status = get_current_user()
+    if error_response:
+        return error_response, status
+    limit = request.args.get('limit', type=int)
+    return jsonify(get_log_buffer().get_logs(limit)), 200
+
+# ---- MAIN -------------------------------------------------------------------
 
 if __name__ == "__main__":
     import argparse

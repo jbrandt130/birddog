@@ -1,5 +1,3 @@
-import logging
-logger = logging.getLogger(__name__)
 # (c) 2025 Jonathan Brandt
 # Licensed under the MIT License. See LICENSE file in the project root.
 
@@ -7,9 +5,12 @@ logger = logging.getLogger(__name__)
 
 import json
 import os
+from threading import Lock
 from pathlib import Path
 from birddog.utility import get_logger
-logger = get_logger()
+
+_logger = get_logger()
+_cache_lock = Lock() # could be overkill?
 
 USE_LOCAL_FILESYSTEM = os.getenv("BIRDDOG_USE_LOCAL_CACHE", False) in ("true", "True", "1")
 
@@ -26,7 +27,7 @@ class CacheMissError(Exception):
 if USE_LOCAL_FILESYSTEM:
 
     CACHE_DIR       = Path(__file__).resolve().parent.parent / '.cache'
-    logger.info(f"{f'Using local folder {CACHE_DIR} for storage.'}")
+    _logger.info(f'Using local folder {CACHE_DIR} for storage.')
 
     def _cache_path(object_path):
         return f'{CACHE_DIR}/{object_path}'
@@ -41,6 +42,7 @@ if USE_LOCAL_FILESYSTEM:
         """Store JSON serialized version of object at object_path location relative to CACHE_DIR"""
         path = _cache_path(object_path)
         _make_path_if_needed(path)
+        #with _cache_lock:
         with open(path, 'w', encoding="utf8") as file:
             file.write(json.dumps(obj))
 
@@ -49,6 +51,7 @@ if USE_LOCAL_FILESYSTEM:
         Raises CacheMissError if cache entry is missing.
         """
         path = _cache_path(object_path)
+        #with _cache_lock:
         try:
             with open(path, encoding="utf8") as file:
                 return json.loads(file.read())
@@ -63,7 +66,6 @@ if USE_LOCAL_FILESYSTEM:
 else:
 
     # AWS S3 interface
-    from threading import Lock
     import boto3
 
     CACHE_NAME = 'birddog-data'
@@ -71,7 +73,7 @@ else:
     bucket_created = False
     bucket_creation_lock = Lock()
 
-    logger.info(f"{f'Using AWS S3 bucket {CACHE_NAME} for storage.'}")
+    _logger.info(f'Using AWS S3 bucket {CACHE_NAME} for storage.')
 
     def _create_bucket():
         global bucket_created
@@ -101,7 +103,7 @@ else:
             bucket_created = False
 
     def _put_item(path, json_object):
-        logger.info(f"{f'saving {path}: {len(json_object)}'}")
+        _logger.info(f"{f'saving {path}: {len(json_object)}'}")
         response = s3.put_object(
             Bucket=CACHE_NAME,
             Key=path,
@@ -119,6 +121,7 @@ else:
     def save_cached_object(obj, object_path):
         """Store JSON serialized version of object keyed on object_path"""
         _create_bucket()
+        #with _cache_lock:
         _put_item(object_path, json.dumps(obj))
 
     def load_cached_object(object_path):
@@ -126,6 +129,7 @@ else:
         Raises CacheMissError if cache entry is missing.
         """
         _create_bucket()
+        #with _cache_lock:
         item = _get_item(object_path)
         if not item:
             raise CacheMissError(object_path)

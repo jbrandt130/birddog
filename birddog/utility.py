@@ -2,16 +2,18 @@
 # Licensed under the MIT License. See LICENSE file in the project root.
 
 """
-Utility functions for archivescraper.
+Utility functions for Bird Dog
 """
 
 import re
 import time
 import json
 import requests
-from datetime import datetime
-
-from bs4 import BeautifulSoup
+import random
+from threading import Lock, Semaphore
+from datetime import datetime, timezone
+from collections import deque
+from threading import Semaphore, Lock, Thread
 
 from birddog.translate import (
     translation,
@@ -20,85 +22,121 @@ from birddog.translate import (
     is_translation_running,
     )
 
-#
-# standard logger
+# LOGGING --------------------------------------------------------------
 
 import logging
 import sys
 
+class InMemoryLogHandler(logging.Handler):
+    def __init__(self, capacity=1000):
+        super().__init__()
+        self.buffer = deque(maxlen=capacity)
+
+    def emit(self, record):
+        self.buffer.append(self.format(record))
+
+    def get_logs(self, limit=None):
+        if limit:
+            return list(self.buffer)[-limit:]
+        return list(self.buffer)
+
+LOGGING_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
+_log_buffer_handler = InMemoryLogHandler()
+_log_buffer_handler.setFormatter(logging.Formatter(LOGGING_FORMAT))
+
 def get_logger():
-# Configure the logging system
+    # Configure the logging system
     logging.basicConfig(
         level=logging.INFO,  # Change to DEBUG for more detailed logs
-        format="%(asctime)s [%(levelname)s] %(message)s",
+        format=LOGGING_FORMAT,
         handlers=[
-            logging.StreamHandler(sys.stdout)  # <-- Critical for EB log capture
+            logging.StreamHandler(sys.stdout),  # <-- Critical for EB log capture
+            _log_buffer_handler
         ]
     )
     return logging.getLogger(__name__)
 
-logger = get_logger()
+def get_log_buffer():
+    return _log_buffer_handler
+
+_logger = get_logger()
 
 # INITIALIZATION --------------------------------------------------------------
 
 # global constants
 
-ARCHIVE_BASE    = 'https://uk.wikisource.org'
 UK_MONTHS       = None
-ARCHIVE_LIST    = None
-ARCHIVES        = None
-
-# load static data resources
-
-with open('resources/archives.json', encoding="utf8") as f:
-    ARCHIVE_LIST = json.load(f)
-    ARCHIVE_LIST = {k: v for (k, v) in ARCHIVE_LIST.items() if v is not None}
 
 # used for standardizing dates in numerical format
 with open('resources/months.json', encoding="utf8") as f:
     UK_MONTHS = json.load(f)
 
-with open('resources/archives_master.json', encoding="utf8") as f:
-    ARCHIVES = json.load(f)
-
-def _inventory_subarchives(archives):
-    subarchives = {}
-    for arc_key, arc in archives.items():
-        for sub in arc.values():
-            subarchives[sub['subarchive']['uk']] = sub['subarchive']
-    return list(subarchives.values())
-
-SUBARCHIVES = _inventory_subarchives(ARCHIVES)
+# UTILITY FUNCTIONS --------------------------------------------------------
 
 #
-# subarchive sniffer
+# page loading
 
-def find_subarchives(archive):
-    url = f'{ARCHIVE_BASE}/wiki/{archive}'
-    result = {}
-    soup = BeautifulSoup(requests.get(url).text, 'lxml')
-    for div in soup.find_all('div', attrs = {'id': 'mw-content-text'}):
-        for item in div.find_all('a'):
-            if item.has_attr('title'):
-                if item['title'].startswith(archive):
-                    if 'redlink' not in item['href']:
-                        parsed = item['title'].split('/')
-                        if len(parsed) == 2 and parsed[1] != 'видання':
-                            subarchive = parsed[1]
-                            result[subarchive] = {
-                                'title': form_text_item(item['title']),
-                                'archive': form_text_item(parsed[0]),
-                                'subarchive': form_text_item(parsed[1]),
-                                'description': form_text_item(item.text),
-                                'link': item['href'],
-                                }
-    return result
+MAX_RETRIES = 5
+BASE_BACKOFF = 1.0  # seconds
+MAX_BACKOFF = 30.0  # max wait time in seconds
+REQUEST_TIMEOUT = 10 # seconds
+MAX_CONCURRENT_FETCHES = 5
+
+_fetch_semaphore = Semaphore(MAX_CONCURRENT_FETCHES)
+_url_headers = {
+        'User-Agent': 'BirddogBot/1.0 (non-commercial research, contact: birddogpound@gmail.com)'
+    }
+
+# fetch rate instrumentation
+_fetch_timestamps = deque()
+_fetch_timestamps_lock = Lock()
+LOG_INTERVAL = 10  # seconds between logs
+RATE_WINDOW = 60   # how far back to count requests/sec
+_last_log_time = 0
+
+def _record_fetch_event():
+    global _last_log_time
+    now = time.time()
+    with _fetch_timestamps_lock:
+        _fetch_timestamps.append(now)
+        cutoff = now - RATE_WINDOW
+        while _fetch_timestamps and _fetch_timestamps[0] < cutoff:
+            _fetch_timestamps.popleft()
+        if now - _last_log_time >= LOG_INTERVAL:
+            rate = len(_fetch_timestamps) / RATE_WINDOW if _fetch_timestamps else 0.0
+            if rate > 0:
+                _logger.info(f"fetch_url: {len(_fetch_timestamps)} requests in last {RATE_WINDOW}s → {rate:.2f} req/s")
+            _last_log_time = now
+
+def fetch_url(url, json=False):
+    with _fetch_semaphore:
+        attempt = 0
+        while attempt < MAX_RETRIES:
+            try:
+                response = requests.get(url, timeout=REQUEST_TIMEOUT, headers=_url_headers)
+                if response.status_code == 429:
+                    raise TooManyRequestsError("429 Too Many Requests")
+                if not response.ok:
+                    raise requests.RequestException(f"Unexpected status: {response.status_code}")
+                _record_fetch_event()
+                return response.json() if json else response.text
+            except (requests.RequestException, TooManyRequestsError) as e:
+                wait = min(MAX_BACKOFF, BASE_BACKOFF * (2 ** attempt))  # exponential backoff
+                wait += random.uniform(0, 1)  # add jitter
+                _logger.info(f"[{attempt+1}/{MAX_RETRIES}] Error: {e}. Retrying in {wait:.2f} seconds...")
+                time.sleep(wait)
+                attempt += 1
+        raise RuntimeError("Failed to fetch page after several retries")
+
+class TooManyRequestsError(Exception):
+    pass
 
 #
 # date handling
 
-def now():
-    return datetime.now().strftime('%Y,%m,%d,%H:%M')
+def now(universal=False):
+    result = datetime.now(timezone.utc) if universal else datetime.now()
+    return result.strftime('%Y,%m,%d,%H:%M')
 
 def format_date(message):
     """Convert Ukranian date string such as "19:15, 20 травня 2023" to standard form.
@@ -121,6 +159,10 @@ def lastmod(message):
     if result is not None:
         return format_date(result.group(0))
     return message
+
+def convert_utc_time(utc_str):
+    dt = datetime.strptime(utc_str, '%Y-%m-%dT%H:%M:%SZ')
+    return dt.strftime('%Y,%m,%d,%H:%M')
 
 #
 # multilingual support
@@ -209,10 +251,10 @@ def translate_page(
                     completion_callback(task_id, result)
             return queue_translation(batch, progress_callback, completion_cb)
         else:
-            logger.info(f'Batch translation: {len(batch)} items...')
+            _logger.info(f'Batch translation: {len(batch)} items...')
             start = time.time()
             batch = translation(batch)
             elapsed = time.time() - start
-            logger.info(f'    ...completed ({elapsed:.2f} sec.)')
+            _logger.info(f'    ...completed ({elapsed:.2f} sec.)')
             store_result(items, batch)
     return len(batch)

@@ -16,7 +16,7 @@ function init() {
   echo "✅ Setup complete."
 }
 
-function deploy_app() {
+function deploy() {
   if eb list | grep -Fxq "$ENV_NAME"; then
     echo "🚀 Environment '$ENV_NAME' already exists. Skipping creation."
   else
@@ -47,7 +47,17 @@ function deploy_app() {
   echo "✅ Deployment complete."
 }
 
-function terminate_env() {
+function redeploy() {
+  echo "📦 Redeploying application..."
+  eb deploy
+
+  echo "📊 Checking environment status..."
+  eb status
+
+  echo "✅ Redeploy complete."
+}
+
+function terminate() {
   echo "🔥 Terminating environment: $ENV_NAME"
   eb terminate "$ENV_NAME" --force 
   echo "✅ Environment terminated."
@@ -58,10 +68,13 @@ case "$1" in
     init
     ;;
   deploy)
-    deploy_app
+    deploy
+    ;;
+  redeploy)
+    redeploy
     ;;
   terminate)
-    terminate_env
+    terminate
     ;;
   open)
     eb open
@@ -70,7 +83,7 @@ case "$1" in
     eb status
     ;;
   *)
-    echo "Usage: $0 {init|deploy|open|status|terminate}"
+    echo "Usage: $0 {init|deploy|redeploy|open|status|terminate}"
     exit 1
     ;;
 esac

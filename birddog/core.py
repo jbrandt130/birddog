@@ -6,16 +6,13 @@ Ukraine records archive monitor and scraper.
 """
 
 import time
-import urllib.parse
+from urllib.parse import quote, unquote
 import requests
 from cachetools import LRUCache
 import regex
 from bs4 import BeautifulSoup
 
 from birddog.utility import (
-    ARCHIVE_BASE,
-    SUBARCHIVES,
-    ARCHIVE_LIST,
     lastmod,
     format_date,
     get_text,
@@ -24,16 +21,21 @@ from birddog.utility import (
     translate_page,
     equal_text,
     get_logger,
-    now
+    now,
+    fetch_url
     )
 from birddog.cache import load_cached_object, save_cached_object, CacheMissError
+from birddog.wiki import (
+    ARCHIVE_BASE,
+    SUBARCHIVES,
+    ARCHIVE_LIST,
+    HistoryLRU
+    )
 
 _logger = get_logger()
 
 #
 # global constants
-
-REQUEST_TIMEOUT = 10 # seconds
 
 def decode_subarchive(subarchive):
     for item in SUBARCHIVES:
@@ -62,7 +64,7 @@ def read_page(url):
         doc_link [only for case pages],
         thumb_link [only for case pages],
     """
-    soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
+    soup = BeautifulSoup(fetch_url(url), 'lxml')
     title = soup.find('span', attrs = {'class': 'mw-page-title-main'})
     desc = soup.find('span', attrs = {'id': 'header_section_text'})
     table = soup.find('table', attrs = {'class': 'wikitable'})
@@ -110,10 +112,10 @@ def do_search(query_string, limit=10, offset=0):
     Search archive site for matching entries, sorted on last modification date.
     For each hit, return dict with item with keys: title, link, and lastmod.
     """
-    query_string = urllib.parse.quote(query_string, safe='', encoding=None, errors=None)
+    query_string = quote(query_string, safe='', encoding=None, errors=None)
     url = f'{ARCHIVE_BASE}/w/index.php?limit={limit}&offset={offset}'
     url += f'&ns0=1&sort=last_edit_desc&search={query_string}'
-    soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
+    soup = BeautifulSoup(fetch_url(url), 'lxml')
     results = []
     for result in soup.find_all('li', attrs = {'class': 'mw-search-result'}):
         div = result.find('div', attrs = {'class': 'mw-search-result-heading'})
@@ -128,60 +130,6 @@ def do_search(query_string, limit=10, offset=0):
         }
         results.append(item)
     return results
-
-def history_url(page):
-    return page.default_url.replace(
-        '/wiki/',
-        '/w/index.php?action=history&title=')
-
-def get_page_history(page, limit=None, cutoff_date=None):
-    """
-    Return version history of given page, sorted in reverse chronological order.
-    Returns list of dicts containing keys:
-        "modified": modification date in standard format
-        "link": url to the corresponding page version
-    """
-    if cutoff_date is not None:
-        # search increasingly for cutoff date  because
-        # api does not allow for paging through search results
-        last_result_length = 0
-        attempt = 10
-        while True:
-            result = get_page_history(page, limit=attempt)
-            if not result:
-                _logger.info(f'get_page_history({page.name}, cutoff_date={cutoff_date}): empty history')
-                return []
-            if len(result) == last_result_length:
-                result[-1]['created'] = True
-                return result # no more history to be had
-            if result[-1]['modified'] <= cutoff_date:
-                for index, item in enumerate(result):
-                    if item['modified'] <= cutoff_date:
-                        return result[:(index+1)]
-                return result
-            # increase limit length and try again
-            last_result_length = len(result)
-            attempt *= 2
-
-    url = history_url(page)
-    if limit is not None:
-        limit = max(limit, 1) # low limit value returns no result
-        url = f'{url}&limit={limit}'
-    _logger.info(f'get_page_history: {url}')
-    try:
-        soup = BeautifulSoup(requests.get(url, timeout=REQUEST_TIMEOUT).text, 'lxml')
-        result = []
-        for elem in soup.find_all('a', attrs = {'class': 'mw-changeslist-date'}):
-            date = format_date(elem.text)
-            link = elem['href']
-            result.append({
-                'modified': date,
-                'link': page.base + link,
-            })
-        _logger.info(f'get_page_history({page.name}, limit={limit}): len(result)={len(result)}')
-        return result
-    except:
-        return None
 
 def report_page_changes(page):
     """
@@ -286,6 +234,8 @@ def check_page_updates(archive, cutoff_date):
 #        Case
 # The archive is organized hierarchically as Archive->Fond->Opus->Case
 
+_history_lru = HistoryLRU()
+
 class Page:
     """Abstract base clase for all page types on the archive."""
     def __init__(self, spec, parent, use_cache=True):
@@ -319,6 +269,7 @@ class Page:
         if not self.default_url:
             return False
         if not version:
+            # determine latest version
             history = self.history(limit=1)
             if not history:
                 _logger.info(f"{f'{self.name}: no history'}")
@@ -339,6 +290,14 @@ class Page:
         if self.lastmod:
             path = f'{self._cache_path}/{self.lastmod}.json'
             save_cached_object(self._page, path)
+
+    def history(self, limit=None, cutoff_date=None):
+        # needs to work if self._page is None
+        if limit:
+            return _history_lru.lookup(self.title, limit)
+        if cutoff_date:
+            return _history_lru.lookup_by_cutoff(self.title, cutoff_date=cutoff_date)
+            raise ValueError(f'Page({self.title}).history must specify either limit or cutoff_date')
 
     def latest(self):
         """Set page state to the latest version."""
@@ -415,7 +374,8 @@ class Page:
 
     @property
     def title(self):
-        return get_text(self._page.get('title'))
+        # must work even if self._page is None so history can be accessed before loading
+        return unquote(self._spec[1].split(':')[1])
 
     @property
     def lastmod(self):
@@ -485,28 +445,6 @@ class Page:
             return True
         return False
 
-    def history(self, limit=None, cutoff_date=None):
-        today = now()[:-6]
-        cached_history = self._page.get('cached_history')
-        #_logger.info(f'page({self.name}).history: cache={cached_history}')
-        if cached_history:
-            # is our cached history current enough?
-            if today == cached_history['last_checked']:
-                # do we have enough history cached?
-                if limit and len(cached_history['history']) >= limit:
-                    return cached_history['history'][:limit]
-                if cached_history['history']:
-                    last = cached_history['history'][-1]
-                    if cutoff_date and (last['modified'] <= cutoff_date or last.get('created')):
-                        return cached_history['history']
-        _logger.info(f'page({self.name}).history: refreshing cache: limit={limit}, cutoff_date={cutoff_date}')
-        self._page['cached_history'] = {
-            'history': get_page_history(self, limit, cutoff_date),
-            'last_checked': today
-        }
-        self._cache_save()
-        return self._page['cached_history']['history']
-
 class Archive(Page):
     """Represents a top level archive page."""
     def __init__(self, tag, subarchive=None, base=ARCHIVE_BASE, use_cache=True):
@@ -516,6 +454,11 @@ class Archive(Page):
         self._archive_name = f'{archive_name}/{self._subarchive["uk"]}'
         self._base = base
         super().__init__(None, None, use_cache=use_cache)
+
+    @property
+    def title(self):
+        # must work even if self._page is None so history can be accessed before loading
+        return self._archive_name.split(':')[1]
 
     @property
     def kind(self):
@@ -547,7 +490,7 @@ class Archive(Page):
 
     @property
     def default_url(self):
-        return self._base + '/wiki/' + str(urllib.parse.quote(self._archive_name))
+        return self._base + '/wiki/' + str(quote(self._archive_name))
 
     def latest_changes(self, limit=100, offset=0):
         return do_search(ARCHIVE_LIST[self._tag], limit=limit, offset=offset)

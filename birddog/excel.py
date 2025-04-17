@@ -12,11 +12,11 @@ from openpyxl.worksheet.formula import ArrayFormula
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import get_column_letter
 
-from birddog.utility import get_text, ARCHIVE_BASE
+from birddog.utility import get_text, get_logger
 from birddog.ai import classify_table_columns
+from birddog.wiki import ARCHIVE_BASE
 
-import logging
-_logger = logging.getLogger(__name__)
+_logger = get_logger()
 
 # ------------ HELPER FUNCTIONS ---------------
 
@@ -50,12 +50,12 @@ def _child_sheetname(page, child):
     return f'sheetname-{get_text(child[0]["text"])}'
 
 def _child_doc_url(parent, child, lru=None):
-    #_logger.info(f'_child_doc_url: _child_url {_child_url(child)}')
+    _logger.info(f'_child_doc_url: _child_url {_child_url(child)}')
     if not child or not _is_linked(_child_url(child)):
-        #_logger.info(f'_child_doc_url: {parent.name}: unlinked {get_text(child[0]["text"])}')
+        _logger.info(f'_child_doc_url: {parent.name}: unlinked {get_text(child[0]["text"])}')
         return None
     child_id = get_text(child[0]['text'])
-    #_logger.info(f'_child_doc_url: {parent.name}: looking up {child_id}')
+    _logger.info(f'_child_doc_url: {parent.name}: looking up {child_id}')
     if lru:
         child = lru.lookup_child(parent, child_id)
     else:

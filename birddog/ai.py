@@ -5,11 +5,19 @@ from openai import OpenAI
 import os
 import json
 
-import logging
-_logger = logging.getLogger(__name__)
+from birddog.utility import get_logger
+
+_logger = get_logger()
 
 _key = os.getenv("OPENAI_API_KEY")
-_ai_client = OpenAI(api_key=_key) if _key else None
+_ai_client = None
+
+def _get_client():
+    global _ai_client
+    if not _ai_client:
+        _logger.info(f'Creating OpenAI client')
+        _ai_client = OpenAI(api_key=_key) if _key else None
+    return _ai_client
 
 def table_column_classifier(headers, class_descriptions, sample_rows=None, max_rows=3):
     """
@@ -64,7 +72,7 @@ def table_column_classifier(headers, class_descriptions, sample_rows=None, max_r
     full_prompt = "\n".join(prompt_parts)
 
     try:
-        response = _ai_client.chat.completions.create(
+        response = _get_client().chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are a multilingual assistant that classifies table headers based on user-defined categories and sample data."},
