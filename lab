@@ -1,0 +1,27 @@
+#!/bin/bash
+# (c) 2025 Jonathan Brandt
+# Licensed under the MIT License. See LICENSE file in the project root.
+
+DEBUG_MODE=false
+EXTRA_ARGS=()
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --debug)
+      DEBUG_MODE=true
+      shift
+      ;;
+    *)
+      EXTRA_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if $DEBUG_MODE; then
+  export BIRDDOG_USE_LOCAL_CACHE=True
+fi
+
+jupyter lab
+

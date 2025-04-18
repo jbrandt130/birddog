@@ -15,6 +15,7 @@ from openpyxl.utils.cell import get_column_letter
 from birddog.utility import get_text, get_logger
 from birddog.ai import classify_table_columns
 from birddog.wiki import ARCHIVE_BASE
+from birddog.core import is_linked
 
 _logger = get_logger()
 
@@ -32,11 +33,8 @@ def _format_date(date_str):
     dt = datetime.strptime(date_str, "%Y,%m,%d,%H:%M")
     return dt.strftime("%d %b %Y")
 
-def _is_linked(url):
-    return url and not "redlink" in url
-
 def _link_status(url):
-    return "linked" if _is_linked(url) else "unlinked"
+    return "linked" if is_linked(url) else "unlinked"
 
 def _child_url(child):
     link = child[0]["link"]
@@ -49,18 +47,9 @@ def _child_sheetname(page, child):
         return f'{page.parent.id} {page.id}-{get_text(child[0]["text"])}'
     return f'sheetname-{get_text(child[0]["text"])}'
 
-def _child_doc_url(parent, child, lru=None):
-    _logger.info(f'_child_doc_url: _child_url {_child_url(child)}')
-    if not child or not _is_linked(_child_url(child)):
-        _logger.info(f'_child_doc_url: {parent.name}: unlinked {get_text(child[0]["text"])}')
-        return None
-    child_id = get_text(child[0]['text'])
-    _logger.info(f'_child_doc_url: {parent.name}: looking up {child_id}')
-    if lru:
-        child = lru.lookup_child(parent, child_id)
-    else:
-        child = parent[child_id]
-    return child.doc_url if child else None
+def _child_doc_url(child):
+    link = child[1]["link"]
+    return ARCHIVE_BASE + link if link is not None else None
 
 _EXPR_PATTERN = re.compile(r'{[^}]+}')
 
@@ -157,15 +146,15 @@ def _process_table_column(page, lru, column_header_map, edit_cell, sheet, cell, 
                 child_cell.value = sub
             if parse['modifier'] == 'linked':
                 url = _child_url(child)
-                if _is_linked(url):
+                if is_linked(url):
                     child_cell.hyperlink = _child_url(child)
                     child_cell.font = copy(edit_cell['linked'].font)
                 else:
                     child_cell.font = copy(edit_cell['unlinked'].font)
             elif parse['modifier'] == 'doc_link':
-                url = _child_doc_url(page, child, lru)
-                if _is_linked(url):
-                    child_cell.hyperlink = _child_doc_url(page, child, lru)
+                url = _child_doc_url(child)
+                if is_linked(url):
+                    child_cell.hyperlink = url
                     child_cell.font = copy(edit_cell['linked'].font)
                 else:
                     child_cell.font = copy(edit_cell['unlinked'].font)
@@ -219,6 +208,9 @@ def export_page(page, dest_file=None, lru=None):
     max_col = sheet.max_column
     max_col_letter = get_column_letter(max_col)
     _logger.info(f'sheet dimensions: {max_row} rows, {max_col} cols')
+
+    # make sure document links are present (for Opi only at the moment)
+    page.load_child_document_links()
 
     _process_title(page, sheet)
 

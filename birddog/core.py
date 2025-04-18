@@ -29,7 +29,8 @@ from birddog.wiki import (
     ARCHIVE_BASE,
     SUBARCHIVES,
     ARCHIVE_LIST,
-    HistoryLRU
+    HistoryLRU,
+    batch_fetch_document_links
     )
 
 _logger = get_logger()
@@ -42,6 +43,12 @@ def decode_subarchive(subarchive):
         if subarchive in item.values():
             return item
     return SUBARCHIVES[0]
+
+#
+# Helper functions
+
+def is_linked(url):
+    return url and not "redlink" in url
 
 #
 # WikiSource archive scraping
@@ -449,6 +456,11 @@ class Page:
             return True
         return False
 
+    def load_child_document_links(self):
+        # do nothing unless (overridden in subclass)
+        pass
+
+
 class Archive(Page):
     """Represents a top level archive page."""
     def __init__(self, tag, subarchive=None, base=ARCHIVE_BASE, use_cache=True):
@@ -522,6 +534,26 @@ class Opus(Page):
     @property
     def shortname(self):
         return f'{self.parent.parent.id} {self.parent.id}-{self.id}'
+
+    def load_child_document_links(self):
+        items = []
+        titles = []
+        for i, child in enumerate(self.children):
+            if is_linked(child[0].get('link')) and not is_linked(child[1].get('link')):
+                items.append(i)
+                titles.append(f"{self.title}/{get_text(child[0]['text'])}")
+        if items:
+            need_save = False
+            doc_links = batch_fetch_document_links(titles)
+            for i, title in zip(items, titles):
+                links = doc_links.get(title)
+                if links:
+                    # FIXME: what about multiple links? Ignoring them for now.
+                    self.children[i][1]['link'] = links[0]
+                    need_save = True
+            if need_save:
+                _logger.info(f'load_child_document_links({self.name}) updating cache')
+                self._cache_save()
 
 class Case(Page):
     """Represents case page."""

@@ -25,6 +25,7 @@ jiter==0.9.0
 jmespath==1.0.1
 lxml==5.3.1
 MarkupSafe==3.0.2
+mwparserfromhell==0.6.6
 openai==1.72.0
 openpyxl==3.1.5
 packaging==24.2

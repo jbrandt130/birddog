@@ -7,7 +7,9 @@ Wiki API access functions
 
 import time
 import json
+import mwparserfromhell
 from urllib.parse import quote
+from itertools import islice
 from cachetools import LRUCache
 
 from birddog.utility import (
@@ -187,4 +189,78 @@ class HistoryLRU:
         self._lru[page_title] = history
         return self._filter_with_fallback(history, cutoff_date)
 
+# -------------------------------------------------------------------------------
+# Document link extraction from wikitext
 
+def _wiki_content_url(titles):
+    batch_titles = '|'.join([quote(f'{WIKI_NAMESPACE}:{t}') for t in titles])
+    return (f'{ARCHIVE_BASE}/w/api.php?'
+            'action=query&format=json&prop=revisions&'
+            'rvprop=content&rvslots=main&'
+            f'titles={batch_titles}'
+           )
+
+def _extract_file_links(wikitext):
+    wikicode = mwparserfromhell.parse(wikitext)
+    file_links = []
+
+    # 1. Top-level links like [[File:...]]
+    for link in wikicode.filter_wikilinks():
+        title = str(link.title)
+        if title.lower().startswith("file:"):
+            file_links.append(title)
+
+    # 2. Template parameters containing [[File:...]] links
+    for template in wikicode.filter_templates():
+        for param in template.params:
+            param_value = mwparserfromhell.parse(str(param.value))
+            for link in param_value.filter_wikilinks():
+                title = str(link.title)
+                if title.lower().startswith("file:"):
+                    file_links.append(title)
+
+    return file_links
+
+def _normalize_mediawiki_title(title):
+    title = title.replace(' ', '_')         # Normalize space to underscore
+    return title
+
+def _file_link_to_url(link):
+    if link.lower().startswith("file:"):
+        filename = _normalize_mediawiki_title(link[5:])
+        return f"/wiki/File:{filename}"
+    else:
+        return None
+
+def _deduplicate_links(links):
+    return list(dict.fromkeys(links))
+    
+def _chunked(iterable, size):
+    """Yield successive chunks from iterable."""
+    it = iter(iterable)
+    while True:
+        chunk = list(islice(it, size))
+        if not chunk:
+            break
+        yield chunk
+
+def batch_fetch_document_links(titles, map_to_url=True, chunk_size=20):
+    if not isinstance(titles, (list, tuple)):
+        titles = [titles]
+
+    result = {}
+
+    for chunk in _chunked(titles, chunk_size):
+        data = fetch_url(_wiki_content_url(chunk), json=True)
+        for page in data['query']['pages'].values():
+            title = page['title'].split(':', 1)[-1]  # strip 'Архів:' prefix
+            try:
+                wikitext = page['revisions'][0]['slots']['main']['*']
+                links = _extract_file_links(wikitext)
+                if map_to_url:
+                    links = [_file_link_to_url(link) for link in links]
+                result[title] = _deduplicate_links(links)
+            except (KeyError, IndexError):
+                result[title] = []
+
+    return result

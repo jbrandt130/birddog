@@ -42,21 +42,22 @@ if USE_LOCAL_FILESYSTEM:
         """Store JSON serialized version of object at object_path location relative to CACHE_DIR"""
         path = _cache_path(object_path)
         _make_path_if_needed(path)
-        #with _cache_lock:
-        with open(path, 'w', encoding="utf8") as file:
-            file.write(json.dumps(obj))
+        with _cache_lock:
+            with open(path, 'w', encoding="utf8") as file:
+                file.write(json.dumps(obj))
 
     def load_cached_object(object_path):
         """Return object previously saved at object_path relative to CACHE_DIR.
         Raises CacheMissError if cache entry is missing.
         """
         path = _cache_path(object_path)
-        #with _cache_lock:
-        try:
-            with open(path, encoding="utf8") as file:
-                return json.loads(file.read())
-        except FileNotFoundError:
-            raise CacheMissError(object_path)
+        with _cache_lock:
+            try:
+                with open(path, encoding="utf8") as file:
+                    buffer = file.read()
+            except FileNotFoundError:
+                raise CacheMissError(object_path)
+        return json.loads(buffer)
 
     def remove_cached_object(object_path):
         path = _cache_path(object_path)
@@ -121,18 +122,18 @@ else:
     def save_cached_object(obj, object_path):
         """Store JSON serialized version of object keyed on object_path"""
         _create_bucket()
-        #with _cache_lock:
-        _put_item(object_path, json.dumps(obj))
+        with _cache_lock:
+            _put_item(object_path, json.dumps(obj))
 
     def load_cached_object(object_path):
         """Return object previously saved at object_path.
         Raises CacheMissError if cache entry is missing.
         """
         _create_bucket()
-        #with _cache_lock:
-        item = _get_item(object_path)
-        if not item:
-            raise CacheMissError(object_path)
+        with _cache_lock:
+            item = _get_item(object_path)
+            if not item:
+                raise CacheMissError(object_path)
         return json.loads(item)
 
     def remove_cached_object(object_path):
