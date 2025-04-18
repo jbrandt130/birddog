@@ -67,6 +67,8 @@ _EXPR_PATTERN = re.compile(r'{[^}]+}')
 def _check_string(text):
     if not text:
         return None
+    if not isinstance(text, str):
+        return text
     match = re.findall(_EXPR_PATTERN, text)
     if not match:
         return None
@@ -79,6 +81,7 @@ def _get_cell_text(cell):
     return text
 
 def _check_cell(cell):
+    #_logger.info(f'_check_cell[{cell.coordinate}]: {cell.value}')
     return _check_string(_get_cell_text(cell))
 
 def _is_integer(text):

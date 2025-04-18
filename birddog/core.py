@@ -365,6 +365,10 @@ class Page:
         return self.default_url
 
     @property
+    def unquoted_url(self):
+        return unquote(self.url)
+
+    @property
     def id(self):
         return self._spec[0]
 
