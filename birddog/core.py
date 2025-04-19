@@ -7,7 +7,6 @@ Ukraine records archive monitor and scraper.
 
 import time
 from urllib.parse import quote, unquote
-import requests
 from cachetools import LRUCache
 import regex
 from bs4 import BeautifulSoup
@@ -20,7 +19,6 @@ from birddog.utility import (
     form_text_item,
     translate_page,
     equal_text,
-    now,
     fetch_url
     )
 from birddog.cache import load_cached_object, save_cached_object, CacheMissError
@@ -664,7 +662,7 @@ def _make_tree(unresolved):
         address = address.replace(",", "-", 1)
         address = address.split(',')
         pos = root
-        for i, item in enumerate(address):
+        for item in address:
             if item not in pos:
                 pos[item] = {}
             pos = pos[item]

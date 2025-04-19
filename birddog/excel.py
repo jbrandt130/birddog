@@ -127,7 +127,7 @@ def _map_index(column_header_map, index):
         return int(index)
     return int(column_header_map.get(index))
 
-def _process_table_column(page, lru, column_header_map, edit_cell, sheet, cell, parse, match, first_child_row, last_child_row):
+def _process_table_column(page, column_header_map, edit_cell, sheet, cell, parse, match):
     row = cell.row
     col = cell.column
     index = parse['index']
@@ -259,7 +259,7 @@ def export_page(page, dest_file=None, lru=None):
         cell, matches, parses = edit
         for match, parse in zip(matches, parses):
             if parse['expr'] in ['empty', 'child']:
-                _process_table_column(page, lru, column_header_map, edit_cell, sheet, cell, parse, match, first_child_row, last_child_row)
+                _process_table_column(page, column_header_map, edit_cell, sheet, cell, parse, match)
             elif parse['expr'] == 'edit':
                 # {edit} cells contain formatting for editing highlights (caught above)
                 pass

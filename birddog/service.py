@@ -2,12 +2,9 @@
 import os
 import threading
 from copy import copy, deepcopy
-from urllib.parse import quote, unquote
 from datetime import datetime
-from time import sleep
 from cachetools import LRUCache
 from collections import defaultdict
-import logging
 from itsdangerous import URLSafeTimedSerializer
 import smtplib
 from email.message import EmailMessage
@@ -15,7 +12,6 @@ from flask import (
     Flask,
     render_template,
     request,
-    json,
     send_file,
     redirect,
     url_for,
@@ -28,8 +24,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from birddog.core import (
     PageLRU,
     ArchiveWatcher,
-    check_page_changes,
-    report_page_changes)
+    check_page_changes)
 from birddog.excel import export_page
 from birddog.cache import (
     load_cached_object,
@@ -56,10 +51,10 @@ SMTP_PORT = os.getenv('BIRDDOG_SMTP_PORT', '')  # For password reset
 SMTP_USERNAME = os.getenv('BIRDDOG_SMTP_USERNAME', '')  # For password reset
 SMTP_PASSWORD = os.getenv('BIRDDOG_SMTP_PASSWORD', '')  # For password reset
 
-logger = get_logger()
-
 # ---- USER MANAGEMENT --------------------------------------------------------
 
+def _hide(text):
+    return f'{text[:3]}...'
 
 def _watcher_cache_path(email, archive, subarchive):
     return f'watchers/{email}/{archive}-{subarchive}.json'
@@ -157,7 +152,7 @@ class User:
             watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
 
             resolve_key = ArchiveWatcher.key(archive, subarchive, fond, opus, case)
-            logger.info(f'Resolving {resolve_key}')
+            _logger.info(f'Resolving {resolve_key}')
             watcher.resolve(resolve_key, deep=tree)
 
             save_cached_object(watcher.save(), path)
@@ -213,7 +208,7 @@ class Users:
     def create(self, email, name, password):
         if self.lookup(email):
             return False
-        logger.info(f"Storing new user: {name}, {email}")
+        _logger.info(f"Storing new user: {name}, {_hide(email)}")
         user = User(name, email, password)
         with self._locks[email]:
             user.save()
@@ -253,7 +248,7 @@ def signup():
 
     if not users.create(email, name, password):
         return jsonify({'success': False, 'message': 'Email already exists'}), 400
-    logger.info(f"Creating new user: {name} {email}")
+    _logger.info(f"Creating new user: {name} {_hide(email)}")
     return jsonify({'success': True})
 
 # Login Route
@@ -265,7 +260,7 @@ def login():
 
     if users.login(email, password):
         return jsonify({'success': True})
-    logger.info(f"Login failed: {email}")
+    _logger.info(f"Login failed: {_hide(email)}")
     return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
 
 # Logout Route
@@ -318,7 +313,7 @@ def reset_password_request():
         return jsonify(success=True, message='If that email is registered, a reset link was sent.')
 
     token = serializer.dumps(email, salt='reset-password')
-    logger.info(f'sending password reset to {email}, {token}')
+    _logger.info(f'sending password reset to {_hide(email)}')
     _send_reset_email(email, token)
     return jsonify(success=True, message='Check your email for a reset link.')
 
@@ -447,7 +442,7 @@ def download_file():
             filename = f'{clean_name}.xlsx'
             filepath = os.path.join(BASE_DIR, 'static', 'downloads', filename)
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            logger.info(f'exporting spreadsheet to {filepath}')
+            _logger.info(f'exporting spreadsheet to {filepath}')
             export_page(page, filepath, lru=page_lru)
 
             return send_file(
@@ -457,10 +452,10 @@ def download_file():
                 mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
     except FileNotFoundError:
-        logger.exception(f'File not found: {filepath}')
+        _logger.exception(f'File not found: {filepath}')
         return jsonify({'error': 'File not found'}), 404
     except Exception as e:
-        logger.exception(f'Error: {e}')
+        _logger.exception(f'Error: {e}')
         return jsonify({'error': 'Internal server error'}), 500
 
 def _watchlist_key(archive, subarchive):
@@ -484,7 +479,7 @@ def get_watchlist():
         return error_response, status
 
     result = _format_watchlist(user.watchlist)
-    logger.info(f'watchlist for {user.email}: {result}')
+    _logger.info(f'watchlist for {_hide(user.email)}: {result}')
     return jsonify(result)
 
 # Add to user's watchlist
@@ -510,7 +505,7 @@ def remove_from_watchlist(archive, subarchive):
     if error_response:
         return error_response, status
 
-    logger.info(f'Removing watcher[{user.email}]: {archive}-{subarchive}')
+    _logger.info(f'Removing watcher[{_hide(user.email)}]: {archive}-{subarchive}')
     success = user.remove_from_watchlist(archive, subarchive)
 
     if success:
@@ -549,7 +544,7 @@ def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
 
     tree = request.args.get('tree') is not None
 
-    logger.info(f'resolve_update: {archive}, {subarchive}, {fond}, {opus}, {case}')
+    _logger.info(f'resolve_update: {archive}, {subarchive}, {fond}, {opus}, {case}')
     try:
         result = user.resolve_item(
             archive, subarchive,
@@ -563,8 +558,8 @@ def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
         return jsonify({'error': 'Watchlist item not found'}), 404
     except FileNotFoundError:
         return jsonify({'error': 'No watcher found'}), 404
-    except Exception as e:
-        logger.exception("Error during resolve")
+    except Exception:
+        _logger.exception("Error during resolve")
         return jsonify({'error': 'Exception during resolve'}), 500
 
 # ---- TRANSLATION MANAGEMENT -------------------------------------------------
@@ -597,7 +592,7 @@ def _translation_progress(task_id, progress, total):
         item['progress'] = progress
         item['total'] = total
         item['running'] = True
-    logger.info(f'translation progress: {page.name} {progress}/{total} {float(progress)/float(total)*100.:.1f}%')
+    _logger.info(f'translation progress: {page.name} {progress}/{total} {float(progress)/float(total)*100.:.1f}%')
 
 def _translation_completion(task_id, results):
     with _translation_lock:
@@ -607,7 +602,7 @@ def _translation_completion(task_id, results):
             _task_id_map[user] = [task for task in tasks if task != task_id]
         if task_id in _translation_tasks:
             del _translation_tasks[task_id]
-    logger.info(f'translation completed: {item["page"].name}')
+    _logger.info(f'translation completed: {item["page"].name}')
 
 def _start_translation(email, page):
     with _translation_lock:
@@ -618,7 +613,7 @@ def _start_translation(email, page):
                 progress_callback=_translation_progress,
                 completion_callback=_translation_completion)
             if task_id:
-                logger.info(f'translation started ({email}): {page.name}')
+                _logger.info(f'translation started ({_hide(email)}): {page.name}')
                 _translation_tasks[task_id] = {
                     'page': page,
                     'progress': 0,

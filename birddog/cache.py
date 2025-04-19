@@ -106,7 +106,7 @@ else:
 
     def _put_item(path, json_object):
         _logger.info(f"{f'saving {path}: {len(json_object)}'}")
-        response = s3.put_object(
+        s3.put_object(
             Bucket=CACHE_NAME,
             Key=path,
             Body=json_object

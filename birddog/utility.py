@@ -13,14 +13,11 @@ import random
 from threading import Lock, Semaphore
 from datetime import datetime, timezone
 from collections import deque
-from threading import Semaphore, Lock, Thread
 
 from birddog.translate import (
     translation,
     is_english,
-    queue_translation,
-    is_translation_running,
-    )
+    queue_translation)
 
 from birddog.logging import get_logger
 _logger = get_logger()

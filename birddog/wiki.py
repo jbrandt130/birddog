@@ -40,7 +40,7 @@ with open('resources/archives_master.json', encoding="utf8") as f:
 
 def _inventory_subarchives(archives):
     subarchives = {}
-    for arc_key, arc in archives.items():
+    for arc in archives.values():
         for sub in arc.values():
             subarchives[sub['subarchive']['uk']] = sub['subarchive']
     return list(subarchives.values())
