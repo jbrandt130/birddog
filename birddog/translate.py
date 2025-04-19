@@ -5,15 +5,56 @@
 
 from time import sleep
 import requests
-from deep_translator import GoogleTranslator
+import os
+from deep_translator import GoogleTranslator, DeeplTranslator
 from httpcore._exceptions import ReadTimeout, ConnectTimeout
 import threading
 import uuid
 import queue
 
-# don't import from utility (dependent)
-import logging
-logger = logging.getLogger(__name__)
+
+from birddog.logging import get_logger
+_logger = get_logger()
+
+# --- Google Cloud service support ---
+
+import os
+from google.cloud import translate_v2 as google_translate
+
+# Set the environment variable to your credentials file
+#os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./keys/google-cloud-translate-key.json"
+
+class GoogleCloudTranslator:
+    def __init__(self, source="uk", target="en"):
+        self._source = source
+        self._target = target
+        self._client = google_translate.Client()
+
+    def translate(self, text):
+        result = self._client.translate(text, source_language=self._source, target_language=self._target)
+        if isinstance(text, (list, tuple)):
+            return [item['translatedText'] for item in result]
+        else:
+            return result['translatedText']
+
+    def translate_batch(self, text):
+        return self.translate(text)
+
+# --- Configure Translator ---
+
+_translator = None
+_DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", None)
+_USE_GOOGLE_CLOUD_TRANSLATE = os.getenv("BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE", False) in ("true", "True", "1")
+
+if _USE_GOOGLE_CLOUD_TRANSLATE:
+    _logger.info(f'Using Google Cloud translation API (credentials file:{os.getenv("GOOGLE_APPLICATION_CREDENTIALS")})')
+    _translator = GoogleCloudTranslator(source="uk", target="en")
+elif _DEEPL_API_KEY:
+    _logger.info('Using DeepL translation API')
+    _translator = DeeplTranslator(api_key=_DEEPL_API_KEY, source="uk", target="en", use_free_api=True)
+else:
+    _logger.info('Using free Google translation API')
+    _translator = GoogleTranslator(source='uk', target='en')
 
 # --- Basic Translation Logic ---
 
@@ -24,8 +65,6 @@ def is_english(text):
     except UnicodeDecodeError:
         return False
     return True
-
-_translator = GoogleTranslator(source='uk', target='en')
 
 def translation(text):
     """ Translate single text string or list/tuple of strings. Returns None on failure. """
@@ -39,7 +78,7 @@ def translation(text):
                 result = _translator.translate(text)
             break
         except (requests.Timeout, ReadTimeout, ConnectTimeout):
-            logger.info(f"translation timeout. retrying...")
+            _logger.info(f"translation timeout. retrying...")
         sleep(wait_time)
         wait_time *= 2
     return result
@@ -47,7 +86,7 @@ def translation(text):
 # --- Async Queue Infrastructure ---
 
 _NUM_WORKERS = 8
-_BATCH_SIZE = 5
+_BATCH_SIZE = 10 if _USE_GOOGLE_CLOUD_TRANSLATE else 5 # google cloud is faster than the alternatives
 
 _task_queue = queue.Queue()
 _task_registry = {}
@@ -70,7 +109,7 @@ class TranslationTask:
         total = len(self.batch)
         for i in range(0, total, chunk_size):
             if self.cancelled.is_set():
-                logger.info(f"Task {self.task_id} cancelled.")
+                _logger.info(f"Task {self.task_id} cancelled.")
                 return
             chunk = self.batch[i:i+chunk_size]
             chunk_result = translation(chunk)

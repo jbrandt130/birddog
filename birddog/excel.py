@@ -12,11 +12,13 @@ from openpyxl.worksheet.formula import ArrayFormula
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import get_column_letter
 
-from birddog.utility import get_text, get_logger
+from birddog.utility import get_text
 from birddog.ai import classify_table_columns
 from birddog.wiki import ARCHIVE_BASE
 from birddog.core import is_linked
 
+
+from birddog.logging import get_logger
 _logger = get_logger()
 
 # ------------ HELPER FUNCTIONS ---------------
@@ -117,17 +119,20 @@ def _process_formula(sheet, cell, first_child_row, last_child_row):
                     new_formula, origin=cell.coordinate).translate_formula(child_cell.coordinate)
 
 def _map_index(column_header_map, index):
-    assert index is not None
+    if index is None:
+        return index
     if isinstance(index, int):
         return index
     if _is_integer(index):
         return int(index)
-    return column_header_map.get(index)
+    return int(column_header_map.get(index))
 
 def _process_table_column(page, lru, column_header_map, edit_cell, sheet, cell, parse, match, first_child_row, last_child_row):
     row = cell.row
     col = cell.column
     index = parse['index']
+    mapped_index = _map_index(column_header_map, index)
+    #_logger.info(f'column map: {index} -> {mapped_index}')
     cell_text = _get_cell_text(cell)
     for child in page.children:
         child_cell = sheet.cell(row=row, column=col)
@@ -135,9 +140,9 @@ def _process_table_column(page, lru, column_header_map, edit_cell, sheet, cell, 
             # propagate border, style, font, and alignment to all rows
             _copy_cell_properties(cell, child_cell)
         if parse['expr'] == 'child':
-            if index is not None:
-                index = _map_index(column_header_map, index)
-                item = child[int(index)]
+            if mapped_index is not None:
+                if mapped_index < len(child):
+                    item = child[mapped_index]
                 sub = get_text(item['text'])
                 if 'edit' in item:
                     edit = item['edit']

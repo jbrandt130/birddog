@@ -20,7 +20,6 @@ from birddog.utility import (
     form_text_item,
     translate_page,
     equal_text,
-    get_logger,
     now,
     fetch_url
     )
@@ -33,6 +32,7 @@ from birddog.wiki import (
     batch_fetch_document_links
     )
 
+from birddog.logging import get_logger
 _logger = get_logger()
 
 #

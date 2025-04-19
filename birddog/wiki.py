@@ -13,14 +13,14 @@ from itertools import islice
 from cachetools import LRUCache
 
 from birddog.utility import (
-    get_logger,
     fetch_url,
     convert_utc_time,
     )
 
-# INITIALIZATION --------------------------------------------------------------
-
+from birddog.logging import get_logger
 _logger = get_logger()
+
+# INITIALIZATION --------------------------------------------------------------
 
 # global constants
 

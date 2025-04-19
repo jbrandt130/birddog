@@ -7,9 +7,10 @@ import json
 import os
 from threading import Lock
 from pathlib import Path
-from birddog.utility import get_logger
 
+from birddog.logging import get_logger
 _logger = get_logger()
+
 _cache_lock = Lock() # could be overkill?
 
 USE_LOCAL_FILESYSTEM = os.getenv("BIRDDOG_USE_LOCAL_CACHE", False) in ("true", "True", "1")

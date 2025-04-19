@@ -8,6 +8,7 @@ excel
 static/downloads
 var
 venv*
+*key.json
 
 # Elastic Beanstalk Files
 .elasticbeanstalk/*

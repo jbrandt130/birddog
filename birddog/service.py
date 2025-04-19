@@ -36,8 +36,10 @@ from birddog.cache import (
     save_cached_object,
     remove_cached_object,
     CacheMissError)
-from birddog.utility import get_logger
 from birddog.wiki import ARCHIVES
+
+from birddog.logging import get_logger, get_log_buffer
+_logger = get_logger()
 
 # ---- INITIALIZATION  --------------------------------------------------
 
@@ -648,8 +650,6 @@ def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=Non
         'translations': _active_translations(user.email)}), 200
 
 # ---- LOG ACCESS ---------------------------------------------------------------
-
-from birddog.utility import get_log_buffer
 
 @app.route('/log')
 def get_log():
