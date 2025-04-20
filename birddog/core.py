@@ -37,10 +37,12 @@ _logger = get_logger()
 # global constants
 
 def decode_subarchive(subarchive):
+    if not subarchive:
+        return SUBARCHIVES[0]
     for item in SUBARCHIVES:
         if subarchive in item.values():
             return item
-    return SUBARCHIVES[0]
+    return None
 
 #
 # Helper functions
@@ -224,7 +226,7 @@ def check_page_updates(archive, cutoff_date):
         if not changes or changes[-1]["lastmod"] < cutoff_date:
             break
         offset += batch_size
-        batch_size *= 2 # search geometrically longer history 
+        batch_size *= 2 # search geometrically longer history
     change_list = [item for item in change_list if item["lastmod"] >= cutoff_date]
     _logger.info(f"check_page_updates, {len(change_list)}, changes found")
     return _page_update_summary(archive, change_list)
@@ -599,22 +601,24 @@ class PageLRU:
             return item
         except KeyError:
             _logger.info(f"{f'PageLRU.lookup({key}): miss'}")
-            if not fond:
-                item = Archive(archive, subarchive=subarchive)
-            elif not opus:
-                parent = self.lookup(archive, subarchive)
-                item = parent.lookup(fond)
-            elif not case:
-                parent = self.lookup(archive, subarchive, fond)
-                item = parent.lookup(opus)
-            else:
-                parent = self.lookup(archive, subarchive, fond, opus)
-                item = parent.lookup(case)
-            if not item:
+            try:
+                if not fond:
+                    item = Archive(archive, subarchive=subarchive)
+                elif not opus:
+                    parent = self.lookup(archive, subarchive)
+                    item = parent.lookup(fond)
+                elif not case:
+                    parent = self.lookup(archive, subarchive, fond)
+                    item = parent.lookup(opus)
+                else:
+                    parent = self.lookup(archive, subarchive, fond, opus)
+                    item = parent.lookup(case)
+                if not item:
+                    raise PageLRU.NotFoundError(key)
+                self._lru[key] = item
+                return item
+            except:
                 raise PageLRU.NotFoundError(key)
-            self._lru[key] = item
-            return item
-
 # ----------------------------------------------------------------------------
 # Update watcher
 
@@ -720,7 +724,7 @@ class ArchiveWatcher:
     @property
     def unresolved_tree(self):
         return _flatten_hierarchy(_make_tree(self.unresolved))
-    
+
     def check(self):
         def _check_ancestors(changes):
             def _add_result(kwargs):

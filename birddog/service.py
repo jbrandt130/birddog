@@ -425,13 +425,18 @@ def page_data(archive, subarchive=None, fond=None, opus=None, case=None):
     if error_response:
         return error_response, status
 
-    page = get_page(
-        archive, 
-        subarchive, 
-        fond, opus, 
-        case, 
-        compare=request.args.get('compare'))
-    return jsonify(page.page if page else None)
+    try:
+        page = get_page(
+            archive,
+            subarchive,
+            fond, opus,
+            case,
+            compare=request.args.get('compare'))
+    except PageLRU.NotFoundError:
+        return 'Page not found', 404
+    if not page:
+        return 'Page not found', 404
+    return jsonify(page.page), 200
 
 def ascii_filename(name):
     # Normalize and strip non-ASCII characters
@@ -448,10 +453,10 @@ def ascii_filename(name):
 def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
     try:
         page = get_page(
-            archive, 
-            subarchive, 
-            fond, opus, 
-            case, 
+            archive,
+            subarchive,
+            fond, opus,
+            case,
             compare=request.args.get('compare'))
         if page:
             clean_name = ascii_filename(page.name if page.name else "unnamed")
@@ -467,6 +472,7 @@ def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
                 download_name=filename,
                 mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
+        return 'Page not found', 404
     except FileNotFoundError:
         _logger.exception(f'File not found: {filepath}')
         return jsonify({'error': 'File not found'}), 404

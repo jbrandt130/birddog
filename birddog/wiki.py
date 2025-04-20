@@ -103,7 +103,7 @@ def get_page_history(page_title, limit=10):
         return []
     # assume only one page is returned (in future, pass multiple to reduce api calls)
     for page in pages.values():
-        history = [ { 
+        history = [ {
             'revid': rev['revid'],
             'modified': convert_utc_time(rev['timestamp']),
             'link': page_revision_url(page_title, rev['revid'])
@@ -234,7 +234,7 @@ def _file_link_to_url(link):
 
 def _deduplicate_links(links):
     return list(dict.fromkeys(links))
-    
+
 def _chunked(iterable, size):
     """Yield successive chunks from iterable."""
     it = iter(iterable)

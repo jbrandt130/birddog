@@ -32,7 +32,7 @@ if USE_LOCAL_FILESYSTEM:
 
     def _cache_path(object_path):
         return f'{CACHE_DIR}/{object_path}'
-        
+
     def _make_path_if_needed(path):
         """Make full subdirectory hierarchy for given path."""
         pos = path.rfind('/')
@@ -64,7 +64,7 @@ if USE_LOCAL_FILESYSTEM:
         path = _cache_path(object_path)
         if os.path.isfile(path):
             os.remove(path)
-        
+
 else:
 
     # AWS S3 interface
@@ -92,11 +92,9 @@ else:
                         'LocationConstraint': 'us-east-2',
                     },
                 )
-            except (
-                s3.exceptions.BucketAlreadyExists, 
-                s3.exceptions.BucketAlreadyOwnedByYou):
-                    # already exists
-                    pass
+            except (s3.exceptions.BucketAlreadyExists, s3.exceptions.BucketAlreadyOwnedByYou):
+                # already exists
+                pass
             bucket_created = True
 
     def _delete_bucket():
