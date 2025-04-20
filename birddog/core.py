@@ -684,6 +684,7 @@ class ArchiveWatcher:
 
     def save(self):
         return {
+            'version': 'v2',
             'archive': self._archive.tag,
             'subarchive': self._archive.subarchive["en"],
             'cutoff_date': self._cutoff_date,
@@ -697,17 +698,30 @@ class ArchiveWatcher:
         if not lru:
             lru = PageLRU()
         watcher = ArchiveWatcher(data['archive'], data['subarchive'], data['cutoff_date'], lru=lru)
-        watcher._resolved = data['resolved']
-        watcher._unresolved = data['unresolved']
+        version = data.get("version", "v1")  # default to legacy
+
+        # normalize unresolved (assume format is fine)
+        watcher._unresolved = data.get('unresolved', {})
         watcher._last_checked_date = data.get('last_checked_date', watcher._cutoff_date)
+
+        # normalize resolved entries for legacy versions
+        if version == "v1":
+            cutoff_date = watcher._cutoff_date
+            watcher._resolved = {
+                k: (
+                    [{"modified": v, "last_resolved": cutoff_date}]
+                    if not isinstance(v, list) else v
+                )
+                for k, v in data.get('resolved', {}).items()
+            }
+        else:
+            watcher._resolved = data.get('resolved', {})
+
         return watcher
 
     @staticmethod
     def key(archive, subarchive, fond=None, opus=None, case=None):
         return ','.join((archive, subarchive, fond or '', opus or '', case or ''))
-
-    def _last_resolved_date(self, item):
-        return self._resolved.get(item, self._cutoff_date)
 
     @property
     def resolved(self):
@@ -724,6 +738,10 @@ class ArchiveWatcher:
     @property
     def unresolved_tree(self):
         return _flatten_hierarchy(_make_tree(self.unresolved))
+
+    def _last_resolved_date(self, item):
+        entries = self._resolved.get(item, [])
+        return entries[-1]["last_resolved"] if entries else self._cutoff_date
 
     def check(self):
         def _check_ancestors(changes):
@@ -765,22 +783,31 @@ class ArchiveWatcher:
         if updates:
             updates = _check_ancestors(updates)
             for item, mod_date in updates.items():
-                if mod_date >= self._last_checked_date:
-                    if item not in self._resolved or mod_date > self._resolved[item]:
-                        self._unresolved[item] = {
-                            "modified": mod_date,
-                            "last_resolved": self._last_resolved_date(item)
-                        }
+                # Get most recent resolved mod date (if any)
+                latest_resolved = self._resolved[item][-1]["modified"] if item in self._resolved else None
+                if mod_date >= self._last_checked_date and (latest_resolved is None or mod_date > latest_resolved):
+                    self._unresolved[item] = {
+                        "modified": mod_date,
+                        "last_resolved": self._last_resolved_date(item)
+                    }
             self._last_checked_date = max(max(updates.values()), self._last_checked_date)
 
     def resolve(self, item, deep=False):
+        _logger.info(f'ArchiveWatcher.resolve: before\n\tunresolved: {self._unresolved}\n\tresolved: {self._resolved}')
         if deep:
-            # resolve item and all its subsidiaries
             _logger.info(f'ArchiveWatcher: deep resolve: {item}')
             item = item.rstrip(',')
-            # iterate over a copy of the keys to avoid problem mutating dict inside the loop
             for key in list(self.unresolved.keys()):
                 if key.startswith(item):
-                    self._resolved[key] = self._unresolved.pop(key)["modified"]
-        if item in self._unresolved:
-            self._resolved[item] = self._unresolved.pop(item)["modified"]
+                    unresolved_item = self._unresolved.pop(key)
+                    self._resolved.setdefault(key, []).append(unresolved_item)
+        elif item in self._unresolved:
+            unresolved_item = self._unresolved.pop(item)
+            self._resolved.setdefault(item, []).append(unresolved_item)
+        _logger.info(f'ArchiveWatcher.resolve: after\n\tunresolved: {self._unresolved}\n\tresolved: {self._resolved}')
+
+    def unresolve(self, item):
+        if item in self._resolved and self._resolved[item]:
+            self._unresolved[item] = self._resolved[item].pop()
+            if not self._resolved[item]:  # Clean up empty lists
+                del self._resolved[item]
