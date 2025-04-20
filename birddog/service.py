@@ -1,6 +1,8 @@
 # system packages
 import os
 import threading
+import re
+import unicodedata
 from copy import copy, deepcopy
 from datetime import datetime
 from cachetools import LRUCache
@@ -368,16 +370,11 @@ def _compress_history(history, max_entries=30):
 
 page_lru = PageLRU(maxsize=500)
 
-def unpack_standard_args(request):
-    standard_args = ('archive', 'subarchive', 'fond', 'opus', 'case', 'translate', 'compare')
-    return (request.args.get(arg) for arg in standard_args)
-
-def get_page(request):
-    archive_id, subarchive_id, fond_id, opus_id, case_id, translate, compare = unpack_standard_args(request)
-    result = page_lru.lookup(archive_id, subarchive_id, fond_id, opus_id, case_id)
+def get_page(archive, subarchive, fond, opus, case, compare=None):
+    result = page_lru.lookup(archive, subarchive, fond, opus, case)
     if result:
         if result.kind == 'archive':
-            subarchive_id = result.subarchive["en"]
+            subarchive = result.subarchive["en"]
         if compare:
             # avoid making changes to cached page - work on copy instead
             result = deepcopy(result)
@@ -385,11 +382,11 @@ def get_page(request):
             reference.revert_to(compare)
             check_page_changes(result, reference)
         page = result.page
-        page['archive'] = archive_id
-        page['subarchive'] = subarchive_id
-        page['fond'] = fond_id
-        page['opus'] = opus_id
-        page['case'] = case_id
+        page['archive'] = archive
+        page['subarchive'] = subarchive
+        page['fond'] = fond
+        page['opus'] = opus
+        page['case'] = case
         page['kind'] = result.kind
         page['name'] = result.name
         page['needs_translation'] = result.needs_translation
@@ -418,13 +415,23 @@ archive_master_list = [(arc, sub['subarchive']['en']) for arc, archive in ARCHIV
 def archive_list():
     return jsonify(archive_master_list)
 
-@app.route("/page", methods=['GET'])
-def page_data():
-    page = get_page(request)
-    return jsonify(page.page if page else None)
+@app.route('/page/<archive>', methods=['GET'])
+@app.route('/page/<archive>/<subarchive>', methods=['GET'])
+@app.route('/page/<archive>/<subarchive>/<fond>', methods=['GET'])
+@app.route('/page/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
+@app.route('/page/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
+def page_data(archive, subarchive=None, fond=None, opus=None, case=None):
+    user, error_response, status = get_current_user()
+    if error_response:
+        return error_response, status
 
-import re
-import unicodedata
+    page = get_page(
+        archive, 
+        subarchive, 
+        fond, opus, 
+        case, 
+        compare=request.args.get('compare'))
+    return jsonify(page.page if page else None)
 
 def ascii_filename(name):
     # Normalize and strip non-ASCII characters
@@ -433,10 +440,19 @@ def ascii_filename(name):
     name = re.sub(r'[^\w\-_.]', '_', name)
     return name or "download"
 
-@app.route('/download', methods=['GET'])
-def download_file():
+@app.route('/download/<archive>', methods=['GET'])
+@app.route('/download/<archive>/<subarchive>', methods=['GET'])
+@app.route('/download/<archive>/<subarchive>/<fond>', methods=['GET'])
+@app.route('/download/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
+@app.route('/download/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
+def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
     try:
-        page = get_page(request)
+        page = get_page(
+            archive, 
+            subarchive, 
+            fond, opus, 
+            case, 
+            compare=request.args.get('compare'))
         if page:
             clean_name = ascii_filename(page.name if page.name else "unnamed")
             filename = f'{clean_name}.xlsx'

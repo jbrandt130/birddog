@@ -138,14 +138,21 @@ async function load_page(
         compare=null) {
     try {
         // Default to an empty string if any parameter is null or undefined
-        url = `/page?` +
-            `archive=${encodeURIComponent(archive_id ?? '')}&` +
-            `subarchive=${encodeURIComponent(subarchive_id ?? '')}&` +
-            `fond=${encodeURIComponent(fond_id ?? '')}&` +
-            `opus=${encodeURIComponent(opus_id ?? '')}&` +
-            `case=${encodeURIComponent(case_id ?? '')}`;
+        url = `/page/${encodeURIComponent(archive_id)}`;
+        if (subarchive_id) { 
+            url += `/${encodeURIComponent(subarchive_id)}`;
+            if (fond_id) { 
+                url += `/${encodeURIComponent(fond_id)}`;
+                if (opus_id) { 
+                    url += `/${encodeURIComponent(opus_id)}`;
+                    if (case_id) { 
+                        url += `/${encodeURIComponent(case_id)}`;
+                    }
+                }
+            }
+        }
         if (compare != null)
-            url += `&compare=${compare}`
+            url += `?compare=${compare}`
         console.log(`Fetching data from: ${url}`);
 
         // Show the spinner
@@ -209,15 +216,21 @@ async function translate_page() {
 async function download_page() {
     try {
         // Default to an empty string if any parameter is null or undefined
-        url = `/download?` +
-            `archive=${encodeURIComponent(current_page.archive ?? '')}&` +
-            `subarchive=${encodeURIComponent(current_page.subarchive ?? '')}&` +
-            `fond=${encodeURIComponent(current_page.fond ?? '')}&` +
-            `opus=${encodeURIComponent(current_page.opus ?? '')}&` +
-            `case=${encodeURIComponent(current_page.case ?? '')}`;
-
+        url = `/download/${encodeURIComponent(current_page.archive)}`;
+        if (current_page.archive) { 
+            url += `/${encodeURIComponent(current_page.subarchive)}`;
+            if (current_page.fond) { 
+                url += `/${encodeURIComponent(current_page.fond)}`;
+                if (current_page.opus) { 
+                    url += `/${encodeURIComponent(current_page.opus)}`;
+                    if (current_page.case) { 
+                        url += `/${encodeURIComponent(current_page.case)}`;
+                    }
+                }
+            }
+        }
         if ("refmod" in current_page) {
-            url += `&compare=${current_page.refmod}`
+            url += `?compare=${current_page.refmod}`
         }
         console.log(`Fetching data from: ${url}`);
 
