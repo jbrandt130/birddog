@@ -9,8 +9,23 @@ This document describes the HTTP endpoints exposed by the Birddog web service, w
 #### `POST /signup`
 Create a new user account.
 
+**Parameters:**
+- `name` : User name
+- `email` : User email
+- `password` : User password
+
+**Errors**
+- `400` : Email already exists.
+
 #### `POST /login`
 Authenticate a user and start a session.
+
+**Parameters:**
+- `email` : User email
+- `password` : User password
+
+**Errors**
+- `401` : Invalid login credentials.
 
 #### `GET /logout`
 End the current user session.
@@ -18,11 +33,26 @@ End the current user session.
 #### `POST /change_password`
 Change the password of the currently logged-in user.
 
+**Parameters:**
+- `email` : User email
+- `current` : Current user password
+- `new`: New user password
+
+**Errors**
+- `403` : Invalid current password
+- `404` : Unknown user
+
 #### `POST /reset_password`
-Request a password reset email.
+Request a password reset email. If the email is recognized, a reset token will be sent.
+
+**Parameters:**
+- `email` : User email
 
 #### `GET|POST /reset_password/<token>`
-Reset a password using the provided token.
+Reset a password if the provided token is recognized.
+
+**Parameters:**
+- `password` : New password
 
 ---
 
@@ -36,7 +66,7 @@ Return the list of available top-level archives.
 #### `GET /page/<archive>/<subarchive>/<fond>`
 #### `GET /page/<archive>/<subarchive>/<fond>/<opus>`
 #### `GET /page/<archive>/<subarchive>/<fond>/<opus>/<case>`
-Return information about a page at any level of the hierarchy.
+Return the specified page data structure.
 
 **Query Parameters:**
 - `compare` (optional): Modification date string used to compare the current version against a previous one. Format: `YYYY,MM,DD,hh:mm`
