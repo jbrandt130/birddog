@@ -97,11 +97,6 @@ else:
                 pass
             bucket_created = True
 
-    def _delete_bucket():
-        with bucket_creation_lock:
-            s3.delete_bucket(Bucket=CACHE_NAME)
-            bucket_created = False
-
     def _put_item(path, json_object):
         _logger.info(f"{f'saving {path}: {len(json_object)}'}")
         s3.put_object(
