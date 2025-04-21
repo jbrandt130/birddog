@@ -7,14 +7,23 @@ Wiki API access functions
 
 import time
 import json
+import requests
 import mwparserfromhell
 from urllib.parse import quote
 from itertools import islice
 from cachetools import LRUCache
+from bs4 import BeautifulSoup
 
 from birddog.utility import (
-    fetch_url,
     convert_utc_time,
+    equal_text,
+    fetch_url,
+    form_text_item,
+    format_date,
+    get_text,
+    lastmod,
+    match_text,
+    translate_page,
     )
 
 from birddog.logging import get_logger
@@ -70,6 +79,187 @@ def find_subarchives(archive):
                                 'link': item['href'],
                                 }
     return result
+
+# -------------------------------------------------------------------------------
+# WikiSource archive scraping
+
+# HTML page element processing
+def form_element_text(element):
+    """Given HTML element, return multilingual text item containing the inner text"""
+    text = element.text.strip() if element is not None else None
+    return form_text_item(text)
+
+def read_page(url):
+    """
+    Extract archive information for given page using HTTP get.
+    Return struct with page:
+        title,
+        description,
+        table header,
+        table contents,
+        lastmod date,
+        doc_link [only for case pages],
+        thumb_link [only for case pages],
+    """
+    soup = BeautifulSoup(fetch_url(url), 'lxml')
+    title = soup.find('span', attrs = {'class': 'mw-page-title-main'})
+    desc = soup.find('span', attrs = {'id': 'header_section_text'})
+    table = soup.find('table', attrs = {'class': 'wikitable'})
+    children = []
+    header = []
+    if table:
+        for tr_elem in table.find_all('tr'):
+            if not header:
+                for th_elem in tr_elem.find_all('th'):
+                    header.append(form_element_text(th_elem))
+            item = []
+            for td_elem in tr_elem.find_all('td'):
+                a_elem = td_elem.find('a')
+                child_url = a_elem.get('href') if a_elem else None
+                text = form_text_item(td_elem.text.strip())
+                item.append({'text': text, 'link': child_url})
+            if item:
+                children.append(item)
+
+    # check for document thumbnail
+    doc_info = soup.find('figure', attrs = {'typeof': 'mw:File/Thumb'})
+    doc_url = None
+    thumb_url = None
+    if doc_info:
+        a_tag = doc_info.find('a')
+        doc_url = a_tag.get('href')
+        thumb_elem = a_tag.find('img')
+        thumb_url = thumb_elem.get('src') if thumb_elem else None
+    footer = soup.find('li', attrs={'id': 'footer-info-lastmod'})
+    last_modified = lastmod(footer.text) if footer else None
+
+    return {
+        'title': form_element_text(title),
+        'description': form_element_text(desc),
+        'header': header,
+        'children': children,
+        'lastmod': last_modified,
+        'link': url,
+        'doc_link': doc_url,
+        'thumb_link': thumb_url,
+    }
+
+def do_search(query_string, limit=10, offset=0):
+    """
+    Search archive site for matching entries, sorted on last modification date.
+    For each hit, return dict with item with keys: title, link, and lastmod.
+    """
+    query_string = quote(query_string, safe='', encoding=None, errors=None)
+    url = f'{ARCHIVE_BASE}/w/index.php?limit={limit}&offset={offset}'
+    url += f'&ns0=1&sort=last_edit_desc&search={query_string}'
+    soup = BeautifulSoup(fetch_url(url), 'lxml')
+    results = []
+    for result in soup.find_all('li', attrs = {'class': 'mw-search-result'}):
+        div = result.find('div', attrs = {'class': 'mw-search-result-heading'})
+        data = result.find('div', attrs = {'class': 'mw-search-result-data'})
+        data = data.text.strip()
+        pos = data.find('-')
+        data = format_date(data[(pos + 1):].strip())
+        item = {
+            'title': div.a['title'],
+            'link': div.a['href'],
+            'lastmod': data
+        }
+        results.append(item)
+    return results
+
+def report_page_changes(page):
+    """
+    Print a report of changes detected in check_page_changes().
+    """
+    if not isinstance(page, dict):
+        page = page.page
+    if 'refmod' not in page:
+        _logger.info(f"No changes to report. Run check_page_changes first.")
+        return
+    _logger.info(
+        f'Change report for {get_text(page["title"])},' +
+        f' lastmod={page["lastmod"]}, refmod={page["refmod"]}')
+    for key in ['title', 'description']:
+        if page[key]['edit'] is not None:
+            _logger.info(f'{key}: {page[key]["edit"]}')
+    for child in page['children']:
+        index = get_text(child[0]['text'])
+        for i, item in enumerate(child):
+            if 'edit' in item and item['edit'] is not None:
+                _logger.info(f'{index}[{i}] ({item["edit"]}): {get_text(item["text"])}')
+
+def check_page_changes(page, reference, report=False):
+    """
+    Compare a given page to a prior version of the same page and return any detected changes.
+    """
+    if not isinstance(page, dict):
+        page = page.page
+    if not isinstance(reference, dict):
+        reference = reference.page
+    page['refmod'] = reference['lastmod']
+    for key in ['title', 'description']:
+        changed = not equal_text(page[key], reference[key])
+        page[key]['edit'] = 'changed' if changed else None
+    ref_children = dict((get_text(c[0]['text']), c) for c in reference['children'])
+    for child in page['children']:
+        index = get_text(child[0]['text'])
+        if index in ref_children:
+            ref_child = ref_children[index]
+            for item, ref_item in zip(child, ref_child):
+                changed = not equal_text(item['text'], ref_item['text'])
+                item['edit'] = 'changed' if changed else None
+                if 'link' in item:
+                    if 'link' in ref_item:
+                        item['link_edit'] = 'changed' if item['link'] != ref_item['link'] else None
+                    else:
+                        item['link_edit'] = 'added'
+        else:
+            for item in child:
+                item['edit'] = 'added'
+    if report:
+        report_page_changes(page)
+
+def _page_update_summary(archive, change_list):
+    #assert isinstance(archive, Archive)
+    archive_prefix = archive.url[:archive.url.rfind('/')]
+    archive_prefix = archive_prefix.replace(ARCHIVE_BASE, '')
+    archive_prefix = archive_prefix.replace('%3A', ':')
+    # Form list of fonds belonging to this archive
+    fond_list={get_text(c[0]['text']) for c in archive.children}
+    result = {}
+    for item in change_list:
+        page_spec = item["title"].split('/')
+        address = (archive.tag, archive.subarchive["en"])
+        address += tuple(entry for entry in page_spec[1:])
+        address = (address + ("",) * 3)[:5]
+        fond = address[2]
+        address = ','.join(address)
+        mod_date = item["lastmod"]
+        # Confirm that the item belongs to the selected archive
+        if fond in fond_list and item["link"].startswith(archive_prefix):
+            if address in result:
+                result[address] = max(mod_date, result["address"])
+            else:
+                result[address] = mod_date
+    return result
+
+def check_page_updates(archive, cutoff_date):
+    #assert isinstance(archive, Archive)
+    change_list = []
+    batch_size = 50
+    offset = 0
+    while True:
+        _logger.info(f'check_page_updates: {archive.name}, {batch_size}, {offset}')
+        changes = archive.latest_changes(limit=batch_size, offset=offset)
+        change_list += changes
+        if not changes or changes[-1]["lastmod"] < cutoff_date:
+            break
+        offset += batch_size
+        batch_size *= 2 # search geometrically longer history
+    change_list = [item for item in change_list if item["lastmod"] >= cutoff_date]
+    _logger.info(f"check_page_updates, {len(change_list)}, changes found")
+    return _page_update_summary(archive, change_list)
 
 # -------------------------------------------------------------------------------
 # Page revision history handling (using wiki API)

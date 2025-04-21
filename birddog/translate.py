@@ -44,8 +44,8 @@ _DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", None)
 _USE_GOOGLE_CLOUD_TRANSLATE = os.getenv("BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE", False) in ("true", "True", "1")
 
 if _USE_GOOGLE_CLOUD_TRANSLATE:
-    #_logger.info(f'Using Google Cloud translation API (credentials file:{os.getenv("GOOGLE_APPLICATION_CREDENTIALS")})')
-    _logger.info('Using Google Cloud translation API')
+    _logger.info(f'Using Google Cloud translation API (credentials file:{os.getenv("GOOGLE_APPLICATION_CREDENTIALS")})')
+    #_logger.info('Using Google Cloud translation API')
     _translator = GoogleCloudTranslator(source="uk", target="en")
 elif _DEEPL_API_KEY:
     _logger.info('Using DeepL translation API')

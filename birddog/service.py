@@ -25,15 +25,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 # Birddog packages
 from birddog.core import (
     PageLRU,
-    ArchiveWatcher,
-    check_page_changes)
+    ArchiveWatcher)
 from birddog.excel import export_page
 from birddog.cache import (
     load_cached_object,
     save_cached_object,
     remove_cached_object,
     CacheMissError)
-from birddog.wiki import ARCHIVES
+from birddog.wiki import ARCHIVES, check_page_changes
 
 from birddog.logging import get_logger, get_log_buffer
 _logger = get_logger()

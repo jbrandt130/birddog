@@ -1,17 +1,14 @@
 import os
 from copy import copy
 import unittest
-from birddog.utility import ARCHIVE_BASE
+from birddog.wiki import ARCHIVE_BASE
 from birddog.core import (
-    read_page,
-    do_search,
-    get_page_history,
-    report_page_changes,
-    check_page_changes,
     Archive,
     Fond,
     Opus,
     Case,
+    PageLRU,
+    ArchiveWatcher
     )
 
 archive_path = '%D0%90%D1%80%D1%85%D1%96%D0%B2:%D0%94%D0%90%D0%96%D0%9E'
@@ -122,6 +119,36 @@ class Test(unittest.TestCase):
         #self.assertTrue(page.title == f'{page.parent.title}/{case_id}')
         print('url', page.url)
         self.assertTrue(page.url == page.default_url)
+
+    def test_PageLRU(self):
+        lru = PageLRU()
+        page = lru.lookup("DAHmO", "D")
+        print(page.title)
+        page = lru.lookup("DAHmO", "D", "1")
+        print(page.title)
+        page = lru.lookup("DAHmO", "D", "2", "3")
+        print(page.title)
+        page = lru.lookup("DAHmO", "R", "Р-5", "1")
+        print(page.title)
+
+    def test_ArchiveWatcher(self):
+        lru = PageLRU()
+        watcher = ArchiveWatcher("DAKO", "D", cutoff_date="2025,03,01", lru=lru)
+        self.assertFalse(watcher.resolved)
+        self.assertFalse(watcher.unresolved)
+        watcher.check()
+        self.assertFalse(watcher.resolved)
+        self.assertTrue(watcher.unresolved)
+        print(watcher.unresolved_tree)
+        item = watcher.key("DAKO", "D", "1455", "1", "169")
+        #item = "DAKO-D/1455/1/169"
+        self.assertTrue(item in watcher.unresolved)
+        watcher.resolve(item)
+        self.assertFalse(item in watcher.unresolved)
+        self.assertTrue(item in watcher.resolved)
+        watcher.unresolve(item)
+        self.assertTrue(item in watcher.unresolved)
+        self.assertFalse(item in watcher.resolved)
 
 if __name__ == "__main__":
     unittest.main()
