@@ -26,6 +26,7 @@ from birddog.wiki import (
     batch_fetch_document_links,
     check_page_updates
     )
+from birddog.ai import classify_table_columns
 
 from birddog.logging import get_logger
 _logger = get_logger()
@@ -65,6 +66,7 @@ class Page:
         self._parent = parent
         self._spec = spec
         self._page = {}
+        self._column_header_map = None
         if use_cache:
             if not self._cache_load():
                 # not in the cache - get it
@@ -276,6 +278,26 @@ class Page:
         # do nothing unless (overridden in subclass)
         pass
 
+    @property
+    def column_header_map(self):
+        result = self._column_header_map
+        if not result:
+            # check if it is in the cached page data
+            result = self._page.get("column_header_map")
+            if not result:
+                # not in cache - try to infer the map
+                classification = classify_table_columns(self)
+                # form mapping from column header type to column index
+                result = {}
+                for i, col_type in enumerate(classification["mapping"]):
+                    result[col_type] = i
+                if classification["success"]:
+                    # classification worked - retain it in the cache
+                    self._page["column_header_map"] = result
+                    self._cache_save()
+            # keep non-persistent map for next time (regardless of success)
+            self._column_header_map = result
+        return result
 
 class Archive(Page):
     """Represents a top level archive page."""

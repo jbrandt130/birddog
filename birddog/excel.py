@@ -127,11 +127,11 @@ def _map_index(column_header_map, index):
         return int(index)
     return int(column_header_map.get(index))
 
-def _process_table_column(page, column_header_map, edit_cell, sheet, cell, parse, match):
+def _process_table_column(page, edit_cell, sheet, cell, parse, match):
     row = cell.row
     col = cell.column
     index = parse['index']
-    mapped_index = _map_index(column_header_map, index)
+    mapped_index = _map_index(page.column_header_map, index)
     #_logger.info(f'column map: {index} -> {mapped_index}')
     cell_text = _get_cell_text(cell)
     for child in page.children:
@@ -249,17 +249,12 @@ def export_page(page, dest_file=None, lru=None):
                 # check for and handle a formula
                 _process_formula(sheet, cell, first_child_row, last_child_row)
 
-    # form mapping from column header type to column index
-    column_header_map = {}
-    for i, col_type in enumerate(classify_table_columns(page)):
-        column_header_map[col_type] = i
-
     # process all the edit expressions
     for edit in edits:
         cell, matches, parses = edit
         for match, parse in zip(matches, parses):
             if parse['expr'] in ['empty', 'child']:
-                _process_table_column(page, column_header_map, edit_cell, sheet, cell, parse, match)
+                _process_table_column(page, edit_cell, sheet, cell, parse, match)
             elif parse['expr'] == 'edit':
                 # {edit} cells contain formatting for editing highlights (caught above)
                 pass

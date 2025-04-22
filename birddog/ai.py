@@ -118,9 +118,18 @@ def classify_table_columns(page):
     max_rows = 3
     rows = [ [ item['text']['uk'] for item in row ] for row in page.children[:max_rows] ]
     try:
-        return table_column_classifier([col['uk'] for col in page.header], classes, sample_rows=rows)
+        mapping = table_column_classifier(
+            [col['uk'] for col in page.header], classes, sample_rows=rows)
+        return {
+            "mapping": mapping,
+            "success": True
+            }
     except ServiceError:
         _backoff_until = time.time() + _BACKOFF_DURATION
         _logger.warning("Rate limit hit. Backing off table classification until %s",
                            datetime.fromtimestamp(_backoff_until).isoformat())
-        return ["ID", "DESCRIPTION", "DATE"] + ["OTHER"] * (len(page.header) - 3)
+        # unable to run inference - return fallback and let caller know
+        return {
+            "mapping": ["ID", "DESCRIPTION", "DATE"] + ["OTHER"] * (len(page.header) - 3),
+            "success": False
+            }
