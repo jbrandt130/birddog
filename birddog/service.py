@@ -3,6 +3,7 @@ import os
 import threading
 import re
 import unicodedata
+from io import BytesIO
 from copy import copy, deepcopy
 from datetime import datetime
 from cachetools import LRUCache
@@ -458,17 +459,17 @@ def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
             case,
             compare=request.args.get('compare'))
         if page:
+            _logger.info(f'exporting spreadsheet to memory buffer')
             clean_name = ascii_filename(page.name if page.name else "unnamed")
-            filename = f'{clean_name}.xlsx'
-            filepath = os.path.join(BASE_DIR, 'static', 'downloads', filename)
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            _logger.info(f'exporting spreadsheet to {filepath}')
-            export_page(page, filepath, lru=page_lru)
+
+            excel_io = BytesIO()
+            export_page(page, excel_io, lru=page_lru)
+            excel_io.seek(0)  # Rewind buffer for reading
 
             return send_file(
-                filepath,
+                excel_io,
                 as_attachment=True,
-                download_name=filename,
+                download_name=f'{clean_name}.xlsx',
                 mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 conditional=False
             )

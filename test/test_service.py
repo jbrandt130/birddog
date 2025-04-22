@@ -87,18 +87,13 @@ class Test(unittest.TestCase):
             first_cell = ws.cell(row=1, column=1).value
             print("First table cell:", first_cell)
             wb.close()
-            # Optionally write to disk for inspection (for dev only):
-            # with open("test_download.xlsx", "wb") as f:
-            #     f.write(response.data)
-
-            # Just confirm we got non-empty binary content
             self.assertGreater(len(response.data), 100)
 
         address = [ "DAKrO", "R", "Р-285", "2", "20"]
         for i in range(1, len(address)):
             url = f"/download/{'/'.join(address[:i])}"
             _download_page_url(url)
-            #_download_page_url(url + "?compare=2023,12,31", page_keys | {"refmod"})
+            _download_page_url(url + "?compare=2023,12,31")
 
 if __name__ == "__main__":
     unittest.main()
