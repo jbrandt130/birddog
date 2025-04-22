@@ -81,7 +81,7 @@ def table_column_classifier(headers, class_descriptions, sample_rows=None, max_r
 
     try:
         response = _get_client().chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a multilingual assistant that classifies table headers based on user-defined categories and sample data."},
                 {"role": "user", "content": full_prompt}
