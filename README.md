@@ -1,4 +1,4 @@
-# Birddog 🐦‍⬛
+# Birddog
 
 Birddog is a web-based tool for navigating and translating Ukrainian archival documents. It supports structured browsing, revision history, side-by-side comparison, and batch translation using Google Cloud and OpenAI APIs.
 
@@ -9,6 +9,19 @@ Birddog is a web-based tool for navigating and translating Ukrainian archival do
 - Generate and manage tracking spreadsheets
 - Web UI for report browsing
 
+### 🗂️ Project Overview
+
+```bash
+birddog/
+├── birddog/              # Core application code
+├── template/             # Jinja2 HTML templates (Bootstrap-based)
+├── static/               # Static Flask app assets
+├── resources/            # auxilliary data, including archive list and spreadsheet templates
+├── test/                 # Unit tests
+├── docs/                 # Project documentation
+├── notebooks/            # Jupyter notebooks
+└── README.md             # You're here
+```
 ---
 
 ## 🚀 Quickstart Guide
@@ -105,18 +118,11 @@ pip install notebook ipykernel
 
 ---
 
-### 🗂️ Project Overview
+### 📓 6. (Optional) AWS setup
 
-```bash
-birddog/
-├── birddog/              # Core application code
-├── template/             # Jinja2 HTML templates (Bootstrap-based)
-├── static/               # Static Flask app assets
-├── resources/            # auxilliary data, including archive list and spreadsheet templates
-├── test/                 # Unit tests
-├── notebooks/            # Jupyter notebooks
-└── README.md             # You're here
-```
+Coming soon...
+
+---
 
 ## License
 
