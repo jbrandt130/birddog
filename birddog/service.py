@@ -469,7 +469,8 @@ def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
                 filepath,
                 as_attachment=True,
                 download_name=filename,
-                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                conditional=False
             )
         return 'Page not found', 404
     except FileNotFoundError:

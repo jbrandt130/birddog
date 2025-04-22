@@ -1,9 +1,14 @@
 # (c) 2025 Jonathan Brandt
 # Licensed under the MIT License. See LICENSE file in the project root.
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 import os
 import json
+import time
+from datetime import datetime
+
+_backoff_until = 0  # epoch timestamp
+_BACKOFF_DURATION = 4 * 60 * 60  # 4 hours in seconds
 
 from birddog.utility import get_logger
 
@@ -18,6 +23,9 @@ def _get_client():
         _logger.info(f'Creating OpenAI client')
         _ai_client = OpenAI(api_key=_key) if _key else None
     return _ai_client
+
+class ServiceError(Exception):
+    pass
 
 def table_column_classifier(headers, class_descriptions, sample_rows=None, max_rows=3):
     """
@@ -90,16 +98,29 @@ def table_column_classifier(headers, class_descriptions, sample_rows=None, max_r
             return parsed
         else:
             _logger.warning("⚠️ GPT response was valid JSON but did not match expected structure. Using fallback.")
+    except RateLimitError:
+        raise ServiceError()
     except Exception as e:
-        _logger.warning(f"⚠️ Failed to parse GPT response: {e}. Using fallback.")
+        _logger.warning(f"⚠️ Failed to parse GPT response: {type(e)}\n{e}\nUsing fallback.")
     return ["OTHER"] * len(headers)
 
 def classify_table_columns(page):
+    global _backoff_until
     classes = {
         "DATE": "A column indicating a single date or a date range",
         "DESCRIPTION": "A column containing a textual description of the item",
         "ID": "A unique row identifier, number, or code"
     }
+    now = time.time()
+    if now < _backoff_until:
+        return ["ID", "DESCRIPTION", "DATE"] + ["OTHER"] * (len(page.header) - 3)
+
     max_rows = 3
     rows = [ [ item['text']['uk'] for item in row ] for row in page.children[:max_rows] ]
-    return table_column_classifier([col['uk'] for col in page.header], classes, sample_rows=rows)
+    try:
+        return table_column_classifier([col['uk'] for col in page.header], classes, sample_rows=rows)
+    except ServiceError:
+        _backoff_until = time.time() + _BACKOFF_DURATION
+        _logger.warning("Rate limit hit. Backing off table classification until %s",
+                           datetime.fromtimestamp(_backoff_until).isoformat())
+        return ["ID", "DESCRIPTION", "DATE"] + ["OTHER"] * (len(page.header) - 3)

@@ -2,6 +2,9 @@ import os
 import unittest
 from unittest.mock import patch
 
+from io import BytesIO
+import openpyxl
+
 from birddog.service import app
 from birddog.wiki import ARCHIVES
 
@@ -49,7 +52,7 @@ class Test(unittest.TestCase):
             'history', 'kind', 'lastmod', 'link', 'name', 'needs_translation', 'opus', 
             'subarchive', 'thumb_link', 'title'])
 
-        def test_url(url, keys):
+        def _load_page_url(url, keys):
             print("Testing URL:", url)
             response = self.client.get(url)
             self.assertEqual(response.status_code, 200)
@@ -61,8 +64,41 @@ class Test(unittest.TestCase):
         address = [ "DAK", "D", "6", "1", "38"]
         for i in range(1, len(address)):
             url = f"/page/{'/'.join(address[:i])}"
-            test_url(url, page_keys)
-            test_url(url + "?compare=2023,12,31", page_keys | {"refmod"})
+            _load_page_url(url, page_keys)
+            _load_page_url(url + "?compare=2023,12,31", page_keys | {"refmod"})
+
+    @patch("birddog.service.users.lookup")
+    def test_download(self, mock_lookup):
+        # Simulate a valid user being found
+        mock_lookup.return_value = {"email": test_email, "name": test_name}
+
+        def _download_page_url(url):
+            print("Testing Download:", url)
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.content_type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+            # Check file download headers
+            content_disp = response.headers.get("Content-Disposition")
+            self.assertTrue(content_disp.startswith("attachment;"))
+
+            wb = openpyxl.load_workbook(filename=BytesIO(response.data))
+            ws = wb.active
+            first_cell = ws.cell(row=1, column=1).value
+            print("First table cell:", first_cell)
+            wb.close()
+            # Optionally write to disk for inspection (for dev only):
+            # with open("test_download.xlsx", "wb") as f:
+            #     f.write(response.data)
+
+            # Just confirm we got non-empty binary content
+            self.assertGreater(len(response.data), 100)
+
+        address = [ "DAKrO", "R", "Р-285", "2", "20"]
+        for i in range(1, len(address)):
+            url = f"/download/{'/'.join(address[:i])}"
+            _download_page_url(url)
+            #_download_page_url(url + "?compare=2023,12,31", page_keys | {"refmod"})
 
 if __name__ == "__main__":
     unittest.main()
