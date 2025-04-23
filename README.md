@@ -79,7 +79,7 @@ BIRDDOG_SMTP_PASSWORD=...
 ### ▶️ 3. Run the local dev server
 
 ```bash
-./run_local --debug
+./local_run --debug
 ```
 
 This launches the Flask development server with hot reload and debug logging.
