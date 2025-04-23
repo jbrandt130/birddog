@@ -11,6 +11,7 @@ from collections import defaultdict
 from itsdangerous import URLSafeTimedSerializer
 import smtplib
 from email.message import EmailMessage
+from werkzeug.security import generate_password_hash, check_password_hash
 from flask import (
     Flask,
     render_template,
@@ -20,8 +21,6 @@ from flask import (
     url_for,
     session,
     jsonify)
-
-from werkzeug.security import generate_password_hash, check_password_hash
 
 # Birddog packages
 from birddog.core import (
@@ -342,9 +341,6 @@ def reset_with_token(token):
 
 # ---- HELPER FUNCTIONS -------------------------------------------------------
 
-from copy import copy
-from collections import defaultdict
-
 def _compress_history(history, max_entries=30):
     if len(history) <= max_entries:
         return history
@@ -370,31 +366,7 @@ def _compress_history(history, max_entries=30):
 
 page_lru = PageLRU(maxsize=500)
 
-def get_page(archive, subarchive, fond, opus, case, compare=None):
-    result = page_lru.lookup(archive, subarchive, fond, opus, case)
-    if result:
-        if result.kind == 'archive':
-            subarchive = result.subarchive["en"]
-        if compare:
-            # avoid making changes to cached page - work on copy instead
-            result = deepcopy(result)
-            reference = deepcopy(result)
-            reference.revert_to(compare)
-            check_page_changes(result, reference)
-        page = result.page
-        page['archive'] = archive
-        page['subarchive'] = subarchive
-        page['fond'] = fond
-        page['opus'] = opus
-        page['case'] = case
-        page['kind'] = result.kind
-        page['name'] = result.name
-        page['needs_translation'] = result.needs_translation
-        page['history'] = _compress_history(result.history(cutoff_date='2023'))
-
-    return result
-
-def get_current_user():
+def _get_current_user():
     user_session = session.get('user')
     if not user_session:
         return None, jsonify({'error': 'Not logged in'}), 401
@@ -405,6 +377,14 @@ def get_current_user():
         return None, jsonify({'error': 'User not found'}), 404
 
     return user, None, None
+
+def _compare_page(page, ref_date):
+    # avoid making changes to cached page - work on copy instead
+    result = deepcopy(page)
+    reference = deepcopy(result)
+    reference.revert_to(ref_date)
+    check_page_changes(result, reference)
+    return result
 
 # ---- SERVICE API ------------------------------------------------------------
 
@@ -421,22 +401,33 @@ def archive_list():
 @app.route('/page/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
 @app.route('/page/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
 def page_data(archive, subarchive=None, fond=None, opus=None, case=None):
-    user, error_response, status = get_current_user()
+    user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
 
     try:
-        page = get_page(
-            archive,
-            subarchive,
-            fond, opus,
-            case,
-            compare=request.args.get('compare'))
+        page = page_lru.lookup(archive, subarchive, fond, opus, case)
+        if page:
+            if page.kind == 'archive':
+                subarchive = page.subarchive["en"]
+            compare = request.args.get('compare')
+            if compare:
+                page = _compare_page(page, compare)
+            # prevent mutation of page data in LRU/cache
+            page_dict = deepcopy(page.page)
+            page_dict['archive'] = archive
+            page_dict['subarchive'] = subarchive
+            page_dict['fond'] = fond
+            page_dict['opus'] = opus
+            page_dict['case'] = case
+            page_dict['kind'] = page.kind
+            page_dict['name'] = page.name
+            page_dict['needs_translation'] = page.needs_translation
+            page_dict['history'] = _compress_history(page.history(cutoff_date='2023'))
+            return jsonify(page_dict), 200
+        return 'Page not found', 404
     except PageLRU.NotFoundError:
         return 'Page not found', 404
-    if not page:
-        return 'Page not found', 404
-    return jsonify(page.page), 200
 
 def ascii_filename(name):
     # Normalize and strip non-ASCII characters
@@ -452,13 +443,14 @@ def ascii_filename(name):
 @app.route('/download/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
 def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
     try:
-        page = get_page(
-            archive,
-            subarchive,
-            fond, opus,
-            case,
-            compare=request.args.get('compare'))
+        page = page_lru.lookup(archive, subarchive, fond, opus, case)
         if page:
+            page.prepare_to_download()
+            # put the page into a comparison state if requested
+            compare = request.args.get('compare')
+            if compare:
+                page = _compare_page(page, compare)
+
             _logger.info(f'exporting spreadsheet to memory buffer')
             clean_name = ascii_filename(page.name if page.name else "unnamed")
 
@@ -476,7 +468,7 @@ def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
         return 'Page not found', 404
     except FileNotFoundError:
         _logger.exception(f'File not found: {filepath}')
-        return jsonify({'error': 'File not found'}), 404
+        return jsonify({'error': 'Page not found'}), 404
     except Exception as e:
         _logger.exception(f'Error: {e}')
         return jsonify({'error': 'Internal server error'}), 500
@@ -497,7 +489,7 @@ def _format_watchlist(watchlist):
 ## Get user's watchlist
 @app.route('/watchlist', methods=['GET'])
 def get_watchlist():
-    user, error_response, status = get_current_user()
+    user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
 
@@ -508,7 +500,7 @@ def get_watchlist():
 # Add to user's watchlist
 @app.route('/watchlist', methods=['POST'])
 def add_to_watchlist():
-    user, error_response, status = get_current_user()
+    user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
 
@@ -524,7 +516,7 @@ def add_to_watchlist():
 # Remove from user's watchlist
 @app.route('/watchlist/<archive>/<subarchive>', methods=['DELETE'])
 def remove_from_watchlist(archive, subarchive):
-    user, error_response, status = get_current_user()
+    user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
 
@@ -539,7 +531,7 @@ def remove_from_watchlist(archive, subarchive):
 # Check for updates on a specific watchlist item
 @app.route('/watchlist/<archive>/<subarchive>/check', methods=['GET'])
 def check_watchlist_item(archive, subarchive):
-    user, error_response, status = get_current_user()
+    user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
 
@@ -561,7 +553,7 @@ def check_watchlist_item(archive, subarchive):
 @app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
 @app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
 def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
-    user, error_response, status = get_current_user()
+    user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
 
@@ -655,7 +647,7 @@ def _start_translation(email, page):
 @app.route('/translate/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
 @app.route('/translate/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
 def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=None):
-    user, error_response, status = get_current_user()
+    user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
     if archive:
@@ -671,7 +663,7 @@ def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=Non
 
 @app.route('/log')
 def get_log():
-    user, error_response, status = get_current_user()
+    user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
     limit = request.args.get('limit', type=int)

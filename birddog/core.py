@@ -74,11 +74,16 @@ class Page:
                     _logger.info(f"{f'Loading page: {self.name} from {self.default_url}'}")
                     try:
                         self._page = read_page(self.default_url)
+                        # ensure lastmod == history[0]
+                        history = self.history(limit=1)
+                        if history:
+                            self._page["lastmod"] = history[0]["modified"]
                         self._cache_save()
                     except:
                         # FIXME: bad page
                         pass
-    class LookupError(LookupError):
+
+    class LookupError(Exception):
         def __init__(self, page_name, key):
             self.page_name = page_name
             self.key = key
@@ -97,13 +102,14 @@ class Page:
             # determine latest version
             history = self.history(limit=1)
             if not history:
-                _logger.info(f"{f'{self.name}: no history'}")
+                _logger.info(f"{self.name}: no history")
                 return False # bad page?
             version = history[0]["modified"]
         path = f'{self._cache_path}/{version}.json'
         try:
+            _logger.info(f"Fetching from cache: {self.name}[{version}]: {path}")
             self._page = load_cached_object(path)
-            _logger.info(f"{f'Retrieved from cache: {self.name}[{version}]: {path}'}")
+            _logger.info(f"Retrieved from cache: {self.name}[{version}]: {path}")
             return True
         except CacheMissError:
             pass
@@ -112,8 +118,11 @@ class Page:
     def _cache_save(self):
         """Store the page contents in the cache, later retrievable under modification date.
         """
+        if self.refmod:
+            raise ValueError(f"Cannot save page when in comparison state: {self.name}") 
         if self.lastmod:
             path = f'{self._cache_path}/{self.lastmod}.json'
+            _logger.info(f"Saving page to cache: {self.name}[{self.lastmod}]")
             save_cached_object(self._page, path)
 
     def history(self, limit=None, cutoff_date=None):
@@ -282,9 +291,11 @@ class Page:
     def column_header_map(self):
         result = self._column_header_map
         if not result:
+            _logger.info(f'column_header_map({self.name} {self.lastmod}): checking cache')
             # check if it is in the cached page data
             result = self._page.get("column_header_map")
             if not result:
+                _logger.info(f'column_header_map({self.name}): cache miss: fresh inference')
                 # not in cache - try to infer the map
                 classification = classify_table_columns(self)
                 # form mapping from column header type to column index
@@ -293,11 +304,20 @@ class Page:
                     result[col_type] = i
                 if classification["success"]:
                     # classification worked - retain it in the cache
+                    _logger.info(f'column_header_map({self.name}): updating cache')
                     self._page["column_header_map"] = result
                     self._cache_save()
+            else:
+                _logger.info(f'column_header_map({self.name}): retrieved from cache')
             # keep non-persistent map for next time (regardless of success)
             self._column_header_map = result
         return result
+
+    def prepare_to_download(self):
+        _logger.info(f'prepare_to_download: {self.name} ({self.lastmod})')
+        # trigger on-demand processing needed for download that may entail cache update
+        self.load_child_document_links()
+        self.column_header_map    
 
 class Archive(Page):
     """Represents a top level archive page."""

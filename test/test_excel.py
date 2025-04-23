@@ -19,10 +19,13 @@ class Test(unittest.TestCase):
             if os.path.isfile(path):
                 os.remove(path)
         archive = Archive('DAZHO')
+        archive.prepare_to_download()
         export_page(archive, 'var/unittest_DAZHO.xlsx')
         fond1 = archive.lookup('1')
+        fond1.prepare_to_download()
         export_page(fond1, 'var/unittest_DAZHO_1.xlsx')
         opus74 = fond1.lookup('74')
+        opus74.prepare_to_download()
         export_page(opus74, 'var/unittest_DAZHO_1_74.xlsx')
         for fname in ['unittest_DAZHO', 'unittest_DAZHO_1', 'unittest_DAZHO_1_74']:
             with open(f'var/{fname}.xlsx', 'rb') as file:
@@ -36,6 +39,7 @@ class Test(unittest.TestCase):
         opus74_copy = copy(opus74)
         opus74.revert_to('2024')
         opus74_copy.revert_to('2023')
+        opus74.prepare_to_download()
         check_page_changes(opus74, opus74_copy)
         fname = 'unittest_DAZHO_1_74_2024_2023'
         export_page(opus74, f'var/{fname}.xlsx')

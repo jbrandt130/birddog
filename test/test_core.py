@@ -139,7 +139,6 @@ class Test(unittest.TestCase):
         watcher.check()
         self.assertFalse(watcher.resolved)
         self.assertTrue(watcher.unresolved)
-        print(watcher.unresolved_tree)
         item = watcher.key("DAKO", "D", "1455", "1", "169")
         #item = "DAKO-D/1455/1/169"
         self.assertTrue(item in watcher.unresolved)
