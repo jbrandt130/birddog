@@ -26,7 +26,7 @@ birddog/
 
 ## 🚀 Quickstart Guide
 
-This guide helps you get started **locally** using the `run_local` script. No AWS setup required.
+This guide helps you get started **locally** using the `local_run` script. No AWS setup required.
 
 ### ✅ Requirements
 
