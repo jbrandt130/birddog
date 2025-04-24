@@ -122,13 +122,13 @@ class Test(unittest.TestCase):
 
     def test_PageLRU(self):
         lru = PageLRU()
-        page = lru.lookup("DAHmO", "D")
+        page = lru.lookup("DAHMO", "D")
         print(page.title)
-        page = lru.lookup("DAHmO", "D", "1")
+        page = lru.lookup("DAHMO", "D", "1")
         print(page.title)
-        page = lru.lookup("DAHmO", "D", "2", "3")
+        page = lru.lookup("DAHMO", "D", "2", "3")
         print(page.title)
-        page = lru.lookup("DAHmO", "R", "Р-5", "1")
+        page = lru.lookup("DAHMO", "R", "Р-5", "1")
         print(page.title)
 
     def test_ArchiveWatcher(self):

@@ -71,6 +71,7 @@ def find_subarchives(archive):
                         parsed = item['title'].split('/')
                         if len(parsed) == 2 and parsed[1] != 'видання':
                             subarchive = parsed[1]
+                            _logger.info(f'found subarchive: {parsed[0]}-{parsed[1]}')
                             result[subarchive] = {
                                 'title': form_text_item(item['title']),
                                 'archive': form_text_item(parsed[0]),
@@ -79,6 +80,25 @@ def find_subarchives(archive):
                                 'link': item['href'],
                                 }
     return result
+
+def update_master_archive_list():
+    archives = {}
+    for archive_name, archive in ARCHIVE_LIST.items():
+        _logger.info(f"Searching {archive_name}")
+        archives[archive_name] = find_subarchives(archive)
+        translate_page(archives[archive_name])
+        for sub, value in archives[archive_name].items():
+            if sub == "Р":  # make sure Cyrillic Р maps to Latin R
+                _logger.info("Mapping Cyrillic Р to Latin R")
+                value["subarchive"]["en"] = "R"
+            elif sub == "А": # make sure Cyrillic А maps to Latin A
+                _logger.info("Mapping Cyrillic А to Latin A")
+                value["subarchive"]["en"] = "A"
+                _logger.info(f"        {sub}: {value}")
+    path = 'resources/archives_master.json'
+    _logger.info(f"generate_master_archive_list: updating {path}")
+    with open(path, "w") as file:
+        file.write(json.dumps(archives, indent=4))
 
 # -------------------------------------------------------------------------------
 # WikiSource archive scraping

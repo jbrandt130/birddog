@@ -89,7 +89,7 @@ class Test(unittest.TestCase):
             wb.close()
             self.assertGreater(len(response.data), 100)
 
-        address = [ "DAKrO", "R", "Р-285", "2", "20"]
+        address = [ "DAKIRO", "R", "Р-285", "2", "20"]
         for i in range(1, len(address)):
             url = f"/download/{'/'.join(address[:i])}"
             _download_page_url(url)

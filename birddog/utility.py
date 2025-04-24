@@ -69,12 +69,12 @@ def _record_fetch_event():
                 _logger.info(f"fetch_url: {len(_fetch_timestamps)} requests in last {RATE_WINDOW}s → {rate:.2f} req/s")
             _last_log_time = now
 
-def fetch_url(url, json=False):
+def fetch_url(url, params=None, json=False):
     with _fetch_semaphore:
         attempt = 0
         while attempt < MAX_RETRIES:
             try:
-                response = requests.get(url, timeout=REQUEST_TIMEOUT, headers=_url_headers)
+                response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT, headers=_url_headers)
                 if response.status_code == 429:
                     raise TooManyRequestsError("429 Too Many Requests")
                 if not response.ok:
