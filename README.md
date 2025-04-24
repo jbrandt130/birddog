@@ -26,7 +26,7 @@ birddog/
 
 ## 🚀 Quickstart Guide
 
-This guide helps you get started **locally** using the `run_local` script. No AWS setup required.
+This guide helps you get started **locally** using the `local_run` script. No AWS setup required.
 
 ### ✅ Requirements
 
@@ -79,7 +79,7 @@ BIRDDOG_SMTP_PASSWORD=...
 ### ▶️ 3. Run the local dev server
 
 ```bash
-./run_local --debug
+./local_run --debug
 ```
 
 This launches the Flask development server with hot reload and debug logging.
