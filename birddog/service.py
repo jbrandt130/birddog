@@ -32,7 +32,7 @@ from birddog.cache import (
     save_cached_object,
     remove_cached_object,
     CacheMissError)
-from birddog.wiki import ARCHIVES, check_page_changes
+from birddog.wiki import check_page_changes, all_archives
 
 from birddog.logging import get_logger, get_log_buffer
 _logger = get_logger()
@@ -388,7 +388,7 @@ def _compare_page(page, ref_date):
 
 # ---- SERVICE API ------------------------------------------------------------
 
-archive_master_list = [(arc, sub['subarchive']['en']) for arc, archive in ARCHIVES.items() for sub in archive.values()]
+archive_master_list = all_archives()
 
 # List all archives
 @app.route("/archives", methods=['GET'])

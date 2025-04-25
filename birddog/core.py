@@ -19,7 +19,7 @@ from birddog.cache import load_cached_object, save_cached_object, CacheMissError
 from birddog.wiki import (
     ARCHIVE_BASE,
     SUBARCHIVES,
-    ARCHIVE_LIST,
+    find_archive,
     HistoryLRU,
     read_page,
     do_search,
@@ -323,9 +323,9 @@ class Archive(Page):
     """Represents a top level archive page."""
     def __init__(self, tag, subarchive=None, base=ARCHIVE_BASE, use_cache=True):
         self._tag = tag
-        self._subarchive = decode_subarchive(subarchive)
-        archive_name = ARCHIVE_LIST[tag] if tag in ARCHIVE_LIST else None
-        self._archive_name = f'{archive_name}/{self._subarchive["uk"]}'
+        archive_data = find_archive(tag, subarchive)
+        self._subarchive = archive_data["subarchive"]
+        self._archive_name = archive_data["title"]["uk"]
         self._base = base
         super().__init__(None, None, use_cache=use_cache)
 
@@ -367,7 +367,7 @@ class Archive(Page):
         return self._base + '/wiki/' + str(quote(self._archive_name))
 
     def latest_changes(self, limit=100, offset=0):
-        return do_search(ARCHIVE_LIST[self._tag], limit=limit, offset=offset)
+        return do_search(self._archive_name.split('/')[0], limit=limit, offset=offset)
 
 class Fond(Page):
     """Represents fond page."""

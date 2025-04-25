@@ -3,11 +3,11 @@ from copy import copy
 import unittest
 
 from birddog.wiki import (
-    ARCHIVE_LIST,
     ARCHIVE_BASE,
     ARCHIVES,
     SUBARCHIVES,
-    find_subarchives,
+    all_archives,
+    sniff_subarchives,
     wiki_title,
     read_page,
     check_page_updates,
@@ -50,19 +50,11 @@ class Test(unittest.TestCase):
 
     def test_change_check(self):
         pass
-    
-    def test_sniffer(self):
-        for archive in ARCHIVE_LIST.values():
-            subarchives = find_subarchives(archive)
-            print(f'{archive}:')
-            #self.assertTrue(ARCHIVES[archive] == subarchives)
-            for key, value in subarchives.items():
-                print(f'    {key}: {get_text(value['title'])} ({get_text(value['description'])})')
 
     def test_all_archives(self):
         print("Checking opening all archives")
-        archive_master_list = [(arc, sub['subarchive']['en']) for arc, archive in ARCHIVES.items() for sub in archive.values()]
-        for item in archive_master_list:
+        for item in all_archives():
+            print(item)
             archive = Archive(item[0], item[1])
             print(f'{item[0]}-{item[1]}: {archive.name}, #children={len(archive.children)}')
 
