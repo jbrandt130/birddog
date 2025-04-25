@@ -87,11 +87,10 @@ def _comment_string():
 
 def update_master_archive_list():
     with open('resources/archives.json', encoding="utf8") as f:
-        archive_list = json.load(f)
-        archive_list = {k: v for (k, v) in archive_list.items() if v is not None}
-
+        manifest = json.load(f)
+    
     archives = {}
-    for archive_name, archive in archive_list.items():
+    for archive_name, archive in manifest["archives"].items():
         _logger.info(f"Searching {archive_name}")
         archives[archive_name] = sniff_subarchives(archive)
         translate_page(archives[archive_name])
@@ -102,8 +101,21 @@ def update_master_archive_list():
             elif sub == "А": # make sure Cyrillic А maps to Latin A
                 _logger.info("Mapping Cyrillic А to Latin A")
                 value["subarchive"]["en"] = "A"
-    _logger.info(f"generate_master_archive_list: updating {_archive_master_path}")
 
+    for fond_name, fond_title in manifest["fonds"].items():
+        fond_name = fond_name.split('-')
+        if len(fond_name) == 1:
+            fond_name.append('_')
+        item = {
+            "title": form_text_item(fond_title),
+            "subarchive": form_text_item(fond_name[1])
+        }
+        translate_page(item)
+        if not archives.get(fond_name[0]):
+            archives[fond_name[0]] = {}
+        archives[fond_name[0]][fond_name[1]] = item
+
+    _logger.info(f"generate_master_archive_list: updating {_archive_master_path}")
     with open(_archive_master_path, "w") as file:
         file.write(json.dumps({ 
             'comment':  _comment_string(),
