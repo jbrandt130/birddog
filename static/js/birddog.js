@@ -335,7 +335,7 @@ function render_page_data(data) {
     const is_comparison = 'refmod' in data && data.refmod != data.lastmod;
 
     const title_elem = document.getElementById('page-title');
-    title_elem.textContent = data.name;
+    title_elem.textContent = data.name.replace("-_","");
 
     var any_edit = false;
     const desc_elem = document.getElementById('page-description');
@@ -512,7 +512,10 @@ function render_breadcrumbs(data) {
     const breadcrumbContainer = document.getElementById('breadcrumb');
     breadcrumbContainer.innerHTML = ''; // Clear existing content
 
-    parts = [ `${data.archive}-${data.subarchive}` ];
+    var archive_name = data.archive;
+    if (data.subarchive != "_")
+        archive_name += `-${data.subarchive}`
+    parts = [ archive_name ];
     if (!empty(data.fond)) {
         parts.push(data.fond);
         if (!empty(data.opus)) {
@@ -596,7 +599,7 @@ function populate_archive_select() {
         archives.forEach((archive, index) => {
             //console.log(archive);
             const option = document.createElement('option');
-            value = `${archive[0]}-${archive[1]}`
+            const value = `${archive[0]}-${archive[1]}`.replace("-_", "");
             option.value = index;
             option.textContent = value;
             archive_select.appendChild(option);
@@ -755,9 +758,9 @@ async function populate_watchlist_archive_select(archives) {
     try {
         archives.forEach(archive => {
             const option = document.createElement('option');
-            value = `${archive[0]}-${archive[1]}`
+            const value = `${archive[0]}-${archive[1]}`;
             option.value = value;
-            option.textContent = value;
+            option.textContent = value.replace("-_", "");
             archive_select.appendChild(option);
         });
     } catch (error) {
@@ -950,13 +953,13 @@ function render_node(name, node) {
           <i class="bi bi-check-square"></i>
     </button>`;
 
-
+    const display_name = name.replace("-_", "");
     const name_html = has_children
     ? `<a data-bs-toggle="collapse" href="#${node_id}" role="button" aria-expanded="false" aria-controls="${node_id}">
             <i class="bi ${closed_icon} arrow" data-arrow="closed"></i>
-            <span class="tree-label ms-1" data-path="${full_path}">${name}</span>
+            <span class="tree-label ms-1" data-path="${full_path}">${display_name}</span>
     </a>`
-    : `<span class="tree-label" data-path="${full_path}">${name}</span>`;
+    : `<span class="tree-label" data-path="${full_path}">${display_name}</span>`;
 
     const meta_html = meta
     ? `<div class="text-muted small">
