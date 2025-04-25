@@ -66,7 +66,7 @@ def find_subarchives(archive):
     for div in soup.find_all('div', attrs = {'id': 'mw-content-text'}):
         for item in div.find_all('a'):
             if item.has_attr('title'):
-                if item['title'].startswith(archive):
+                if item['title'].startswith(archive) or item['title'].replace(" ", "_").startswith(archive):
                     if 'redlink' not in item['href']:
                         parsed = item['title'].split('/')
                         if len(parsed) == 2 and parsed[1] != 'видання':
@@ -94,7 +94,6 @@ def update_master_archive_list():
             elif sub == "А": # make sure Cyrillic А maps to Latin A
                 _logger.info("Mapping Cyrillic А to Latin A")
                 value["subarchive"]["en"] = "A"
-                _logger.info(f"        {sub}: {value}")
     path = 'resources/archives_master.json'
     _logger.info(f"generate_master_archive_list: updating {path}")
     with open(path, "w") as file:
