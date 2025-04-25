@@ -59,5 +59,12 @@ class Test(unittest.TestCase):
             for key, value in subarchives.items():
                 print(f'    {key}: {get_text(value['title'])} ({get_text(value['description'])})')
 
+    def test_all_archives(self):
+        print("Checking opening all archives")
+        archive_master_list = [(arc, sub['subarchive']['en']) for arc, archive in ARCHIVES.items() for sub in archive.values()]
+        for item in archive_master_list:
+            archive = Archive(item[0], item[1])
+            print(f'{item[0]}-{item[1]}: {archive.name}, #children={len(archive.children)}')
+
 if __name__ == "__main__":
     unittest.main()
