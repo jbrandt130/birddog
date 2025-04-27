@@ -126,6 +126,42 @@ async function update_translation_progress(data) {
 }
 
 // ---------------------------------------------------------------------------
+// Browse panel scroll position
+
+// Save/restore scroll positions for the page_table across pages
+
+function get_scroll_position() {
+    return window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop || 0;
+}
+
+function set_scroll_position(pos) {
+    window.scrollTo({
+      top: pos,
+      behavior: 'smooth'
+    });
+}
+
+// per page scroll memory (keyed on page name)
+const scroll_positions = {};
+
+function save_scroll_position() {
+    const page_name = current_page?.name;
+    if (!page_name) return;
+    const position = get_scroll_position();
+    scroll_positions[page_name] = position;
+    console.log(`Saved scroll position: ${page_name}: ${position}`);
+}
+
+function restore_scroll_position() {
+    const page_name = current_page?.name;
+    if (page_name && page_name in scroll_positions) {
+        position = scroll_positions[page_name];
+        set_scroll_position(position);
+        console.log(`Restored scroll position: ${page_name}: ${position}`);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // BIRDDOG SERVICE CALLS
 
 // page loader
@@ -137,6 +173,8 @@ async function load_page(
         case_id=null,
         compare=null) {
     try {
+        save_scroll_position();
+
         // Default to an empty string if any parameter is null or undefined
         url = `/page/${encodeURIComponent(archive_id)}`;
         if (subarchive_id) { 
@@ -185,6 +223,8 @@ async function load_page(
         // Populate the history dropdown
         render_history(data)
 
+        setTimeout(restore_scroll_position, 100);
+        
         // Hide the spinner after loading
         hide('browse-spinner');
         show('browse-page-content');
