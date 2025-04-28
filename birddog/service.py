@@ -429,12 +429,15 @@ def page_data(archive, subarchive=None, fond=None, opus=None, case=None):
     except PageLRU.NotFoundError:
         return 'Page not found', 404
 
+from unidecode import unidecode
+
 def ascii_filename(name):
-    # Normalize and strip non-ASCII characters
-    name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
-    # Replace slashes and anything else problematic
-    name = re.sub(r'[^\w\-_.]', '_', name)
-    return name or "download"
+    # Transliterate non-ASCII characters into closest ASCII representation
+    new_name = unidecode(name)
+    new_name = new_name.replace("-_", "")
+    new_name = re.sub(r'[^\w\-_.]', '_', new_name)
+    _logger.info(f'normalizing filename: {name} -> {new_name}')
+    return new_name or "download"
 
 @app.route('/download/<archive>', methods=['GET'])
 @app.route('/download/<archive>/<subarchive>', methods=['GET'])

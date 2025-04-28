@@ -223,6 +223,7 @@ async function load_page(
         // Populate the history dropdown
         render_history(data)
 
+        // after delay to get the page populated, update scroll
         setTimeout(restore_scroll_position, 100);
         
         // Hide the spinner after loading
@@ -1322,6 +1323,12 @@ function on_loaded() {
             msgBox.className = 'text-danger';
           }
         });
+
+        // constrain range for watchlist cutoff date
+        const today = new Date().toISOString().split('T')[0];
+        const input = document.getElementById('watchlistCutoffDate');
+        input.max = today;  // only allow up to today
+        input.min = "2000-01-01";  // hard-coded example start date
 
         setup_back_button_interceptor();
 
