@@ -134,7 +134,7 @@ def _get_client():
 
 # ---------- TABLE HEADER CLASSIFIER ----------------------------
 
-def _form_table_column_classifier_prompt(headers, class_descriptions, sample_rows=None, max_rows=3):
+def _form_table_column_classifier_prompt(headers, class_descriptions, sample_rows=None, max_rows=3, hints=None):
     classes_text = "\n".join(f"- {cat}: {desc}" for cat, desc in class_descriptions.items())
     headers_with_index = "\n".join(f"{i}: {h}" for i, h in enumerate(headers))
 
@@ -156,6 +156,13 @@ def _form_table_column_classifier_prompt(headers, class_descriptions, sample_row
             sample_text
         ]
 
+    if hints:
+        prompt_parts += [
+            "",
+            "Here are some additional hints to help:",
+            hints
+        ]
+
     prompt_parts += [
         "",
         "Rules:",
@@ -170,7 +177,7 @@ def _form_table_column_classifier_prompt(headers, class_descriptions, sample_row
 
     return "\n".join(prompt_parts)
 
-def table_column_classifier(headers, class_descriptions, sample_rows=None, max_rows=3):
+def table_column_classifier(headers, class_descriptions, sample_rows=None, max_rows=3, hints=None):
     """
     Classify table headers into user-defined categories, returning a list aligned with the input.
 
@@ -188,10 +195,11 @@ def table_column_classifier(headers, class_descriptions, sample_rows=None, max_r
         list of str: Classification for each header in order.
     """
     full_prompt = _form_table_column_classifier_prompt(
-        headers, class_descriptions, sample_rows, max_rows)
+        headers, class_descriptions, sample_rows, max_rows, hints)
 
     system_prompt = "You are a multilingual assistant that classifies table headers based on user-defined categories and sample data."
     #result = _get_client().write(full_prompt, system_prompt=system_prompt)
+    _logger.info(f'table_column_classifier prompt: {full_prompt}')
     result = _get_client().write(full_prompt)
     _logger.info(f'table_column_classifier result: {result}')
     parsed = json.loads(result)
@@ -199,7 +207,7 @@ def table_column_classifier(headers, class_descriptions, sample_rows=None, max_r
     # Ensure it's a list of the right length
     if isinstance(parsed, list) and len(parsed) == len(headers):
         return parsed
-    _logger.warning("⚠️ GPT response was valid JSON but did not match expected structure. Using fallback.")
+    _logger.warning("GPT response was valid JSON but did not match expected structure. Using fallback.")
     raise ServiceError("Invalid Response")
 
 def _normalize(labels, required_labels, other_label="OTHER"):
@@ -239,6 +247,9 @@ def classify_table_columns(page):
         "DESCRIPTION": "A column containing a textual description of the item",
         "ID": "A unique row identifier, number, or code"
     }
+    hints = "\n".join([
+        "The ID column is always first.",
+        ""])
     now = time.time()
     if now < _backoff_until:
         return _default_labels(page)
@@ -248,7 +259,7 @@ def classify_table_columns(page):
     try:
         _total_inferences += 1
         mapping = table_column_classifier(
-            [col['uk'] for col in page.header], classes, sample_rows=rows)
+            [col['uk'] for col in page.header], classes, sample_rows=rows, hints=hints)
         mapping, is_usable, is_valid = _normalize(mapping, classes.keys())
         if not is_usable:
             mapping = _default_labels(page)
