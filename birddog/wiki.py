@@ -8,6 +8,7 @@ Wiki API access functions
 import time
 import json
 import requests
+import re
 from datetime import datetime
 from urllib.parse import quote
 
@@ -449,20 +450,33 @@ def _extract_file_links(wikitext):
     wikicode = mwparserfromhell.parse(wikitext)
     file_links = []
 
-    # 1. Top-level links like [[File:...]]
+    # 1. [[File:...]] wikilinks
     for link in wikicode.filter_wikilinks():
         title = str(link.title)
         if title.lower().startswith("file:"):
             file_links.append(title)
 
-    # 2. Template parameters containing [[File:...]] links
+    # 2. Template param values
     for template in wikicode.filter_templates():
         for param in template.params:
-            param_value = mwparserfromhell.parse(str(param.value))
-            for link in param_value.filter_wikilinks():
+            value_str = str(param.value)
+
+            # (a) Extract wikilinks inside param value
+            parsed_value = mwparserfromhell.parse(value_str)
+            for link in parsed_value.filter_wikilinks():
                 title = str(link.title)
                 if title.lower().startswith("file:"):
                     file_links.append(title)
+
+            # (b) Extract raw "File:..." patterns not wrapped in [[ ]]
+            # Acceptable file name chars: letters, digits, spaces, punctuation
+            raw_file_match = re.findall(r'\bFile:[^\|\}\n\r]+', value_str)
+            file_links.extend(raw_file_match)
+
+            # (c) Extract full file URLs (just in case)
+            file_url_matches = re.findall(r'https?://uk\.wikisource\.org/wiki/File:([^\s|}]+)', value_str)
+            for match in file_url_matches:
+                file_links.append(f'File:{match.replace("_", " ")}')  # decode _
 
     return file_links
 
@@ -497,6 +511,8 @@ def batch_fetch_document_links(titles, map_to_url=True, chunk_size=20):
 
     for chunk in _chunked(titles, chunk_size):
         data = fetch_url(_wiki_content_url(chunk), json=True)
+        if not 'query' in data:
+            _logger.error(f'batch_fetch_document_links returned:\n    {data}')
         for page in data['query']['pages'].values():
             title = page['title'].split(':', 1)[-1]  # strip 'Архів:' prefix
             try:

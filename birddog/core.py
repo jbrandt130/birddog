@@ -78,6 +78,8 @@ class Page:
                         history = self.history(limit=1)
                         if history:
                             self._page["lastmod"] = history[0]["modified"]
+                        # proactively get document links
+                        self.load_child_document_links(update_cache=False)
                         self._cache_save()
                     except:
                         # FIXME: bad page
@@ -284,7 +286,7 @@ class Page:
             return True
         return False
 
-    def load_child_document_links(self):
+    def load_child_document_links(self, update_cache=True):
         # do nothing unless (overridden in subclass)
         pass
 
@@ -394,7 +396,7 @@ class Opus(Page):
     def shortname(self):
         return f'{self.parent.parent.id} {self.parent.id}-{self.id}'
 
-    def load_child_document_links(self):
+    def load_child_document_links(self, update_cache=True):
         items = []
         titles = []
         for i, child in enumerate(self.children):
@@ -410,7 +412,7 @@ class Opus(Page):
                     # FIXME: what about multiple links? Ignoring them for now.
                     self.children[i][1]['link'] = links[0]
                     need_save = True
-            if need_save:
+            if update_cache and need_save:
                 _logger.info(f'load_child_document_links({self.name}) updating cache')
                 self._cache_save()
 
