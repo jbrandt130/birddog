@@ -1131,10 +1131,14 @@ function render_unresolved_items() {
 
     // Sort by keys in unresolved_updates
     const sorted_keys = Object.keys(unresolved_updates).sort(); // alphabetical sort
+    //console.log(`render_unresolved_items: sorted_keys=${sorted_keys}`);
 
     sorted_keys.forEach(key => {
         const item = unresolved_updates[key];
-        render_tree_to_dom(item, 'tree-container');
+        // only render if there are unresolved items for this archive
+        if (Object.keys(item).length > 0) {
+            render_tree_to_dom(item, 'tree-container');
+        }
     });
 
     restore_expanded_nodes(container_id, expanded_paths);
@@ -1144,23 +1148,14 @@ function render_unresolved_items() {
 // APP INITIALIZATION
 
 function setup_back_button_interceptor() {
-    // Ensure we don't double-push or stack redundant entries
-    if (!history.state || history.state.page !== 'guard') {
-        history.pushState({ page: 'guard' }, '', window.location.pathname + window.location.search);
-    }
-
-    window.addEventListener('popstate', function (event) {
-        if (event.state && event.state.page === 'guard') {
-            const should_leave = confirm('Are you sure you want to go back? Unsaved changes may be lost.');
-            if (!should_leave) {
-                // Re-push the guard entry
-                history.pushState({ page: 'guard' }, '', window.location.pathname + window.location.search);
-            } else {
-                // Remove listener to prevent it firing again
-                window.removeEventListener('popstate', arguments.callee);
-                history.back(); // allow back navigation
-            }
-        }
+    console.log('setup_back_button_interceptor');
+    window.addEventListener("popstate", (ev) => {
+        //ev.preventDefault();
+        console.log('Pop state');
+    });
+    window.addEventListener("beforeunload", (ev) => {
+        //ev.preventDefault();
+        console.log('Before unload');
     });
 }
 
@@ -1330,7 +1325,7 @@ function on_loaded() {
         input.max = today;  // only allow up to today
         input.min = "2000-01-01";  // hard-coded example start date
 
-        setup_back_button_interceptor();
+        setTimeout(setup_back_button_interceptor, 1000);
 
         // Populate the interface
         load_watchlist(check_all=true, initial_load=true);

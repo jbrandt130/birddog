@@ -425,8 +425,10 @@ def page_data(archive, subarchive=None, fond=None, opus=None, case=None):
             page_dict['needs_translation'] = page.needs_translation
             page_dict['history'] = _compress_history(page.history(cutoff_date='2023'))
             return jsonify(page_dict), 200
+        _logger.error(f'PageLRU({archive}, {subarchive}, {fond}, {opus}, {case}) returned None')
         return 'Page not found', 404
     except PageLRU.NotFoundError:
+        _logger.error(f'PageLRU({archive}, {subarchive}, {fond}, {opus}, {case}) raised NotFoundError')
         return 'Page not found', 404
 
 from unidecode import unidecode

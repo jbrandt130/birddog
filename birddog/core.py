@@ -257,6 +257,7 @@ class Page:
         row = self.get_child_row(entry_id)
         if row:
             return self.child_class((get_text(row[0]['text']), row[0]['link']), self, use_cache=use_cache)
+        _logger.error(f'Page.lookup({self.name}): failed to find matching child: {entry_id}')
         raise LookupError(self.name, entry_id)
 
     def __getitem__(self, key):
@@ -479,6 +480,7 @@ class PageLRU:
                 self._lru[key] = item
                 return item
             except:
+                _logger.error(f'PageLRU: exception during page lookup')
                 raise PageLRU.NotFoundError(key)
 
 # ----------------------------------------------------------------------------
