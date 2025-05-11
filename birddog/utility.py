@@ -35,6 +35,12 @@ with open('resources/months.json', encoding="utf8") as f:
 # UTILITY FUNCTIONS --------------------------------------------------------
 
 #
+# helper functions
+
+def is_linked(url):
+    return url and not "redlink" in url
+
+#
 # page loading
 
 MAX_RETRIES = 5

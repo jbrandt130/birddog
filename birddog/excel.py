@@ -12,11 +12,9 @@ from openpyxl.worksheet.formula import ArrayFormula
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import get_column_letter
 
-from birddog.utility import get_text
+from birddog.utility import get_text, is_linked
 from birddog.ai import classify_table_columns
 from birddog.wiki import ARCHIVE_BASE
-from birddog.core import is_linked
-
 
 from birddog.logging import get_logger
 _logger = get_logger()
@@ -213,9 +211,6 @@ def export_page(page, dest_file=None, lru=None):
     max_col = sheet.max_column
     max_col_letter = get_column_letter(max_col)
     _logger.info(f'sheet dimensions: {max_row} rows, {max_col} cols')
-
-    # make sure document links are present (for Opi only at the moment)
-    page.load_child_document_links()
 
     _process_title(page, sheet)
 

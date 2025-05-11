@@ -27,6 +27,7 @@ from birddog.utility import (
     lastmod,
     match_text,
     translate_page,
+    is_linked,
     )
 
 from birddog.logging import get_logger
@@ -265,8 +266,8 @@ def check_page_changes(page, reference, report=False):
             for item, ref_item in zip(child, ref_child):
                 changed = not equal_text(item['text'], ref_item['text'])
                 item['edit'] = 'changed' if changed else None
-                if 'link' in item:
-                    if 'link' in ref_item:
+                if 'link' in item and is_linked(item['link']):
+                    if 'link' in ref_item and is_linked(ref_item['link']):
                         item['link_edit'] = 'changed' if item['link'] != ref_item['link'] else None
                     else:
                         item['link_edit'] = 'added'

@@ -13,7 +13,8 @@ import regex
 from birddog.utility import (
     get_text,
     match_text,
-    translate_page
+    translate_page,
+    is_linked
     )
 from birddog.cache import load_cached_object, save_cached_object, CacheMissError
 from birddog.wiki import (
@@ -41,12 +42,6 @@ def decode_subarchive(subarchive):
         if subarchive in item.values():
             return item
     return None
-
-#
-# Helper functions
-
-def is_linked(url):
-    return url and not "redlink" in url
 
 # -------------------------------------------------------------------------------
 # class definitions for each of the page types in the archive
