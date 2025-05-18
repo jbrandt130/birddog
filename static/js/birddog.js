@@ -441,7 +441,7 @@ function render_page_data(data) {
             if (is_comparison && 'link_edit' in item) {
                 switch (item.link_edit) {
                 case 'added':
-                    console.log('link added:', cell_content);
+                    //console.log('link added:', cell_content);
                     cell_content = 
                         `<button class="btn btn-success btn-sm" style="opacity: 0.5;">
                             <i class="bi bi-link-45deg"></i>
@@ -449,7 +449,7 @@ function render_page_data(data) {
                     row_edited = true;
                     break;
                 case 'changed':
-                    console.log('link changed:', cell_content);
+                    //console.log('link changed:', cell_content);
                     cell_content = 
                         `<button class="btn btn-warning btn-sm" style="opacity: 0.5;">
                             <i class="bi bi-link-45deg"></i>
@@ -626,6 +626,11 @@ function populate_archive_select() {
             }
             archives = await response.json();
             console.log('archive list loaded:', archives);
+            // Sort by first element, then by second
+            archives.sort((a, b) => {
+                const firstCompare = a[0].localeCompare(b[0]);
+                return firstCompare !== 0 ? firstCompare : a[1].localeCompare(b[1]);
+            });
             populate_archive_select_dropdown(archives);
             populate_watchlist_archive_select(archives);
         } catch (error) {
