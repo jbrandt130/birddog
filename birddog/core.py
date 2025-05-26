@@ -53,32 +53,34 @@ def decode_subarchive(subarchive):
 #        Case
 # The archive is organized hierarchically as Archive->Fond->Opus->Case
 
+def _entry_hit(entry, entry_id):
+    return match_text(entry['text'], entry_id) or unquote(entry['link'].split('/')[-1]) == entry_id
+        
 _history_lru = HistoryLRU()
 
 class Page:
     """Abstract base clase for all page types on the archive."""
-    def __init__(self, spec, parent, use_cache=True):
+    def __init__(self, spec, parent):
         self._parent = parent
         self._spec = spec
         self._page = {}
         self._column_header_map = None
-        if use_cache:
-            if not self._cache_load():
-                # not in the cache - get it
-                if self.default_url is not None:
-                    _logger.info(f"{f'Loading page: {self.name} from {self.default_url}'}")
-                    try:
-                        self._page = read_page(self.default_url)
-                        # ensure lastmod == history[0]
-                        history = self.history(limit=1)
-                        if history:
-                            self._page["lastmod"] = history[0]["modified"]
-                        # proactively get document links
-                        self.load_child_document_links(update_cache=False)
-                        self._cache_save()
-                    except:
-                        # FIXME: bad page
-                        pass
+        if not self._cache_load():
+            # not in the cache - get it
+            if self.default_url is not None:
+                _logger.info(f"{f'Loading page: {self.name} from {self.default_url}'}")
+                try:
+                    self._page = read_page(self.default_url)
+                    # ensure lastmod == history[0]
+                    history = self.history(limit=1)
+                    if history:
+                        self._page["lastmod"] = history[0]["modified"]
+                    # proactively get document links
+                    self.load_child_document_links(update_cache=False)
+                    self._cache_save()
+                except:
+                    # FIXME: bad page
+                    pass
 
     class LookupError(Exception):
         def __init__(self, page_name, key):
@@ -93,7 +95,7 @@ class Page:
 
     def _cache_load(self, version=None):
         """Try to retrieve page contents from cache. Returns True if successful."""
-        if not self.default_url:
+        if not is_linked(self.default_url):
             return False
         if not version:
             # determine latest version
@@ -128,7 +130,7 @@ class Page:
             return _history_lru.lookup(self.title, limit)
         if cutoff_date:
             return _history_lru.lookup_by_cutoff(self.title, cutoff_date=cutoff_date)
-            raise ValueError(f'Page({self.title}).history must specify either limit or cutoff_date')
+        raise ValueError(f'Page({self.title}).history must specify either limit or cutoff_date')
 
     def latest(self):
         """Set page state to the latest version."""
@@ -247,14 +249,42 @@ class Page:
         # make sure no commas in the name
         return f'{self.kind},{self.name.replace(",", "")},{self.lastmod}'
 
-    def get_child_row(self, entry_id):
-        return next((x for x in self.children if match_text(x[0]['text'], entry_id)), None)
+    @property
+    def child_ids(self):
+        return [item[0]['text']['uk'] for item in self.children]
 
-    def lookup(self, entry_id, use_cache=True):
-        row = self.get_child_row(entry_id)
+    def _find_child_row(self, entry_id):
+        return next((x for x in self.children if _entry_hit(x[0], entry_id)), None)
+
+    def lookup(self, entry_id):
+        row = self._find_child_row(entry_id)
         if row:
-            return self.child_class((get_text(row[0]['text']), row[0]['link']), self, use_cache=use_cache)
-        _logger.error(f'Page.lookup({self.name}): failed to find matching child: {entry_id}')
+            url = row[0]['link']
+            split_url = url.rsplit('/', 1)
+            child_id = get_text(row[0]['text'])
+            if split_url[0] == self.url.replace(self.base, '').rsplit('/', 1)[0]:
+                # child url is at peer level: spawn sibling
+                return self.parent.child_class((child_id, url), self.parent)
+            # normal case: entry_id is listed in the parent page
+            return self.child_class((child_id, url), self)
+        # entry_id does not match known children - could be shadow child page
+        # try to spawn it using the constructed url
+        child_url = f'{self.url}/{entry_id}'
+        child_url = child_url.replace(ARCHIVE_BASE, '')
+        child_spec = (entry_id, child_url)
+        try:
+            result = self.child_class(child_spec, self)
+            if result._page:
+                return result
+        except:
+            pass
+        # last ditch: search children lists
+        for child_id in self.child_ids:
+            child = self.lookup(child_id)
+            row = child._find_child_row(entry_id)
+            if row:
+                return self.child_class((get_text(row[0]['text']), row[0]['link']), self)
+        # unable to find matching id
         raise LookupError(self.name, entry_id)
 
     def __getitem__(self, key):
@@ -319,13 +349,13 @@ class Page:
 
 class Archive(Page):
     """Represents a top level archive page."""
-    def __init__(self, tag, subarchive=None, base=ARCHIVE_BASE, use_cache=True):
+    def __init__(self, tag, subarchive=None, base=ARCHIVE_BASE):
         self._tag = tag
         archive_data = find_archive(tag, subarchive)
         self._subarchive = archive_data["subarchive"]
         self._archive_name = archive_data["title"]["uk"]
         self._base = base
-        super().__init__(None, None, use_cache=use_cache)
+        super().__init__(None, None)
 
     @property
     def title(self):
@@ -476,8 +506,9 @@ class PageLRU:
                     raise PageLRU.NotFoundError(key)
                 self._lru[key] = item
                 return item
-            except:
+            except Page.LookupError:
                 _logger.error(f'PageLRU: exception during page lookup')
+                _logger.info(f'... failed to find child page: parent={parent.name}, key={key}')
                 raise PageLRU.NotFoundError(key)
 
 # ----------------------------------------------------------------------------
@@ -605,6 +636,8 @@ class ArchiveWatcher:
         return entries[-1]["last_resolved"] if entries else self._cutoff_date
 
     def check(self):
+        #import json
+
         def _check_ancestors(changes):
             def _add_result(kwargs):
                 page = self._lru.lookup(**kwargs)
@@ -651,6 +684,7 @@ class ArchiveWatcher:
                         "modified": mod_date,
                         "last_resolved": self._last_resolved_date(item)
                     }
+            #_logger.info(f'ArchiveWatcher.check() unresolved: {json.dumps(self._unresolved, indent=4)}')
             self._last_checked_date = max(max(updates.values()), self._last_checked_date)
 
     def resolve(self, item, deep=False):

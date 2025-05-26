@@ -341,26 +341,50 @@ def reset_with_token(token):
 
 # ---- HELPER FUNCTIONS -------------------------------------------------------
 
+#import json
+
+# Helper to extract oldid from URL
+def _extract_oldid(url):
+    match = re.search(r'oldid=(\d+)', url)
+    return int(match.group(1)) if match else 0
+
 def _compress_history(history, max_entries=30):
-    if len(history) <= max_entries:
-        return history
 
-    # Sort oldest to newest
-    history = sorted(history, key=lambda x: x['modified'])
+    # Sort by modified date, then by oldid DESCENDING (newer edit first)
+    history = sorted(
+        history,
+        key=lambda x: (x['modified'], -_extract_oldid(x['link']))
+    )
 
-    hist_by_day = {}
+    # Remove duplicates: keep only the first entry per modified date
+    seen_dates = set()
+    unique_history = []
     for h in history:
+        if h['modified'] not in seen_dates:
+            unique_history.append(copy(h))
+            seen_dates.add(h['modified'])
+
+    #_logger.info(f'_compress_history: unique_history={json.dumps(unique_history, indent=4)}')
+
+    # Skip compression if already within limits
+    if len(unique_history) <= max_entries:
+        return unique_history
+
+    # Compress to 1 entry per day (oldest)
+    hist_by_day = {}
+    for h in unique_history:
         day = h['modified'][:10]
-        # only keep the first seen entry per day (oldest)
         if day not in hist_by_day:
             hist_by_day[day] = copy(h)
 
-    compressed = list(hist_by_day.values())
-    compressed = sorted(compressed, key=lambda x: x['modified'], reverse=True)
+    # Sort compressed by modified DESCENDING (newest first)
+    compressed = sorted(hist_by_day.values(), key=lambda x: x['modified'], reverse=True)
 
-    # If still too many, drop oldest until we're within the limit
+    # Drop oldest if still above limit
     if len(compressed) > max_entries:
         compressed = compressed[:max_entries]
+
+    #_logger.info(f'_compress_history: compressed={json.dumps(compressed, indent=4)}')
 
     return compressed
 
@@ -413,17 +437,22 @@ def page_data(archive, subarchive=None, fond=None, opus=None, case=None):
             compare = request.args.get('compare')
             if compare:
                 page = _compare_page(page, compare)
+
+            # recheck page address (which could be different)
+            address = page.name.split('/') + 3 * [None]
+            true_fond, true_opus, true_case = address[1:4]
+
             # prevent mutation of page data in LRU/cache
             page_dict = deepcopy(page.page)
             page_dict['archive'] = archive
             page_dict['subarchive'] = subarchive
-            page_dict['fond'] = fond
-            page_dict['opus'] = opus
-            page_dict['case'] = case
+            page_dict['fond'] = true_fond
+            page_dict['opus'] = true_opus
+            page_dict['case'] = true_case
             page_dict['kind'] = page.kind
             page_dict['name'] = page.name
             page_dict['needs_translation'] = page.needs_translation
-            page_dict['history'] = _compress_history(page.history(cutoff_date='2023'))
+            page_dict['history'] = _compress_history(page.history(cutoff_date='2000'))
             return jsonify(page_dict), 200
         _logger.error(f'PageLRU({archive}, {subarchive}, {fond}, {opus}, {case}) returned None')
         return 'Page not found', 404

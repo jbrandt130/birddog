@@ -206,6 +206,7 @@ def do_search(query_string, limit=10, offset=0):
     Search archive site for matching entries, sorted on last modification date.
     For each hit, return dict with item with keys: title, link, and lastmod.
     """
+    _logger.info(f'do_search({query_string}, limt={limit}, offset={offset})')
     query_string = quote(query_string, safe='', encoding=None, errors=None)
     url = f'{ARCHIVE_BASE}/w/index.php?limit={limit}&offset={offset}'
     url += f'&ns0=1&sort=last_edit_desc&search={query_string}'

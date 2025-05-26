@@ -148,6 +148,13 @@ class Test(unittest.TestCase):
         watcher.unresolve(item)
         self.assertTrue(item in watcher.unresolved)
         self.assertFalse(item in watcher.resolved)
+        watcher = ArchiveWatcher('DADNO', 'R', '2025,03,01')
+        watcher.check()
+        for key in list(watcher.unresolved.keys())[::77]:
+            address = key.rstrip(',').split(',') + 3 * [None]
+            address = address[:5]
+            page = lru.lookup(*address)
+            self.assertEqual(page.lastmod, watcher.unresolved[key]['modified'])
 
 if __name__ == "__main__":
     unittest.main()

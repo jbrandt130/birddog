@@ -199,9 +199,9 @@ def table_column_classifier(headers, class_descriptions, sample_rows=None, max_r
 
     system_prompt = "You are a multilingual assistant that classifies table headers based on user-defined categories and sample data."
     #result = _get_client().write(full_prompt, system_prompt=system_prompt)
-    _logger.info(f'table_column_classifier prompt: {full_prompt}')
+    #_logger.info(f'table_column_classifier prompt: {full_prompt}')
     result = _get_client().write(full_prompt)
-    _logger.info(f'table_column_classifier result: {result}')
+    #_logger.info(f'table_column_classifier result: {result}')
     parsed = json.loads(result)
 
     # Ensure it's a list of the right length

@@ -84,6 +84,8 @@ def fetch_url(url, params=None, json=False):
                 if response.status_code == 429:
                     raise TooManyRequestsError("429 Too Many Requests")
                 if not response.ok:
+                    if response.status_code == 404:
+                        raise RuntimeError("Failed to fetch page (404)")
                     raise requests.RequestException(f"Unexpected status: {response.status_code}")
                 _record_fetch_event()
                 return response.json() if json else response.text
