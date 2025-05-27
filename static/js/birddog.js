@@ -540,12 +540,13 @@ function render_history(data) {
 }
 
 function handle_breadcrumb_click(parts, index) {
-    archive_id = parts[0].split('-');
-    subarchive_id = archive_id[1];
-    archive_id = archive_id[0];
-    fond_id = index >= 1? parts[1] : '';
-    opus_id = index >= 2? parts[2] : '';
-    case_id = index >= 3? parts[3] : '';
+    console.log(`handle_breadcrumb_click: ${parts}, ${index}`);
+    let archive_parts = parts[0].split('-');
+    let archive_id = archive_parts[0];
+    let subarchive_id = archive_parts.length > 1 ? archive_parts[1] : '_';
+    let fond_id = index >= 1 ? parts[1] : '';
+    let opus_id = index >= 2 ? parts[2] : '';
+    let case_id = index >= 3 ? parts[3] : '';
     load_page(archive_id, subarchive_id, fond_id, opus_id, case_id);
 }
 
