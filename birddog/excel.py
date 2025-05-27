@@ -6,6 +6,7 @@ import string
 from pathlib import Path
 from copy import copy
 from datetime import datetime
+from html import unescape
 
 from openpyxl import load_workbook
 from openpyxl.worksheet.formula import ArrayFormula
@@ -42,10 +43,10 @@ def _child_url(child):
 
 def _child_sheetname(page, child):
     if page.kind == 'archive':
-        return f'Fund {get_text(child[0]["text"])}'
+        return f'Fund {unescape(get_text(child[0]["text"]))}'
     elif page.kind == 'fond':
-        return f'{page.parent.id} {page.id}-{get_text(child[0]["text"])}'
-    return f'sheetname-{get_text(child[0]["text"])}'
+        return f'{page.parent.id} {page.id}-{unescape(get_text(child[0]["text"]))}'
+    return f'sheetname-{unescape(get_text(child[0]["text"]))}'
 
 def _child_doc_url(child):
     link = child[1]["link"]
@@ -141,7 +142,7 @@ def _process_table_column(page, edit_cell, sheet, cell, parse, match):
             if mapped_index is not None:
                 if mapped_index < len(child):
                     item = child[mapped_index]
-                sub = get_text(item['text'])
+                sub = unescape(get_text(item['text']))
                 if 'edit' in item:
                     edit = item['edit']
                     if edit in edit_cell:
@@ -255,7 +256,7 @@ def export_page(page, dest_file=None, lru=None):
                 pass
             else:
                 # general case: replace template expression with substitution value
-                sub = _substitute(page, parse)
+                sub = unescape(_substitute(page, parse))
                 if sub is not None:
                     cell.value = cell.value.replace(match, sub)
                 if parse['modifier'] == 'linked':
