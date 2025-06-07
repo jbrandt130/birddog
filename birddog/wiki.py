@@ -10,7 +10,7 @@ import json
 import requests
 import re
 from datetime import datetime
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import mwparserfromhell
 from itertools import islice
@@ -40,6 +40,7 @@ _logger = get_logger()
 ARCHIVE_BASE    = 'https://uk.wikisource.org'
 WIKI_NAMESPACE  = 'Архів'
 ARCHIVES        = None
+API_URL         = f"{ARCHIVE_BASE}/w/api.php"
 
 # load static data resources
 
@@ -138,7 +139,257 @@ def find_archive(archive_tag, subarchive=None):
     return { "title": sub["title"], "subarchive": sub["subarchive"] }
 
 # -------------------------------------------------------------------------------
-# WikiSource archive scraping
+# WikiSource MediaWiki API page download
+
+def get_title(url):
+    result = url.replace(ARCHIVE_BASE, '')
+    result = result.replace('/wiki/', '')
+    return unquote(result)
+
+def _is_table(tag):
+    return tag.tag == "table" and [entry for entry in tag.attributes if "wikitable" in entry] != []
+ 
+def _check_page_existence_chunked(page_links, chunk_size=50):
+    exists_map = {}
+    #print("check_page_existence_chunked:", page_links)
+    title_map = {get_title(link): link for link in page_links}
+    titles = list(title_map.keys())
+    
+    for i in range(0, len(titles), chunk_size):
+        params = {
+            'action': 'query',
+            'prop': 'info',
+            'titles': "|".join(titles[i:i+chunk_size]),
+            'format': 'json'
+        }
+        data = fetch_url(API_URL, params=params, json=True)
+        for page_id, page_data in data['query']['pages'].items():
+            title = page_data['title']
+            #print('\n', title, page_data)
+            # If invalid or missing, mark as False
+            exists = not ('missing' in page_data or 'invalid' in page_data)
+            exists_map[title_map[title]] = exists
+    return exists_map
+
+def _is_category_link(title):
+    return title.startswith("Категорія:")
+    
+def _is_commons_url(title):
+    return title.lower().startswith("c:")
+    
+def _map_commons_url(title):
+    if title.lower().startswith("c:"):
+        return f"https://commons.wikimedia.org/wiki/{title[2:].replace(' ', '_')}"
+    return title
+
+def _expand_link_target(link_target, page_title):
+    link_target = link_target.strip()
+    link_target = re.sub(r'//+', '/', link_target)
+    link_target = link_target.replace(' ', '_')
+    while link_target.startswith("../"):
+        link_target = link_target[2:] # retain leading slash (handled below)
+        page_title = page_title.rsplit('/', 1)[0] if "/" in page_title else ""
+    if link_target.startswith("./"):
+        link_target = link_target[1:]
+    if link_target.startswith("/"):
+        return f"{ARCHIVE_BASE}/wiki/{page_title}{link_target.rstrip('/')}"
+    return f"{ARCHIVE_BASE}/wiki/{link_target}"
+
+def _split_list(lst, *predicates):
+    buckets = [[] for _ in range(len(predicates) + 1)]  # One extra for "rest"
+    for item in lst:
+        for i, pred in enumerate(predicates):
+            if pred(item):
+                buckets[i].append(item)
+                break
+        else:
+            buckets[-1].append(item)  # No predicate matched
+    return tuple(buckets)
+
+def _safe_remove(lst, item):
+    try:
+        lst.remove(item)
+    except ValueError:
+        pass
+
+def _subtract_links(links, delta):
+    for key, link_list in delta.items():
+        if key in links.keys():
+            for delta_link in link_list:
+                _safe_remove(links[key], delta_link)
+
+def _extract_links(wikitext):
+    # parse if necessary
+    if not isinstance(wikitext, mwparserfromhell.wikicode.Wikicode):
+        wikitext = mwparserfromhell.parse(str(wikitext))
+
+    # Internal wiki link targets
+    links = [str(link.title).strip() for link in wikitext.filter_wikilinks()]    
+    commons_links, category_links, int_links = _split_list(links, _is_commons_url, _is_category_link)
+    commons_links = [_map_commons_url(title) for title in commons_links]
+    
+    # External link URLs
+    ext_links = [str(link.url).strip() for link in wikitext.filter_external_links()]
+
+    return { 
+        "commons_links": commons_links,
+        "category_links": category_links,
+        "internal_links": int_links,
+        "external_links": ext_links,
+    }
+
+def _read_wiki_text(page_title, oldid=None):
+    params = {
+        'action': 'parse',
+        'page': page_title,
+        'prop': 'wikitext|revid',
+        'format': 'json'
+    }
+    if oldid:
+        params['oldid'] = oldid
+
+    data = fetch_url(API_URL, params=params, json=True)
+
+    if 'error' in data:
+        raise RuntimeError(f"API error: {data['error']}")
+
+    return (
+        data['parse']['wikitext']['*'], 
+        data['parse']['revid'], 
+        data['parse']['title'].replace(f'{WIKI_NAMESPACE}:', ''),
+    )
+
+def mw_read_page(page_title, oldid=None):
+    wikitext, revid, title = _read_wiki_text(page_title, oldid)
+    wikicode = mwparserfromhell.parse(wikitext)
+    page_links = _extract_links(wikicode)
+
+    # Title and description
+    desc = None
+    dates = None
+    notes = None
+    template_name = None
+    for template in wikicode.filter_templates():
+        if template.name.startswith("Архіви"):
+            template_name = template.name.strip(' \n')
+            if template.has("назва"):
+                desc = template.get("назва").value.strip_code().strip()
+                #print('description:', desc)
+            if template.has("рік"):
+                dates = template.get("рік").value.strip_code().strip()
+                #print('dates:', dates)
+            if template.has("примітки"):
+                notes = _extract_links(template.get("примітки"))
+                _subtract_links(page_links, notes)
+            break
+
+    page = {
+        "title": form_text_item(title),
+        "template": form_text_item(template_name),
+        "revid": revid,
+        "description": form_text_item(desc),
+        "dates": form_text_item(dates),
+        "notes": notes,
+        "other_links": page_links
+    }
+
+    # Table data
+    tables = [t for t in wikicode.filter_tags() if _is_table(t)]
+    header = []
+    children = []
+    all_page_links = set()
+
+    if tables:
+        table_code = tables[0].contents
+        rows = [r.strip() for r in table_code.split("\n") if r.strip() and r.strip() != "|-"]
+        for row in rows:
+            # Identify header row (starts with '!')
+            if row.startswith("!"):
+                cells = row.lstrip("!").split("||")
+                header = [form_text_item(c.strip()) for c in cells]
+                continue  # skip to next row
+        
+            # Process data rows
+            cells = row.split("||")
+            cells = [c.strip(" |") for c in cells]
+            row_data = []
+            for cell_text in cells:
+                cell_wikicode = mwparserfromhell.parse(cell_text)
+                # Extract internal links
+                links = cell_wikicode.filter_wikilinks()
+                link = None
+                if links:
+                    #print(links)
+                    link_target = str(links[0].title).strip()
+                    _safe_remove(page_links["internal_links"], link_target)
+                    link = _expand_link_target(link_target, page_title)
+                    all_page_links.add(link)
+                else:
+                    # External links as fallback
+                    ext_links = cell_wikicode.filter_external_links()
+                    if ext_links:
+                        link = str(ext_links[0].url).strip()
+        
+                # Clean text (strip wikitext markup)
+                text = form_text_item(cell_wikicode.strip_code().strip('/ '))
+                row_data.append({'text': text, 'link': link})
+            children.append(row_data)
+
+    if not header and not children:
+        # try to populate a "table" if there is either a list of subpages or commons links
+        sub_pages = [link for link in page_links["internal_links"] if link.startswith("/")]
+        if sub_pages:
+            # synthesize a table from list of links to subpages
+            header = [ form_text_item("-") ]
+            for link_target in sub_pages:
+                link = _expand_link_target(link_target, page_title)
+                all_page_links.add(link)
+                _safe_remove(page_links["internal_links"], link_target)
+                text = form_text_item(link_target.strip("/"))
+                children.append([{'text': text, 'link': link}])
+        else:
+            sub_pages = [link for link in page_links["commons_links"]]
+            if len(sub_pages) > 1:
+                # synthesize a table from list of links commons files
+                header = [ form_text_item("-") ]
+                for link in sub_pages:
+                    _safe_remove(page_links["commons_links"], link)
+                    text = link.replace("https://commons.wikimedia.org/wiki/", "")
+                    text = text.replace("File:", "")
+                    text = text.replace("_", " ")
+                    text = form_text_item(text)
+                    children.append([{'text': text, 'link': link, 'exists': True}])
+            
+    # Collect unique linked page titles (relative titles like '/1/' etc.)
+    link_existence = _check_page_existence_chunked(all_page_links)
+    for row in children:
+        for cell in row:
+            if cell['link']:
+                cell['exists'] = link_existence.get(cell["link"], True)  # True by default
+
+    page["header"] = header
+    page["children"] = children
+
+    # Last modified date via API `revisions` (for this oldid)
+    params_rev = {
+        'action': 'query',
+        'prop': 'revisions',
+        'revids': revid,
+        'rvprop': 'timestamp',
+        'format': 'json'
+    }
+    rev_data = fetch_url(API_URL, params=params_rev, json=True)
+
+    pages = rev_data['query']['pages']
+    page_id = next(iter(pages))
+    page["lastmod"] = convert_utc_time(pages[page_id]['revisions'][0]['timestamp'])
+    page["link"] = f"{ARCHIVE_BASE}/wiki/{page_title}"
+
+    return page
+
+# -------------------------------------------------------------------------------
+# WikiSource HTML archive scraping
+
 
 # HTML page element processing
 def form_element_text(element):
@@ -200,6 +451,9 @@ def read_page(url):
         'doc_link': doc_url,
         'thumb_link': thumb_url,
     }
+
+# -------------------------------------------------------------------------------
+# WikiSource change detection
 
 def do_search(query_string, limit=10, offset=0):
     """
