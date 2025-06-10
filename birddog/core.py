@@ -54,8 +54,12 @@ def decode_subarchive(subarchive):
 # The archive is organized hierarchically as Archive->Fond->Opus->Case
 
 def _entry_hit(entry, entry_id):
-    return match_text(entry['text'], entry_id) or unquote(entry['link'].split('/')[-1]) == entry_id
-        
+    if match_text(entry['text'], entry_id):
+        return True
+    if entry.get('link'):
+        return unquote(entry['link'].split('/')[-1]) == entry_id
+    return False
+
 _history_lru = HistoryLRU()
 
 class Page:
@@ -229,11 +233,6 @@ class Page:
     @property
     def doc_url(self):
         url = self._page.get('doc_link')
-        return self.base + url if url else None
-
-    @property
-    def thumb_url(self):
-        url = self._page.get('thumb_link')
         return self.base + url if url else None
 
     @property

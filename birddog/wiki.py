@@ -260,8 +260,14 @@ def _read_wiki_text(page_title, oldid=None):
     )
 
 def mw_read_page(page_title, oldid=None):
+    # extract title from url if necessary
+    page_title = get_title(page_title)
+
+    # get the wikitext and parse
     wikitext, revid, title = _read_wiki_text(page_title, oldid)
     wikicode = mwparserfromhell.parse(wikitext)
+
+    # get and organize all the links on the page
     page_links = _extract_links(wikicode)
 
     # Title and description
@@ -274,12 +280,12 @@ def mw_read_page(page_title, oldid=None):
             template_name = template.name.strip(' \n')
             if template.has("назва"):
                 desc = template.get("назва").value.strip_code().strip()
-                #print('description:', desc)
             if template.has("рік"):
                 dates = template.get("рік").value.strip_code().strip()
-                #print('dates:', dates)
             if template.has("примітки"):
                 notes = _extract_links(template.get("примітки"))
+                # take the links found in the header section out of the master list
+                # since they are now accounted for
                 _subtract_links(page_links, notes)
             break
 
@@ -386,6 +392,15 @@ def mw_read_page(page_title, oldid=None):
     page["link"] = f"{ARCHIVE_BASE}/wiki/{page_title}"
 
     return page
+
+def mw_page_doc_url(page):
+    internal_links = page["other_links"].get("internal_links")
+    if internal_links:
+        return _expand_link_target(internal_links[0], page["title"]["uk"])
+    commons_links = page["notes"].get("commons_links")
+    if commons_links:
+        return commons_links[0]
+    return None
 
 # -------------------------------------------------------------------------------
 # WikiSource HTML archive scraping
