@@ -8,7 +8,8 @@ from birddog.core import (
     Opus,
     Case,
     PageLRU,
-    ArchiveWatcher
+    ArchiveWatcher,
+    PageUpdateManager
     )
 
 archive_path = '%D0%90%D1%80%D1%85%D1%96%D0%B2:%D0%94%D0%90%D0%96%D0%9E'
@@ -133,23 +134,25 @@ class Test(unittest.TestCase):
 
     def test_ArchiveWatcher(self):
         lru = PageLRU()
-        watcher = ArchiveWatcher("DAKO", "D", cutoff_date="2025,03,01", lru=lru)
+        watcher = ArchiveWatcher("DAKO", "D", cutoff_date="2025,03,01")
         self.assertFalse(watcher.resolved)
         self.assertFalse(watcher.unresolved)
-        watcher.check()
-        self.assertFalse(watcher.resolved)
-        self.assertTrue(watcher.unresolved)
-        item = watcher.key("DAKO", "D", "1455", "1", "169")
-        #item = "DAKO-D/1455/1/169"
-        self.assertTrue(item in watcher.unresolved)
-        watcher.resolve(item)
-        self.assertFalse(item in watcher.unresolved)
-        self.assertTrue(item in watcher.resolved)
-        watcher.unresolve(item)
-        self.assertTrue(item in watcher.unresolved)
-        self.assertFalse(item in watcher.resolved)
-        watcher = ArchiveWatcher('DADNO', 'R', '2025,03,01')
-        watcher.check()
+        with PageUpdateManager() as page_manager:
+            watcher.check(page_manager)
+            self.assertFalse(watcher.resolved)
+            self.assertTrue(watcher.unresolved)
+            #print(watcher.unresolved)
+            item = watcher.key("DAKO", "D", "280", "201", "4")
+            #item = "DAKO-D/1455/1/169"
+            self.assertTrue(item in watcher.unresolved)
+            watcher.resolve(item)
+            self.assertFalse(item in watcher.unresolved)
+            self.assertTrue(item in watcher.resolved)
+            watcher.unresolve(item)
+            self.assertTrue(item in watcher.unresolved)
+            self.assertFalse(item in watcher.resolved)
+            watcher = ArchiveWatcher('DADNO', 'R', '2025,03,01')
+            watcher.check(page_manager)
         for key in list(watcher.unresolved.keys())[::77]:
             address = key.rstrip(',').split(',') + 3 * [None]
             address = address[:5]

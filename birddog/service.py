@@ -25,7 +25,8 @@ from flask import (
 # Birddog packages
 from birddog.core import (
     PageLRU,
-    ArchiveWatcher)
+    ArchiveWatcher,
+    PageUpdateManager)
 from birddog.excel import export_page
 from birddog.cache import (
     load_cached_object,
@@ -46,11 +47,18 @@ STATIC_DIR = os.path.join(BASE_DIR, 'static')
 app = Flask(__name__, template_folder=TEMPLATES_DIR, static_folder=STATIC_DIR)
 app.secret_key = os.getenv('BIRDDOG_SECRET_KEY', '')  # For session management
 serializer = URLSafeTimedSerializer(app.secret_key)
-
+    
 SMTP_SERVER = os.getenv('BIRDDOG_SMTP_SERVER', '')  # For password reset
 SMTP_PORT = os.getenv('BIRDDOG_SMTP_PORT', '')  # For password reset
 SMTP_USERNAME = os.getenv('BIRDDOG_SMTP_USERNAME', '')  # For password reset
 SMTP_PASSWORD = os.getenv('BIRDDOG_SMTP_PASSWORD', '')  # For password reset
+
+# ---- APP GLOBALS  -----------------------------------------------------------
+
+ARCHIVE_MASTER_LIST     = all_archives()
+users                   = None
+page_lru                = None
+page_update_manager     = None
 
 # ---- USER MANAGEMENT --------------------------------------------------------
 
@@ -118,14 +126,13 @@ class User:
             path = _watcher_cache_path(self.email, archive, subarchive)
             try:
                 watcher_data = load_cached_object(path)
-                watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
+                watcher = ArchiveWatcher.load(watcher_data)
             except CacheMissError:
                 watcher = ArchiveWatcher(
                     archive, subarchive,
-                    self.watchlist[key]['cutoff_date'], lru=page_lru
-                )
+                    self.watchlist[key]['cutoff_date'])
 
-            watcher.check()
+            watcher.check(page_update_manager)
             save_cached_object(watcher.save(), path)
 
             self.watchlist[key]['last_checked_date'] = datetime.now().strftime('%Y,%m,%d,%H:%M')
@@ -150,7 +157,7 @@ class User:
             except CacheMissError:
                 raise FileNotFoundError('No watcher found')
 
-            watcher = ArchiveWatcher.load(watcher_data, lru=page_lru)
+            watcher = ArchiveWatcher.load(watcher_data)
 
             resolve_key = ArchiveWatcher.key(archive, subarchive, fond, opus, case)
             _logger.info(f'Resolving {resolve_key}')
@@ -226,8 +233,6 @@ class Users:
 
     def logout(self):
         self._session.pop('user', None)
-
-users = Users(session)
 
 # ---- FRONT END PAGES --------------------------------------------------------
 
@@ -341,8 +346,6 @@ def reset_with_token(token):
 
 # ---- HELPER FUNCTIONS -------------------------------------------------------
 
-#import json
-
 # Helper to extract oldid from URL
 def _extract_oldid(url):
     match = re.search(r'oldid=(\d+)', url)
@@ -388,8 +391,6 @@ def _compress_history(history, max_entries=30):
 
     return compressed
 
-page_lru = PageLRU(maxsize=500)
-
 def _get_current_user():
     user_session = session.get('user')
     if not user_session:
@@ -412,12 +413,10 @@ def _compare_page(page, ref_date):
 
 # ---- SERVICE API ------------------------------------------------------------
 
-archive_master_list = all_archives()
-
 # List all archives
 @app.route("/archives", methods=['GET'])
 def archive_list():
-    return jsonify(archive_master_list)
+    return jsonify(ARCHIVE_MASTER_LIST)
 
 @app.route('/page/<archive>', methods=['GET'])
 @app.route('/page/<archive>/<subarchive>', methods=['GET'])
@@ -507,6 +506,8 @@ def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
         _logger.exception(f'Error: {e}')
         return jsonify({'error': 'Internal server error'}), 500
 
+# ---- WATCHLIST MANAGEMENT -------------------------------------------------
+
 def _watchlist_key(archive, subarchive):
     return f'{archive}-{subarchive}'
 
@@ -520,7 +521,7 @@ def _format_watchlist(watchlist):
         }
         for k, v in watchlist.items() ]
 
-## Get user's watchlist
+# Get user's watchlist
 @app.route('/watchlist', methods=['GET'])
 def get_watchlist():
     user, error_response, status = _get_current_user()
@@ -705,6 +706,10 @@ def get_log():
 
 # ---- MAIN -------------------------------------------------------------------
 
+# initialize globals
+users = Users(session)
+page_lru = PageLRU(maxsize=500)
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
@@ -712,8 +717,11 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=2002, help="Port to run the server on")
     args = parser.parse_args()
 
-    app.run(
-        debug=args.debug,
-        port=args.port,
-        host="0.0.0.0"  # Allow external connections
-    )
+    # run
+    with PageUpdateManager(page_lru=page_lru) as manager:
+        page_update_manager = manager
+        app.run(
+            debug=args.debug,
+            port=args.port,
+            host="0.0.0.0"  # Allow external connections
+        )

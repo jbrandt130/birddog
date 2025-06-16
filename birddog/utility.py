@@ -129,10 +129,20 @@ def lastmod(message):
         return format_date(result.group(0))
     return message
 
-def convert_utc_time(utc_str):
+def from_utc_format(utc_str):
     dt = datetime.strptime(utc_str, '%Y-%m-%dT%H:%M:%SZ')
     return dt.strftime('%Y,%m,%d,%H:%M')
 
+def to_utc_format(time_str):
+    # Split the input and pad with default values
+    parts = time_str.split(',')
+    defaults = ['2000', '01', '01', '00:00']  # month, day, hour, minute
+    full_parts = parts + defaults[len(parts):]
+    # Join into full timestamp string
+    full_str = ','.join(full_parts)
+    dt = datetime.strptime(full_str, '%Y,%m,%d,%H:%M')
+    return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+   
 #
 # multilingual support
 

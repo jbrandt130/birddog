@@ -18,7 +18,8 @@ from cachetools import LRUCache
 from bs4 import BeautifulSoup
 
 from birddog.utility import (
-    convert_utc_time,
+    from_utc_format,
+    to_utc_format,
     equal_text,
     fetch_url,
     form_text_item,
@@ -39,6 +40,7 @@ _logger = get_logger()
 
 ARCHIVE_BASE    = 'https://uk.wikisource.org'
 WIKI_NAMESPACE  = 'Архів'
+WIKI_NAMESPACE_ID = '116'
 ARCHIVES        = None
 API_URL         = f"{ARCHIVE_BASE}/w/api.php"
 
@@ -58,6 +60,58 @@ def _inventory_subarchives(archives):
     return list(subarchives.values())
 
 SUBARCHIVES = _inventory_subarchives(ARCHIVES)
+
+# -------------------------------------------------------------------------------
+# namespace id lookup (utility)
+
+def lookup_namespace_id(name):
+    params = {
+        "action": "query",
+        "format": "json",
+        "meta": "siteinfo",
+        "siprop": "namespaces|namespacealiases"
+    }
+    data = fetch_url(API_URL, params=params, json=True)
+    data = data["query"]
+    #_logger.info(data)
+    target = name.lower()
+    # Check official namespaces
+    for ns_id, ns in data["namespaces"].items():
+        if ns.get("canonical","").lower() == target or ns.get("*","").lower() == target:
+            return int(ns_id)
+    # Check aliases
+    for alias in data.get("namespacealiases", []):
+        if alias["alias"].lower() == target:
+            return int(alias["id"])
+    return None
+
+# -------------------------------------------------------------------------------
+# return list of all pages in given namespace with given prefix (or all if prefix is None)
+
+def get_all_pages(namespace=WIKI_NAMESPACE_ID, prefix=None, limit=500):
+    titles = []
+    params = {
+        "action": "query",
+        "format": "json",
+        "list": "allpages",
+        "apnamespace": namespace,
+        "aplimit": limit,
+    }
+    if prefix:
+        params["apprefix"] = prefix
+
+    cont = {}
+    while True:
+        if cont:
+            params.update(cont)
+        r = requests.get(API_URL, params=params)
+        data = r.json()
+        titles.extend([p["title"] for p in data["query"]["allpages"]])
+        if "continue" in data:
+            cont = data["continue"]
+        else:
+            break
+    return titles
 
 # -------------------------------------------------------------------------------
 # subarchive sniffer
@@ -388,7 +442,7 @@ def mw_read_page(page_title, oldid=None):
 
     pages = rev_data['query']['pages']
     page_id = next(iter(pages))
-    page["lastmod"] = convert_utc_time(pages[page_id]['revisions'][0]['timestamp'])
+    page["lastmod"] = from_utc_format(pages[page_id]['revisions'][0]['timestamp'])
     page["link"] = f"{ARCHIVE_BASE}/wiki/{page_title}"
 
     return page
@@ -464,7 +518,7 @@ def read_page(url):
         'lastmod': last_modified,
         'link': url,
         'doc_link': doc_url,
-        'thumb_link': thumb_url,
+        #'thumb_link': thumb_url,
     }
 
 # -------------------------------------------------------------------------------
@@ -475,10 +529,11 @@ def do_search(query_string, limit=10, offset=0):
     Search archive site for matching entries, sorted on last modification date.
     For each hit, return dict with item with keys: title, link, and lastmod.
     """
-    _logger.info(f'do_search({query_string}, limt={limit}, offset={offset})')
+    _logger.info(f'do_search({query_string}, limit={limit}, offset={offset})')
     query_string = quote(query_string, safe='', encoding=None, errors=None)
     url = f'{ARCHIVE_BASE}/w/index.php?limit={limit}&offset={offset}'
     url += f'&ns0=1&sort=last_edit_desc&search={query_string}'
+    #_logger.info(f'search url={url}')
     soup = BeautifulSoup(fetch_url(url), 'lxml')
     results = []
     for result in soup.find_all('li', attrs = {'class': 'mw-search-result'}):
@@ -589,6 +644,170 @@ def check_page_updates(archive, cutoff_date):
     return _page_update_summary(archive, change_list)
 
 # -------------------------------------------------------------------------------
+# Get most recent page modification dates within given namespace
+
+def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500, sleep_time=0.1):
+    """
+    Collects the latest modification timestamp for each page in a given namespace,
+    going back to the specified cutoff date.
+    
+    Args:
+        namespace (int): Namespace number (e.g. 0 = main, 6 = file, etc.)
+        cutoff_date (str): timestamp
+        limit (int): Max results per request (max is 500 for users, 5000 for bots)
+        sleep_time (float): Seconds to sleep between requests to avoid throttling
+
+    Returns:
+        dict: Mapping from page title to latest modification timestamp (ISO8601)
+    """
+    if not cutoff_date:
+        cutoff_date = "2025"
+
+    latest_mods = {}
+    params = {
+        "action": "query",
+        "format": "json",
+        "list": "recentchanges",
+        "rcnamespace": namespace,
+        "rcprop": "title|timestamp",
+        "rclimit": limit,
+        "rcend": to_utc_format(cutoff_date),
+        "rcdir": "older",  # go backward in time
+        "rcshow": "!redirect",
+    }
+
+    seen_pages = set()
+    cont = {}
+
+    while True:
+        if cont:
+            params.update(cont)
+        data = fetch_url(API_URL, params=params, json=True)
+        for rc in data.get("query", {}).get("recentchanges", []):
+            title = rc["title"]
+            timestamp = rc["timestamp"]
+            if title not in seen_pages:
+                seen_pages.add(title)
+                latest_mods[title] = from_utc_format(timestamp)
+
+        if "continue" in data:
+            cont = data["continue"]
+            time.sleep(sleep_time)
+        else:
+            break
+
+    return latest_mods
+
+# -------------------------------------------------------------------------------
+# Get most recent page modification dates within given namespace
+
+def get_last_mod(titles):
+    """
+    Return a dict of {page_title: last_modified_datetime} using fast batched 'prop=info' queries.
+    Input: str or list of str (page titles)
+    Output: dict {title: datetime or None}
+    """
+    if isinstance(titles, str):
+        titles = [titles]
+
+    result = {}
+    for i in range(0, len(titles), 50):
+        batch = titles[i:i+50]
+        title_str = "|".join(batch)
+
+        params = {
+            "action": "query",
+            "format": "json",
+            "prop": "info",
+            "titles": title_str,
+        }
+
+        response = fetch_url(API_URL, params=params, json=True)
+        pages = response.get("query", {}).get("pages", {})
+
+        for page in pages.values():
+            title = page.get("title")
+            touched = page.get("touched")
+            result[title] = from_utc_format(touched) if touched else None
+
+        # Fill in None for missing titles (e.g., typos or deleted pages)
+        for title in batch:
+            result.setdefault(title, None)
+
+    return result
+
+# -------------------------------------------------------------------------------
+# Keep persistable list of latest mod date per page title
+
+class PageTracker:
+    def __init__(self, mod_dates={}, cutoff_date=None, archive_prefixes = []):
+        self._mod_dates = mod_dates
+        self._cutoff_date = cutoff_date
+        self._prefixes = archive_prefixes
+
+    def to_dict(self):
+        return {
+            'mod_dates':        self._mod_dates,
+            'cutoff_date':      self._cutoff_date,
+            'archive_prefixes': self._prefixes
+        }
+
+    @classmethod
+    def from_dict(cls, d):
+        return cls(
+            mod_dates=d['mod_dates'],
+            cutoff_date=d['cutoff_date'],
+            archive_prefixes=d['archive_prefixes']
+            )
+
+    def least_recent(self):
+        return min(self._mod_dates.items(), key=lambda x: x[1])
+
+    def most_recent(self):
+        return max(self._mod_dates.items(), key=lambda x: x[1])
+
+    def update(self):
+        updates = get_recent_changes(cutoff_date=self._cutoff_date)
+        self._cutoff_date = max(updates.items(), key=lambda x: x[1])[1]
+        any_change = False
+        for page, mod_date in updates.items():
+            if mod_date != self._mod_dates.get(page):
+                any_change = True
+                self._mod_dates[page] = mod_date
+        return any_change
+
+    def add_title_prefix(self, prefix):
+        _logger.info(f"add_title_prefix: prefix={prefix}")
+        for known_prefix in self._prefixes:
+            if prefix.startswith(known_prefix):
+                # already known
+                return False
+        titles = get_all_pages(prefix=prefix)
+        updates = get_last_mod(titles)
+        any_change = False
+        for page, mod_date in updates.items():
+            if mod_date != self._mod_dates.get(page):
+                any_change = True
+                self._mod_dates[page] = mod_date
+        self._prefixes.append(prefix)
+        return any_change
+
+    def get_updates(self, prefix, cutoff_date=None):
+        prefix = prefix.replace("_", " ")
+        if not prefix.startswith(WIKI_NAMESPACE):
+            prefix = f"{WIKI_NAMESPACE}:{prefix}"
+        def selected(title, mod_date):
+            return title.startswith(prefix) and (not cutoff_date or mod_date >= cutoff_date)
+        result = { title: mod_date for title, mod_date in self._mod_dates.items() if selected(title, mod_date)}
+        return result
+
+    def __getitem__(self, key):
+        return self._mod_dates[key]
+
+    def __contains__(self, key):
+        return key in self._mod_dates
+
+# -------------------------------------------------------------------------------
 # Page revision history handling (using wiki API)
 
 def wiki_title(page_title):
@@ -622,7 +841,7 @@ def get_page_history(page_title, limit=10):
     for page in pages.values():
         history = [ {
             'revid': rev['revid'],
-            'modified': convert_utc_time(rev['timestamp']),
+            'modified': from_utc_format(rev['timestamp']),
             'link': page_revision_url(page_title, rev['revid'])
         } for rev in page.get('revisions') ]
         return history
@@ -663,7 +882,7 @@ class HistoryLRU:
 
     def _flush_if_needed(self):
         if time.time() - self._timer_start >= self._reset_limit:
-            _logger.info("HistoryLRU: flushing all entries")
+            #_logger.info("HistoryLRU: flushing all entries")
             self._lru.clear()
             self._timer_start = time.time()
 
@@ -675,12 +894,13 @@ class HistoryLRU:
         self._flush_if_needed()
         try:
             history = self._lru[page_title]
-            _logger.info(f"HistoryLRU.lookup({page_title}): cache hit")
+            #_logger.info(f"HistoryLRU.lookup({page_title}): cache hit")
             if len(history) >= limit:
                 return history[:limit]
-            _logger.info(f"HistoryLRU.lookup({page_title}): cache too short, refreshing")
+            #_logger.info(f"HistoryLRU.lookup({page_title}): cache too short, refreshing")
         except KeyError:
-            _logger.info(f"HistoryLRU.lookup({page_title}): cache miss")
+            pass
+            #_logger.info(f"HistoryLRU.lookup({page_title}): cache miss")
         # Refresh
         history = get_page_history(page_title, limit=limit)
         self._lru[page_title] = history
@@ -690,16 +910,17 @@ class HistoryLRU:
         self._flush_if_needed()
         try:
             history = self._lru[page_title]
-            _logger.info(f"HistoryLRU.lookup_by_cutoff({page_title}): cache hit")
+            #_logger.info(f"HistoryLRU.lookup_by_cutoff({page_title}): cache hit")
 
             if history:
                 oldest = history[-1]
                 if oldest.get('created') or oldest['modified'] < cutoff_date:
                     # We have enough
                     return self._filter_with_fallback(history, cutoff_date)
-                _logger.info(f"HistoryLRU.lookup_by_cutoff({page_title}): cache incomplete, refreshing")
+                #_logger.info(f"HistoryLRU.lookup_by_cutoff({page_title}): cache incomplete, refreshing")
         except KeyError:
-            _logger.info(f"HistoryLRU.lookup_by_cutoff({page_title}): cache miss")
+            pass
+            #_logger.info(f"HistoryLRU.lookup_by_cutoff({page_title}): cache miss")
 
         # Refresh and filter
         history = get_page_history_from_cutoff(page_title, cutoff_date=cutoff_date)

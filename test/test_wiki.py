@@ -35,7 +35,7 @@ class Test(unittest.TestCase):
     def test_read_page(self):
         page = read_page(_page_url("ДААРК"))
         print(get_text(page['title']), get_text(page['description']))
-        self.assertTrue(set(page.keys()) == set(['title', 'description', 'header', 'children', 'lastmod', 'link', 'doc_link', 'thumb_link']))
+        self.assertTrue(set(page.keys()) == set(['title', 'description', 'header', 'children', 'lastmod', 'link', 'doc_link']))
 
     def test_update_check(self):
         archive = Archive("DACHGO", subarchive="D")

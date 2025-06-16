@@ -6,9 +6,11 @@ Ukraine records archive monitor and scraper.
 """
 
 import time
+import regex
+import threading
+import queue
 from urllib.parse import quote, unquote
 from cachetools import LRUCache
-import regex
 
 from birddog.utility import (
     get_text,
@@ -20,8 +22,11 @@ from birddog.cache import load_cached_object, save_cached_object, CacheMissError
 from birddog.wiki import (
     ARCHIVE_BASE,
     SUBARCHIVES,
+    WIKI_NAMESPACE,
+    ARCHIVES,
     find_archive,
     HistoryLRU,
+    PageTracker,
     read_page,
     do_search,
     batch_fetch_document_links,
@@ -72,7 +77,7 @@ class Page:
         if not self._cache_load():
             # not in the cache - get it
             if self.default_url is not None:
-                _logger.info(f"{f'Loading page: {self.name} from {self.default_url}'}")
+                #_logger.info(f"{f'Loading page: {self.name} from {self.default_url}'}")
                 try:
                     self._page = read_page(self.default_url)
                     # ensure lastmod == history[0]
@@ -110,9 +115,9 @@ class Page:
             version = history[0]["modified"]
         path = f'{self._cache_path}/{version}.json'
         try:
-            _logger.info(f"Fetching from cache: {self.name}[{version}]: {path}")
+            #_logger.info(f"Fetching from cache: {self.name}[{version}]: {path}")
             self._page = load_cached_object(path)
-            _logger.info(f"Retrieved from cache: {self.name}[{version}]: {path}")
+            #_logger.info(f"Retrieved from cache: {self.name}[{version}]: {path}")
             return True
         except CacheMissError:
             pass
@@ -125,7 +130,7 @@ class Page:
             raise ValueError(f"Cannot save page when in comparison state: {self.name}") 
         if self.lastmod:
             path = f'{self._cache_path}/{self.lastmod}.json'
-            _logger.info(f"Saving page to cache: {self.name}[{self.lastmod}]")
+            #_logger.info(f"Saving page to cache: {self.name}[{self.lastmod}]")
             save_cached_object(self._page, path)
 
     def history(self, limit=None, cutoff_date=None):
@@ -151,7 +156,7 @@ class Page:
         if self._cache_load(version=version['modified']):
             return self
 
-        _logger.info(f'Loading page: {self.name}, modified: {version["modified"]}')
+        #_logger.info(f'Loading page: {self.name}, modified: {version["modified"]}')
         self._page = read_page(version['link'])
         self._cache_save()
         return self
@@ -318,11 +323,11 @@ class Page:
     def column_header_map(self):
         result = self._column_header_map
         if not result:
-            _logger.info(f'column_header_map({self.name} {self.lastmod}): checking cache')
+            #_logger.info(f'column_header_map({self.name} {self.lastmod}): checking cache')
             # check if it is in the cached page data
             result = self._page.get("column_header_map")
             if not result:
-                _logger.info(f'column_header_map({self.name}): cache miss: fresh inference')
+                #_logger.info(f'column_header_map({self.name}): cache miss: fresh inference')
                 # not in cache - try to infer the map
                 classification = classify_table_columns(self)
                 # form mapping from column header type to column index
@@ -331,11 +336,12 @@ class Page:
                     result[col_type] = i
                 if classification["success"]:
                     # classification worked - retain it in the cache
-                    _logger.info(f'column_header_map({self.name}): updating cache')
+                    #_logger.info(f'column_header_map({self.name}): updating cache')
                     self._page["column_header_map"] = result
                     self._cache_save()
             else:
-                _logger.info(f'column_header_map({self.name}): retrieved from cache')
+                pass
+                #_logger.info(f'column_header_map({self.name}): retrieved from cache')
             # keep non-persistent map for next time (regardless of success)
             self._column_header_map = result
         return result
@@ -485,10 +491,10 @@ class PageLRU:
         key = self._key(archive, subarchive, fond, opus, case)
         try:
             item = self._lru[key]
-            _logger.info(f"{f'PageLRU.lookup({key}): hit'}")
+            #_logger.info(f"{f'PageLRU.lookup({key}): hit'}")
             return item
         except KeyError:
-            _logger.info(f"{f'PageLRU.lookup({key}): miss'}")
+            #_logger.info(f"{f'PageLRU.lookup({key}): miss'}")
             try:
                 if not fond:
                     item = Archive(archive, subarchive=subarchive)
@@ -509,6 +515,151 @@ class PageLRU:
                 _logger.error(f'PageLRU: exception during page lookup')
                 _logger.info(f'... failed to find child page: parent={parent.name}, key={key}')
                 raise PageLRU.NotFoundError(key)
+
+def lookup_page_by_title(page_title, page_lru=None):
+    if not page_lru:
+        page_lru = PageLRU()
+    if not page_title.startswith(f"{WIKI_NAMESPACE}:"):
+        page_title = f"{WIKI_NAMESPACE}:{page_title}"
+    page_title = page_title.replace(" ", "_")
+    #_logger.info(f"lookup_page_by_title: looking up: {page_title}")
+    page_split = page_title.split("/")
+    page_split = page_split + 3 * [None]
+    page_split = page_split[:4]
+    for archive_key in ARCHIVES.keys():
+        for key, entry in ARCHIVES[archive_key].items():
+            if entry["title"]["uk"].split("/")[0] == page_split[0]:
+                subarchive_key = entry["subarchive"]["en"]
+                archive = page_lru.lookup(archive_key, subarchive_key)
+                if archive is not None:
+                    #_logger.info(f"potential matching archive found: {archive.report}, {archive.title}")
+                    if f"{WIKI_NAMESPACE}:{archive.title}" == page_title:
+                        # title refers to the archive
+                        return page_lru._key(archive_key, subarchive_key)
+                    if page_split[1] and page_split[1] in archive.child_ids:
+                        page = page_lru.lookup(archive_key, subarchive_key, page_split[1])
+                        if page is not None:
+                            return page_lru._key(archive_key, subarchive_key, *page_split[1:])
+    return None
+
+# ----------------------------------------------------------------------------
+# Page Update Manager
+
+class HeartbeatManager:
+    def __init__(self, interval=1.0):
+        self.interval = interval
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(target=self._run_heartbeat, daemon=True)
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.stop()
+
+    def _run_heartbeat(self):
+        while not self._stop_event.is_set():
+            try:
+                self.heartbeat()
+            except Exception as e:
+                _logger.info(f"Heartbeat error: {e}")
+            time.sleep(self.interval)
+
+    def heartbeat(self):
+        """Override this method in subclasses to perform periodic actions."""
+        _logger.info("Heartbeat...")
+
+    def stop(self):
+        self._stop_event.set()
+        self._thread.join()
+
+class PageUpdateManager(HeartbeatManager):
+    _TRACKER_PATH = "page_tracker.json"
+    _HEARTBEAT_INTERVAL = 30 # seconds
+    _PAGE_UPDATE_CHECK_INTERVAL = 60 * 15 # seconds
+    
+    def __init__(self, page_lru=None):
+        self._lru = page_lru if page_lru else PageLRU()
+        self._tracker = None
+        self._request_queue = queue.Queue()
+        self._last_check = 0
+        self._busy = False
+        super().__init__(interval=PageUpdateManager._HEARTBEAT_INTERVAL)
+        self._load_tracker()
+        
+    def _load_tracker(self):
+        try:
+            tracker_data = load_cached_object(PageUpdateManager._TRACKER_PATH)
+            self._tracker = PageTracker.from_dict(tracker_data)
+        except CacheMissError:
+            self._tracker = PageTracker()
+
+    def _save_tracker(self):
+        tracker_data = self._tracker.to_dict()
+        save_cached_object(tracker_data, PageUpdateManager._TRACKER_PATH)
+
+    def _form_prefix(self, archive, subarchive):
+        archive_page = self._lru.lookup(archive, subarchive)
+        if not archive_page:
+            raise ValueError(f"Page not found: {archive}-{subarchive}")
+        #_logger.info(f"_form_prefix(page title = '{archive_page.title}')")
+        parts = archive_page.title.split("/")
+        #parts = regex.split(r'[/_]+', archive_page.title)
+        return parts[0]
+
+    @property
+    def busy(self):
+        return not self._request_queue.empty() or self._busy
+        
+    def heartbeat(self):
+        #_logger.info("PageUpdateManager heartbeat...")
+        self._busy = True
+        save_needed = False
+
+        # 1. Process registration requests
+        while not self._request_queue.empty():
+            try:
+                archive, subarchive = self._request_queue.get_nowait()
+                _logger.info(f"PageUpdateManager: registering {archive}-{subarchive}")
+                if self._tracker.add_title_prefix(self._form_prefix(archive, subarchive)):
+                    save_needed = True
+            except queue.Empty:
+                break  # should not happen, but safe
+
+        # 2. Update tracker periodically
+        now = time.time()
+        if now - self._last_check > PageUpdateManager._PAGE_UPDATE_CHECK_INTERVAL:
+            #_logger.info("PageUpdateManager: checking for page updates...")
+            if self._tracker.update():
+                save_needed = True
+            #_logger.info("PageUpdateManager: finished update check...")
+
+            self._last_check = now
+
+        if save_needed:
+            self._save_tracker()
+        self._busy = False
+
+    def register_archive(self, archive, subarchive):
+        # let the tracker know there's interest in a particular archive
+        # insert (archive, subarchive) into request queue
+        self._request_queue.put((archive, subarchive))
+
+    def get_updates(self, archive, subarchive, cutoff_date=None):
+        prefix = self._form_prefix(archive, subarchive)
+        #_logger.info(f"pageUpdateManager.get_updates: prefix={prefix}")
+        updates_pending = self.busy
+        updates = self._tracker.get_updates(prefix, cutoff_date=cutoff_date)
+        #_logger.info(len(updates))
+        result = {}
+        for title, mod_date in updates.items():
+            address = lookup_page_by_title(title, self._lru)
+            #_logger.info(f"{title}, {mod_date}, {address}")
+            if address and address[0] == archive and address[1] == subarchive:
+                key = ArchiveWatcher.key(*address)
+                result[key] = mod_date
+        return result, updates_pending
 
 # ----------------------------------------------------------------------------
 # Update watcher
@@ -565,9 +716,11 @@ def _make_tree(unresolved):
     return root
 
 class ArchiveWatcher:
-    def __init__(self, archive, subarchive, cutoff_date, lru=None):
-        self._lru = lru if lru else PageLRU()
-        self._archive = self._lru.lookup(archive, subarchive)
+    def __init__(self, archive, subarchive, cutoff_date):
+        self._archive = archive
+        if not subarchive:
+            subarchive = Archive(archive).subarchive["en"]
+        self._subarchive = subarchive
         self._cutoff_date = cutoff_date
         self._last_checked_date = cutoff_date
         self._resolved = {}
@@ -576,8 +729,8 @@ class ArchiveWatcher:
     def save(self):
         return {
             'version': 'v2',
-            'archive': self._archive.tag,
-            'subarchive': self._archive.subarchive["en"],
+            'archive': self._archive,
+            'subarchive': self._subarchive,
             'cutoff_date': self._cutoff_date,
             'resolved': self._resolved,
             'unresolved': self._unresolved,
@@ -585,10 +738,8 @@ class ArchiveWatcher:
         }
 
     @staticmethod
-    def load(data, lru=None):
-        if not lru:
-            lru = PageLRU()
-        watcher = ArchiveWatcher(data['archive'], data['subarchive'], data['cutoff_date'], lru=lru)
+    def load(data):
+        watcher = ArchiveWatcher(data['archive'], data['subarchive'], data['cutoff_date'])
         version = data.get("version", "v1")  # default to legacy
 
         # normalize unresolved (assume format is fine)
@@ -634,7 +785,24 @@ class ArchiveWatcher:
         entries = self._resolved.get(item, [])
         return entries[-1]["last_resolved"] if entries else self._cutoff_date
 
-    def check(self):
+    def check(self, page_manager):
+        # register just in case it hasn't been already
+        page_manager.register_archive(self._archive, self._subarchive)
+        # retrieve updates from page manager
+        updates, page_manager_busy = page_manager.get_updates(self._archive, self._subarchive, self._last_checked_date)
+        if updates:
+            for item, mod_date in updates.items():
+                # Get most recent resolved mod date (if any)
+                latest_resolved = self._resolved[item][-1]["modified"] if item in self._resolved else None
+                if mod_date >= self._last_checked_date and (latest_resolved is None or mod_date > latest_resolved):
+                    self._unresolved[item] = {
+                        "modified": mod_date,
+                        "last_resolved": self._last_resolved_date(item)
+                    }
+            #_logger.info(f'ArchiveWatcher.check() unresolved: {json.dumps(self._unresolved, indent=4)}')
+            self._last_checked_date = max(max(updates.values()), self._last_checked_date)
+
+    def check_legacy(self):
         #import json
 
         def _check_ancestors(changes):

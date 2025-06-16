@@ -131,7 +131,7 @@ def _process_table_column(page, edit_cell, sheet, cell, parse, match):
     col = cell.column
     index = parse['index']
     mapped_index = _map_index(page.column_header_map, index)
-    #_logger.info(f'column map: {index} -> {mapped_index}')
+    _logger.info(f'column map: {index} -> {mapped_index}')
     cell_text = _get_cell_text(cell)
     for child in page.children:
         child_cell = sheet.cell(row=row, column=col)
@@ -142,33 +142,33 @@ def _process_table_column(page, edit_cell, sheet, cell, parse, match):
             if mapped_index is not None:
                 if mapped_index < len(child):
                     item = child[mapped_index]
-                sub = unescape(get_text(item['text']))
-                if 'edit' in item:
-                    edit = item['edit']
-                    if edit in edit_cell:
-                        child_cell.fill = copy(edit_cell[edit].fill)
-                child_cell.value = sub
-            if parse['modifier'] == 'linked':
-                url = _child_url(child)
-                if is_linked(url):
-                    child_cell.hyperlink = _child_url(child)
-                    child_cell.font = copy(edit_cell['linked'].font)
-                else:
-                    child_cell.font = copy(edit_cell['unlinked'].font)
-            elif parse['modifier'] == 'doc_link':
-                url = _child_doc_url(child)
-                if is_linked(url):
-                    child_cell.hyperlink = url
-                    child_cell.font = copy(edit_cell['linked'].font)
-                else:
-                    child_cell.font = copy(edit_cell['unlinked'].font)
-            elif parse['modifier'] == 'link_status':
-                child_cell.value = _link_status(_child_url(child))
-            elif parse['modifier'] == 'sheetname':
-                #_logger.info(f'child sheetname directive: {child_cell.coordinate}, {child[0]}')
-                new_value = cell_text.replace(match, _child_sheetname(page, child))
-                #_logger.info(f'. replacement: {new_value}')
-                child_cell.value = new_value
+                    sub = unescape(get_text(item['text']))
+                    if 'edit' in item:
+                        edit = item['edit']
+                        if edit in edit_cell:
+                            child_cell.fill = copy(edit_cell[edit].fill)
+                    child_cell.value = sub
+                    if parse['modifier'] == 'linked':
+                        url = _child_url(child)
+                        if is_linked(url):
+                            child_cell.hyperlink = _child_url(child)
+                            child_cell.font = copy(edit_cell['linked'].font)
+                        else:
+                            child_cell.font = copy(edit_cell['unlinked'].font)
+                    elif parse['modifier'] == 'doc_link':
+                        url = _child_doc_url(child)
+                        if is_linked(url):
+                            child_cell.hyperlink = url
+                            child_cell.font = copy(edit_cell['linked'].font)
+                        else:
+                            child_cell.font = copy(edit_cell['unlinked'].font)
+                    elif parse['modifier'] == 'link_status':
+                        child_cell.value = _link_status(_child_url(child))
+                    elif parse['modifier'] == 'sheetname':
+                        #_logger.info(f'child sheetname directive: {child_cell.coordinate}, {child[0]}')
+                        new_value = cell_text.replace(match, _child_sheetname(page, child))
+                        #_logger.info(f'. replacement: {new_value}')
+                        child_cell.value = new_value
         elif parse['expr'] == 'empty':
             child_cell.value = ''
         row += 1
