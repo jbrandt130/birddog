@@ -710,6 +710,19 @@ def get_log():
 users = Users(session)
 page_lru = PageLRU(maxsize=500)
 
+def create_app():
+    global page_update_manager
+    # Only run this once during WSGI app startup
+    if page_update_manager is None:
+        manager = PageUpdateManager(page_lru=page_lru)
+        manager.start()  # don't use `with`; call `start()` explicitly
+        page_update_manager = manager
+    return app
+
+# Required for WSGI: this is the callable Gunicorn or EB will look for
+application = create_app()
+
+# Local development entry point
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
@@ -717,11 +730,10 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=2002, help="Port to run the server on")
     args = parser.parse_args()
 
-    # run
-    with PageUpdateManager(page_lru=page_lru) as manager:
-        page_update_manager = manager
-        app.run(
-            debug=args.debug,
-            port=args.port,
-            host="0.0.0.0"  # Allow external connections
-        )
+    # Local version uses the same startup logic
+    create_app()
+    app.run(
+        debug=args.debug,
+        port=args.port,
+        host="0.0.0.0"
+    )

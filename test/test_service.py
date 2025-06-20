@@ -50,7 +50,7 @@ class Test(unittest.TestCase):
         page_keys = set([
             'archive', 'case', 'children', 'description', 'doc_link', 'fond', 'header', 
             'history', 'kind', 'lastmod', 'link', 'name', 'needs_translation', 'opus', 
-            'subarchive', 'title'])
+            'subarchive', 'title', 'revid', 'notes', 'other_links', 'dates', 'template'])
 
         def _load_page_url(url, keys):
             print("Testing URL:", url)

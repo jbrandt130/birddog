@@ -27,7 +27,7 @@ function empty(item) {
 
 // check if valid link
 function is_linked(item) {
-    return item != null && !item.includes("redlink");
+    return item != null && item.link != null && item.exists && !item.link.includes("redlink");
 }
 
 function format_date(mod_date, strip_time=false) {
@@ -467,7 +467,7 @@ function render_page_data(data) {
             any_edit = true;
         if (!is_comparison || row_edited) {
             // only add the row if not doing comparison or there is a change to show
-            if (data.kind != 'case' && is_linked(child[0].link)) {
+            if (data.kind != 'case' && is_linked(child[0])) {
                 // Add click event listener
                 row_elem.addEventListener('click', () => on_row_click(data, index));
             }

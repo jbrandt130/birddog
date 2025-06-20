@@ -34,9 +34,6 @@ def _format_date(date_str):
     dt = datetime.strptime(date_str, "%Y,%m,%d,%H:%M")
     return dt.strftime("%d %b %Y")
 
-def _link_status(url):
-    return "linked" if is_linked(url) else "unlinked"
-
 def _child_url(child):
     link = child[0]["link"]
     return ARCHIVE_BASE + link if link is not None else None
@@ -150,20 +147,18 @@ def _process_table_column(page, edit_cell, sheet, cell, parse, match):
                     child_cell.value = sub
                     if parse['modifier'] == 'linked':
                         url = _child_url(child)
-                        if is_linked(url):
-                            child_cell.hyperlink = _child_url(child)
+                        if is_linked(item):
+                            child_cell.hyperlink = url
                             child_cell.font = copy(edit_cell['linked'].font)
                         else:
                             child_cell.font = copy(edit_cell['unlinked'].font)
                     elif parse['modifier'] == 'doc_link':
                         url = _child_doc_url(child)
-                        if is_linked(url):
+                        if is_linked(item):
                             child_cell.hyperlink = url
                             child_cell.font = copy(edit_cell['linked'].font)
                         else:
                             child_cell.font = copy(edit_cell['unlinked'].font)
-                    elif parse['modifier'] == 'link_status':
-                        child_cell.value = _link_status(_child_url(child))
                     elif parse['modifier'] == 'sheetname':
                         #_logger.info(f'child sheetname directive: {child_cell.coordinate}, {child[0]}')
                         new_value = cell_text.replace(match, _child_sheetname(page, child))
@@ -256,6 +251,7 @@ def export_page(page, dest_file=None, lru=None):
                 pass
             else:
                 # general case: replace template expression with substitution value
+                print(cell.coordinate, cell.value)
                 sub = unescape(_substitute(page, parse))
                 if sub is not None:
                     cell.value = cell.value.replace(match, sub)

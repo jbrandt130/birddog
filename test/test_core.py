@@ -46,8 +46,7 @@ class Test(unittest.TestCase):
         #print('title', page.title)
         #self.assertTrue(page.title == 'ДАЖО/Д')
         print('url', page.url)
-        self.assertTrue(
-            page.url == ARCHIVE_BASE + '/wiki/%D0%90%D1%80%D1%85%D1%96%D0%B2%3A%D0%94%D0%90%D0%96%D0%9E/%D0%94')
+        self.assertTrue(page.url == ARCHIVE_BASE + '/wiki/Архів:ДАЖО/Д')
         
     def test_Fond(self):
         page = Archive('DAZHO').lookup(fond_id)
@@ -57,7 +56,7 @@ class Test(unittest.TestCase):
         self.assertTrue(page.child_class == Opus)
         print('default_url', page.default_url)
         self.assertTrue(
-            page.default_url == f'{ARCHIVE_BASE}/wiki/{archive_path}/{fond_id}')
+            page.default_url == f'{ARCHIVE_BASE}/wiki/Архів:ДАЖО/1')
         print('id', page.id)
         self.assertTrue(page.id == fond_id)
         print('kind', page.kind)

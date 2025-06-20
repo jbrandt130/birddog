@@ -28,6 +28,7 @@ from birddog.wiki import (
     HistoryLRU,
     PageTracker,
     read_page,
+    mw_read_page,
     do_search,
     batch_fetch_document_links,
     check_page_updates
@@ -77,19 +78,17 @@ class Page:
         if not self._cache_load():
             # not in the cache - get it
             if self.default_url is not None:
-                #_logger.info(f"{f'Loading page: {self.name} from {self.default_url}'}")
-                try:
-                    self._page = read_page(self.default_url)
-                    # ensure lastmod == history[0]
-                    history = self.history(limit=1)
-                    if history:
-                        self._page["lastmod"] = history[0]["modified"]
-                    # proactively get document links
-                    self.load_child_document_links(update_cache=False)
-                    self._cache_save()
-                except:
-                    # FIXME: bad page
-                    pass
+                #self._page = read_page(self.default_url)
+                _logger.info(f'Loading page: {self.name} using title "{self.title}"')
+                self._page = mw_read_page(self.title)
+
+                # ensure lastmod == history[0]
+                history = self.history(limit=1)
+                if history:
+                    self._page["lastmod"] = history[0]["modified"]
+                # proactively get document links
+                self.load_child_document_links(update_cache=False)
+                self._cache_save()
 
     class LookupError(Exception):
         def __init__(self, page_name, key):
@@ -104,8 +103,8 @@ class Page:
 
     def _cache_load(self, version=None):
         """Try to retrieve page contents from cache. Returns True if successful."""
-        if not is_linked(self.default_url):
-            return False
+        #if not is_linked(self.default_url):  # when does this happen?
+        #    return False
         if not version:
             # determine latest version
             history = self.history(limit=1)
@@ -156,10 +155,14 @@ class Page:
         if self._cache_load(version=version['modified']):
             return self
 
-        #_logger.info(f'Loading page: {self.name}, modified: {version["modified"]}')
-        self._page = read_page(version['link'])
-        self._cache_save()
-        return self
+        match = regex.search(r"[?&]oldid=(\d+)", version["link"])
+        if match:
+            oldid = match.group(1)
+            _logger.info(f'Loading page: {self.name}, modified: {version["modified"]}')
+            self._page = mw_read_page(self.title, oldid)
+            self._cache_save()
+            return self
+        raise ValueError("URL does not contain oldid: unknown version")
 
     @property
     def page(self):
@@ -266,7 +269,7 @@ class Page:
             url = row[0]['link']
             split_url = url.rsplit('/', 1)
             child_id = get_text(row[0]['text'])
-            if split_url[0] == self.url.replace(self.base, '').rsplit('/', 1)[0]:
+            if self.parent and split_url[0] == self.url.replace(self.base, '').rsplit('/', 1)[0]:
                 # child url is at peer level: spawn sibling
                 return self.parent.child_class((child_id, url), self.parent)
             # normal case: entry_id is listed in the parent page
@@ -430,7 +433,8 @@ class Opus(Page):
         items = []
         titles = []
         for i, child in enumerate(self.children):
-            if is_linked(child[0].get('link')) and not is_linked(child[1].get('link')):
+            #_logger.info(f"load_child_document_links: {self.name}: {child}")
+            if is_linked(child[0]) and not is_linked(child[1]):
                 items.append(i)
                 titles.append(f"{self.title}/{get_text(child[0]['text'])}")
         if items:
@@ -443,7 +447,7 @@ class Opus(Page):
                     self.children[i][1]['link'] = links[0]
                     need_save = True
             if update_cache and need_save:
-                _logger.info(f'load_child_document_links({self.name}) updating cache')
+                #_logger.info(f'load_child_document_links({self.name}) updating cache')
                 self._cache_save()
 
 class Case(Page):
@@ -550,13 +554,19 @@ class HeartbeatManager:
         self.interval = interval
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._run_heartbeat, daemon=True)
+        self._started = False
 
     def __enter__(self):
-        self._thread.start()
+        self.start()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.stop()
+
+    def start(self):
+        if not self._started:
+            self._thread.start()
+            self._started = True
 
     def _run_heartbeat(self):
         while not self._stop_event.is_set():
@@ -615,30 +625,28 @@ class PageUpdateManager(HeartbeatManager):
     def heartbeat(self):
         #_logger.info("PageUpdateManager heartbeat...")
         self._busy = True
-        save_needed = False
 
         # 1. Process registration requests
-        while not self._request_queue.empty():
+        if not self._request_queue.empty():
             try:
                 archive, subarchive = self._request_queue.get_nowait()
                 _logger.info(f"PageUpdateManager: registering {archive}-{subarchive}")
                 if self._tracker.add_title_prefix(self._form_prefix(archive, subarchive)):
-                    save_needed = True
+                    self._save_tracker()
             except queue.Empty:
-                break  # should not happen, but safe
+                pass  # should not happen, but safe
+            self._busy = False
+            return
 
         # 2. Update tracker periodically
         now = time.time()
         if now - self._last_check > PageUpdateManager._PAGE_UPDATE_CHECK_INTERVAL:
-            #_logger.info("PageUpdateManager: checking for page updates...")
+            _logger.info("PageUpdateManager: checking for page updates...")
             if self._tracker.update():
-                save_needed = True
-            #_logger.info("PageUpdateManager: finished update check...")
-
+                self._save_tracker()
+            _logger.info("PageUpdateManager: finished update check...")
             self._last_check = now
 
-        if save_needed:
-            self._save_tracker()
         self._busy = False
 
     def register_archive(self, archive, subarchive):

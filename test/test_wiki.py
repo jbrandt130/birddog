@@ -56,6 +56,8 @@ class Test(unittest.TestCase):
         for item in all_archives():
             print(item)
             archive = Archive(item[0], item[1])
+            if archive.children is None:
+                print("Children is None:", item[0], item[1])
             print(f'{item[0]}-{item[1]}: {archive.name}, #children={len(archive.children)}')
 
 if __name__ == "__main__":

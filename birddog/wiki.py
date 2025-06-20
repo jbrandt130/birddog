@@ -104,8 +104,7 @@ def get_all_pages(namespace=WIKI_NAMESPACE_ID, prefix=None, limit=500):
     while True:
         if cont:
             params.update(cont)
-        r = requests.get(API_URL, params=params)
-        data = r.json()
+        data = fetch_url(API_URL, params=params, json=True)
         titles.extend([p["title"] for p in data["query"]["allpages"]])
         if "continue" in data:
             cont = data["continue"]
@@ -198,28 +197,37 @@ def find_archive(archive_tag, subarchive=None):
 def get_title(url):
     result = url.replace(ARCHIVE_BASE, '')
     result = result.replace('/wiki/', '')
-    return unquote(result)
+    result = unquote(result)
+    if not result.startswith(f"{WIKI_NAMESPACE}:"):
+        result = f"{WIKI_NAMESPACE}:{result}"
+    return result
 
 def _is_table(tag):
     return tag.tag == "table" and [entry for entry in tag.attributes if "wikitable" in entry] != []
  
 def _check_page_existence_chunked(page_links, chunk_size=50):
     exists_map = {}
-    #print("check_page_existence_chunked:", page_links)
     title_map = {get_title(link): link for link in page_links}
     titles = list(title_map.keys())
+    title_map = {key.replace(" ", "_").lower(): link for key, link in title_map.items()}
+    #for key, value in title_map.items():
+    #    print(key, value)
+    #print("check_page_existence_chunked:", titles)
     
     for i in range(0, len(titles), chunk_size):
+        title_batch = "|".join(titles[i:i+chunk_size])
+        #print("batch:", i, "title length:", len(title_batch))
         params = {
             'action': 'query',
             'prop': 'info',
-            'titles': "|".join(titles[i:i+chunk_size]),
+            'titles': title_batch,
             'format': 'json'
         }
-        data = fetch_url(API_URL, params=params, json=True)
+        data = fetch_url(API_URL, params=params, json=True, method="POST")
         for page_id, page_data in data['query']['pages'].items():
-            title = page_data['title']
-            #print('\n', title, page_data)
+            title = page_data['title'].replace(" ", "_").lower()
+            #if title == "архів:дажо/1/74/":
+            #    print('\n', title, page_data, params)
             # If invalid or missing, mark as False
             exists = not ('missing' in page_data or 'invalid' in page_data)
             exists_map[title_map[title]] = exists
@@ -236,18 +244,34 @@ def _map_commons_url(title):
         return f"https://commons.wikimedia.org/wiki/{title[2:].replace(' ', '_')}"
     return title
 
+def _is_relative_link_target(link_target):
+    return re.match(r'^(\.\./|\.\/|/)', link_target) is not None
+
+def _is_familysearch_url(link):
+    return link.startswith("https://www.familysearch.org")
+
 def _expand_link_target(link_target, page_title):
-    link_target = link_target.strip()
+    link_target = link_target.strip().replace(" ", "_")
     link_target = re.sub(r'//+', '/', link_target)
-    link_target = link_target.replace(' ', '_')
-    while link_target.startswith("../"):
-        link_target = link_target[2:] # retain leading slash (handled below)
-        page_title = page_title.rsplit('/', 1)[0] if "/" in page_title else ""
-    if link_target.startswith("./"):
-        link_target = link_target[1:]
-    if link_target.startswith("/"):
-        return f"{ARCHIVE_BASE}/wiki/{page_title}{link_target.rstrip('/')}"
-    return f"{ARCHIVE_BASE}/wiki/{link_target}"
+
+    # Split the page_title into components
+    base_parts = page_title.strip("/").split("/")
+    target_parts = link_target.strip("/").split("/")
+
+    resolved_parts = []
+    for part in target_parts:
+        if part == "..":
+            if base_parts:
+                base_parts.pop()
+        elif part == "." or part == "":
+            continue
+        else:
+            resolved_parts.append(part)
+
+    final_parts = base_parts + resolved_parts
+    full_path = "/".join(final_parts).replace(" ", "_")
+
+    return f"{ARCHIVE_BASE}/wiki/{full_path}"
 
 def _split_list(lst, *predicates):
     buckets = [[] for _ in range(len(predicates) + 1)]  # One extra for "rest"
@@ -295,27 +319,173 @@ def _extract_links(wikitext):
 def _read_wiki_text(page_title, oldid=None):
     params = {
         'action': 'parse',
-        'page': page_title,
         'prop': 'wikitext|revid',
         'format': 'json'
     }
     if oldid:
         params['oldid'] = oldid
-
+    elif page_title:
+        params['page'] = page_title
+    else:
+        raise ValueError("Must provide either page_title or oldid")
+        
     data = fetch_url(API_URL, params=params, json=True)
 
     if 'error' in data:
         raise RuntimeError(f"API error: {data['error']}")
-
+    
     return (
         data['parse']['wikitext']['*'], 
         data['parse']['revid'], 
         data['parse']['title'].replace(f'{WIKI_NAMESPACE}:', ''),
     )
 
+def _extract_colspan(text):
+    """Extracts colspan=N from text, returns N as int or 0 if absent."""
+    match = re.search(r'\bcolspan\s*=\s*(\d+)', text, flags=re.IGNORECASE)
+    return int(match.group(1)) if match else 0
+
+def _expand_row_cells(cells):
+    """
+    Given a list of cell strings, expand any cell with colspan=N into N cells.
+    Fills extra cells with empty strings.
+    """
+    expanded = []
+    for cell in cells:
+        colspan = _extract_colspan(cell)
+        # Remove the colspan directive from the text
+        clean_cell = re.sub(r'\bcolspan\s*=\s*\d+', '', cell, flags=re.IGNORECASE).strip(' |')
+        if colspan > 1:
+            expanded.append(clean_cell)
+            expanded.extend([""] * (colspan - 1))
+        else:
+            expanded.append(clean_cell)
+    return expanded
+
+def _strip_attributes(cell_text):
+    """
+    Removes leading attributes from a Wikitext table cell, stopping at the first
+    unescaped pipe that is not followed by another attribute.
+
+    Attributes are considered anything before content and typically look like:
+        'style="..."|align="..."|Some content'
+
+    Escaped pipes (\\|) are preserved.
+
+    :param cell_text: Wikitext for a single cell
+    :return: Cleaned cell content string
+    """
+
+    # Split only on unescaped pipes
+    parts = re.split(r'(?<!\\)\|', cell_text)
+
+    # Strip whitespace and preserve escaped pipes
+    parts = [part.strip().replace(r'\|', '|') for part in parts]
+
+    # Heuristic: if more than one part, assume all but the last are attributes
+    return parts[-1] if len(parts) > 1 else parts[0]
+
+def _parse_wikitext_table_lines(wikitext):
+    """
+    Parse stripped Wikitext table content line-by-line.
+
+    :param wikitext: A string containing the contents of a table, minus the outer {| and |}
+    :return: List of rows, each row is a list of cells
+    """
+    rows = []
+    current_row = []
+    is_header = False
+
+    lines = wikitext.strip().splitlines()
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        if line.startswith('|-'):
+            if current_row:
+                rows.append(current_row)
+                current_row = []
+            is_header = False  # reset after row break
+            continue
+
+        if line.startswith('|+'):
+            continue  # ignore caption lines
+
+        if line.startswith('!'):
+            if not is_header and current_row:
+                rows.append(current_row)
+                current_row = []
+            is_header = True
+            line_content = line[1:]
+
+            # Use both !! and || as possible header separators
+            cells = re.split(r'\s*(?:!!|\|\|)\s*', line_content)
+            current_row.extend(cells)
+            continue
+
+        if line.startswith('|'):
+            if is_header:
+                rows.append(current_row)
+                current_row = []
+                is_header = False
+            line_content = line[1:]
+            cells = re.split(r'\s*\|\|\s*', line_content)
+            current_row.extend(cells)
+            continue
+
+    if current_row:
+        rows.append(current_row)
+
+    # Apply attribute stripping and colspan expansion
+    rows = [[_strip_attributes(cell) for cell in _expand_row_cells(row)] for row in rows]
+    return rows
+
+def _parse_wikitext_table(text):
+
+    #with open("table_code.txt", "w") as file:
+    #    file.write(str(text))
+
+    # Split rows using the row separator "|-", allowing optional leading/trailing whitespace
+    rows = re.split(r"\s*\|[-—]\s*", str(text))
+    rows = [row.strip("\n ") for row in rows]
+    rows = [row for row in rows if row] # get rid of empty rows
+    
+    #_logger.info(rows)
+
+    header = []
+    body = []
+
+    body = _parse_wikitext_table_lines(text)
+    if body:
+        # take the first row as the header
+        header = body.pop(0)
+
+    # process colspan directives
+    #header = _expand_row_cells(header)
+    #body = [_expand_row_cells(row) for row in body]
+
+    return header, body
+
+def mw_page_doc_url(page):
+    internal_links = page["other_links"].get("internal_links", [])
+    internal_links = [link for link in internal_links if not _is_relative_link_target(link)]
+    if internal_links:
+        return _expand_link_target(internal_links[0], page["title"]["uk"])
+    commons_links = page["notes"].get("commons_links", [])
+    if commons_links:
+        return commons_links[0]
+    external_links = page["other_links"].get("external_links", [])
+    external_links = [link for link in external_links if not _is_familysearch_url(link)]
+    if external_links:
+        return external_links[0]
+    return None
+
 def mw_read_page(page_title, oldid=None):
     # extract title from url if necessary
     page_title = get_title(page_title)
+    #_logger.info(f"mw_read_page: {page_title}")
 
     # get the wikitext and parse
     wikitext, revid, title = _read_wiki_text(page_title, oldid)
@@ -327,13 +497,15 @@ def mw_read_page(page_title, oldid=None):
     # Title and description
     desc = None
     dates = None
-    notes = None
+    notes = {}
     template_name = None
     for template in wikicode.filter_templates():
-        if template.name.startswith("Архіви"):
+        if template.name.startswith("Архіви") or template.name.startswith("заголовок"):
             template_name = template.name.strip(' \n')
             if template.has("назва"):
-                desc = template.get("назва").value.strip_code().strip()
+                desc = template.get("назва").value.strip_code().strip(" ./\n")
+            if template.has("секція") and not desc:
+                desc = template.get("секція").value.strip_code().strip()
             if template.has("рік"):
                 dates = template.get("рік").value.strip_code().strip()
             if template.has("примітки"):
@@ -360,18 +532,14 @@ def mw_read_page(page_title, oldid=None):
     all_page_links = set()
 
     if tables:
-        table_code = tables[0].contents
-        rows = [r.strip() for r in table_code.split("\n") if r.strip() and r.strip() != "|-"]
-        for row in rows:
-            # Identify header row (starts with '!')
-            if row.startswith("!"):
-                cells = row.lstrip("!").split("||")
-                header = [form_text_item(c.strip()) for c in cells]
-                continue  # skip to next row
-        
-            # Process data rows
-            cells = row.split("||")
-            cells = [c.strip(" |") for c in cells]
+        table_code = tables[0].contents # assume first table
+        header, rows = _parse_wikitext_table(table_code)
+
+        # format header
+        header = [form_text_item(cell.strip()) for cell in header]
+
+        # process rows
+        for cells in rows:
             row_data = []
             for cell_text in cells:
                 cell_wikicode = mwparserfromhell.parse(cell_text)
@@ -382,8 +550,10 @@ def mw_read_page(page_title, oldid=None):
                     #print(links)
                     link_target = str(links[0].title).strip()
                     _safe_remove(page_links["internal_links"], link_target)
-                    link = _expand_link_target(link_target, page_title)
-                    all_page_links.add(link)
+                    if not link_target.startswith("#"):
+                        link = _expand_link_target(link_target, page_title)
+                        #print("link target expanded:", link_target, link)
+                        all_page_links.add(link)
                 else:
                     # External links as fallback
                     ext_links = cell_wikicode.filter_external_links()
@@ -391,8 +561,8 @@ def mw_read_page(page_title, oldid=None):
                         link = str(ext_links[0].url).strip()
         
                 # Clean text (strip wikitext markup)
-                text = form_text_item(cell_wikicode.strip_code().strip('/ '))
-                row_data.append({'text': text, 'link': link})
+                text = cell_wikicode.strip_code().strip('./ ')
+                row_data.append({'text': form_text_item(text), 'link': link})
             children.append(row_data)
 
     if not header and not children:
@@ -405,7 +575,7 @@ def mw_read_page(page_title, oldid=None):
                 link = _expand_link_target(link_target, page_title)
                 all_page_links.add(link)
                 _safe_remove(page_links["internal_links"], link_target)
-                text = form_text_item(link_target.strip("/"))
+                text = form_text_item(link_target.strip("./ "))
                 children.append([{'text': text, 'link': link}])
         else:
             sub_pages = [link for link in page_links["commons_links"]]
@@ -419,13 +589,16 @@ def mw_read_page(page_title, oldid=None):
                     text = text.replace("_", " ")
                     text = form_text_item(text)
                     children.append([{'text': text, 'link': link, 'exists': True}])
-            
+
     # Collect unique linked page titles (relative titles like '/1/' etc.)
     link_existence = _check_page_existence_chunked(all_page_links)
+    #link_existence = {}
     for row in children:
         for cell in row:
             if cell['link']:
                 cell['exists'] = link_existence.get(cell["link"], True)  # True by default
+                # ARCHIVE_BASE is implicit for child links that are within the media wiki 
+                cell["link"] = cell["link"].replace(ARCHIVE_BASE, "")
 
     page["header"] = header
     page["children"] = children
@@ -444,17 +617,9 @@ def mw_read_page(page_title, oldid=None):
     page_id = next(iter(pages))
     page["lastmod"] = from_utc_format(pages[page_id]['revisions'][0]['timestamp'])
     page["link"] = f"{ARCHIVE_BASE}/wiki/{page_title}"
+    page["doc_link"] = mw_page_doc_url(page)
 
     return page
-
-def mw_page_doc_url(page):
-    internal_links = page["other_links"].get("internal_links")
-    if internal_links:
-        return _expand_link_target(internal_links[0], page["title"]["uk"])
-    commons_links = page["notes"].get("commons_links")
-    if commons_links:
-        return commons_links[0]
-    return None
 
 # -------------------------------------------------------------------------------
 # WikiSource HTML archive scraping
@@ -570,6 +735,8 @@ def report_page_changes(page):
         for i, item in enumerate(child):
             if 'edit' in item and item['edit'] is not None:
                 _logger.info(f'{index}[{i}] ({item["edit"]}): {get_text(item["text"])}')
+            if 'link_edit' in item and item['link_edit'] is not None:
+                _logger.info(f'{index}[{i}] (link {item["link_edit"]}): {item["link"]}')
 
 def check_page_changes(page, reference, report=False):
     """
@@ -585,14 +752,16 @@ def check_page_changes(page, reference, report=False):
         page[key]['edit'] = 'changed' if changed else None
     ref_children = dict((get_text(c[0]['text']), c) for c in reference['children'])
     for child in page['children']:
+        #print("checking child:", child)
         index = get_text(child[0]['text'])
         if index in ref_children:
             ref_child = ref_children[index]
+            #print("comparing:", child, "to", ref_child)
             for item, ref_item in zip(child, ref_child):
                 changed = not equal_text(item['text'], ref_item['text'])
                 item['edit'] = 'changed' if changed else None
-                if 'link' in item and is_linked(item['link']):
-                    if 'link' in ref_item and is_linked(ref_item['link']):
+                if is_linked(item):
+                    if is_linked(ref_item):
                         item['link_edit'] = 'changed' if item['link'] != ref_item['link'] else None
                     else:
                         item['link_edit'] = 'added'
@@ -783,7 +952,9 @@ class PageTracker:
                 # already known
                 return False
         titles = get_all_pages(prefix=prefix)
+        _logger.info(f'add_title_prefix: found {len(titles)} titles')
         updates = get_last_mod(titles)
+        _logger.info(f'add_title_prefix: found {len(updates)} updates')
         any_change = False
         for page, mod_date in updates.items():
             if mod_date != self._mod_dates.get(page):
