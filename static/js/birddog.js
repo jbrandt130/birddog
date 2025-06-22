@@ -397,6 +397,36 @@ function render_page_data(data) {
         }
     }
 
+    const dates_elem = document.getElementById('page-dates');
+    dates_elem.textContent = get_text(data.dates);
+    dates_elem.classList.remove('bg-warning', 'bg-success');
+    if (is_comparison && 'edit' in data.dates) {
+        switch (data.dates.edit) {
+            case 'added':
+                dates_elem.classList.add('bg-success');
+                any_edit = true;
+                break;
+            case 'changed':
+                dates_elem.classList.add('bg-warning');
+                any_edit = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    const doc_link_elem = document.getElementById('page-doc-link');
+    const doc_url = data.doc_link;
+    doc_link_elem.textContent = doc_url;
+    doc_link_elem.classList.remove('bg-warning', 'bg-success');
+    if (doc_url.length > 0) {
+        doc_link_elem.setAttribute('href', doc_url);
+        show('page-doc-link')
+    }
+    else {
+        hide('page-doc-link')
+    }
+
     const lastmod = document.getElementById('last-modified');
     lastmod.textContent = format_date(data.lastmod);
 

@@ -528,11 +528,12 @@ def lookup_page_by_title(page_title, page_lru=None):
         page_lru = PageLRU()
     if not page_title.startswith(f"{WIKI_NAMESPACE}:"):
         page_title = f"{WIKI_NAMESPACE}:{page_title}"
-    page_title = page_title.replace(" ", "_")
+    #page_title = page_title.replace(" ", "_")
+    #title_root = page_title.split("/", 1)[0]
     #_logger.info(f"lookup_page_by_title: looking up: {page_title}")
     page_split = page_title.split("/")
     page_split = page_split + 3 * [None]
-    page_split = page_split[:4]
+    page_split = page_split[:5]
     for archive_key in ARCHIVES.keys():
         for key, entry in ARCHIVES[archive_key].items():
             if entry["title"]["uk"].split("/")[0] == page_split[0]:
@@ -544,9 +545,13 @@ def lookup_page_by_title(page_title, page_lru=None):
                         # title refers to the archive
                         return page_lru._key(archive_key, subarchive_key)
                     if page_split[1] and page_split[1] in archive.child_ids:
-                        page = page_lru.lookup(archive_key, subarchive_key, page_split[1])
+                        page = page_lru.lookup(archive_key, subarchive_key, *page_split[1:4])
                         if page is not None:
-                            return page_lru._key(archive_key, subarchive_key, *page_split[1:])
+                            return page_lru._key(archive_key, subarchive_key, *page_split[1:4])
+                    if page_split[2] and page_split[2] in archive.child_ids:
+                        page = page_lru.lookup(archive_key, subarchive_key, *page_split[2:5])
+                        if page is not None:
+                            return page_lru._key(archive_key, subarchive_key, *page_split[2:5])
     return None
 
 # ----------------------------------------------------------------------------

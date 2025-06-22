@@ -138,7 +138,8 @@ def _process_table_column(page, edit_cell, sheet, cell, parse, match):
     col = cell.column
     index = parse['index']
     mapped_index = _map_index(page.column_header_map, index)
-    _logger.info(f'column map: {index} -> {mapped_index}')
+    if index is not None or mapped_index is not None:
+        _logger.info(f'column map: {index} -> {mapped_index}')
     cell_text = _get_cell_text(cell)
     for child in page.children:
         child_cell = sheet.cell(row=row, column=col)

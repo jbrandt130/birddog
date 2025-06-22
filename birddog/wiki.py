@@ -468,18 +468,26 @@ def _parse_wikitext_table(text):
 
     return header, body
 
+def _included_link(link):
+    return not any([
+        _is_relative_link_target(link),
+        _is_familysearch_url(link),
+        re.search(r".(png|jpg)$", link, re.IGNORECASE),
+        ])
+
 def mw_page_doc_url(page):
-    internal_links = page["other_links"].get("internal_links", [])
-    internal_links = [link for link in internal_links if not _is_relative_link_target(link)]
-    if internal_links:
-        return _expand_link_target(internal_links[0], page["title"]["uk"])
-    commons_links = page["notes"].get("commons_links", [])
-    if commons_links:
-        return commons_links[0]
-    external_links = page["other_links"].get("external_links", [])
-    external_links = [link for link in external_links if not _is_familysearch_url(link)]
-    if external_links:
-        return external_links[0]
+    links = page["other_links"].get("internal_links", [])
+    links = [link for link in links if _included_link(link)]
+    if links:
+        return _expand_link_target(links[0], page["title"]["uk"])
+    links = page["notes"].get("commons_links", [])
+    links = [link for link in links if _included_link(link)]
+    if links:
+        return links[0]
+    links = page["other_links"].get("external_links", [])
+    links = [link for link in links if _included_link(link)]
+    if links:
+        return links[0]
     return None
 
 def mw_read_page(page_title, oldid=None):
