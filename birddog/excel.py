@@ -13,7 +13,7 @@ from openpyxl.worksheet.formula import ArrayFormula
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import get_column_letter
 
-from birddog.utility import get_text, is_linked
+from birddog.utility import get_text, is_linked, link_status
 from birddog.ai import classify_table_columns
 from birddog.wiki import ARCHIVE_BASE
 
@@ -123,6 +123,16 @@ def _map_index(column_header_map, index):
         return int(index)
     return int(column_header_map.get(index))
 
+def _set_url(cell, link_flag, url, edit_cell):
+    if link_flag == "exists":
+        cell.hyperlink = url
+        cell.font = copy(edit_cell['linked'].font)
+    elif link_flag == "linked":
+        cell.hyperlink = url
+        cell.font = copy(edit_cell['nonexistent'].font)
+    else: # "unlinked" status
+        cell.font = copy(edit_cell['unlinked'].font)
+
 def _process_table_column(page, edit_cell, sheet, cell, parse, match):
     row = cell.row
     col = cell.column
@@ -147,18 +157,10 @@ def _process_table_column(page, edit_cell, sheet, cell, parse, match):
                     child_cell.value = sub
                     if parse['modifier'] == 'linked':
                         url = _child_url(child)
-                        if is_linked(item):
-                            child_cell.hyperlink = url
-                            child_cell.font = copy(edit_cell['linked'].font)
-                        else:
-                            child_cell.font = copy(edit_cell['unlinked'].font)
+                        _set_url(child_cell, link_status(item), url, edit_cell)
                     elif parse['modifier'] == 'doc_link':
                         url = _child_doc_url(child)
-                        if is_linked(item):
-                            child_cell.hyperlink = url
-                            child_cell.font = copy(edit_cell['linked'].font)
-                        else:
-                            child_cell.font = copy(edit_cell['unlinked'].font)
+                        _set_url(child_cell, link_status(item), url, edit_cell)
                     elif parse['modifier'] == 'sheetname':
                         #_logger.info(f'child sheetname directive: {child_cell.coordinate}, {child[0]}')
                         new_value = cell_text.replace(match, _child_sheetname(page, child))
@@ -252,12 +254,18 @@ def export_page(page, dest_file=None, lru=None):
             else:
                 # general case: replace template expression with substitution value
                 print(cell.coordinate, cell.value)
-                sub = unescape(_substitute(page, parse))
+                sub = _substitute(page, parse)
                 if sub is not None:
+                    sub = unescape(sub)
                     cell.value = cell.value.replace(match, sub)
                 if parse['modifier'] == 'linked':
                     cell.hyperlink = page.url
                     cell.font = copy(edit_cell['linked'].font)
+                if parse['modifier'] == 'doc_link':
+                    doc_url = page.doc_url
+                    if doc_url:
+                        cell.hyperlink = doc_url
+                        cell.font = copy(edit_cell['linked'].font)
                 if parse['modifier'] == 'date':
                     cell.value = _format_date(cell.value)
 

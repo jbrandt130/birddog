@@ -617,7 +617,8 @@ def mw_read_page(page_title, oldid=None):
     page_id = next(iter(pages))
     page["lastmod"] = from_utc_format(pages[page_id]['revisions'][0]['timestamp'])
     page["link"] = f"{ARCHIVE_BASE}/wiki/{page_title}"
-    page["doc_link"] = mw_page_doc_url(page)
+    doc_url = mw_page_doc_url(page)
+    page["doc_link"] = doc_url if doc_url is not None else ""
 
     return page
 

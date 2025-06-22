@@ -240,8 +240,11 @@ class Page:
 
     @property
     def doc_url(self):
-        url = self._page.get('doc_link')
-        return self.base + url if url else None
+        return self._page.get('doc_link')
+
+    @property
+    def dates(self):
+        return get_text(self._page.get('dates'))
 
     @property
     def kind(self):

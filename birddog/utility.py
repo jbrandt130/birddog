@@ -39,7 +39,13 @@ with open('resources/months.json', encoding="utf8") as f:
 
 def is_linked(item):
     return item and item.get("exists") and item.get("link") and not "redlink" in item.get("link")
-    #return url and not "redlink" in url
+
+def link_status(item):
+    if item.get("link"):
+        if item.get("exists"):
+            return "exists"
+        return "linked"
+    return "unlinked"
 
 #
 # page loading
@@ -185,7 +191,7 @@ def equal_text(item1, item2):
 
 def get_text(text_item):
     """Return the English version of the text item if present, else use Ukrainian."""
-    return text_item.get('en', text_item.get('uk' '')) if isinstance(text_item, dict) else ''
+    return text_item.get('en', text_item.get('uk' '')) if isinstance(text_item, dict) else text_item
 
 def match_text(text_item, text):
     """Check if the given text matches either the Ukrainian or English version
