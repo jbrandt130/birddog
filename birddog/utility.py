@@ -66,6 +66,7 @@ _fetch_timestamps = deque()
 _fetch_timestamps_lock = Lock()
 LOG_INTERVAL = 10  # seconds between logs
 RATE_WINDOW = 60   # how far back to count requests/sec
+RATE_LIMIT = 3     # fastest request rate allowed in reqs/sec
 _last_log_time = 0
 
 def _record_fetch_event():
@@ -80,6 +81,9 @@ def _record_fetch_event():
             rate = len(_fetch_timestamps) / RATE_WINDOW if _fetch_timestamps else 0.0
             if rate > 0:
                 _logger.info(f"fetch_url: {len(_fetch_timestamps)} requests in last {RATE_WINDOW}s → {rate:.2f} req/s")
+            if rate > RATE_LIMIT:
+                _logger.info(f"fetch_url: rate limit exceeded - sleeping...")
+                time.sleep(5)
             _last_log_time = now
 
 def fetch_url(url, params=None, json=False, method="GET"):

@@ -10,7 +10,7 @@ from birddog.translate import (
     translation,
     )
 
-from birddog.wiki import read_page
+from birddog.wiki import mw_read_page
 from birddog.utility import translate_page
 
 # ------------------ TRANSLATE UNIT TESTS ------------------ 
@@ -24,7 +24,7 @@ class Test(unittest.TestCase):
         self.assertTrue(translation(uk_text) == ['dog', 'cat', 'mouse'])
 
     def test_full_translation_cycle(self):
-        page = read_page("https://uk.wikisource.org/wiki/%D0%90%D1%80%D1%85%D1%96%D0%B2:%D0%94%D0%90%D0%9A%D0%9E/1/7")
+        page = mw_read_page("Архів:ДАКО/1/7")
 
         completed = threading.Event()
         progress_steps = []

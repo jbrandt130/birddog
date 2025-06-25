@@ -98,7 +98,7 @@ def get_all_pages(namespace=WIKI_NAMESPACE_ID, prefix=None, limit=500):
         "aplimit": limit,
     }
     if prefix:
-        params["apprefix"] = prefix
+        params["apprefix"] = prefix.replace(f"{WIKI_NAMESPACE}:", "")
 
     cont = {}
     while True:
@@ -108,6 +108,7 @@ def get_all_pages(namespace=WIKI_NAMESPACE_ID, prefix=None, limit=500):
         titles.extend([p["title"] for p in data["query"]["allpages"]])
         if "continue" in data:
             cont = data["continue"]
+            #time.sleep(5)
         else:
             break
     return titles
@@ -634,24 +635,14 @@ def mw_read_page(page_title, oldid=None):
 # WikiSource HTML archive scraping
 
 
+"""
 # HTML page element processing
 def form_element_text(element):
-    """Given HTML element, return multilingual text item containing the inner text"""
     text = element.text.strip() if element is not None else None
     return form_text_item(text)
 
 def read_page(url):
-    """
-    Extract archive information for given page using HTTP get.
-    Return struct with page:
-        title,
-        description,
-        table header,
-        table contents,
-        lastmod date,
-        doc_link [only for case pages],
-        thumb_link [only for case pages],
-    """
+
     soup = BeautifulSoup(fetch_url(url), 'lxml')
     title = soup.find('span', attrs = {'class': 'mw-page-title-main'})
     desc = soup.find('span', attrs = {'id': 'header_section_text'})
@@ -694,6 +685,7 @@ def read_page(url):
         'doc_link': doc_url,
         #'thumb_link': thumb_url,
     }
+"""
 
 # -------------------------------------------------------------------------------
 # WikiSource change detection
@@ -912,22 +904,23 @@ def get_last_mod(titles):
         for title in batch:
             result.setdefault(title, None)
 
+        #if i < len(titles):
+        #    time.sleep(5)
+
     return result
 
 # -------------------------------------------------------------------------------
 # Keep persistable list of latest mod date per page title
 
 class PageTracker:
-    def __init__(self, mod_dates={}, cutoff_date=None, archive_prefixes = []):
+    def __init__(self, mod_dates={}, cutoff_date=None):
         self._mod_dates = mod_dates
         self._cutoff_date = cutoff_date
-        self._prefixes = archive_prefixes
 
     def to_dict(self):
         return {
             'mod_dates':        self._mod_dates,
             'cutoff_date':      self._cutoff_date,
-            'archive_prefixes': self._prefixes
         }
 
     @classmethod
@@ -935,7 +928,6 @@ class PageTracker:
         return cls(
             mod_dates=d['mod_dates'],
             cutoff_date=d['cutoff_date'],
-            archive_prefixes=d['archive_prefixes']
             )
 
     def least_recent(self):
@@ -954,22 +946,18 @@ class PageTracker:
                 self._mod_dates[page] = mod_date
         return any_change
 
-    def add_title_prefix(self, prefix):
-        _logger.info(f"add_title_prefix: prefix={prefix}")
-        for known_prefix in self._prefixes:
-            if prefix.startswith(known_prefix):
-                # already known
-                return False
-        titles = get_all_pages(prefix=prefix)
-        _logger.info(f'add_title_prefix: found {len(titles)} titles')
-        updates = get_last_mod(titles)
-        _logger.info(f'add_title_prefix: found {len(updates)} updates')
+    def add_titles(self, titles):
+        new_titles = [title for title in titles if title not in self._mod_dates]
+        if not new_titles:
+            return False
+
+        updates = get_last_mod(new_titles)
+        _logger.info(f'add_titles: found {len(updates)} updates')
         any_change = False
         for page, mod_date in updates.items():
             if mod_date != self._mod_dates.get(page):
                 any_change = True
                 self._mod_dates[page] = mod_date
-        self._prefixes.append(prefix)
         return any_change
 
     def get_updates(self, prefix, cutoff_date=None):

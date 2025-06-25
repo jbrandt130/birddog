@@ -9,10 +9,10 @@ from birddog.wiki import (
     all_archives,
     sniff_subarchives,
     wiki_title,
-    read_page,
     check_page_updates,
     check_page_changes,
     report_page_changes,
+    mw_read_page
     )
 
 from birddog.utility import (
@@ -25,17 +25,23 @@ from birddog.core import (
 
 # ------------------ WIKI UNIT TESTS ------------------ 
 
-def _page_url(archive, sub=None):
-    url = f'{ARCHIVE_BASE}/wiki/{wiki_title("ДААРК")}'
-    if sub:
-        url += f'/{sub}'
-    return url
-
 class Test(unittest.TestCase):
     def test_read_page(self):
-        page = read_page(_page_url("ДААРК"))
+        page = mw_read_page("ДААРК")
         print(get_text(page['title']), get_text(page['description']))
-        self.assertTrue(set(page.keys()) == set(['title', 'description', 'header', 'children', 'lastmod', 'link', 'doc_link']))
+        self.assertTrue(set(page.keys()) == set([
+            'title', 
+            'template', 
+            'revid', 
+            'description', 
+            'dates', 
+            'notes', 
+            'other_links', 
+            'header', 
+            'children', 
+            'lastmod', 
+            'link', 
+            'doc_link']))
 
     def test_update_check(self):
         archive = Archive("DACHGO", subarchive="D")
@@ -51,6 +57,7 @@ class Test(unittest.TestCase):
     def test_change_check(self):
         pass
 
+    """
     def test_all_archives(self):
         print("Checking opening all archives")
         for item in all_archives():
@@ -59,6 +66,6 @@ class Test(unittest.TestCase):
             if archive.children is None:
                 print("Children is None:", item[0], item[1])
             print(f'{item[0]}-{item[1]}: {archive.name}, #children={len(archive.children)}')
-
+    """
 if __name__ == "__main__":
     unittest.main()

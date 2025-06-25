@@ -25,9 +25,9 @@ from birddog.wiki import (
     WIKI_NAMESPACE,
     ARCHIVES,
     find_archive,
+    get_all_pages,
     HistoryLRU,
     PageTracker,
-    read_page,
     mw_read_page,
     do_search,
     batch_fetch_document_links,
@@ -477,7 +477,7 @@ class PageLRU:
         self._timer_start = time.time()
         self._lru = LRUCache(maxsize=maxsize)
 
-    def _key(self, archive, subarchive, fond=None, opus=None, case=None):
+    def key(self, archive, subarchive, fond=None, opus=None, case=None):
         return (archive or '', subarchive or '', fond or '', opus or '', case or '')
 
     def _page_key(self, page):
@@ -495,7 +495,7 @@ class PageLRU:
             self._lru.clear()
             self._timer_start = time.time()
 
-        key = self._key(archive, subarchive, fond, opus, case)
+        key = self.key(archive, subarchive, fond, opus, case)
         try:
             item = self._lru[key]
             #_logger.info(f"{f'PageLRU.lookup({key}): hit'}")
@@ -523,36 +523,101 @@ class PageLRU:
                 _logger.info(f'... failed to find child page: parent={parent.name}, key={key}')
                 raise PageLRU.NotFoundError(key)
 
-def lookup_page_by_title(page_title, page_lru=None):
-    if not page_lru:
-        page_lru = PageLRU()
-    if not page_title.startswith(f"{WIKI_NAMESPACE}:"):
-        page_title = f"{WIKI_NAMESPACE}:{page_title}"
-    #page_title = page_title.replace(" ", "_")
-    #title_root = page_title.split("/", 1)[0]
-    #_logger.info(f"lookup_page_by_title: looking up: {page_title}")
-    page_split = page_title.split("/")
-    page_split = page_split + 3 * [None]
-    page_split = page_split[:5]
-    for archive_key in ARCHIVES.keys():
-        for key, entry in ARCHIVES[archive_key].items():
-            if entry["title"]["uk"].split("/")[0] == page_split[0]:
+# ----------------------------------------------------------------------------
+# Efficient mapping from page title to Birddog address
+
+class TitleIndex:
+    def __init__(self, page_lru=None, index=None, archives=None):
+        self._lru = page_lru if page_lru else PageLRU()
+        if not index or not archives:
+            self._init_index()
+        else:
+            self._index = index
+            self._archives = archives
+        self._archive_root = { }
+        for archive_root, addresses in self._archives.items():
+            for address in addresses:
+                self._archive_root[tuple(address)] = archive_root
+
+    def to_dict(self):
+        return {
+            'index':        self._index,
+            'archives':     self._archives,
+        }
+
+    @classmethod
+    def from_dict(cls, d, page_lru=None):
+        return cls(
+            index=d['index'],
+            archives=d['archives'],
+            page_lru=page_lru
+            )
+    
+    @staticmethod
+    def _canonicalize_title(title):
+        if not title.startswith(f"{WIKI_NAMESPACE}:"):
+            title = f"{WIKI_NAMESPACE}:{title}"
+        return title.replace(" ", "_")
+
+    def _init_index(self):
+        self._index = {}
+        self._archives = {}
+        for archive_key in ARCHIVES.keys():
+            for key, entry in ARCHIVES[archive_key].items():
                 subarchive_key = entry["subarchive"]["en"]
-                archive = page_lru.lookup(archive_key, subarchive_key)
-                if archive is not None:
-                    #_logger.info(f"potential matching archive found: {archive.report}, {archive.title}")
-                    if f"{WIKI_NAMESPACE}:{archive.title}" == page_title:
-                        # title refers to the archive
-                        return page_lru._key(archive_key, subarchive_key)
-                    if page_split[1] and page_split[1] in archive.child_ids:
-                        page = page_lru.lookup(archive_key, subarchive_key, *page_split[1:4])
-                        if page is not None:
-                            return page_lru._key(archive_key, subarchive_key, *page_split[1:4])
-                    if page_split[2] and page_split[2] in archive.child_ids:
-                        page = page_lru.lookup(archive_key, subarchive_key, *page_split[2:5])
-                        if page is not None:
-                            return page_lru._key(archive_key, subarchive_key, *page_split[2:5])
-    return None
+                archive_title = self._canonicalize_title(entry["title"]["uk"])
+                address = self._lru.key(archive_key, subarchive_key)
+                archive_root = archive_title.split("/")[0]
+                #print(archive_title, archive_root, address)
+                self._index[archive_title] = address
+                if not archive_root in self._archives:
+                    self._archives[archive_root] = [ address ]
+                else:
+                    self._archives[archive_root].append(address)
+                
+    def lookup_archive_root(self, archive_key, subarchive_key):
+        address = self._lru.key(archive_key, subarchive_key)
+        return self._archive_root[address]
+
+    def lookup(self, page_title):
+        page_title = self._canonicalize_title(page_title)
+        if page_title in self._index:
+            return self._index[page_title]
+        page_split = page_title.split("/") + 4 * [None]
+        archive_root = page_split[0]
+        if not archive_root in self._archives:
+            raise ValueError(f"Unrecognized title: {page_title}")
+        for archive_address in self._archives[archive_root]:
+            archive = self._lru.lookup(*archive_address)
+            if archive:
+                if self._canonicalize_title(archive.title) == page_title:
+                    # the page title is the same as the archive title
+                    self._index[page_title] = archive_address
+                    return archive_address
+                archive_split = archive.title.split("/")
+                if len(archive_split) > 1 and archive_split[1] == page_split[1]:
+                    # title is of the form archive/subarchive/fond/...
+                    address = self._lru.key(
+                        archive_address[0],
+                        archive_address[1],
+                        page_split[2],
+                        page_split[3],
+                        page_split[4])
+                    self._index[page_title] = address
+                    return address
+                if page_split[1] in archive.child_ids:
+                    # title is of the form archive/fond/...
+                    # check for matching fond id
+                    address = self._lru.key(
+                        archive_address[0],
+                        archive_address[1],
+                        page_split[1],
+                        page_split[2],
+                        page_split[3])
+                    self._index[page_title] = address
+                    return address
+        raise ValueError(f"Cannot find page: {page_title}")
+        return None
 
 # ----------------------------------------------------------------------------
 # Page Update Manager
@@ -593,38 +658,41 @@ class HeartbeatManager:
         self._thread.join()
 
 class PageUpdateManager(HeartbeatManager):
-    _TRACKER_PATH = "page_tracker.json"
-    _HEARTBEAT_INTERVAL = 30 # seconds
-    _PAGE_UPDATE_CHECK_INTERVAL = 60 * 15 # seconds
+    _PAGE_UPDATE_MANAGER_PATH       = "page_update_manager.json"
+    _HEARTBEAT_INTERVAL             = 30 # seconds
+    _PAGE_UPDATE_CHECK_INTERVAL     = 60 * 15 # seconds
+    _TITLE_BATCH_SIZE               = 500
     
     def __init__(self, page_lru=None):
         self._lru = page_lru if page_lru else PageLRU()
-        self._tracker = None
         self._request_queue = queue.Queue()
         self._last_check = 0
         self._busy = False
         super().__init__(interval=PageUpdateManager._HEARTBEAT_INTERVAL)
-        self._load_tracker()
+        self._load()
         
-    def _load_tracker(self):
+    def _load(self):
         try:
-            tracker_data = load_cached_object(PageUpdateManager._TRACKER_PATH)
-            self._tracker = PageTracker.from_dict(tracker_data)
+            data = load_cached_object(PageUpdateManager._PAGE_UPDATE_MANAGER_PATH)
+            self._tracker = PageTracker.from_dict(data["tracker"])
+            self._title_index = TitleIndex.from_dict(data["title_index"], page_lru=self._lru)
+            self._pending_titles = data["pending_titles"]
+            self._registered_archives = set(data["registered_archives"])
         except CacheMissError:
             self._tracker = PageTracker()
+            self._title_index = TitleIndex(page_lru=self._lru)
+            self._pending_titles = []
+            self._registered_archives = set()
 
-    def _save_tracker(self):
+    def _save(self):
         tracker_data = self._tracker.to_dict()
-        save_cached_object(tracker_data, PageUpdateManager._TRACKER_PATH)
-
-    def _form_prefix(self, archive, subarchive):
-        archive_page = self._lru.lookup(archive, subarchive)
-        if not archive_page:
-            raise ValueError(f"Page not found: {archive}-{subarchive}")
-        #_logger.info(f"_form_prefix(page title = '{archive_page.title}')")
-        parts = archive_page.title.split("/")
-        #parts = regex.split(r'[/_]+', archive_page.title)
-        return parts[0]
+        title_index_data = self._title_index.to_dict()
+        save_cached_object({
+            "tracker": self._tracker.to_dict(),
+            "title_index": self._title_index.to_dict(),
+            "pending_titles": self._pending_titles,
+            "registered_archives": list(self._registered_archives),
+        }, PageUpdateManager._PAGE_UPDATE_MANAGER_PATH)
 
     @property
     def busy(self):
@@ -634,27 +702,43 @@ class PageUpdateManager(HeartbeatManager):
         #_logger.info("PageUpdateManager heartbeat...")
         self._busy = True
 
-        # 1. Process registration requests
-        if not self._request_queue.empty():
-            try:
-                archive, subarchive = self._request_queue.get_nowait()
-                _logger.info(f"PageUpdateManager: registering {archive}-{subarchive}")
-                if self._tracker.add_title_prefix(self._form_prefix(archive, subarchive)):
-                    self._save_tracker()
-            except queue.Empty:
-                pass  # should not happen, but safe
-            self._busy = False
-            return
-
-        # 2. Update tracker periodically
+        # 1. Update tracker periodically
         now = time.time()
         if now - self._last_check > PageUpdateManager._PAGE_UPDATE_CHECK_INTERVAL:
             _logger.info("PageUpdateManager: checking for page updates...")
             if self._tracker.update():
-                self._save_tracker()
+                self._save()
             _logger.info("PageUpdateManager: finished update check...")
             self._last_check = now
+            self._busy = False
+            return
 
+        # 2. Process registration requests
+        if not self._request_queue.empty():
+            try:
+                archive, subarchive = self._request_queue.get_nowait()
+                key = f"{archive}-{subarchive}"
+                if key not in self._registered_archives:
+                    _logger.info(f"PageUpdateManager: registering {archive}-{subarchive}")
+                    archive_root = self._title_index.lookup_archive_root(archive, subarchive)
+                    # inventory all pages that start with archive root and add latest mod times to tracker
+                    titles = get_all_pages(prefix=archive_root)
+                    if titles:
+                        self._pending_titles.extend(titles)
+                        self._registered_archives.add(key)
+                        self._save()
+                    self._busy = False
+                    return
+            except queue.Empty:
+                pass  # should not happen, but safe
+
+        # 3. Insert batch of pending titles into tracker
+        if self._pending_titles:
+            batch = self._pending_titles[:PageUpdateManager._TITLE_BATCH_SIZE]
+            del self._pending_titles[:PageUpdateManager._TITLE_BATCH_SIZE]
+            _logger.info(f"PageUpdateManager: adding batch of {len(batch)} titles to tracker")
+            self._tracker.add_titles(batch)
+            self._save()
         self._busy = False
 
     def register_archive(self, archive, subarchive):
@@ -663,18 +747,21 @@ class PageUpdateManager(HeartbeatManager):
         self._request_queue.put((archive, subarchive))
 
     def get_updates(self, archive, subarchive, cutoff_date=None):
-        prefix = self._form_prefix(archive, subarchive)
-        #_logger.info(f"pageUpdateManager.get_updates: prefix={prefix}")
+        prefix = self._title_index.lookup_archive_root(archive, subarchive)
+        _logger.info(f"PageUpdateManager.get_updates: prefix={prefix}")
         updates_pending = self.busy
         updates = self._tracker.get_updates(prefix, cutoff_date=cutoff_date)
-        #_logger.info(len(updates))
+        _logger.info(f"PageUpdateManager.get_updates: {len(updates)} total updates")
         result = {}
         for title, mod_date in updates.items():
-            address = lookup_page_by_title(title, self._lru)
-            #_logger.info(f"{title}, {mod_date}, {address}")
-            if address and address[0] == archive and address[1] == subarchive:
-                key = ArchiveWatcher.key(*address)
-                result[key] = mod_date
+            try:
+                address = self._title_index.lookup(title)
+                #_logger.info(f"{title}, {mod_date}, {address}")
+                if address and address[0] == archive and address[1] == subarchive:
+                    key = ArchiveWatcher.key(*address)
+                    result[key] = mod_date
+            except ValueError as error:
+                _logger.error(f"PageUpdateManager.get_updates: cannot find title {title}. Skipping...")
         return result, updates_pending
 
 # ----------------------------------------------------------------------------
