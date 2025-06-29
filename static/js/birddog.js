@@ -73,7 +73,7 @@ function show_tab(tab_id) {
 }
 
 async function update_translation_progress(data) {
-    //console.log('translate result:', data);
+    console.log('translate result:', data);
     const translations = data.translations || [];
 
     hide('progress-container');
@@ -101,6 +101,7 @@ async function update_translation_progress(data) {
         // Continue polling after 1 second
         setTimeout(async () => {
             try {
+                console.log('checking translation progress...')
                 const response = await fetch('/translate');
                 if (!response.ok) {
                     throw new Error(`Polling failed: ${response.statusText}`);
