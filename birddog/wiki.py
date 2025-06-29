@@ -428,6 +428,7 @@ def _parse_wikitext_table_lines(wikitext):
 
         if line.startswith('|'):
             if is_header:
+                # terminate header
                 rows.append(current_row)
                 current_row = []
                 is_header = False
@@ -751,6 +752,13 @@ def check_page_changes(page, reference, report=False):
     for key in ['title', 'description']:
         changed = not equal_text(page[key], reference[key])
         page[key]['edit'] = 'changed' if changed else None
+    if 'doc_link' in page:
+        if 'doc_link' in reference:
+            if page['doc_link'] != reference['doc_link']:
+                page['doc_link_edit'] = 'changed'
+        else:
+                page['doc_link_edit'] = 'added'
+
     ref_children = dict((get_text(c[0]['text']), c) for c in reference['children'])
     for child in page['children']:
         #print("checking child:", child)

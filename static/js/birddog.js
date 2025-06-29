@@ -420,6 +420,20 @@ function render_page_data(data) {
     const doc_url = data.doc_link;
     doc_link_elem.textContent = doc_url;
     doc_link_elem.classList.remove('bg-warning', 'bg-success');
+    if (is_comparison && 'doc_link_edit' in data) {
+        switch (data.doc_link_edit) {
+            case 'added':
+                doc_link_elem.classList.add('bg-success');
+                any_edit = true;
+                break;
+            case 'changed':
+                doc_link_elem.classList.add('bg-warning');
+                any_edit = true;
+                break;
+            default:
+                break;
+        }
+    }
     if (doc_url.length > 0) {
         doc_link_elem.setAttribute('href', doc_url);
         show('page-doc-link')

@@ -267,6 +267,10 @@ def export_page(page, dest_file=None, lru=None):
                     if doc_url:
                         cell.hyperlink = doc_url
                         cell.font = copy(edit_cell['linked'].font)
+                    if 'doc_link_edit' in page._page:
+                        edit = page._page['doc_link_edit']
+                        if edit in edit_cell:
+                            cell.fill = copy(edit_cell[edit].fill)
                 if parse['modifier'] == 'date':
                     cell.value = _format_date(cell.value)
 
