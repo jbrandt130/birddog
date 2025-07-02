@@ -395,6 +395,14 @@ class Archive(Page):
         return f'{self.tag}-{self.subarchive["en"]}'
 
     @property
+    def clean_name(self):
+        # cleaned version for excel export standard
+        sub = self.subarchive["en"]
+        if sub in ["_", "D"]:
+            return self.tag
+        return f'{self.tag}-{sub}'
+
+    @property
     def subarchive(self):
         return self._subarchive
 
