@@ -21,7 +21,7 @@ function deploy() {
     echo "🚀 Environment '$ENV_NAME' already exists. Skipping creation."
   else
     echo "🚀 Creating Elastic Beanstalk environment: $ENV_NAME..."
-    eb create "$ENV_NAME"
+    eb create "$ENV_NAME" --single --instance_type "$INSTANCE_TYPE"
     echo "✅ Environment created."
   fi
 

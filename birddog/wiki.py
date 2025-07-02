@@ -253,6 +253,9 @@ def _is_familysearch_url(link):
 
 def _expand_link_target(link_target, page_title):
     link_target = link_target.strip().replace(" ", "_")
+    if not link_target.startswith(('.', '/')):
+        return f"{ARCHIVE_BASE}/wiki/{link_target}"
+
     link_target = re.sub(r'//+', '/', link_target)
 
     # Split the page_title into components
@@ -341,50 +344,93 @@ def _read_wiki_text(page_title, oldid=None):
         data['parse']['title'].replace(f'{WIKI_NAMESPACE}:', ''),
     )
 
-def _extract_colspan(text):
-    """Extracts colspan=N from text, returns N as int or 0 if absent."""
-    match = re.search(r'\bcolspan\s*=\s*(\d+)', text, flags=re.IGNORECASE)
-    return int(match.group(1)) if match else 0
+_colspan_re = re.compile(r'\bcolspan\s*=\s*["\']?(\d+)["\']?', flags=re.IGNORECASE)
 
-def _expand_row_cells(cells):
+def _extract_colspan(text):
     """
-    Given a list of cell strings, expand any cell with colspan=N into N cells.
-    Fills extra cells with empty strings.
+    Extracts colspan=N from text.
+    
+    Returns:
+        (n, cleaned_text): 
+            n (int): colspan value (0 if absent),
+            cleaned_text (str): text with the colspan directive removed
     """
+    match = _colspan_re.search(text)
+    if not match:
+        return 0, text
+
+    colspan = int(match.group(1))
+
+    # Remove the colspan directive
+    start, end = match.span()
+    before = text[:start].rstrip()
+    after = text[end:].lstrip()
+
+    cleaned_text = f"{before} {after}".strip()
+    return colspan, cleaned_text
+    
+def _expand_colspan(cells):
     expanded = []
     for cell in cells:
-        colspan = _extract_colspan(cell)
-        # Remove the colspan directive from the text
-        clean_cell = re.sub(r'\bcolspan\s*=\s*\d+', '', cell, flags=re.IGNORECASE).strip(' |')
+        expanded.append(cell.get("text", ""))
+        colspan = cell.get("colspan", 0)
         if colspan > 1:
-            expanded.append(clean_cell)
-            expanded.extend([""] * (colspan - 1))
-        else:
-            expanded.append(clean_cell)
+            expanded.extend(expanded[-1:] * (colspan - 1))
     return expanded
 
-def _strip_attributes(cell_text):
-    """
-    Removes leading attributes from a Wikitext table cell, stopping at the first
-    unescaped pipe that is not followed by another attribute.
+_table_cell_token_re = re.compile(r'''
+    (\[\[[^\[\]]+?\]\])      |  # group 1: wikilink, non-greedy
+    (\[https?:[^\[\]]+?\])   |  # group 2: external link (optional)
+    (?<!\\)(\|)              |  # group 3: unescaped pipe
+    ([^|\[\]\\]+|\\\|)          # group 4: text (including escaped pipe)
+    ''', re.VERBOSE)
 
-    Attributes are considered anything before content and typically look like:
-        'style="..."|align="..."|Some content'
+def _tokenize_wikitext_table_cell(text):
+    text = text.strip()
+    parts = [m.group(0) for m in _table_cell_token_re.finditer(text)]
+    result_text = ""
+    colspan = 0
+    for part in parts:
+        if part == "|":
+            result_text = ""
+        elif "colspan" in part:
+            #print(text)
+            colspan, result_text = _extract_colspan(part)
+        else:
+            result_text = part       
+    return result_text, colspan
 
-    Escaped pipes (\\|) are preserved.
+_table_line_token_re = re.compile(r'''
+    (\[\[.*?\]\])       |  # group 1: wikilink
+    (\|\||\!\!)         |  # group 2: table cell separators
+    ([^|\[\]!]+)           # group 3: everything else
+    ''', re.VERBOSE)
 
-    :param cell_text: Wikitext for a single cell
-    :return: Cleaned cell content string
-    """
+def _tokenize_wikitext_table_line(text):
+    #print(f'table line: "{text}"')
 
-    # Split only on unescaped pipes
-    parts = re.split(r'(?<!\\)\|', cell_text)
+    # tokenize the table text line
+    text = text.strip()
+    cells = [m.group(0) for m in _table_line_token_re.finditer(text)]
 
-    # Strip whitespace and preserve escaped pipes
-    parts = [part.strip().replace(r'\|', '|') for part in parts]
-
-    # Heuristic: if more than one part, assume all but the last are attributes
-    return parts[-1] if len(parts) > 1 else parts[0]
+    def _format_cell(cell_text):
+        cell_text, colspan = _tokenize_wikitext_table_cell(cell_text)
+        return { "text": cell_text, "colspan": colspan }
+        
+    # group cells between separators
+    result = []
+    current_cell = ""
+    for cell in cells:
+        if cell not in ["!!", "||"]:
+            current_cell += cell
+        else:
+            result.append(_format_cell(current_cell))
+            current_cell = ""
+    if current_cell:
+        result.append(_format_cell(current_cell))
+    result = _expand_colspan(result)
+    
+    return result
 
 def _parse_wikitext_table_lines(wikitext):
     """
@@ -422,7 +468,7 @@ def _parse_wikitext_table_lines(wikitext):
             line_content = line[1:]
 
             # Use both !! and || as possible header separators
-            cells = re.split(r'\s*(?:!!|\|\|)\s*', line_content)
+            cells = _tokenize_wikitext_table_line(line_content)
             current_row.extend(cells)
             continue
 
@@ -433,15 +479,13 @@ def _parse_wikitext_table_lines(wikitext):
                 current_row = []
                 is_header = False
             line_content = line[1:]
-            cells = re.split(r'\s*\|\|\s*', line_content)
+            cells = _tokenize_wikitext_table_line(line_content)
             current_row.extend(cells)
             continue
 
     if current_row:
         rows.append(current_row)
 
-    # Apply attribute stripping and colspan expansion
-    rows = [[_strip_attributes(cell) for cell in _expand_row_cells(row)] for row in rows]
     return rows
 
 def _parse_wikitext_table(text):
@@ -454,22 +498,14 @@ def _parse_wikitext_table(text):
     rows = [row.strip("\n ") for row in rows]
     rows = [row for row in rows if row] # get rid of empty rows
     
-    #_logger.info(rows)
-
     header = []
-    body = []
-
     body = _parse_wikitext_table_lines(text)
     if body:
         # take the first row as the header
         header = body.pop(0)
 
-    # process colspan directives
-    #header = _expand_row_cells(header)
-    #body = [_expand_row_cells(row) for row in body]
-
     return header, body
-
+    
 def _included_link(link):
     return not any([
         _is_relative_link_target(link),
@@ -552,6 +588,7 @@ def mw_read_page(page_title, oldid=None):
         for cells in rows:
             row_data = []
             for cell_text in cells:
+                #_logger.info(f"cell: {cell_text}")
                 cell_wikicode = mwparserfromhell.parse(cell_text)
                 # Extract internal links
                 links = cell_wikicode.filter_wikilinks()

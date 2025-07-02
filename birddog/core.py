@@ -244,7 +244,8 @@ class Page:
 
     @property
     def dates(self):
-        return get_text(self._page.get('dates'))
+        #_logger(f"dates = '{self._page.get('dates', '')}'")
+        return get_text(self._page.get('dates', ''))
 
     @property
     def kind(self):

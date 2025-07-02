@@ -704,6 +704,10 @@ def get_log():
     limit = request.args.get('limit', type=int)
     return jsonify(get_log_buffer().get_logs(limit)), 200
 
+@app.route("/logs")
+def logs_view():
+    return render_template("logs.html")
+
 # ---- MAIN -------------------------------------------------------------------
 
 # initialize globals

@@ -84,9 +84,12 @@ def _parse_template_expr(expr):
 def _substitute(page, expr):
     try:
         fstring = '{__page__.' + expr['expr'] + '}'
-        return string.Formatter().format(fstring, __page__=page)
+        result = string.Formatter().format(fstring, __page__=page)
+        if result == "None":
+            result = ""
+        return result
     except:
-        return None
+        return ""
 
 def _copy_cell_properties(source, dest):
     # propagate border, style, font, and alignment to all rows
@@ -267,8 +270,8 @@ def export_page(page, dest_file=None, lru=None):
                     if doc_url:
                         cell.hyperlink = doc_url
                         cell.font = copy(edit_cell['linked'].font)
-                    if 'doc_link_edit' in page._page:
-                        edit = page._page['doc_link_edit']
+                    if 'doc_link_edit' in page.page:
+                        edit = page.page['doc_link_edit']
                         if edit in edit_cell:
                             cell.fill = copy(edit_cell[edit].fill)
                 if parse['modifier'] == 'date':
