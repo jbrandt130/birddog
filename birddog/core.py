@@ -457,6 +457,7 @@ class Opus(Page):
                 if links:
                     # FIXME: what about multiple links? Ignoring them for now.
                     self.children[i][1]['link'] = links[0]
+                    self.children[i][1]['exists'] = True
                     need_save = True
             if update_cache and need_save:
                 #_logger.info(f'load_child_document_links({self.name}) updating cache')

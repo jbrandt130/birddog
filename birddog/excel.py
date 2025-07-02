@@ -92,11 +92,12 @@ def _substitute(page, expr):
         return ""
 
 def _copy_cell_properties(source, dest):
-    # propagate border, style, font, and alignment to all rows
+    # propagate border, style, font, fill, and alignment to all rows
     dest.style = source.style
     dest.border = copy(source.border)
     dest.alignment = copy(source.alignment)
     dest.font = copy(source.font)
+    dest.fill = copy(source.fill)
 
 def _process_formula(sheet, cell, first_child_row, last_child_row):
     if cell.row > first_child_row and cell.row <= last_child_row:
@@ -179,6 +180,14 @@ def _process_table_column(page, edit_cell, sheet, cell, parse, match):
                         child_cell.value = new_value
         elif parse['expr'] == 'empty':
             child_cell.value = ''
+        elif parse['expr'] == 'col':
+            contents = cell_text.replace("{col}", "")
+            _logger.info(f"col cell: {contents}")
+            if row == cell.row or contents[0] != "=":
+                child_cell.value = contents
+            else:
+                child_cell.value = Translator(
+                    contents, origin=cell.coordinate).translate_formula(child_cell.coordinate)
         row += 1
 
 def _locate_first_child_row(sheet):
@@ -226,7 +235,7 @@ def export_page(page, dest_file=None, lru=None):
     # move rows below the table downward to make room for table rows
     num_children = len(page.children)
     first_child_row = _locate_first_child_row(sheet)
-    last_child_row = first_child_row + num_children - 1
+    last_child_row = first_child_row + max(num_children, 1) - 1
     _logger.info(f"export_page: first_child_row={first_child_row}, last_child_row={last_child_row}")
     footer_range = f'A{first_child_row+1}:{max_col_letter}{max_row}'
     _logger.info(f'moving cell range: {footer_range}')
@@ -258,7 +267,7 @@ def export_page(page, dest_file=None, lru=None):
     for edit in edits:
         cell, matches, parses = edit
         for match, parse in zip(matches, parses):
-            if parse['expr'] in ['empty', 'child']:
+            if parse['expr'] in ['empty', 'child', 'col']:
                 _process_table_column(page, edit_cell, sheet, cell, parse, match)
             elif parse['expr'] == 'edit':
                 # {edit} cells contain formatting for editing highlights (caught above)
