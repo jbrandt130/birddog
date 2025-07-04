@@ -182,7 +182,7 @@ def _process_table_column(page, edit_cell, sheet, cell, parse, match):
             child_cell.value = ''
         elif parse['expr'] == 'col':
             contents = cell_text.replace("{col}", "")
-            _logger.info(f"col cell: {contents}")
+            #_logger.info(f"col cell: {contents}")
             if row == cell.row or contents[0] != "=":
                 child_cell.value = contents
             else:

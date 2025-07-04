@@ -270,7 +270,7 @@ class Page:
     def lookup(self, entry_id):
         row = self._find_child_row(entry_id)
         if row:
-            url = row[0]['link']
+            url = row[0].get("link", "")
             split_url = url.rsplit('/', 1)
             child_id = get_text(row[0]['text'])
             if self.parent and split_url[0] == self.url.replace(self.base, '').rsplit('/', 1)[0]:
@@ -597,37 +597,44 @@ class TitleIndex:
         archive_root = page_split[0]
         if not archive_root in self._archives:
             raise ValueError(f"Unrecognized title: {page_title}")
+        
+        def _gen_address_for(archive, subarchive, fond, opus, case):
+            address = self._lru.key(archive, subarchive, fond, opus, case)
+            self._index[page_title] = address
+            return address
+
         for archive_address in self._archives[archive_root]:
             archive = self._lru.lookup(*archive_address)
             if archive:
                 if self._canonicalize_title(archive.title) == page_title:
-                    # the page title is the same as the archive title
-                    self._index[page_title] = archive_address
-                    return archive_address
+                    # the page title is the same as the archive title (shouldn't happen, but safe)
+                    return _gen_address_for(*archive_address)
                 archive_split = archive.title.split("/")
                 if len(archive_split) > 1 and archive_split[1] == page_split[1]:
                     # title is of the form archive/subarchive/fond/...
-                    address = self._lru.key(
-                        archive_address[0],
-                        archive_address[1],
-                        page_split[2],
-                        page_split[3],
-                        page_split[4])
-                    self._index[page_title] = address
-                    return address
+                    return _gen_address_for(*archive_address[:2], *page_split[2:5])
                 if page_split[1] in archive.child_ids:
                     # title is of the form archive/fond/...
                     # check for matching fond id
-                    address = self._lru.key(
-                        archive_address[0],
-                        archive_address[1],
-                        page_split[1],
-                        page_split[2],
-                        page_split[3])
-                    self._index[page_title] = address
-                    return address
+                    return _gen_address_for(*archive_address[:2], *page_split[1:4])
+
+        """ not working...
+        # the title isn't a strict subpage of its parent; explore the archive top down
+        for archive_address in self._archives[archive_root]:
+            archive = self._lru.lookup(*archive_address)
+            if archive and page_split[1].startswith(archive.subarchive["uk"]):
+                for fond in archive.children:
+                    if fond[0]["exists"]:
+                        fond_id = get_text(fond[0]["text"])
+                        page = archive[fond_id]
+                        for child in page.children:
+                            child_link = child[0].get("link")
+                            if child_link: 
+                                child_title = child_link.replace("/wiki/", "")
+                                if child_title and page_title.startswith(child_title):
+                                    return _gen_address_for(*archive_address[:2], fond_id, *page_split[1:3])
+        """
         raise ValueError(f"Cannot find page: {page_title}")
-        return None
 
 # ----------------------------------------------------------------------------
 # Page Update Manager
