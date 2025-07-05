@@ -88,7 +88,7 @@ class AWSBedrockClient(ChatClient):
 
     def _get_client(self):
         if not self._client:
-            self._client = boto3.session.Session().client("bedrock-runtime", region_name="us-east-1")
+            self._client = boto3.session.Session().client("bedrock-runtime")
         return self._client
 
     def _message_body(self, prompt, system_prompt=None):

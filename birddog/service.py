@@ -2,10 +2,12 @@
 import os
 import threading
 import re
+import time
 import unicodedata
+import hashlib
 from io import BytesIO
 from copy import copy, deepcopy
-from datetime import datetime
+from datetime import datetime, timedelta, UTC
 from cachetools import LRUCache
 from collections import defaultdict
 from itsdangerous import URLSafeTimedSerializer
@@ -20,7 +22,8 @@ from flask import (
     redirect,
     url_for,
     session,
-    jsonify)
+    jsonify, 
+    g)
 
 # Birddog packages
 from birddog.core import (
@@ -34,11 +37,18 @@ from birddog.cache import (
     remove_cached_object,
     CacheMissError)
 from birddog.wiki import check_page_changes, all_archives
-
-from birddog.logging import get_logger, get_log_buffer
-_logger = get_logger()
+from birddog.logging import (
+    get_logger, 
+    get_log_buffer, 
+    detect_environment, 
+    get_event_logger,
+    summarize_duration_by_path_group,
+    user_histogram)
 
 # ---- INITIALIZATION  --------------------------------------------------
+
+_logger = get_logger()
+_event_logger = get_event_logger()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATES_DIR = os.path.join(BASE_DIR, 'templates')
@@ -62,8 +72,11 @@ page_update_manager     = None
 
 # ---- USER MANAGEMENT --------------------------------------------------------
 
-def _hide(text):
-    return f'{text[:3]}...'
+def _hide(email: str, salt: str = app.secret_key) -> str:
+    """Returns a short, anonymized hash of an email address."""
+    hasher = hashlib.sha256()
+    hasher.update((salt + email.lower().strip()).encode("utf-8"))
+    return hasher.hexdigest()[:8]
 
 def _watcher_cache_path(email, archive, subarchive):
     return f'watchers/{email}/{archive}-{subarchive}.json'
@@ -708,6 +721,46 @@ def get_log():
 def logs_view():
     return render_template("logs.html")
 
+# ---- APP METRICS ---------------------------------------------------------------
+
+@app.before_request
+def start_timer():
+    g.start_time = time.time()
+
+@app.after_request
+def log_request(response):
+    duration = time.time() - g.start_time
+    method = request.method
+    path = request.path
+    user_id = _hide(session.get("user", {}).get("email"))
+    status_code = response.status_code
+
+    _logger.info(f"REQUEST: {user_id}, {method}, {path}, {status_code}, {duration:.4f}s")
+    _event_logger.log_request(user_id, method, path, status_code, duration)
+    return response
+
+@app.route("/metrics")
+def metrics_dashboard():
+    range_opt = request.args.get("range", "24h")
+    now = datetime.now(UTC)
+
+    delta = {
+        "24h": timedelta(days=1),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+    }.get(range_opt, timedelta(days=1))
+
+    df = _event_logger.load_logs(now - delta, now)
+    user_hist = user_histogram(df).to_dict()
+    duration_summary_df = summarize_duration_by_path_group(df).reset_index().round(4)
+    summary_list = duration_summary_df.to_dict(orient="records")
+
+    return render_template("metrics.html",
+        user_histogram=user_hist,
+        duration_summary=summary_list,
+        selected_range=range_opt,
+    )
+
 # ---- MAIN -------------------------------------------------------------------
 
 # initialize globals
@@ -736,6 +789,8 @@ if __name__ == "__main__":
 
     # Local version uses the same startup logic
     create_app()
+    _logger.info(f"Birddog starting: environment == {detect_environment()}")
+
     app.run(
         debug=args.debug,
         port=args.port,

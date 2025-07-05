@@ -8,7 +8,8 @@ set -e  # Exit on error
 APP_NAME="birddog"
 ENV_NAME="birddog-env"
 REGION="us-east-1"
-PLATFORM="Python 3.12"
+PLATFORM="Python 3.13"
+INSTANCE_TYPE="t3.micro"
 
 function init() {
   echo "🔧 Running EB init setup..."
@@ -32,6 +33,7 @@ function deploy() {
     AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
     OPENAI_API_KEY="$OPENAI_API_KEY" \
     DEEPL_API_KEY="$DEEPL_API_KEY" \
+    BIRDDOG_AWS_ENVIRONMENT=1 \
     BIRDDOG_SECRET_KEY="$BIRDDOG_SECRET_KEY" \
     BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE="$BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE" \
     BIRDDOG_SMTP_PASSWORD="$BIRDDOG_SMTP_PASSWORD" \
