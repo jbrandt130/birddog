@@ -291,11 +291,13 @@ def logout():
 # Change Password Route
 @app.route('/change_password', methods=['POST'])
 def change_password():
-    user_session = session.get('user')
-    if not user_session:
+    user, error_response, status = _get_current_user()
+    if error_response:
+        return error_response, status
+    if not user:
         return jsonify(success=False, message='Not logged in'), 401
 
-    email = user_session['email']
+    email = user['email']
     data = request.get_json()
     current_pw = data.get('current')
     new_pw = data.get('new')
@@ -407,12 +409,12 @@ def _compress_history(history, max_entries=30):
 def _get_current_user():
     user_session = session.get('user')
     if not user_session:
-        return None, jsonify({'error': 'Not logged in'}), 401
+        return None, jsonify({'error': 'Not found'}), 404
 
     email = user_session.get('email')
     user = users.lookup(email)
     if not user:
-        return None, jsonify({'error': 'User not found'}), 404
+        return None, jsonify({'error': 'Not found'}), 404
 
     return user, None, None
 
@@ -429,6 +431,9 @@ def _compare_page(page, ref_date):
 # List all archives
 @app.route("/archives", methods=['GET'])
 def archive_list():
+    user, error_response, status = _get_current_user()
+    if error_response:
+        return error_response, status
     return jsonify(ARCHIVE_MASTER_LIST)
 
 @app.route('/page/<archive>', methods=['GET'])
@@ -488,6 +493,10 @@ def ascii_filename(name):
 @app.route('/download/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
 @app.route('/download/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
 def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
+    user, error_response, status = _get_current_user()
+    if error_response:
+        return error_response, status
+
     try:
         page = page_lru.lookup(archive, subarchive, fond, opus, case)
         if page:
@@ -719,6 +728,9 @@ def get_log():
 
 @app.route("/logs")
 def logs_view():
+    user, error_response, status = _get_current_user()
+    if error_response:
+        return error_response, status
     return render_template("logs.html")
 
 # ---- APP METRICS ---------------------------------------------------------------
@@ -732,7 +744,8 @@ def log_request(response):
     duration = time.time() - g.start_time
     method = request.method
     path = request.path
-    user_id = _hide(session.get("user", {}).get("email"))
+    email = session.get("user", {}).get("email")
+    user_id = _hide(email) if email else "unknown"
     status_code = response.status_code
 
     _logger.info(f"REQUEST: {user_id}, {method}, {path}, {status_code}, {duration:.4f}s")
@@ -741,6 +754,10 @@ def log_request(response):
 
 @app.route("/metrics")
 def metrics_dashboard():
+    user, error_response, status = _get_current_user()
+    if error_response:
+        return error_response, status
+
     range_opt = request.args.get("range", "24h")
     now = datetime.now(UTC)
 
