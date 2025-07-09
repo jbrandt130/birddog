@@ -15,6 +15,7 @@ from cachetools import LRUCache
 from birddog.utility import (
     get_text,
     match_text,
+    form_text_item,
     translate_page,
     is_linked
     )
@@ -31,7 +32,8 @@ from birddog.wiki import (
     mw_read_page,
     do_search,
     batch_fetch_document_links,
-    check_page_updates
+    check_page_updates,
+    canonicalize_title
     )
 from birddog.ai import classify_table_columns
 
@@ -417,6 +419,18 @@ class Archive(Page):
     def latest_changes(self, limit=100, offset=0):
         return do_search(self._archive_name.split('/')[0], limit=limit, offset=offset)
 
+    def adopt(self, fond_id, fond_title):
+        if fond_id not in self.child_ids:
+            _logger.info(f"{self.name} adopting {fond_id} with title {fond_title}")
+            if not self._page["header"]:
+                self._page["header"] = [form_text_item("")]
+            num_cols = len(self.children[0]) if self.children else 1
+            row = [{ "text": form_text_item(fond_id), "link": f"/wiki/{fond_title}", "exists": True }]
+            if num_cols > 1:
+                row.extend((num_cols - 1) * [{ "text": form_text_item(""), "link": None}])
+            self._page["children"].append(row)
+            #self._cache_save()
+
 class Fond(Page):
     """Represents fond page."""
     @property
@@ -563,19 +577,13 @@ class TitleIndex:
             page_lru=page_lru
             )
     
-    @staticmethod
-    def _canonicalize_title(title):
-        if not title.startswith(f"{WIKI_NAMESPACE}:"):
-            title = f"{WIKI_NAMESPACE}:{title}"
-        return title.replace(" ", "_")
-
     def _init_index(self):
         self._index = {}
         self._archives = {}
         for archive_key in ARCHIVES.keys():
             for key, entry in ARCHIVES[archive_key].items():
                 subarchive_key = entry["subarchive"]["en"]
-                archive_title = self._canonicalize_title(entry["title"]["uk"])
+                archive_title = canonicalize_title(entry["title"]["uk"])
                 address = self._lru.key(archive_key, subarchive_key)
                 archive_root = archive_title.split("/")[0]
                 #print(archive_title, archive_root, address)
@@ -584,13 +592,31 @@ class TitleIndex:
                     self._archives[archive_root] = [ address ]
                 else:
                     self._archives[archive_root].append(address)
-                
+    
+    def _select_parent_archive(self, archive_root, fond_id):
+        parent_archive = None
+        known_child = False
+        if not archive_root in self._archives:
+            raise ValueError(f"Unknown archive root: {archive_root}")
+        for archive_address in self._archives[archive_root]:
+            archive = self._lru.lookup(*archive_address)
+            if fond_id.upper().startswith(archive.subarchive["uk"]):
+                # look for fond prefix matching subarchive id
+                parent_archive = archive_address
+                known_child = fond_id in archive.child_ids
+                break
+            elif archive_address[1] == "D" or len(self._archives[archive_root]) == 1:
+                # default to singleton archive or "D" archive which doesn't have prefix on fond ids
+                parent_archive = archive_address
+                known_child = fond_id in archive.child_ids
+        return parent_archive, known_child
+
     def lookup_archive_root(self, archive_key, subarchive_key):
         address = self._lru.key(archive_key, subarchive_key)
         return self._archive_root[address]
 
     def lookup(self, page_title):
-        page_title = self._canonicalize_title(page_title)
+        page_title = canonicalize_title(page_title)
         if page_title in self._index:
             return self._index[page_title]
         page_split = page_title.split("/") + 4 * [None]
@@ -606,7 +632,7 @@ class TitleIndex:
         for archive_address in self._archives[archive_root]:
             archive = self._lru.lookup(*archive_address)
             if archive:
-                if self._canonicalize_title(archive.title) == page_title:
+                if canonicalize_title(archive.title) == page_title:
                     # the page title is the same as the archive title (shouldn't happen, but safe)
                     return _gen_address_for(*archive_address)
                 archive_split = archive.title.split("/")
@@ -618,22 +644,13 @@ class TitleIndex:
                     # check for matching fond id
                     return _gen_address_for(*archive_address[:2], *page_split[1:4])
 
-        """ not working...
-        # the title isn't a strict subpage of its parent; explore the archive top down
-        for archive_address in self._archives[archive_root]:
+        # failed to find matching fond - test for fond adoption candidate
+        archive_address, known_child = self._select_parent_archive(*page_split[:2])
+        if not known_child:
             archive = self._lru.lookup(*archive_address)
-            if archive and page_split[1].startswith(archive.subarchive["uk"]):
-                for fond in archive.children:
-                    if fond[0]["exists"]:
-                        fond_id = get_text(fond[0]["text"])
-                        page = archive[fond_id]
-                        for child in page.children:
-                            child_link = child[0].get("link")
-                            if child_link: 
-                                child_title = child_link.replace("/wiki/", "")
-                                if child_title and page_title.startswith(child_title):
-                                    return _gen_address_for(*archive_address[:2], fond_id, *page_split[1:3])
-        """
+            archive.adopt(page_split[1], "/".join(page_split[:2]))
+            return _gen_address_for(*archive_address[:2], *page_split[1:4])
+
         raise ValueError(f"Cannot find page: {page_title}")
 
 # ----------------------------------------------------------------------------

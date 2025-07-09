@@ -192,6 +192,45 @@ def find_archive(archive_tag, subarchive=None):
     sub = _select_subarchive(archive, subarchive)
     return { "title": sub["title"], "subarchive": sub["subarchive"] }
 
+def canonicalize_title(title):
+    if not title.startswith(f"{WIKI_NAMESPACE}:"):
+        title = f"{WIKI_NAMESPACE}:{title}"
+    return title.replace(" ", "_")
+
+def batch_page_exists(titles, batch_size=50):
+    """
+    Check if a list of Wikimedia page titles exist using the MediaWiki API.
+
+    Args:
+        titles (list of str): Page titles to check.
+        batch_size (int): Max titles per request (50 for normal users).
+
+    Returns:
+        dict: Mapping of title -> True (exists) or False (missing)
+    """
+    results = {}
+
+    for i in range(0, len(titles), batch_size):
+        batch = titles[i:i + batch_size]
+        params = {
+            "action": "query",
+            "format": "json",
+            "titles": "|".join(batch)
+        }
+
+        try:
+            response = fetch_url(API_URL, params=params, json=True, method="POST")
+            pages = response.get("query", {}).get("pages", {})
+            for page in pages.values():
+                title = page.get("title")
+                results[title] = "missing" not in page
+        except Exception as e:
+            for title in batch:
+                results[title] = False
+            _logger.error(f"Error checking titles {batch}: {e}")
+
+    return results
+
 # -------------------------------------------------------------------------------
 # WikiSource MediaWiki API page download
 
@@ -366,8 +405,8 @@ def _extract_colspan(text):
     before = text[:start].rstrip()
     after = text[end:].lstrip()
 
-    cleaned_text = f"{before} {after}".strip()
-    return colspan, cleaned_text
+    #cleaned_text = f"{before} {after}".strip()
+    return colspan
     
 def _expand_colspan(cells):
     expanded = []
@@ -375,7 +414,7 @@ def _expand_colspan(cells):
         expanded.append(cell.get("text", ""))
         colspan = cell.get("colspan", 0)
         if colspan > 1:
-            expanded.extend(expanded[-1:] * (colspan - 1))
+            expanded.extend([""] * (colspan - 1))
     return expanded
 
 _table_cell_token_re = re.compile(r'''
@@ -385,34 +424,60 @@ _table_cell_token_re = re.compile(r'''
     ([^|\[\]\\]+|\\\|)          # group 4: text (including escaped pipe)
     ''', re.VERBOSE)
 
+_table_cell_token_re = re.compile(r'''
+    (?P<wikilink>\[\[[^\[\]]+?\]\])                  |  # [[wikilink]]
+    (?P<externallink>\[https?:[^\[\]]+?\])           |  # [http://...]
+    (?P<pipe>(?<!\\)\|)                              |  # unescaped |
+    (?P<quoted_directive>\b\w+\s*=\s*"[^"]*")        |  # key="..."
+    (?P<single_quoted_directive>\b\w+\s*=\s*'[^']*') |  # key='...'
+    (?P<unquoted_directive>\b\w+\s*=\s*[^\s|]+)      |  # key=value (no quotes)
+    (?P<text>[^\s|[\]\\]+(?:\s+[^\s|[\]\\]+)*)       |  # text chunks, avoiding pipes and brackets
+    (?P<whitespace>\s+)                                 # separate whitespace
+    ''', re.VERBOSE)
+
 def _tokenize_wikitext_table_cell(text):
     text = text.strip()
-    parts = [m.group(0) for m in _table_cell_token_re.finditer(text)]
-    result_text = ""
+    #print("cell:", text)
+    tokens = []
     colspan = 0
-    for part in parts:
-        if part == "|":
+    result_text = ""
+    after_pipe = True
+
+    for match in _table_cell_token_re.finditer(text):
+        token_type = match.lastgroup
+        value = match.group(token_type)
+        #print(token_type, repr(value))  # Use repr to show spaces
+
+        if token_type in ["quoted_directive", "single_quoted_directive", "unquoted_directive"]:
+            after_pipe = False # everything before pipe is a directive
+            if "colspan" in value:
+                colspan = _extract_colspan(value)
+        elif token_type == "pipe":
+            after_pipe = True
             result_text = ""
-        elif "colspan" in part:
-            #print(text)
-            colspan, result_text = _extract_colspan(part)
-        else:
-            result_text = part       
-    return result_text, colspan
+        elif token_type == "text" and after_pipe:
+            result_text += value
+        elif token_type == "wikilink" and after_pipe:
+            result_text += value
+        elif token_type == "whitespace" and after_pipe:
+            result_text += " "
+
+    return result_text.strip(), colspan
 
 _table_line_token_re = re.compile(r'''
-    (\[\[.*?\]\])       |  # group 1: wikilink
-    (\|\||\!\!)         |  # group 2: table cell separators
-    ([^|\[\]!]+)           # group 3: everything else
+    (?P<wikilink>\[\[.*?\]\])       |  # [[wikilink]]
+    (?P<sep_double>\|\||\!\!)       |  # double pipe || or double bang !!
+    (?P<sep_single>\||\!)           |  # single pipe | or single bang !
+    (?P<text>[^|\[\]!]+)               # everything else (non-token text)
     ''', re.VERBOSE)
 
 def _tokenize_wikitext_table_line(text):
-    #print(f'table line: "{text}"')
-
+    
     # tokenize the table text line
     text = text.strip()
+    #print(f'table line: "{text}"')
     cells = [m.group(0) for m in _table_line_token_re.finditer(text)]
-
+    #print("table cells:", cells)
     def _format_cell(cell_text):
         cell_text, colspan = _tokenize_wikitext_table_cell(cell_text)
         return { "text": cell_text, "colspan": colspan }
@@ -985,14 +1050,28 @@ class PageTracker:
         updates = get_recent_changes(cutoff_date=self._cutoff_date)
         self._cutoff_date = max(updates.items(), key=lambda x: x[1])[1]
         any_change = False
+
+        candidates = []
         for page, mod_date in updates.items():
             if mod_date != self._mod_dates.get(page):
-                any_change = True
-                self._mod_dates[page] = mod_date
+                candidates.append(page)
+
+        if candidates:
+            # check if these new pages exist
+            check = batch_page_exists(candidates)
+            for page in candidates:
+                if check[page]:
+                    self._mod_dates[page] = updates[page]
+                    any_change = True
+
         return any_change
 
     def add_titles(self, titles):
         new_titles = [title for title in titles if title not in self._mod_dates]
+        if new_titles:
+            # validate title existence
+            check = batch_page_exists(new_titles)
+            new_titles = [title for title in new_titles if check[title]]
         if not new_titles:
             return False
 

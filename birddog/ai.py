@@ -252,7 +252,10 @@ def classify_table_columns(page):
         ""])
     now = time.time()
     if now < _backoff_until:
-        return _default_labels(page)
+        return {
+            "mapping": _default_labels(page),
+            "success": False
+            }
 
     max_rows = 3
     rows = [ [ item['text']['uk'] for item in row ] for row in page.children[:max_rows] ]
@@ -277,8 +280,8 @@ def classify_table_columns(page):
         _backoff_until = time.time() + _BACKOFF_DURATION
         _logger.warning("Rate limit hit. Backing off table classification until %s",
                            datetime.fromtimestamp(_backoff_until).isoformat())
-        # unable to run inference - return fallback and let caller know
-        return {
-            "mapping": _default_labels(page),
-            "success": False
-            }
+    # unable to run inference - return fallback and let caller know
+    return {
+        "mapping": _default_labels(page),
+        "success": False
+        }
