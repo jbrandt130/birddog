@@ -436,15 +436,25 @@ def archive_list():
         return error_response, status
     return jsonify(ARCHIVE_MASTER_LIST)
 
+@app.route('/page', methods=['GET'])
 @app.route('/page/<archive>', methods=['GET'])
 @app.route('/page/<archive>/<subarchive>', methods=['GET'])
 @app.route('/page/<archive>/<subarchive>/<fond>', methods=['GET'])
 @app.route('/page/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
 @app.route('/page/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
-def page_data(archive, subarchive=None, fond=None, opus=None, case=None):
+def page_data(archive=None, subarchive=None, fond=None, opus=None, case=None):
     user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
+
+    if not archive:
+        page_title = request.args.get('title')
+        try:
+            address = page_update_manager.lookup_page(page_title)
+            (archive, subarchive, fond, opus, case) = address
+        except ValueError as e:
+            _logger.error(f'Title lookup failed: {e}')
+            return 'Page not found', 404
 
     try:
         page = page_lru.lookup(archive, subarchive, fond, opus, case)

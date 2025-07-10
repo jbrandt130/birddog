@@ -594,6 +594,7 @@ class TitleIndex:
                     self._archives[archive_root].append(address)
     
     def _select_parent_archive(self, archive_root, fond_id):
+        _logger.info(f"_select_parent_archive: {archive_root}, {fond_id}")
         parent_archive = None
         known_child = False
         if not archive_root in self._archives:
@@ -619,6 +620,7 @@ class TitleIndex:
         page_title = canonicalize_title(page_title)
         if page_title in self._index:
             return self._index[page_title]
+        _logger.info(f"TitleIndex.lookup({page_title})")
         page_split = page_title.split("/") + 4 * [None]
         archive_root = page_split[0]
         if not archive_root in self._archives:
@@ -645,11 +647,12 @@ class TitleIndex:
                     return _gen_address_for(*archive_address[:2], *page_split[1:4])
 
         # failed to find matching fond - test for fond adoption candidate
-        archive_address, known_child = self._select_parent_archive(*page_split[:2])
-        if not known_child:
-            archive = self._lru.lookup(*archive_address)
-            archive.adopt(page_split[1], "/".join(page_split[:2]))
-            return _gen_address_for(*archive_address[:2], *page_split[1:4])
+        if page_split[1]:
+            archive_address, known_child = self._select_parent_archive(*page_split[:2])
+            if not known_child:
+                archive = self._lru.lookup(*archive_address)
+                archive.adopt(page_split[1], "/".join(page_split[:2]))
+                return _gen_address_for(*archive_address[:2], *page_split[1:4])
 
         raise ValueError(f"Cannot find page: {page_title}")
 
@@ -797,6 +800,9 @@ class PageUpdateManager(HeartbeatManager):
             except ValueError as error:
                 _logger.error(f"PageUpdateManager.get_updates: cannot find title {title}. Skipping...")
         return result, updates_pending
+
+    def lookup_page(self, page_title):
+        return self._title_index.lookup(page_title)
 
 # ----------------------------------------------------------------------------
 # Update watcher

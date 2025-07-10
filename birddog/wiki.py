@@ -46,9 +46,10 @@ API_URL         = f"{ARCHIVE_BASE}/w/api.php"
 
 # load static data resources
 
-_archive_master_path = 'resources/archives_master.json'
+_ARCHIVE_MASTER_PATH = 'resources/archives_master.json'
+_NONEXISTENT_PAGE_PATH = 'resources/nonexistent_page.json'
 
-with open(_archive_master_path, encoding="utf8") as f:
+with open(_ARCHIVE_MASTER_PATH, encoding="utf8") as f:
     data = json.load(f)
     ARCHIVES = data['archives']
 
@@ -172,8 +173,8 @@ def update_master_archive_list():
             archives[fond_name[0]] = {}
         archives[fond_name[0]][fond_name[1]] = item
 
-    _logger.info(f"generate_master_archive_list: updating {_archive_master_path}")
-    with open(_archive_master_path, "w") as file:
+    _logger.info(f"generate_master_archive_list: updating {_ARCHIVE_MASTER_PATH}")
+    with open(_ARCHIVE_MASTER_PATH, "w") as file:
         file.write(json.dumps({ 
             'comment':  _comment_string(),
             'archives': archives
@@ -231,6 +232,9 @@ def batch_page_exists(titles, batch_size=50):
 
     return results
 
+def page_exists(title):
+    return batch_page_exists([title])[title]
+
 # -------------------------------------------------------------------------------
 # WikiSource MediaWiki API page download
 
@@ -241,6 +245,13 @@ def get_title(url):
     if not result.startswith(f"{WIKI_NAMESPACE}:"):
         result = f"{WIKI_NAMESPACE}:{result}"
     return result
+
+def _nonexistent_page(page_title):
+    _logger.info(f"Nonexistent page: {page_title}")
+    with open(_NONEXISTENT_PAGE_PATH, encoding="utf8") as f:
+        page = json.load(f)
+        page["title"]["uk"] = page_title.replace(WIKI_NAMESPACE, "")
+        return page
 
 def _is_table(tag):
     return tag.tag == "table" and [entry for entry in tag.attributes if "wikitable" in entry] != []
@@ -599,7 +610,16 @@ def mw_read_page(page_title, oldid=None):
     #_logger.info(f"mw_read_page: {page_title}")
 
     # get the wikitext and parse
-    wikitext, revid, title = _read_wiki_text(page_title, oldid)
+    try:
+        wikitext, revid, title = _read_wiki_text(page_title, oldid)
+    except RuntimeError as e:
+        # unable to read page - test for existence
+        if page_exists(page_title):
+            # page exists - raise the exception
+            raise e
+        # nonexistent page - return placeholder
+        return _nonexistent_page(page_title)
+
     wikicode = mwparserfromhell.parse(wikitext)
 
     # get and organize all the links on the page
@@ -733,62 +753,6 @@ def mw_read_page(page_title, oldid=None):
     page["doc_link"] = doc_url if doc_url is not None else ""
 
     return page
-
-# -------------------------------------------------------------------------------
-# WikiSource HTML archive scraping
-
-
-"""
-# HTML page element processing
-def form_element_text(element):
-    text = element.text.strip() if element is not None else None
-    return form_text_item(text)
-
-def read_page(url):
-
-    soup = BeautifulSoup(fetch_url(url), 'lxml')
-    title = soup.find('span', attrs = {'class': 'mw-page-title-main'})
-    desc = soup.find('span', attrs = {'id': 'header_section_text'})
-    table = soup.find('table', attrs = {'class': 'wikitable'})
-    children = []
-    header = []
-    if table:
-        for tr_elem in table.find_all('tr'):
-            if not header:
-                for th_elem in tr_elem.find_all('th'):
-                    header.append(form_element_text(th_elem))
-            item = []
-            for td_elem in tr_elem.find_all('td'):
-                a_elem = td_elem.find('a')
-                child_url = a_elem.get('href') if a_elem else None
-                text = form_text_item(td_elem.text.strip())
-                item.append({'text': text, 'link': child_url})
-            if item:
-                children.append(item)
-
-    # check for document thumbnail
-    doc_info = soup.find('figure', attrs = {'typeof': 'mw:File/Thumb'})
-    doc_url = None
-    thumb_url = None
-    if doc_info:
-        a_tag = doc_info.find('a')
-        doc_url = a_tag.get('href')
-        thumb_elem = a_tag.find('img')
-        thumb_url = thumb_elem.get('src') if thumb_elem else None
-    footer = soup.find('li', attrs={'id': 'footer-info-lastmod'})
-    last_modified = lastmod(footer.text) if footer else None
-
-    return {
-        'title': form_element_text(title),
-        'description': form_element_text(desc),
-        'header': header,
-        'children': children,
-        'lastmod': last_modified,
-        'link': url,
-        'doc_link': doc_url,
-        #'thumb_link': thumb_url,
-    }
-"""
 
 # -------------------------------------------------------------------------------
 # WikiSource change detection
