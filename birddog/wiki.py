@@ -250,7 +250,8 @@ def _nonexistent_page(page_title):
     _logger.info(f"Nonexistent page: {page_title}")
     with open(_NONEXISTENT_PAGE_PATH, encoding="utf8") as f:
         page = json.load(f)
-        page["title"]["uk"] = page_title.replace(WIKI_NAMESPACE, "")
+        page["title"]["uk"] = page_title.replace(f"{WIKI_NAMESPACE}:", "")
+        page["link"] = f"{ARCHIVE_BASE}/wiki/{page_title}"
         return page
 
 def _is_table(tag):

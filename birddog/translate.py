@@ -4,22 +4,20 @@
 """Translation support from Ukrainian to English with async queue"""
 
 from time import sleep
-import requests
 import os
-from deep_translator import GoogleTranslator, DeeplTranslator
-from httpcore._exceptions import ReadTimeout, ConnectTimeout
 import threading
 import uuid
 import queue
+from httpcore._exceptions import ReadTimeout, ConnectTimeout
 
+import requests
+from deep_translator import GoogleTranslator, DeeplTranslator
+from google.cloud import translate_v2 as google_translate
 
 from birddog.logging import get_logger
 _logger = get_logger()
 
 # --- Google Cloud service support ---
-
-import os
-from google.cloud import translate_v2 as google_translate
 
 class GoogleCloudTranslator:
     def __init__(self, source="uk", target="en"):
@@ -27,22 +25,29 @@ class GoogleCloudTranslator:
         self._target = target
         self._client = google_translate.Client()
 
+    def _log_bytes(self, text):
+        if isinstance(text, (list, tuple)):
+            total_bytes = sum(len(t.encode('utf-8')) for t in text)
+        else:
+            total_bytes = len(text.encode('utf-8'))
+        _logger.info(f"GoogleCloudTranslator: translating {total_bytes} bytes")
+
     def translate(self, text):
+        self._log_bytes(text)
         result = self._client.translate(text, source_language=self._source, target_language=self._target)
         if isinstance(text, (list, tuple)):
             return [item['translatedText'] for item in result]
-        else:
-            return result['translatedText']
+        return result['translatedText']
 
     def translate_batch(self, text):
         return self.translate(text)
 
 # --- Configure Translator ---
 
-_translator = None
 _DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", None)
-_USE_GOOGLE_CLOUD_TRANSLATE = os.getenv("BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE", False) in ("true", "True", "1")
+_USE_GOOGLE_CLOUD_TRANSLATE = os.getenv("BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE", None) in ("true", "True", "1")
 
+_translator = None
 if _USE_GOOGLE_CLOUD_TRANSLATE:
     _logger.info(f'Using Google Cloud translation API (credentials file:{os.getenv("GOOGLE_APPLICATION_CREDENTIALS")})')
     #_logger.info('Using Google Cloud translation API')
@@ -76,7 +81,7 @@ def translation(text):
                 result = _translator.translate(text)
             break
         except (requests.Timeout, ReadTimeout, ConnectTimeout):
-            _logger.info(f"translation timeout. retrying...")
+            _logger.info("translation timeout. retrying...")
         sleep(wait_time)
         wait_time *= 2
     return result

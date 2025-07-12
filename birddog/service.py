@@ -3,17 +3,19 @@ import os
 import threading
 import re
 import time
-import unicodedata
 import hashlib
 from io import BytesIO
 from copy import copy, deepcopy
 from datetime import datetime, timedelta, UTC
-from cachetools import LRUCache
 from collections import defaultdict
-from itsdangerous import URLSafeTimedSerializer
-import smtplib
 from email.message import EmailMessage
+import smtplib
+from unidecode import unidecode
+
+from cachetools import LRUCache
+from itsdangerous import URLSafeTimedSerializer
 from werkzeug.security import generate_password_hash, check_password_hash
+
 from flask import (
     Flask,
     render_template,
@@ -22,14 +24,14 @@ from flask import (
     redirect,
     url_for,
     session,
-    jsonify, 
+    jsonify,
     g)
 
 # Birddog packages
+from birddog.runtime import Runtime, PageLRU
 from birddog.core import (
-    PageLRU,
     ArchiveWatcher,
-    PageUpdateManager)
+    )
 from birddog.excel import export_page
 from birddog.cache import (
     load_cached_object,
@@ -38,9 +40,9 @@ from birddog.cache import (
     CacheMissError)
 from birddog.wiki import check_page_changes, all_archives
 from birddog.logging import (
-    get_logger, 
-    get_log_buffer, 
-    detect_environment, 
+    get_logger,
+    get_log_buffer,
+    detect_environment,
     get_event_logger,
     summarize_duration_by_path_group,
     user_histogram)
@@ -57,7 +59,7 @@ STATIC_DIR = os.path.join(BASE_DIR, 'static')
 app = Flask(__name__, template_folder=TEMPLATES_DIR, static_folder=STATIC_DIR)
 app.secret_key = os.getenv('BIRDDOG_SECRET_KEY', '')  # For session management
 serializer = URLSafeTimedSerializer(app.secret_key)
-    
+
 SMTP_SERVER = os.getenv('BIRDDOG_SMTP_SERVER', '')  # For password reset
 SMTP_PORT = os.getenv('BIRDDOG_SMTP_PORT', '')  # For password reset
 SMTP_USERNAME = os.getenv('BIRDDOG_SMTP_USERNAME', '')  # For password reset
@@ -67,8 +69,7 @@ SMTP_PASSWORD = os.getenv('BIRDDOG_SMTP_PASSWORD', '')  # For password reset
 
 ARCHIVE_MASTER_LIST     = all_archives()
 users                   = None
-page_lru                = None
-page_update_manager     = None
+runtime                 = None
 
 # ---- USER MANAGEMENT --------------------------------------------------------
 
@@ -130,7 +131,7 @@ class User:
             pass  # it's already gone
         return True
 
-    def check_archive(self, archive, subarchive, page_lru, tree=False):
+    def check_archive(self, archive, subarchive, tree=False):
         key = _watchlist_key(archive, subarchive)
         with self._lock:
             if key not in self.watchlist:
@@ -145,7 +146,7 @@ class User:
                     archive, subarchive,
                     self.watchlist[key]['cutoff_date'])
 
-            watcher.check(page_update_manager)
+            watcher.check(runtime.update_manager)
             save_cached_object(watcher.save(), path)
 
             self.watchlist[key]['last_checked_date'] = datetime.now().strftime('%Y,%m,%d,%H:%M')
@@ -154,10 +155,9 @@ class User:
             # Return just the result, not the watcher itself
             if tree:
                 return watcher.unresolved_tree
-            else:
-                return [{'name': k, **v} for k, v in watcher.unresolved.items()]
+            return [{'name': k, **v} for k, v in watcher.unresolved.items()]
 
-    def resolve_item(self, archive, subarchive, fond=None, opus=None, case=None, page_lru=None, tree=False):
+    def resolve_item(self, archive, subarchive, fond=None, opus=None, case=None, tree=False):
         key = _watchlist_key(archive, subarchive)
 
         with self._lock:
@@ -205,9 +205,9 @@ class User:
         )
 
 class Users:
-    def __init__(self, session, max_users=10):
+    def __init__(self, user_session, max_users=10):
         self._path = 'users'
-        self._session = session
+        self._session = user_session
         self._cache = LRUCache(maxsize=max_users)
         self._locks = defaultdict(threading.Lock)
 
@@ -308,8 +308,7 @@ def change_password():
 
     if user.change_password(current_pw, new_pw):
         return jsonify(success=True, message='Password changed successfully'), 200
-    else:
-        return jsonify(success=False, message='Current password is incorrect'), 403
+    return jsonify(success=False, message='Current password is incorrect'), 403
 
 @app.route('/reset_password', methods=['POST'])
 def reset_password_request():
@@ -450,14 +449,17 @@ def page_data(archive=None, subarchive=None, fond=None, opus=None, case=None):
     if not archive:
         page_title = request.args.get('title')
         try:
-            address = page_update_manager.lookup_page(page_title)
+            address = runtime.lookup_address(page_title)
             (archive, subarchive, fond, opus, case) = address
         except ValueError as e:
             _logger.error(f'Title lookup failed: {e}')
             return 'Page not found', 404
 
     try:
-        page = page_lru.lookup(archive, subarchive, fond, opus, case)
+        if not archive:
+            page_title = request.args.get('title')
+            (archive, subarchive, fond, opus, case) = runtime.lookup_address(page_title)
+        page = runtime.lookup(archive, subarchive, fond, opus, case)
         if page:
             if page.kind == 'archive':
                 subarchive = page.subarchive["en"]
@@ -487,8 +489,6 @@ def page_data(archive=None, subarchive=None, fond=None, opus=None, case=None):
         _logger.error(f'PageLRU({archive}, {subarchive}, {fond}, {opus}, {case}) raised NotFoundError')
         return 'Page not found', 404
 
-from unidecode import unidecode
-
 def ascii_filename(name):
     # Transliterate non-ASCII characters into closest ASCII representation
     new_name = unidecode(name)
@@ -508,7 +508,7 @@ def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
         return error_response, status
 
     try:
-        page = page_lru.lookup(archive, subarchive, fond, opus, case)
+        page = runtime.lookup(archive, subarchive, fond, opus, case)
         if page:
             page.prepare_to_download()
             # put the page into a comparison state if requested
@@ -520,7 +520,7 @@ def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
             clean_name = ascii_filename(page.name if page.name else "unnamed")
 
             excel_io = BytesIO()
-            export_page(page, excel_io, lru=page_lru)
+            export_page(page, excel_io, lru=runtime.page_lru)
             excel_io.seek(0)  # Rewind buffer for reading
 
             return send_file(
@@ -592,8 +592,7 @@ def remove_from_watchlist(archive, subarchive):
 
     if success:
         return '', 204
-    else:
-        return jsonify({'error': 'Entry not found'}), 404
+    return jsonify({'error': 'Entry not found'}), 404
 
 # Check for updates on a specific watchlist item
 @app.route('/watchlist/<archive>/<subarchive>/check', methods=['GET'])
@@ -604,7 +603,7 @@ def check_watchlist_item(archive, subarchive):
 
     try:
         tree = request.args.get('tree') is not None
-        result = user.check_archive(archive, subarchive, page_lru, tree=tree)
+        result = user.check_archive(archive, subarchive, tree=tree)
 
         return jsonify({
             'success': True,
@@ -631,7 +630,7 @@ def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
         result = user.resolve_item(
             archive, subarchive,
             fond=fond, opus=opus, case=case,
-            page_lru=page_lru, tree=tree
+            tree=tree
         )
 
         return jsonify({'success': True, 'unresolved': result}), 200
@@ -718,7 +717,7 @@ def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=Non
     if error_response:
         return error_response, status
     if archive:
-        page = page_lru.lookup(archive, subarchive, fond, opus, case)
+        page = runtime.lookup(archive, subarchive, fond, opus, case)
         if page:
             # start new translation
             _start_translation(user.email, page)
@@ -792,15 +791,13 @@ def metrics_dashboard():
 
 # initialize globals
 users = Users(session)
-page_lru = PageLRU(maxsize=500)
 
 def create_app():
-    global page_update_manager
+    global runtime
     # Only run this once during WSGI app startup
-    if page_update_manager is None:
-        manager = PageUpdateManager(page_lru=page_lru)
-        manager.start()  # don't use `with`; call `start()` explicitly
-        page_update_manager = manager
+    if runtime is None:
+        runtime = Runtime()
+        runtime.start()  # don't use `with`; call `start()` explicitly
     return app
 
 # Required for WSGI: this is the callable Gunicorn or EB will look for

@@ -7,10 +7,10 @@ from birddog.core import (
     Fond,
     Opus,
     Case,
-    PageLRU,
     ArchiveWatcher,
-    PageUpdateManager
     )
+from birddog.runtime import Runtime, PageLRU
+
 
 archive_path = '%D0%90%D1%80%D1%85%D1%96%D0%B2:%D0%94%D0%90%D0%96%D0%9E'
 fond_id = '1'
@@ -132,30 +132,29 @@ class Test(unittest.TestCase):
         print(page.title)
 
     def test_ArchiveWatcher(self):
-        lru = PageLRU()
+        runtime = Runtime()
         watcher = ArchiveWatcher("DAKO", "D", cutoff_date="2025,03,01")
         self.assertFalse(watcher.resolved)
         self.assertFalse(watcher.unresolved)
-        with PageUpdateManager() as page_manager:
-            watcher.check(page_manager)
-            self.assertFalse(watcher.resolved)
-            self.assertTrue(watcher.unresolved)
-            #print(watcher.unresolved)
-            item = watcher.key("DAKO", "D", "280", "201", "4")
-            #item = "DAKO-D/1455/1/169"
-            self.assertTrue(item in watcher.unresolved)
-            watcher.resolve(item)
-            self.assertFalse(item in watcher.unresolved)
-            self.assertTrue(item in watcher.resolved)
-            watcher.unresolve(item)
-            self.assertTrue(item in watcher.unresolved)
-            self.assertFalse(item in watcher.resolved)
-            watcher = ArchiveWatcher('DADNO', 'R', '2025,03,01')
-            watcher.check(page_manager)
+        watcher.check(runtime.update_manager)
+        self.assertFalse(watcher.resolved)
+        self.assertTrue(watcher.unresolved)
+        #print(watcher.unresolved)
+        item = watcher.key("DAKO", "D", "280", "2", "6")
+        #item = "DAKO-D/1455/1/169"
+        self.assertTrue(item in watcher.unresolved)
+        watcher.resolve(item)
+        self.assertFalse(item in watcher.unresolved)
+        self.assertTrue(item in watcher.resolved)
+        watcher.unresolve(item)
+        self.assertTrue(item in watcher.unresolved)
+        self.assertFalse(item in watcher.resolved)
+        watcher = ArchiveWatcher('DADNO', 'R', '2025,03,01')
+        watcher.check(runtime.update_manager)
         for key in list(watcher.unresolved.keys())[::77]:
             address = key.rstrip(',').split(',') + 3 * [None]
             address = address[:5]
-            page = lru.lookup(*address)
+            page = runtime.lookup(*address)
             self.assertEqual(page.lastmod, watcher.unresolved[key]['modified'])
 
 if __name__ == "__main__":
