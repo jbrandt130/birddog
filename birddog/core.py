@@ -19,6 +19,9 @@ from birddog.cache import load_cached_object, save_cached_object, CacheMissError
 from birddog.wiki import (
     ARCHIVE_BASE,
     SUBARCHIVES,
+    ARCHIVE_BY_TITLE,
+    canonicalize_title,
+    classify_page,
     find_archive,
     HistoryLRU,
     mw_read_page,
@@ -62,7 +65,8 @@ _history_lru = HistoryLRU()
 
 class Page:
     """Abstract base clase for all page types on the archive."""
-    def __init__(self, spec, parent):
+    def __init__(self, spec, parent, runtime=None):
+        self._runtime = runtime
         self._parent = parent
         self._spec = spec
         self._page = {}
@@ -91,7 +95,7 @@ class Page:
 
     @property
     def _cache_path(self):
-        return f'page_cache/{self.name}'
+        return f'page_cache/{self.title}'
 
     def _cache_load(self, version=None):
         """Try to retrieve page contents from cache. Returns True if successful."""
@@ -183,16 +187,12 @@ class Page:
         return self._page['header']
 
     @property
-    def base(self):
-        return self._parent.base
-
-    @property
     def default_url(self):
         if self._spec is not None and self._spec[1] is not None:
             url = self._spec[1]
             if url.startswith('http://') or url.startswith('https://'):
                 return url
-            return self.base + url
+            return ARCHIVE_BASE + url
         return None
 
     @property
@@ -241,7 +241,10 @@ class Page:
 
     @property
     def kind(self):
-        return 'table'
+        result = classify_page(self.title)
+        if result == "case" and self.children:
+            return "opus"
+        return result
 
     @property
     def is_latest(self):
@@ -265,18 +268,27 @@ class Page:
             url = row[0].get("link", "")
             split_url = url.rsplit('/', 1)
             child_id = get_text(row[0]['text'])
-            if self.parent and split_url[0] == self.url.replace(self.base, '').rsplit('/', 1)[0]:
+            if self.parent and split_url[0] == self.url.replace(ARCHIVE_BASE, '').rsplit('/', 1)[0]:
                 # child url is at peer level: spawn sibling
-                return self.parent.child_class((child_id, url), self.parent)
+                return self.parent.child_class(
+                    (child_id, url), 
+                    self.parent, 
+                    runtime=self._runtime)
             # normal case: entry_id is listed in the parent page
-            return self.child_class((child_id, url), self)
+            return self.child_class(
+                (child_id, url), 
+                self, 
+                runtime=self._runtime)
         # entry_id does not match known children - could be shadow child page
         # try to spawn it using the constructed url
         child_url = f'{self.url}/{entry_id}'
         child_url = child_url.replace(ARCHIVE_BASE, '')
         child_spec = (entry_id, child_url)
         try:
-            result = self.child_class(child_spec, self)
+            result = self.child_class(
+                child_spec, 
+                self, 
+                runtime=self._runtime)
             if result._page:
                 return result
         except:
@@ -286,7 +298,10 @@ class Page:
             child = self.lookup(child_id)
             row = child._find_child_row(entry_id)
             if row:
-                return self.child_class((get_text(row[0]['text']), row[0]['link']), self)
+                return self.child_class(
+                    (get_text(row[0]['text']), row[0]['link']), 
+                    self, 
+                    runtime=self._runtime)
         # unable to find matching id
         raise LookupError(self.name, entry_id)
 
@@ -315,8 +330,27 @@ class Page:
         return False
 
     def load_child_document_links(self, update_cache=True):
-        # do nothing unless (overridden in subclass)
-        pass
+        if self.kind == 'opus':
+            items = []
+            titles = []
+            for i, child in enumerate(self.children):
+                #_logger.info(f"load_child_document_links: {self.name}: {child}")
+                if is_linked(child[0]) and not is_linked(child[1]):
+                    items.append(i)
+                    titles.append(f"{self.title}/{get_text(child[0]['text'])}")
+            if items:
+                need_save = False
+                doc_links = batch_fetch_document_links(titles)
+                for i, title in zip(items, titles):
+                    links = doc_links.get(title)
+                    if links:
+                        # FIXME: what about multiple links? Ignoring them for now.
+                        self.children[i][1]['link'] = links[0]
+                        self.children[i][1]['exists'] = True
+                        need_save = True
+                if update_cache and need_save:
+                    #_logger.info(f'load_child_document_links({self.name}) updating cache')
+                    self._cache_save()
 
     @property
     def column_header_map(self):
@@ -353,22 +387,21 @@ class Page:
 
 class Archive(Page):
     """Represents a top level archive page."""
-    def __init__(self, tag, subarchive=None, base=ARCHIVE_BASE):
+    def __init__(self, tag, subarchive=None, runtime=None):
         self._tag = tag
         archive_data = find_archive(tag, subarchive)
         self._subarchive = archive_data["subarchive"]
         self._archive_name = archive_data["title"]["uk"]
-        self._base = base
-        super().__init__(None, None)
+        super().__init__(None, None, runtime=runtime)
 
     @property
     def title(self):
         # must work even if self._page is None so history can be accessed before loading
         return self._archive_name.split(':')[1]
 
-    @property
-    def kind(self):
-        return 'archive'
+    #@property
+    #def kind(self):
+    #    return 'archive'
 
     @property
     def child_class(self):
@@ -399,12 +432,8 @@ class Archive(Page):
         return self._subarchive
 
     @property
-    def base(self):
-        return self._base
-
-    @property
     def default_url(self):
-        return self._base + '/wiki/' + str(quote(self._archive_name))
+        return ARCHIVE_BASE + '/wiki/' + str(quote(self._archive_name))
 
     def latest_changes(self, limit=100, offset=0):
         return do_search(self._archive_name.split('/')[0], limit=limit, offset=offset)
@@ -423,9 +452,9 @@ class Archive(Page):
 
 class Fond(Page):
     """Represents fond page."""
-    @property
-    def kind(self):
-        return 'fond'
+    #@property
+    #def kind(self):
+    #    return 'fond'
 
     @property
     def child_class(self):
@@ -433,9 +462,9 @@ class Fond(Page):
 
 class Opus(Page):
     """Represents fond page."""
-    @property
-    def kind(self):
-        return 'opus'
+    #@property
+    #def kind(self):
+    #    return 'opus'
 
     @property
     def child_class(self):
@@ -445,33 +474,12 @@ class Opus(Page):
     def shortname(self):
         return f'{self.parent.parent.id} {self.parent.id}-{self.id}'
 
-    def load_child_document_links(self, update_cache=True):
-        items = []
-        titles = []
-        for i, child in enumerate(self.children):
-            #_logger.info(f"load_child_document_links: {self.name}: {child}")
-            if is_linked(child[0]) and not is_linked(child[1]):
-                items.append(i)
-                titles.append(f"{self.title}/{get_text(child[0]['text'])}")
-        if items:
-            need_save = False
-            doc_links = batch_fetch_document_links(titles)
-            for i, title in zip(items, titles):
-                links = doc_links.get(title)
-                if links:
-                    # FIXME: what about multiple links? Ignoring them for now.
-                    self.children[i][1]['link'] = links[0]
-                    self.children[i][1]['exists'] = True
-                    need_save = True
-            if update_cache and need_save:
-                #_logger.info(f'load_child_document_links({self.name}) updating cache')
-                self._cache_save()
-
 class Case(Page):
+    pass
     """Represents case page."""
-    @property
-    def kind(self):
-        return 'case'
+    #@property
+    #def kind(self):
+    #    return 'case'
 
 # ----------------------------------------------------------------------------
 # Update watcher

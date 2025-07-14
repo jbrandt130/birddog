@@ -21,8 +21,6 @@ case_id = '1'
 class Test(unittest.TestCase):
     def test_Archive(self):
         page = Archive('DAZHO')
-        print('base', page.base)
-        self.assertTrue(page.base, ARCHIVE_BASE)
         print('child_class', page.child_class)
         self.assertTrue(page.child_class == Fond)
         print('default_url', page.default_url)
@@ -50,8 +48,6 @@ class Test(unittest.TestCase):
         
     def test_Fond(self):
         page = Archive('DAZHO').lookup(fond_id)
-        print('base', page.base)
-        self.assertTrue(page.base, ARCHIVE_BASE)
         print('child_class', page.child_class)
         self.assertTrue(page.child_class == Opus)
         print('default_url', page.default_url)
@@ -74,8 +70,6 @@ class Test(unittest.TestCase):
        
     def test_Opus(self):
         page = Archive('DAZHO').lookup(fond_id).lookup(opus_id)
-        print('base', page.base)
-        self.assertTrue(page.base, ARCHIVE_BASE)
         print('child_class', page.child_class)
         self.assertTrue(page.child_class == Case)
         print('default_url', page.default_url)
@@ -98,8 +92,6 @@ class Test(unittest.TestCase):
 
     def test_Case(self):
         page = Archive('DAZHO').lookup(fond_id).lookup(opus_id).lookup(case_id)
-        print('base', page.base)
-        self.assertTrue(page.base, ARCHIVE_BASE)
         print('child_class', page.child_class)
         self.assertTrue(page.child_class is None)
         print('default_url', page.default_url)

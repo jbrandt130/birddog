@@ -40,7 +40,7 @@ _logger = get_logger()
 
 ARCHIVE_BASE    = 'https://uk.wikisource.org'
 WIKI_NAMESPACE  = 'Архів'
-WIKI_NAMESPACE_ID = '116'
+WIKI_NAMESPACE_ID = '116' # use lookup_namespace_id() to find this out
 ARCHIVES        = None
 API_URL         = f"{ARCHIVE_BASE}/w/api.php"
 
@@ -61,6 +61,71 @@ def _inventory_subarchives(archives):
     return list(subarchives.values())
 
 SUBARCHIVES = _inventory_subarchives(ARCHIVES)
+
+def canonicalize_title(title):
+    if not title.startswith(f"{WIKI_NAMESPACE}:"):
+        title = f"{WIKI_NAMESPACE}:{title}"
+    return title.replace(" ", "_")
+
+def _archives_init():
+    archives_by_root = {}
+    archive_by_title = {}
+    for archive_key in ARCHIVES.keys():
+        for entry in ARCHIVES[archive_key].values():
+            subarchive_key = entry["subarchive"]["en"]
+            archive_title = canonicalize_title(entry["title"]["uk"])
+            address = (archive_key, subarchive_key)
+            archive_by_title[archive_title] = address
+            archive_root = archive_title.split("/")[0]
+            if not archive_root in archives_by_root:
+                archives_by_root[archive_root] = [ address ]
+            else:
+                archives_by_root[archive_root].append(address)
+    return archives_by_root, archive_by_title
+
+ARCHIVES_BY_ROOT, ARCHIVE_BY_TITLE = _archives_init()
+ARCHIVE_BY_ADDRESS = {address: title for title, address in ARCHIVE_BY_TITLE.items()}
+
+def classify_page(title):
+    title = canonicalize_title(title)
+    if title in ARCHIVE_BY_TITLE:
+        return "archive"
+    title_split = title.split("/")
+    if len(title_split) <= 2:
+        return "fond"
+    if len(title_split) == 3:
+        return "opus"
+    return "case"
+
+def parent_title(title):
+    title = canonicalize_title(title)
+    if title in ARCHIVE_BY_TITLE:
+        # top level page for an archive
+        return None
+    title_split = title.split("/")
+    if title_split[0] not in ARCHIVES_BY_ROOT:
+        raise ValueError(f"Unrecognized archive root: {title}")
+    if len(title_split) > 2:
+        return title.rsplit("/", 1)[0]
+    # hard case: locate parent of a fond
+    assert len(title_split) == 2
+    archives = ARCHIVES_BY_ROOT[title_split[0]]
+    fond_id = title_split[1]
+    if len(archives) == 1:
+        # unambiguous - return the one archive
+        return ARCHIVE_BY_ADDRESS[archives[0]]
+    archive_spec = ARCHIVES[archives[0][0]]
+    default_title = None
+    for key, sub in archive_spec.items():
+        # look for subarchive string like "P" that is in the fond name
+        if sub["subarchive"]["uk"] in fond_id:
+            return canonicalize_title(sub["title"]["uk"])
+        # subarchives "D" and "_" are the backup if no match is found
+        if sub["subarchive"]["en"] in "D_":
+            default_title = canonicalize_title(sub["title"]["uk"])
+    if default_title:
+        return default_title
+    raise RuntimeError(f"Unable to find parent of {title} (searched {archives[0][0]})")
 
 # -------------------------------------------------------------------------------
 # namespace id lookup (utility)
@@ -192,11 +257,6 @@ def find_archive(archive_tag, subarchive=None):
     archive = ARCHIVES[archive_tag]
     sub = _select_subarchive(archive, subarchive)
     return { "title": sub["title"], "subarchive": sub["subarchive"] }
-
-def canonicalize_title(title):
-    if not title.startswith(f"{WIKI_NAMESPACE}:"):
-        title = f"{WIKI_NAMESPACE}:{title}"
-    return title.replace(" ", "_")
 
 def batch_page_exists(titles, batch_size=50):
     """

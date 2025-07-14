@@ -8,6 +8,8 @@ Ukraine records archive monitor and scraper.
 import time
 import threading
 import queue
+from copy import copy
+
 from cachetools import LRUCache
 
 from birddog.cache import load_cached_object, save_cached_object, CacheMissError
@@ -18,6 +20,8 @@ from birddog.core import (
     )
 from birddog.wiki import (
     ARCHIVES,
+    ARCHIVES_BY_ROOT, 
+    ARCHIVE_BY_TITLE,
     canonicalize_title,
     get_all_pages,
     PageTracker,
@@ -98,42 +102,25 @@ class TitleIndex:
 
     def __init__(self, page_lru=None):
         self._lru = page_lru if page_lru else PageLRU()
+        self._archives = ARCHIVES_BY_ROOT
         self.load()
 
     def load(self):
         try:
             data = load_cached_object(TitleIndex._TITLE_INDEX_PATH)
             self._index = data["index"]
-            self._archives = data["archives"]
         except CacheMissError:
-            self._init_index()
+            self._index = { title: self._lru.key(*address) for title, address in ARCHIVE_BY_TITLE.items() }
             self.save()
         self._archive_root = { }
         for archive_root, addresses in self._archives.items():
             for address in addresses:
-                self._archive_root[tuple(address)] = archive_root
+                self._archive_root[self._lru.key(*address)] = archive_root
 
     def save(self):
         save_cached_object({
-            "index": self._index,
-            "archives": self._archives,
+            "index": self._index
         }, TitleIndex._TITLE_INDEX_PATH)
-
-    def _init_index(self):
-        self._index = {}
-        self._archives = {}
-        for archive_key in ARCHIVES.keys():
-            for entry in ARCHIVES[archive_key].values():
-                subarchive_key = entry["subarchive"]["en"]
-                archive_title = canonicalize_title(entry["title"]["uk"])
-                address = self._lru.key(archive_key, subarchive_key)
-                archive_root = archive_title.split("/")[0]
-                #print(archive_title, archive_root, address)
-                self._index[archive_title] = address
-                if not archive_root in self._archives:
-                    self._archives[archive_root] = [ address ]
-                else:
-                    self._archives[archive_root].append(address)
 
     def _select_parent_archive(self, archive_root, fond_id):
         _logger.info(f"_select_parent_archive: {archive_root}, {fond_id}")
@@ -168,7 +155,7 @@ class TitleIndex:
         if not archive_root in self._archives:
             raise ValueError(f"Unrecognized title: {page_title}")
 
-        def _gen_address_for(archive, subarchive, fond, opus, case):
+        def _gen_address_for(archive, subarchive, fond=None, opus=None, case=None):
             address = self._lru.key(archive, subarchive, fond, opus, case)
             self._index[page_title] = address
             return address
