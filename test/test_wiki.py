@@ -8,7 +8,6 @@ from birddog.wiki import (
     SUBARCHIVES,
     all_archives,
     sniff_subarchives,
-    wiki_title,
     check_page_updates,
     check_page_changes,
     report_page_changes,

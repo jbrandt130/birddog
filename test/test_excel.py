@@ -5,7 +5,7 @@ import os
 import unittest
 import filecmp
 from copy import copy
-from birddog.core import Archive, Fond, Opus
+from birddog.core import Archive
 from birddog.wiki import check_page_changes
 from birddog.excel import export_page
 

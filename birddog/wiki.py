@@ -7,13 +7,13 @@ Wiki API access functions
 
 import time
 import json
-import requests
 import re
 from datetime import datetime
 from urllib.parse import quote, unquote
-
-import mwparserfromhell
 from itertools import islice
+
+import requests
+import mwparserfromhell
 from cachetools import LRUCache
 from bs4 import BeautifulSoup
 
@@ -25,8 +25,6 @@ from birddog.utility import (
     form_text_item,
     format_date,
     get_text,
-    lastmod,
-    match_text,
     translate_page,
     is_linked,
     )
@@ -50,8 +48,8 @@ _ARCHIVE_MASTER_PATH = 'resources/archives_master.json'
 _NONEXISTENT_PAGE_PATH = 'resources/nonexistent_page.json'
 
 with open(_ARCHIVE_MASTER_PATH, encoding="utf8") as f:
-    data = json.load(f)
-    ARCHIVES = data['archives']
+    _archive_data = json.load(f)
+    ARCHIVES = _archive_data['archives']
 
 def _inventory_subarchives(archives):
     subarchives = {}
@@ -70,21 +68,30 @@ def canonicalize_title(title):
 def _archives_init():
     archives_by_root = {}
     archive_by_title = {}
+    archive_by_address = {}
     for archive_key in ARCHIVES.keys():
-        for entry in ARCHIVES[archive_key].values():
+        archive_entries = ARCHIVES[archive_key].values()
+        for entry in archive_entries:
             subarchive_key = entry["subarchive"]["en"]
             archive_title = canonicalize_title(entry["title"]["uk"])
             address = (archive_key, subarchive_key)
             archive_by_title[archive_title] = address
-            archive_root = archive_title.split("/")[0]
-            if not archive_root in archives_by_root:
-                archives_by_root[archive_root] = [ address ]
+            archive_by_address[address] = archive_title
+            if len(archive_entries) == 1 or subarchive_key in "D_":
+                # add subarchive defaults
+                archive_by_address[(address[0], "")] = archive_title
+                archive_by_address[(address[0], None)] = archive_title
+            root = archive_title.split("/")[0]
+            if root in archives_by_root:
+                archives_by_root[root].append(address)
             else:
-                archives_by_root[archive_root].append(address)
-    return archives_by_root, archive_by_title
+                archives_by_root[root] = [address]
+    return archives_by_root, archive_by_title, archive_by_address
 
-ARCHIVES_BY_ROOT, ARCHIVE_BY_TITLE = _archives_init()
-ARCHIVE_BY_ADDRESS = {address: title for title, address in ARCHIVE_BY_TITLE.items()}
+ARCHIVES_BY_ROOT, ARCHIVE_BY_TITLE, ARCHIVE_BY_ADDRESS = _archives_init()
+
+def archive_root(archive, subarchive):
+    return ARCHIVE_BY_ADDRESS[(archive, subarchive)].split("/", 1)[0]
 
 def classify_page(title):
     title = canonicalize_title(title)
@@ -108,7 +115,8 @@ def parent_title(title):
     if len(title_split) > 2:
         return title.rsplit("/", 1)[0]
     # hard case: locate parent of a fond
-    assert len(title_split) == 2
+    if len(title_split) < 2:
+        raise ValueError(f"Unrecognized title: {title}")
     archives = ARCHIVES_BY_ROOT[title_split[0]]
     fond_id = title_split[1]
     if len(archives) == 1:
@@ -116,7 +124,7 @@ def parent_title(title):
         return ARCHIVE_BY_ADDRESS[archives[0]]
     archive_spec = ARCHIVES[archives[0][0]]
     default_title = None
-    for key, sub in archive_spec.items():
+    for sub in archive_spec.values():
         # look for subarchive string like "P" that is in the fond name
         if sub["subarchive"]["uk"] in fond_id:
             return canonicalize_title(sub["title"]["uk"])
@@ -126,6 +134,39 @@ def parent_title(title):
     if default_title:
         return default_title
     raise RuntimeError(f"Unable to find parent of {title} (searched {archives[0][0]})")
+
+def lineage(title):
+    title = canonicalize_title(title)
+    #_logger.info(f"lineage({title})")
+    result = []
+    while title:
+        result.append(title)
+        title = parent_title(title)
+    return result
+
+def page_address(title):
+    title = canonicalize_title(title)
+    hierarchy = lineage(title)
+    if not hierarchy:
+        raise ValueError(f"Cannot compute address for title {title}")
+    archive_title = hierarchy[-1].split("/")
+    if len(hierarchy) > 1:
+        tail = title.split("/")[1:]
+        if tail and tail[0] == archive_title[-1]:
+            tail.pop(0)
+        tail.extend((3 - len(tail)) * [""])
+    else:
+        tail = 3 * [""]
+    result = ( *ARCHIVE_BY_TITLE[hierarchy[-1]] , *tail)
+    #_logger.info(f"page_address({title}) -> {result}")
+    return result
+
+def page_name(title):
+    address = page_address(title)
+    return f"{address[0]}-{address[1]}/{'/'.join(address[2:])}".rstrip("/")
+
+def is_archive(title):
+    return canonicalize_title(title) in ARCHIVE_BY_TITLE
 
 # -------------------------------------------------------------------------------
 # namespace id lookup (utility)
@@ -185,7 +226,7 @@ def get_all_pages(namespace=WIKI_NAMESPACE_ID, prefix=None, limit=500):
 def sniff_subarchives(archive):
     url = f'{ARCHIVE_BASE}/wiki/{archive}'
     result = {}
-    soup = BeautifulSoup(requests.get(url).text, 'lxml')
+    soup = BeautifulSoup(requests.get(url,timeout=10).text, 'lxml')
     for div in soup.find_all('div', attrs = {'id': 'mw-content-text'}):
         for item in div.find_all('a'):
             if item.has_attr('title'):
@@ -211,7 +252,7 @@ def _comment_string():
 def update_master_archive_list():
     with open('resources/archives.json', encoding="utf8") as f:
         manifest = json.load(f)
-    
+
     archives = {}
     for archive_name, archive in manifest["archives"].items():
         _logger.info(f"Searching {archive_name}")
@@ -239,8 +280,8 @@ def update_master_archive_list():
         archives[fond_name[0]][fond_name[1]] = item
 
     _logger.info(f"generate_master_archive_list: updating {_ARCHIVE_MASTER_PATH}")
-    with open(_ARCHIVE_MASTER_PATH, "w") as file:
-        file.write(json.dumps({ 
+    with open(_ARCHIVE_MASTER_PATH, "w", encoding="utf8") as file:
+        file.write(json.dumps({
             'comment':  _comment_string(),
             'archives': archives
             }, indent=4))
@@ -252,6 +293,7 @@ def _select_subarchive(archive, subarchive):
     for key, value in archive.items():
         if subarchive is None or key == subarchive or value["subarchive"]["en"] == subarchive:
             return value
+    raise ValueError("Unrecognized subarchive key")
 
 def find_archive(archive_tag, subarchive=None):
     archive = ARCHIVES[archive_tag]
@@ -283,11 +325,11 @@ def batch_page_exists(titles, batch_size=50):
             response = fetch_url(API_URL, params=params, json=True, method="POST")
             pages = response.get("query", {}).get("pages", {})
             for page in pages.values():
-                title = page.get("title")
+                title = canonicalize_title(page.get("title"))
                 results[title] = "missing" not in page
         except Exception as e:
             for title in batch:
-                results[title] = False
+                results[canonicalize_title(title)] = False
             _logger.error(f"Error checking titles {batch}: {e}")
 
     return results
@@ -316,7 +358,7 @@ def _nonexistent_page(page_title):
 
 def _is_table(tag):
     return tag.tag == "table" and [entry for entry in tag.attributes if "wikitable" in entry] != []
- 
+
 def _check_page_existence_chunked(page_links, chunk_size=50):
     exists_map = {}
     title_map = {get_title(link): link for link in page_links}
@@ -325,7 +367,7 @@ def _check_page_existence_chunked(page_links, chunk_size=50):
     #for key, value in title_map.items():
     #    print(key, value)
     #print("check_page_existence_chunked:", titles)
-    
+
     for i in range(0, len(titles), chunk_size):
         title_batch = "|".join(titles[i:i+chunk_size])
         #print("batch:", i, "title length:", len(title_batch))
@@ -336,7 +378,7 @@ def _check_page_existence_chunked(page_links, chunk_size=50):
             'format': 'json'
         }
         data = fetch_url(API_URL, params=params, json=True, method="POST")
-        for page_id, page_data in data['query']['pages'].items():
+        for page_data in data['query']['pages'].values():
             title = page_data['title'].replace(" ", "_").lower()
             #if title == "архів:дажо/1/74/":
             #    print('\n', title, page_data, params)
@@ -347,10 +389,10 @@ def _check_page_existence_chunked(page_links, chunk_size=50):
 
 def _is_category_link(title):
     return title.startswith("Категорія:")
-    
+
 def _is_commons_url(title):
     return title.lower().startswith("c:")
-    
+
 def _map_commons_url(title):
     if title.lower().startswith("c:"):
         return f"https://commons.wikimedia.org/wiki/{title[2:].replace(' ', '_')}"
@@ -378,7 +420,7 @@ def _expand_link_target(link_target, page_title):
         if part == "..":
             if base_parts:
                 base_parts.pop()
-        elif part == "." or part == "":
+        elif part in [".", ""]:
             continue
         else:
             resolved_parts.append(part)
@@ -417,14 +459,14 @@ def _extract_links(wikitext):
         wikitext = mwparserfromhell.parse(str(wikitext))
 
     # Internal wiki link targets
-    links = [str(link.title).strip() for link in wikitext.filter_wikilinks()]    
+    links = [str(link.title).strip() for link in wikitext.filter_wikilinks()]
     commons_links, category_links, int_links = _split_list(links, _is_commons_url, _is_category_link)
     commons_links = [_map_commons_url(title) for title in commons_links]
-    
+
     # External link URLs
     ext_links = [str(link.url).strip() for link in wikitext.filter_external_links()]
 
-    return { 
+    return {
         "commons_links": commons_links,
         "category_links": category_links,
         "internal_links": int_links,
@@ -443,15 +485,15 @@ def _read_wiki_text(page_title, oldid=None):
         params['page'] = page_title
     else:
         raise ValueError("Must provide either page_title or oldid")
-        
+
     data = fetch_url(API_URL, params=params, json=True)
 
     if 'error' in data:
         raise RuntimeError(f"API error: {data['error']}")
-    
+
     return (
-        data['parse']['wikitext']['*'], 
-        data['parse']['revid'], 
+        data['parse']['wikitext']['*'],
+        data['parse']['revid'],
         data['parse']['title'].replace(f'{WIKI_NAMESPACE}:', ''),
     )
 
@@ -460,26 +502,17 @@ _colspan_re = re.compile(r'\bcolspan\s*=\s*["\']?(\d+)["\']?', flags=re.IGNORECA
 def _extract_colspan(text):
     """
     Extracts colspan=N from text.
-    
+
     Returns:
-        (n, cleaned_text): 
+        (n, cleaned_text):
             n (int): colspan value (0 if absent),
             cleaned_text (str): text with the colspan directive removed
     """
     match = _colspan_re.search(text)
     if not match:
-        return 0, text
+        return 0
+    return int(match.group(1))
 
-    colspan = int(match.group(1))
-
-    # Remove the colspan directive
-    start, end = match.span()
-    before = text[:start].rstrip()
-    after = text[end:].lstrip()
-
-    #cleaned_text = f"{before} {after}".strip()
-    return colspan
-    
 def _expand_colspan(cells):
     expanded = []
     for cell in cells:
@@ -510,7 +543,6 @@ _table_cell_token_re = re.compile(r'''
 def _tokenize_wikitext_table_cell(text):
     text = text.strip()
     #print("cell:", text)
-    tokens = []
     colspan = 0
     result_text = ""
     after_pipe = True
@@ -544,7 +576,7 @@ _table_line_token_re = re.compile(r'''
     ''', re.VERBOSE)
 
 def _tokenize_wikitext_table_line(text):
-    
+
     # tokenize the table text line
     text = text.strip()
     #print(f'table line: "{text}"')
@@ -553,7 +585,7 @@ def _tokenize_wikitext_table_line(text):
     def _format_cell(cell_text):
         cell_text, colspan = _tokenize_wikitext_table_cell(cell_text)
         return { "text": cell_text, "colspan": colspan }
-        
+
     # group cells between separators
     result = []
     current_cell = ""
@@ -566,7 +598,7 @@ def _tokenize_wikitext_table_line(text):
     if current_cell:
         result.append(_format_cell(current_cell))
     result = _expand_colspan(result)
-    
+
     return result
 
 def _parse_wikitext_table_lines(wikitext):
@@ -634,7 +666,7 @@ def _parse_wikitext_table(text):
     rows = re.split(r"\s*\|[-—]\s*", str(text))
     rows = [row.strip("\n ") for row in rows]
     rows = [row for row in rows if row] # get rid of empty rows
-    
+
     header = []
     body = _parse_wikitext_table_lines(text)
     if body:
@@ -642,7 +674,7 @@ def _parse_wikitext_table(text):
         header = body.pop(0)
 
     return header, body
-    
+
 def _included_link(link):
     return not any([
         _is_relative_link_target(link),
@@ -752,7 +784,7 @@ def mw_read_page(page_title, oldid=None):
                     ext_links = cell_wikicode.filter_external_links()
                     if ext_links:
                         link = str(ext_links[0].url).strip()
-        
+
                 # Clean text (strip wikitext markup)
                 text = cell_wikicode.strip_code().strip('./ ')
                 row_data.append({'text': form_text_item(text), 'link': link})
@@ -771,7 +803,7 @@ def mw_read_page(page_title, oldid=None):
                 text = form_text_item(link_target.strip("./ "))
                 children.append([{'text': text, 'link': link}])
         else:
-            sub_pages = [link for link in page_links["commons_links"]]
+            sub_pages = list(page_links["commons_links"])
             if len(sub_pages) > 1:
                 # synthesize a table from list of links commons files
                 header = [ form_text_item("-") ]
@@ -790,7 +822,7 @@ def mw_read_page(page_title, oldid=None):
         for cell in row:
             if cell['link']:
                 cell['exists'] = link_existence.get(cell["link"], True)  # True by default
-                # ARCHIVE_BASE is implicit for child links that are within the media wiki 
+                # ARCHIVE_BASE is implicit for child links that are within the media wiki
                 cell["link"] = cell["link"].replace(ARCHIVE_BASE, "")
 
     page["header"] = header
@@ -851,7 +883,7 @@ def report_page_changes(page):
     if not isinstance(page, dict):
         page = page.page
     if 'refmod' not in page:
-        _logger.info(f"No changes to report. Run check_page_changes first.")
+        _logger.info("No changes to report. Run check_page_changes first.")
         return
     _logger.info(
         f'Change report for {get_text(page["title"])},' +
@@ -884,7 +916,7 @@ def check_page_changes(page, reference, report=False):
             if page['doc_link'] != reference['doc_link']:
                 page['doc_link_edit'] = 'changed'
         else:
-                page['doc_link_edit'] = 'added'
+            page['doc_link_edit'] = 'added'
 
     ref_children = dict((get_text(c[0]['text']), c) for c in reference['children'])
     for child in page['children']:
@@ -917,7 +949,7 @@ def _page_update_summary(archive, change_list):
     result = {}
     for item in change_list:
         page_spec = item["title"].split('/')
-        address = (archive.tag, archive.subarchive["en"])
+        address = archive.address[:2]
         address += tuple(entry for entry in page_spec[1:])
         address = (address + ("",) * 3)[:5]
         fond = address[2]
@@ -955,7 +987,7 @@ def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500,
     """
     Collects the latest modification timestamp for each page in a given namespace,
     going back to the specified cutoff date.
-    
+
     Args:
         namespace (int): Namespace number (e.g. 0 = main, 6 = file, etc.)
         cutoff_date (str): timestamp
@@ -1048,8 +1080,8 @@ def get_last_mod(titles):
 # Keep persistable list of latest mod date per page title
 
 class PageTracker:
-    def __init__(self, mod_dates={}, cutoff_date=None):
-        self._mod_dates = mod_dates
+    def __init__(self, mod_dates=None, cutoff_date=None):
+        self._mod_dates = mod_dates if mod_dates else {}
         self._cutoff_date = cutoff_date
 
     def to_dict(self):
@@ -1079,7 +1111,7 @@ class PageTracker:
         candidates = []
         for page, mod_date in updates.items():
             if mod_date != self._mod_dates.get(page):
-                candidates.append(page)
+                candidates.append(canonicalize_title(page))
 
         if candidates:
             # check if these new pages exist
@@ -1092,7 +1124,7 @@ class PageTracker:
         return any_change
 
     def add_titles(self, titles):
-        new_titles = [title for title in titles if title not in self._mod_dates]
+        new_titles = [canonicalize_title(title) for title in titles if title not in self._mod_dates]
         if new_titles:
             # validate title existence
             check = batch_page_exists(new_titles)
@@ -1127,17 +1159,14 @@ class PageTracker:
 # -------------------------------------------------------------------------------
 # Page revision history handling (using wiki API)
 
-def wiki_title(page_title):
-    return f'{WIKI_NAMESPACE}:{page_title}'
-
 def history_url(page_title, limit=1):
     return ('https://uk.wikisource.org/w/api.php?action=query&format=json'
             '&prop=revisions&rvprop=ids|timestamp'
-            f'&rvlimit={limit}&titles={quote(wiki_title(page_title))}')
+            f'&rvlimit={limit}&titles={canonicalize_title(page_title)}')
 
 def page_revision_url(page_title, revid):
     return ('https://uk.wikisource.org/w/index.php?'
-            f'title={quote(wiki_title(page_title))}&oldid={revid}')
+            f'title={canonicalize_title(page_title)}&oldid={revid}')
 
 def get_page_history(page_title, limit=10):
     result = fetch_url(history_url(page_title, limit=limit), json=True)
@@ -1297,8 +1326,7 @@ def _file_link_to_url(link):
     if link.lower().startswith("file:"):
         filename = _normalize_mediawiki_title(link[5:])
         return f"/wiki/File:{filename}"
-    else:
-        return None
+    return None
 
 def _deduplicate_links(links):
     return list(dict.fromkeys(links))

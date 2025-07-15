@@ -1,18 +1,17 @@
 import os
 from copy import copy
+from urllib.parse import quote, unquote
+
 import unittest
-from birddog.wiki import ARCHIVE_BASE
+from birddog.wiki import ARCHIVE_BASE, canonicalize_title, lineage
 from birddog.core import (
     Archive,
-    Fond,
-    Opus,
-    Case,
+    Page,
     ArchiveWatcher,
     )
 from birddog.runtime import Runtime, PageLRU
 
 
-archive_path = '%D0%90%D1%80%D1%85%D1%96%D0%B2:%D0%94%D0%90%D0%96%D0%9E'
 fond_id = '1'
 opus_id = '74'
 case_id = '1'
@@ -21,11 +20,9 @@ case_id = '1'
 class Test(unittest.TestCase):
     def test_Archive(self):
         page = Archive('DAZHO')
-        print('child_class', page.child_class)
-        self.assertTrue(page.child_class == Fond)
         print('default_url', page.default_url)
         self.assertTrue(
-            page.default_url == ARCHIVE_BASE + '/wiki/%D0%90%D1%80%D1%85%D1%96%D0%B2%3A%D0%94%D0%90%D0%96%D0%9E/%D0%94')
+            unquote(page.default_url) == unquote(ARCHIVE_BASE + '/wiki/Архів:ДАЖО/Д'))
         print('id', page.id)
         self.assertTrue(page.id == 'DAZHO')
         print('kind', page.kind)
@@ -37,19 +34,14 @@ class Test(unittest.TestCase):
         print('report', page.report, f'{page.kind},{page.name},{page.lastmod}')
         self.assertTrue(page.report == f'{page.kind},{page.name},{page.lastmod}')
         print('subarchive', page.subarchive)
-        self.assertTrue(page.subarchive["en"] == 'D')
-        self.assertTrue(page.subarchive["uk"] == 'Д')
-        print('tag', page.tag)
-        self.assertTrue(page.tag == 'DAZHO')
-        #print('title', page.title)
-        #self.assertTrue(page.title == 'ДАЖО/Д')
+        self.assertTrue(page.subarchive == 'D')
+        print('title', page.title)
+        self.assertTrue(page.title == 'Архів:ДАЖО/Д')
         print('url', page.url)
-        self.assertTrue(page.url == ARCHIVE_BASE + '/wiki/Архів:ДАЖО/Д')
+        self.assertTrue(page.url == page.default_url)
         
     def test_Fond(self):
         page = Archive('DAZHO').lookup(fond_id)
-        print('child_class', page.child_class)
-        self.assertTrue(page.child_class == Opus)
         print('default_url', page.default_url)
         self.assertTrue(
             page.default_url == f'{ARCHIVE_BASE}/wiki/Архів:ДАЖО/1')
@@ -63,15 +55,13 @@ class Test(unittest.TestCase):
         self.assertTrue(page.refmod == '')
         print('report', page.report)
         self.assertTrue(page.report == f'{page.kind},{page.name.replace(",", "")},{page.lastmod}')
-        #print('title', page.title)
-        #self.assertTrue(page.title == f'ДАЖО/{fond_id}')
+        print('title', page.title)
+        self.assertTrue(page.title == f'Архів:ДАЖО/{fond_id}')
         print('url', page.url)
         self.assertTrue(page.url == page.default_url)
        
     def test_Opus(self):
         page = Archive('DAZHO').lookup(fond_id).lookup(opus_id)
-        print('child_class', page.child_class)
-        self.assertTrue(page.child_class == Case)
         print('default_url', page.default_url)
         self.assertTrue(page.default_url == f'{page.parent.default_url}/{opus_id}')
         print('id', page.id)
@@ -84,16 +74,14 @@ class Test(unittest.TestCase):
         self.assertTrue(page.refmod == '')
         print('report', page.report)
         self.assertTrue(page.report == f'{page.kind},{page.name.replace(",", "")},{page.lastmod}')
-        #print('title', page.title)
+        print('title', page.title)
         #print(f'{page.parent.title}/{opus_id}')
-        #self.assertTrue(page.title == f'{page.parent.title}/{opus_id}')
+        self.assertTrue(page.title == f'{page.parent.title}/{opus_id}')
         print('url', page.url)
         self.assertTrue(page.url == page.default_url)
 
     def test_Case(self):
         page = Archive('DAZHO').lookup(fond_id).lookup(opus_id).lookup(case_id)
-        print('child_class', page.child_class)
-        self.assertTrue(page.child_class is None)
         print('default_url', page.default_url)
         self.assertTrue(
             page.default_url == f'{page.parent.default_url}/{case_id}')
@@ -107,20 +95,20 @@ class Test(unittest.TestCase):
         self.assertTrue(page.refmod == '')
         print('report', page.report)
         self.assertTrue(page.report == f'{page.kind},{page.name.replace(",", "")},{page.lastmod}')
-        #print('title', page.title)
-        #self.assertTrue(page.title == f'{page.parent.title}/{case_id}')
+        print('title', page.title)
+        self.assertTrue(page.title == f'{page.parent.title}/{case_id}')
         print('url', page.url)
         self.assertTrue(page.url == page.default_url)
 
     def test_PageLRU(self):
         lru = PageLRU()
-        page = lru.lookup("DAHMO", "D")
+        page = lru.lookup_by_address("DAHMO", "D")
         print(page.title)
-        page = lru.lookup("DAHMO", "D", "1")
+        page = lru.lookup_by_address("DAHMO", "D", "1")
         print(page.title)
-        page = lru.lookup("DAHMO", "D", "2", "3")
+        page = lru.lookup_by_address("DAHMO", "D", "2", "3")
         print(page.title)
-        page = lru.lookup("DAHMO", "R", "Р-5", "1")
+        page = lru.lookup_by_address("DAHMO", "R", "Р-5", "1")
         print(page.title)
 
     def test_ArchiveWatcher(self):
@@ -146,8 +134,58 @@ class Test(unittest.TestCase):
         for key in list(watcher.unresolved.keys())[::77]:
             address = key.rstrip(',').split(',') + 3 * [None]
             address = address[:5]
-            page = runtime.lookup(*address)
+            page = runtime.lookup_by_address(*address)
             self.assertEqual(page.lastmod, watcher.unresolved[key]['modified'])
+
+    def test_Titles(self):
+        titles = [ 
+            "Архів:Архівний_відділ_виконавчого_комітету_Кременчуцької_міської_ради/2-ОС/1",
+            "Архів:ДАПО/Р-9126/2",
+            "Архів:ДАЖО/1/1",
+            "Архів:ДАК/312/1",
+            "Архів:ДАЖО/1/74",
+            "Архів:Лука_Мала",
+            "Архів:ЦДІАК/1/1",
+            "Архів:ДАХО/Д",
+            "Архів:ДАПО/Р/1–1000",
+            "Архів:ЦДІАК/28",
+            "Архів:ЦДІАК/28/1",
+            "Архів:ДАЖО/1",
+            "Архів:ДАК/Р-352",
+            "Архів:Архівний відділ виконавчого комітету Кременчуцької міської ради/Р",
+            "Архів:ДАЖО/Д",
+            "Архів:ДАДнО/Р-6478/2", 
+            "Архів:ДАЖО/752", 
+            "Архів:ДАКрО/225/1/25", 
+            "Архів:ДАКрО/225", 
+            "Архів:ДАСО/Р", 
+            "Архів:ДАХмО/К", 
+            "Архів:ДАКрО/225/1/144а", 
+            "Архів:ДАПО/978/1",
+            "Архів:ДАПО/Р",
+            "Архів:ДАХмО/Р-6193",
+            "Архів:ДАКрО/П-5907/2Р",
+            "Архів:ДАОО/Р-8085/1",
+            "Архів:ДАКрО/225/1",
+            "Архів:ДАПО/1072/1/1",
+            "Архів:ДАПО/978/1/135",
+            "Архів:ДАПО/978",
+            "Архів:ДАКО/Р-5634/1/3092",
+            "Архів:ІР_НБУВ/130/1",
+            "Архів:ІР НБУВ/232/1"
+            ]
+        runtime = Runtime()
+
+        def test_title(title, runtime):
+            page = runtime.lookup_by_title(title)
+            self.assertEqual(page.title, title)
+            page1 = runtime.lookup_by_address(*page.address)
+            self.assertEqual(page1.title, title)
+        
+        for title in titles:    
+            ancestry = lineage(title)
+            for item in ancestry:
+                test_title(item, runtime)
 
 if __name__ == "__main__":
     unittest.main()

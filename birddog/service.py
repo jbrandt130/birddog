@@ -38,7 +38,11 @@ from birddog.cache import (
     save_cached_object,
     remove_cached_object,
     CacheMissError)
-from birddog.wiki import check_page_changes, all_archives
+from birddog.wiki import (
+    check_page_changes, 
+    all_archives, 
+    page_address
+    )
 from birddog.logging import (
     get_logger,
     get_log_buffer,
@@ -446,31 +450,22 @@ def page_data(archive=None, subarchive=None, fond=None, opus=None, case=None):
     if error_response:
         return error_response, status
 
-    if not archive:
-        page_title = request.args.get('title')
-        try:
-            address = runtime.lookup_address(page_title)
-            (archive, subarchive, fond, opus, case) = address
-        except ValueError as e:
-            _logger.error(f'Title lookup failed: {e}')
-            return 'Page not found', 404
-
     try:
         if not archive:
             page_title = request.args.get('title')
-            (archive, subarchive, fond, opus, case) = runtime.lookup_address(page_title)
-        page = runtime.lookup(archive, subarchive, fond, opus, case)
+            (archive, subarchive, fond, opus, case) = page_address(page_title)
+        _logger.info(f"/page request: {archive}, {subarchive}, {fond}, {opus}, {case}")
+        page = runtime.lookup_by_address(archive, subarchive, fond, opus, case)
         if page:
-            if page.kind == 'archive':
-                subarchive = page.subarchive["en"]
             compare = request.args.get('compare')
             if compare:
                 page = _compare_page(page, compare)
 
             # recheck page address (which could be different)
-            address = page.name.split('/') + 3 * [None]
-            true_fond, true_opus, true_case = address[1:4]
-
+            address = page_address(page.title)
+            true_fond, true_opus, true_case = address[2:]
+            subarchive = address[1]
+            
             # prevent mutation of page data in LRU/cache
             page_dict = deepcopy(page.page)
             page_dict['archive'] = archive
@@ -508,7 +503,7 @@ def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
         return error_response, status
 
     try:
-        page = runtime.lookup(archive, subarchive, fond, opus, case)
+        page = runtime.lookup_by_address(archive, subarchive, fond, opus, case)
         if page:
             page.prepare_to_download()
             # put the page into a comparison state if requested
@@ -717,7 +712,7 @@ def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=Non
     if error_response:
         return error_response, status
     if archive:
-        page = runtime.lookup(archive, subarchive, fond, opus, case)
+        page = runtime.lookup_by_address(archive, subarchive, fond, opus, case)
         if page:
             # start new translation
             _start_translation(user.email, page)
