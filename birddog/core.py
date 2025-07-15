@@ -556,10 +556,12 @@ class ArchiveWatcher:
         #_logger.info(f'ArchiveWatcher.resolve: before\n\tunresolved: {self._unresolved}\n\tresolved: {self._resolved}')
         if deep:
             _logger.info(f'ArchiveWatcher: deep resolve: {item}')
-            item = item.rstrip(',')
+            item = item.rstrip(',').split(",")
             for key in list(self.unresolved.keys()):
-                if key.startswith(item):
+                split_key = key.split(",")[:len(item)]
+                if split_key == item:
                     unresolved_item = self._unresolved.pop(key)
+                    _logger.info(f'ArchiveWatcher: deep resolving subitem: {key}; {item}; {unresolved_item}')
                     self._resolved.setdefault(key, []).append(unresolved_item)
         elif item in self._unresolved:
             unresolved_item = self._unresolved.pop(item)
