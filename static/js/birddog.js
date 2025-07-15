@@ -236,6 +236,56 @@ async function load_page(
     }
 }
 
+async function load_page_by_title(page_title, compare=null) {
+    try {
+        save_scroll_position();
+        var url = `/page?title=${page_title}`;
+        if (compare != null)
+            url += `&compare=${compare}`
+        console.log(`Fetching data from: ${url}`);
+
+        // Show the spinner
+        show('browse-spinner');
+        hide('browse-page-content');
+
+        // Make the GET request
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            hide('browse-spinner');
+            show('browse-page-content');
+            throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        // Parse the JSON response
+        const data = await response.json();
+        console.log('Data loaded:', data);
+
+        current_page = data;
+
+        // Process and display the data
+        render_page_data(data);
+
+        // Populate the history dropdown
+        render_history(data)
+
+        // after delay to get the page populated, update scroll
+        setTimeout(restore_scroll_position, 100);
+        
+        // Hide the spinner after loading
+        hide('browse-spinner');
+        show('browse-page-content');
+    } catch (error) {
+        console.error('Error loading page:', error.message);
+        alert(`Failed to load data: ${error.message}`);
+    }
+}
+
 async function translate_page() {
     //console.log('translate', current_page.name);
     const path = [
@@ -337,6 +387,12 @@ async function download_page() {
 // handle table row click
 function on_row_click(page_data, index) {
     console.log(`click on:  ${get_text(page_data.title)}[${index}]`);
+    const child_title = page_data.children[index][0].link.replace("/wiki/","");
+    console.log(`child title: ${child_title}`)
+
+    load_page_by_title(child_title);
+
+    /*
     archive_id = page_data.archive;
     subarchive_id = page_data.subarchive;
     fond_id = page_data.fond;
@@ -370,6 +426,7 @@ function on_row_click(page_data, index) {
     }
 
     load_page(archive_id, subarchive_id, fond_id, opus_id, case_id);
+    */
 }
 
 // render a data page
