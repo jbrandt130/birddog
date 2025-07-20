@@ -57,10 +57,10 @@ class PageLRU:
     def lookup_child(self, page, child_id, runtime=None):
         return self.lookup_by_title(self._child_key(page, child_id), runtime=runtime)
 
-    def lookup_by_address(self, archive, subarchive, fond=None, opus=None, case=None):
+    def lookup_by_address(self, archive, subarchive, fond=None, opus=None, case=None, runtime=None):
         archive_title = ARCHIVE_BY_ADDRESS[(archive, subarchive)]
         _logger.info(f"PageLRU.lookup_by_address({archive}, {subarchive}, {fond}, {opus}, {case}), archive={archive_title}")
-        page = self.lookup_by_title(archive_title)
+        page = self.lookup_by_title(archive_title, runtime=runtime)
         if fond:
             page = page[fond]
             if opus:
@@ -256,7 +256,7 @@ class Runtime:
         return page_address(title)
 
     def lookup_by_address(self, archive, subarchive, fond=None, opus=None, case=None):
-        return self._page_lru.lookup_by_address(archive, subarchive, fond, opus, case)
+        return self._page_lru.lookup_by_address(archive, subarchive, fond, opus, case, runtime=self)
 
     def lookup_by_title(self, title):
         return self._page_lru.lookup_by_title(title, runtime=self)

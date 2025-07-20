@@ -3,6 +3,8 @@
 
 import re
 import string
+import os
+import glob
 from pathlib import Path
 from copy import copy
 from datetime import datetime
@@ -14,7 +16,6 @@ from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import get_column_letter
 
 from birddog.utility import get_text, is_linked, link_status
-from birddog.ai import classify_table_columns
 from birddog.wiki import ARCHIVE_BASE
 
 from birddog.logging import get_logger
@@ -127,12 +128,20 @@ def _process_formula(sheet, cell, first_child_row, last_child_row):
 
 def _map_index(column_header_map, index):
     if index is None:
-        return index
-    if isinstance(index, int):
-        return index
-    if _is_integer(index):
-        return int(index)
-    return int(column_header_map.get(index))
+        return None
+
+    # Convert stringified integers
+    if isinstance(index, int) or _is_integer(index):
+        return [int(index)]
+
+    # Look up by name
+    result = column_header_map.get(index)
+    if isinstance(result, int):
+        return [result]
+    if isinstance(result, list):
+        return result
+
+    return None
 
 def _set_url(cell, link_flag, url, edit_cell):
     if link_flag == "exists":
@@ -144,13 +153,13 @@ def _set_url(cell, link_flag, url, edit_cell):
     else: # "unlinked" status
         cell.font = copy(edit_cell['unlinked'].font)
 
-def _process_table_column(page, edit_cell, sheet, cell, parse, match):
+def _process_table_column(page, column_header_map, edit_cell, sheet, cell, parse, match):
     row = cell.row
     col = cell.column
     index = parse['index']
-    mapped_index = _map_index(page.column_header_map, index)
-    if index is not None or mapped_index is not None:
-        _logger.info(f'column map: {index} -> {mapped_index}')
+    mapped_index_list = _map_index(column_header_map, index)
+    if index is not None or mapped_index_list is not None:
+        _logger.info(f'column map: {index} -> {mapped_index_list}')
     cell_text = _get_cell_text(cell)
     for child in page.children:
         child_cell = sheet.cell(row=row, column=col)
@@ -158,26 +167,23 @@ def _process_table_column(page, edit_cell, sheet, cell, parse, match):
             # propagate border, style, font, and alignment to all rows
             _copy_cell_properties(cell, child_cell)
         if parse['expr'] == 'child':
-            if mapped_index is not None:
-                if mapped_index < len(child):
-                    item = child[mapped_index]
-                    sub = unescape(get_text(item['text']))
-                    if 'edit' in item:
-                        edit = item['edit']
-                        if edit in edit_cell:
-                            child_cell.fill = copy(edit_cell[edit].fill)
-                    child_cell.value = sub
-                    if parse['modifier'] == 'linked':
-                        url = _child_url(child)
-                        _set_url(child_cell, link_status(item), url, edit_cell)
-                    elif parse['modifier'] == 'doc_link':
-                        url = _child_doc_url(child)
-                        _set_url(child_cell, link_status(item), url, edit_cell)
-                    elif parse['modifier'] == 'sheetname':
-                        #_logger.info(f'child sheetname directive: {child_cell.coordinate}, {child[0]}')
-                        new_value = cell_text.replace(match, _child_sheetname(page, child))
-                        #_logger.info(f'. replacement: {new_value}')
-                        child_cell.value = new_value
+            if mapped_index_list is not None:
+                cell_value = []
+                for mapped_index in mapped_index_list:
+                    if mapped_index < len(child):
+                        item = child[mapped_index]
+                        cell_value.append(unescape(get_text(item['text'])))
+                        if 'edit' in item:
+                            edit = item['edit']
+                            if edit in edit_cell:
+                                child_cell.fill = copy(edit_cell[edit].fill)
+                child_cell.value = "; ".join(cell_value)
+                if parse['modifier'] == 'linked':
+                    url = _child_url(child)
+                    _set_url(child_cell, link_status(item), url, edit_cell)
+                elif parse['modifier'] == 'doc_link':
+                    url = _child_doc_url(child)
+                    _set_url(child_cell, link_status(item), url, edit_cell)
         elif parse['expr'] == 'empty':
             child_cell.value = ''
         elif parse['expr'] == 'col':
@@ -219,9 +225,17 @@ def _process_title(page, sheet):
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _TEMPLATE_DIR = _PROJECT_ROOT / 'resources' / 'xlsx_templates'
 
-def export_page(page, dest_file=None, lru=None):
+def list_templates():
+    pattern = os.path.join(_TEMPLATE_DIR, '*.xlsx')
+    return [os.path.basename(f) for f in glob.glob(pattern)]
+
+def export_page(page, dest_file=None, template=None, column_map=None, lru=None):
     # load template file that matches this kind of page
-    template_file = f'{_TEMPLATE_DIR}/{page.kind}.xlsx'
+    _logger.info(f"export_page({page.title}: template='{template}', column_map='{column_map}')")
+    if not template:
+        template_file = f'{_TEMPLATE_DIR}/{page.kind}.xlsx'
+    else:
+        template_file = f'{_TEMPLATE_DIR}/{template}'
     _logger.info(f'opening template file {template_file}...')
     workbook = load_workbook(filename = template_file)
     sheet = workbook.active
@@ -229,6 +243,9 @@ def export_page(page, dest_file=None, lru=None):
     max_col = sheet.max_column
     max_col_letter = get_column_letter(max_col)
     _logger.info(f'sheet dimensions: {max_row} rows, {max_col} cols')
+
+    # construct column header map if needed
+    column_header_map = column_map if column_map else page.column_header_map
 
     _process_title(page, sheet)
 
@@ -268,7 +285,14 @@ def export_page(page, dest_file=None, lru=None):
         cell, matches, parses = edit
         for match, parse in zip(matches, parses):
             if parse['expr'] in ['empty', 'child', 'col']:
-                _process_table_column(page, edit_cell, sheet, cell, parse, match)
+                _process_table_column(
+                    page, 
+                    column_header_map, 
+                    edit_cell, 
+                    sheet, 
+                    cell, 
+                    parse, 
+                    match)
             elif parse['expr'] == 'edit':
                 # {edit} cells contain formatting for editing highlights (caught above)
                 pass

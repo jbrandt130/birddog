@@ -381,52 +381,107 @@ async function download_page() {
     }
 }
 
+function sanitize_id(column_name) {
+  return 'export_' + column_name.toLowerCase().replace(/\s+/g, '_');
+}
+
+async function open_export_modal() {
+  try {
+    const title = current_page.title;
+    const response = await fetch(`/export?title=${encodeURIComponent(title)}`);
+    if (!response.ok) throw new Error(`Failed to load export config: ${response.status}`);
+    const data = await response.json();
+    console.log("export data:", data)
+
+    const {
+      column_headers,
+      column_classes,
+      column_header_map,
+      default_template,
+      templates,
+      title: page_title
+    } = data;
+
+    // Set modal title
+    document.getElementById("exportModalLabel").textContent = `Download: ${page_title}`;
+
+    // Populate the template dropdown
+    const templateSelect = document.getElementById("templateSelect");
+    templateSelect.innerHTML = templates.map(t => {
+      const displayName = t.replace(/\.xlsx$/i, '')
+                           .replace(/_/g, ' ')
+                           .replace(/\b\w/g, c => c.toUpperCase());
+      return `<option value="${t}">${displayName}</option>`;
+    }).join("");
+    templateSelect.value = default_template;
+
+    // Render column assignment inputs
+    const container = document.getElementById("export-columns-container");
+    container.innerHTML = "";  // Clear any previous content
+    const tagify_map = {};
+
+    column_classes.forEach(col => {
+      const col_id = sanitize_id(col);
+      const div = document.createElement("div");
+      div.className = "mb-3";
+      div.innerHTML = `
+        <label class="form-label">Export Column: ${col}</label>
+        <input class="form-control tag-input" id="${col_id}" placeholder="Select source columns...">
+      `;
+      container.appendChild(div);
+    });
+
+    // Initialize Tagify for each input
+    column_classes.forEach(col => {
+      const inputId = sanitize_id(col);
+      const input = document.getElementById(inputId);
+      if (input) {
+        const tagify = new Tagify(input, {
+          whitelist: column_headers,
+          dropdown: {
+            enabled: 0,
+            fuzzySearch: true,
+            position: 'auto'
+          },
+          enforceWhitelist: true,
+          duplicates: true
+        });
+        tagify_map[col] = tagify;
+
+        // Prepopulate from column_header_map if available
+        const headerIndex = column_header_map[col];
+        if (headerIndex !== undefined && column_headers[headerIndex]) {
+          tagify.removeAllTags();
+          tagify.addTags([column_headers[headerIndex]]);
+        }
+      }
+    });
+
+    // Save for use on submit
+    window._export_tagify_map = tagify_map;
+    window._export_column_classes = column_classes;
+    window._export_page_title = page_title;
+    window._export_column_headers = column_headers;
+
+    // Show the modal
+    const modal = new bootstrap.Modal(document.getElementById("exportModal"));
+    modal.show();
+
+  } catch (err) {
+    console.error("Failed to open export modal:", err);
+    alert("Unable to load export configuration.");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // UI RENDERING AND HANDLERS
 
 // handle table row click
 function on_row_click(page_data, index) {
-    console.log(`click on:  ${get_text(page_data.title)}[${index}]`);
+    console.log(`click on:  ${page_data.title}[${index}]`);
     const child_title = page_data.children[index][0].link.replace("/wiki/","");
     console.log(`child title: ${child_title}`)
-
     load_page_by_title(child_title);
-
-    /*
-    archive_id = page_data.archive;
-    subarchive_id = page_data.subarchive;
-    fond_id = page_data.fond;
-    opus_id = page_data.opus;
-    case_id = page_data.case;
-
-    child_id = get_text(page_data.children[index][0].text);
-    console.log(child_id);
-    switch (page_data.kind) {
-        case 'archive':
-            fond_id = child_id;
-            opus_id = null;
-            case_id = null;
-            break;
-
-        case 'fond':
-            opus_id = child_id;
-            case_id = null;
-            break;
-
-        case 'opus':
-            case_id = child_id;
-            break;
-
-        case 'case':
-            console.log('Ignoring case expansion click...');
-            return;
-
-        default:
-            return;
-    }
-
-    load_page(archive_id, subarchive_id, fond_id, opus_id, case_id);
-    */
 }
 
 // render a data page
@@ -599,7 +654,7 @@ function render_page_data(data) {
     // set button enables
     enable_if("resolve-btn", needs_resolve(data));
     enable_if("translate-btn", data.needs_translation);
-    enable_if("download-btn", data.kind != 'case');
+    //enable_if("download-btn", true);
 
     render_breadcrumbs(data);
     update_archive_select();
@@ -642,14 +697,10 @@ function render_history(data) {
 }
 
 function handle_breadcrumb_click(parts, index) {
-    console.log(`handle_breadcrumb_click: ${parts}, ${index}`);
-    let archive_parts = parts[0].split('-');
-    let archive_id = archive_parts[0];
-    let subarchive_id = archive_parts.length > 1 ? archive_parts[1] : '_';
-    let fond_id = index >= 1 ? parts[1] : '';
-    let opus_id = index >= 2 ? parts[2] : '';
-    let case_id = index >= 3 ? parts[3] : '';
-    load_page(archive_id, subarchive_id, fond_id, opus_id, case_id);
+    //console.log(`handle_breadcrumb_click: ${parts}, ${index}`);
+    let title = current_page.lineage[current_page.lineage.length-1-index]
+    console.log(`handle_breadcrumb_click: ${parts}, ${index}, ${title}`);
+    load_page_by_title(title);
 }
 
 function render_breadcrumbs(data) {
@@ -660,14 +711,11 @@ function render_breadcrumbs(data) {
     if (data.subarchive != "_")
         archive_name += `-${data.subarchive}`
     parts = [ archive_name ];
-    if (!empty(data.fond)) {
-        parts.push(data.fond);
-        if (!empty(data.opus)) {
-            parts.push(data.opus);
-            if (!empty(data.case)) {
-                parts.push(data.case);
-            }
-        }
+    // Add from lineage, from penultimate to first
+    for (let i = data.lineage.length - 2; i >= 0; i--) {
+        const item = data.lineage[i];
+        const lastSegment = item.split("/").pop();
+        parts.push(lastSegment);
     }
 
     //console.log('parts = ', parts);
@@ -1426,6 +1474,76 @@ function on_loaded() {
             msgBox.className = 'text-danger';
           }
         });
+
+        document.getElementById("submitExport").addEventListener("click", () => {
+            const selectedTemplate = document.getElementById("templateSelect").value;
+
+            // map selected labels to indices
+            const column_map = {};
+            window._export_column_classes.forEach(col => {
+                const tagify = window._export_tagify_map[col];
+                if (tagify) {
+                  column_map[col] = tagify.value.map(tag => {
+                    const idx = window._export_column_headers.indexOf(tag.value);
+                    if (idx === -1) {
+                      console.warn(`Header not found: "${tag.value}"`);
+                    }
+                    return idx;
+                  }).filter(i => i !== -1);  // ignore unfound labels
+                }
+            });
+
+            const payload = {
+                title: window._export_page_title,
+                template: selectedTemplate,
+                column_map: column_map
+            };
+
+            // Show the spinner
+            show('browse-spinner');
+            hide('browse-page-content');
+
+            // hide the export modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('exportModal'));
+            if (modal) modal.hide();
+
+            var filename = "download.xlsx";
+
+            fetch("/download", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+              })
+              .then(response => {
+                if (!response.ok) throw new Error("Export failed");
+                // Extract filename from Content-Disposition header (if available)
+                const contentDisposition = response.headers.get('Content-Disposition');
+                filename = contentDisposition
+                    ? contentDisposition.split('filename=')[1]?.replace(/['"]/g, '')
+                    : 'download.xlsx';
+                return response.blob();
+              })
+              .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                // Hide the spinner after loading
+                hide('browse-spinner');
+                show('browse-page-content');
+              })
+              .catch(error => {
+                console.error("Export error:", error);
+                alert("Export failed: " + error.message);
+                // Hide the spinner after loading
+                hide('browse-spinner');
+                show('browse-page-content');
+              });
+            });
 
         // constrain range for watchlist cutoff date
         const today = new Date().toISOString().split('T')[0];

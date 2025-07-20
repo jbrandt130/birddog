@@ -7,6 +7,7 @@ Ukraine records archive monitor and scraper.
 
 from urllib.parse import unquote
 import regex
+from copy import copy, deepcopy
 
 from birddog.utility import (
     get_text,
@@ -51,13 +52,6 @@ def decode_subarchive(subarchive):
 
 # -------------------------------------------------------------------------------
 # class definitions for each of the page types in the archive
-# Page is the abstract base class that implements most of the logic
-#     subclasses of Page are:
-#        Archive
-#        Fond
-#        Opus
-#        Case
-# The archive is organized hierarchically as Archive->Fond->Opus->Case
 
 def _entry_hit(entry, entry_id):
     if match_text(entry['text'], entry_id):
@@ -75,6 +69,7 @@ class Page:
         self._title = canonicalize_title(title)
         self._page = {}
         self._column_header_map = None
+        self._detached = False
         if not self._cache_load():
             # not in the cache - get it
             if self.default_url is not None:
@@ -96,6 +91,12 @@ class Page:
             self.key = key
             message = f"Lookup failed for key '{key}' in page '{name}'"
             super().__init__(message)
+
+    def detached_copy(self):
+        result = copy(self)
+        result._page = deepcopy(self._page)
+        result._detached = True
+        return result
 
     @property
     def _cache_path(self):
@@ -123,6 +124,9 @@ class Page:
     def _cache_save(self):
         """Store the page contents in the cache, later retrievable under modification date.
         """
+        if self._detached:
+            # don't save detached pages to cache
+            return
         if self.refmod:
             raise ValueError(f"Cannot save page when in comparison state: {self.name}")
         if self.lastmod:
@@ -224,6 +228,10 @@ class Page:
     @property
     def name(self):
         return page_name(self._title)
+
+    @property
+    def display_name(self):
+        return page_name(self._title).replace("/", " ")
 
     @property
     def archive_name(self):

@@ -32,7 +32,7 @@ from birddog.runtime import Runtime, PageLRU
 from birddog.core import (
     ArchiveWatcher,
     )
-from birddog.excel import export_page
+from birddog.excel import export_page, list_templates
 from birddog.cache import (
     load_cached_object,
     save_cached_object,
@@ -41,8 +41,11 @@ from birddog.cache import (
 from birddog.wiki import (
     check_page_changes, 
     all_archives, 
-    page_address
+    page_address,
+    lineage
     )
+from birddog.ai import list_column_classes
+from birddog.utility import get_text
 from birddog.logging import (
     get_logger,
     get_log_buffer,
@@ -50,6 +53,7 @@ from birddog.logging import (
     get_event_logger,
     summarize_duration_by_path_group,
     user_histogram)
+
 
 # ---- INITIALIZATION  --------------------------------------------------
 
@@ -423,8 +427,8 @@ def _get_current_user():
 
 def _compare_page(page, ref_date):
     # avoid making changes to cached page - work on copy instead
-    result = deepcopy(page)
-    reference = deepcopy(result)
+    result = page.detached_copy()
+    reference = page.detached_copy()
     reference.revert_to(ref_date)
     check_page_changes(result, reference)
     return result
@@ -468,6 +472,8 @@ def page_data(archive=None, subarchive=None, fond=None, opus=None, case=None):
             
             # prevent mutation of page data in LRU/cache
             page_dict = deepcopy(page.page)
+            page_dict['title'] = page.title
+            page_dict['lineage'] = lineage(page.title)
             page_dict['archive'] = archive
             page_dict['subarchive'] = subarchive
             page_dict['fond'] = true_fond
@@ -492,18 +498,19 @@ def ascii_filename(name):
     _logger.info(f'normalizing filename: {name} -> {new_name}')
     return new_name or "download"
 
-@app.route('/download/<archive>', methods=['GET'])
-@app.route('/download/<archive>/<subarchive>', methods=['GET'])
-@app.route('/download/<archive>/<subarchive>/<fond>', methods=['GET'])
-@app.route('/download/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
-@app.route('/download/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
-def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
+# ---- EXPORT -------------------------------------------------
+
+@app.route('/download', methods=['POST'])
+def download_file():
     user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
 
+    data = request.json
+    _logger.info(f"download: data={data}")
+
     try:
-        page = runtime.lookup_by_address(archive, subarchive, fond, opus, case)
+        page = runtime.lookup_by_title(data["title"])
         if page:
             page.prepare_to_download()
             # put the page into a comparison state if requested
@@ -515,7 +522,12 @@ def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
             clean_name = ascii_filename(page.name if page.name else "unnamed")
 
             excel_io = BytesIO()
-            export_page(page, excel_io, lru=runtime.page_lru)
+            export_page(
+                page, 
+                excel_io, 
+                template=data["template"], 
+                column_map=data["column_map"], 
+                lru=runtime.page_lru)
             excel_io.seek(0)  # Rewind buffer for reading
 
             return send_file(
@@ -532,6 +544,55 @@ def download_file(archive, subarchive=None, fond=None, opus=None, case=None):
     except Exception as e:
         _logger.exception(f'Error: {e}')
         return jsonify({'error': 'Internal server error'}), 500
+
+def _make_unique(string_list):
+    # ensure strings in a list are unique (for column headers in export dialog)
+    result = []
+    seen = set()
+    n = 2
+    for source_string in string_list:
+        s = source_string
+        while s in seen:
+            s = f"{source_string}{n}"
+            n += 1
+        result.append(s)
+        seen.add(s)
+    return result
+
+@app.route("/export")
+def export_dialog():
+    user, error_response, status = _get_current_user()
+    if error_response:
+        return error_response, status
+
+    try:
+        page_title = request.args.get('title')
+        if not page_title:
+            return jsonify({'error': 'Missing required parameter "title"'}), 400
+        page = runtime.lookup_by_title(page_title)
+    except Exception as e:
+        _logger.exception(f'Error: {e}')
+        return jsonify({'error': 'Page not found'}), 404
+
+    templates = list_templates()
+    # allow for case pages to be downloaded by choosing opus as default, otherwise
+    # match template name to kind of page (archive, fond, opus)
+    default_template = (
+        [item for item in list_templates() if page.kind in item] or ["opus.xlsx"])[0]   
+    column_headers = [get_text(item) for item in page.header]
+    column_headers = _make_unique(column_headers)
+    header_map = page.column_header_map
+    _logger.info(header_map)
+
+    data = {
+        "title":                page_title,
+        "default_template":     default_template,
+        "templates":            templates, 
+        "column_classes":       list_column_classes(), 
+        "column_headers":       column_headers,
+        "column_header_map":    header_map,    
+    }
+    return jsonify(data), 200
 
 # ---- WATCHLIST MANAGEMENT -------------------------------------------------
 

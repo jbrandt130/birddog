@@ -240,6 +240,9 @@ def _default_labels(page):
 _total_inferences = 0
 _successful_inferences = 0
 
+def list_column_classes():
+    return ["ID", "DESCRIPTION", "DATE"]
+
 def classify_table_columns(page):
     global _backoff_until, _successful_inferences, _total_inferences
     classes = {
