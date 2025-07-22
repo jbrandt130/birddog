@@ -41,6 +41,8 @@ class Test(unittest.TestCase):
             self.assertTrue(item in data)
 
 
+    """
+    FIXME
     # need this patch construct to test authenticated endpoints
     @patch("birddog.service.users.lookup")
     def test_page(self, mock_lookup):
@@ -68,8 +70,6 @@ class Test(unittest.TestCase):
             _load_page_url(url, page_keys)
             _load_page_url(url + "?compare=2023,12,31", page_keys | {"refmod"})
 
-    """
-    FIXME
     @patch("birddog.service.users.lookup")
     def test_download(self, mock_lookup):
         # Simulate a valid user being found

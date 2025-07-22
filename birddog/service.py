@@ -91,11 +91,12 @@ def _watcher_cache_path(email, archive, subarchive):
     return f'watchers/{email}/{archive}-{subarchive}.json'
 
 class User:
-    def __init__(self, name, email, password, watchlist=None, is_hashed=False):
+    def __init__(self, name, email, password, watchlist=None, preferences=None, is_hashed=False):
         self.name = name
         self.email = email
         self.password_hash = password if is_hashed else generate_password_hash(password)
         self.watchlist = watchlist or {}
+        self.preferences = preferences or {}
         self._lock = threading.RLock()
 
     def check_password(self, password):
@@ -191,6 +192,13 @@ class User:
             else:
                 return [{'name': k, **v} for k, v in watcher.unresolved.items()]
 
+    def set_preference(self, key, value):
+        self.preferences[key] = value
+        self.save()
+
+    def get_preference(self, key):
+        return self.preferences.get(key)
+
     def save(self):
         with self._lock:
             save_cached_object(self.to_dict(), f'users/{self.email}.json')
@@ -199,7 +207,8 @@ class User:
         return {
             'name': self.name,
             'password': self.password_hash,
-            'watchlist': self.watchlist
+            'watchlist': self.watchlist,
+            'preferences': self.preferences
         }
 
     @classmethod
@@ -209,6 +218,7 @@ class User:
             email=email,
             password=d['password'],
             watchlist=d.get('watchlist', {}),
+            preferences=d.get('preferences', {}),
             is_hashed=True
         )
 
@@ -255,13 +265,35 @@ class Users:
     def logout(self):
         self._session.pop('user', None)
 
+
+def _get_current_user():
+    user_session = session.get('user')
+    if not user_session:
+        return None, jsonify({'error': 'Not found'}), 404
+
+    email = user_session.get('email')
+    user = users.lookup(email)
+    if not user:
+        return None, jsonify({'error': 'Not found'}), 404
+
+    return user, None, None
+
 # ---- FRONT END PAGES --------------------------------------------------------
 
 # Home Route (Shows the landing page)
 @app.route('/')
 def home():
-    user = session.get('user')
-    return render_template('index.html', user=user, debug=app.debug)
+    user_session = session.get('user')
+    if user_session:
+        start_title = None
+        user, error_response, status = _get_current_user()
+        if user:
+            start_title = user.get_preference("last_page")
+    return render_template(
+        'index.html', 
+        user=user_session, 
+        start_title=start_title, 
+        debug=app.debug)
 
 # ---- SESSION MANAGEMENT -----------------------------------------------------
 
@@ -413,18 +445,6 @@ def _compress_history(history, max_entries=30):
 
     return compressed
 
-def _get_current_user():
-    user_session = session.get('user')
-    if not user_session:
-        return None, jsonify({'error': 'Not found'}), 404
-
-    email = user_session.get('email')
-    user = users.lookup(email)
-    if not user:
-        return None, jsonify({'error': 'Not found'}), 404
-
-    return user, None, None
-
 def _compare_page(page, ref_date):
     # avoid making changes to cached page - work on copy instead
     result = page.detached_copy()
@@ -483,6 +503,8 @@ def page_data(archive=None, subarchive=None, fond=None, opus=None, case=None):
             page_dict['name'] = page.name
             page_dict['needs_translation'] = page.needs_translation
             page_dict['history'] = _compress_history(page.history(cutoff_date='2000'))
+
+            user.set_preference("last_page", page.title)
             return jsonify(page_dict), 200
         _logger.error(f'PageLRU({archive}, {subarchive}, {fond}, {opus}, {case}) returned None')
         return 'Page not found', 404
@@ -520,6 +542,12 @@ def download_file():
 
             _logger.info(f'exporting spreadsheet to memory buffer')
             clean_name = ascii_filename(page.name if page.name else "unnamed")
+
+            user.set_preference(f"export_{page.title}",
+                {
+                    "template": data["template"],
+                    "column_map": data["column_map"]
+                })
 
             excel_io = BytesIO()
             export_page(
@@ -577,12 +605,20 @@ def export_dialog():
     templates = list_templates()
     # allow for case pages to be downloaded by choosing opus as default, otherwise
     # match template name to kind of page (archive, fond, opus)
-    default_template = (
-        [item for item in list_templates() if page.kind in item] or ["opus.xlsx"])[0]   
     column_headers = [get_text(item) for item in page.header]
     column_headers = _make_unique(column_headers)
-    header_map = page.column_header_map
-    _logger.info(header_map)
+    default_template = None
+    header_map = None
+
+    defaults = user.get_preference(f"export_{page.title}")
+    if defaults:
+        default_template = defaults.get("template")
+        header_map = defaults.get("column_map")
+    if not default_template:
+        default_template = (
+            [item for item in list_templates() if page.kind in item] or ["opus.xlsx"])[0]   
+    if not header_map:
+        header_map = { key: [val] for key, val in page.column_header_map.items()}
 
     data = {
         "title":                page_title,

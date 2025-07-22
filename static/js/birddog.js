@@ -449,10 +449,14 @@ async function open_export_modal() {
         tagify_map[col] = tagify;
 
         // Prepopulate from column_header_map if available
-        const headerIndex = column_header_map[col];
-        if (headerIndex !== undefined && column_headers[headerIndex]) {
+        const headerIndices = column_header_map[col];
+        if (headerIndices !== undefined) {
           tagify.removeAllTags();
-          tagify.addTags([column_headers[headerIndex]]);
+          headerIndices.forEach(headerIndex => {
+            if (column_headers[headerIndex]) {
+                tagify.addTags([column_headers[headerIndex]]);
+            }
+          });
         }
       }
     });
@@ -1560,7 +1564,13 @@ function on_loaded() {
         populate_archive_select();
 
         // start with a default browse page (FIXME: remember user's last page)
-        load_page("DAZHO");
+        console.log("start_title=", start_title);
+        if (start_title) {
+            load_page_by_title(start_title);
+        }
+        else {
+            load_page("DAZHO");
+        }
     }
 }
 

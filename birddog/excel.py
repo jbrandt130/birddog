@@ -177,13 +177,13 @@ def _process_table_column(page, column_header_map, edit_cell, sheet, cell, parse
                             edit = item['edit']
                             if edit in edit_cell:
                                 child_cell.fill = copy(edit_cell[edit].fill)
+                    if parse['modifier'] == 'linked':
+                        url = _child_url(child)
+                        _set_url(child_cell, link_status(item), url, edit_cell)
+                    elif parse['modifier'] == 'doc_link':
+                        url = _child_doc_url(child)
+                        _set_url(child_cell, link_status(item), url, edit_cell)
                 child_cell.value = "; ".join(cell_value)
-                if parse['modifier'] == 'linked':
-                    url = _child_url(child)
-                    _set_url(child_cell, link_status(item), url, edit_cell)
-                elif parse['modifier'] == 'doc_link':
-                    url = _child_doc_url(child)
-                    _set_url(child_cell, link_status(item), url, edit_cell)
         elif parse['expr'] == 'empty':
             child_cell.value = ''
         elif parse['expr'] == 'col':
