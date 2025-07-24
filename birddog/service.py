@@ -284,8 +284,8 @@ def _get_current_user():
 @app.route('/')
 def home():
     user_session = session.get('user')
+    start_title = None
     if user_session:
-        start_title = None
         user, error_response, status = _get_current_user()
         if user:
             start_title = user.get_preference("last_page")
