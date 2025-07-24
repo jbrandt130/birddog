@@ -126,6 +126,21 @@ async function update_translation_progress(data) {
     }
 }
 
+function get_resolve_info(page_name) {
+  const updates = window.unresolved_updates;
+  for (const prefix in updates) {
+    if (page_name.startsWith(prefix)) {
+      const entries = updates[prefix];
+      for (const [title, obj] of entries) {
+        if (title === page_name) {
+          return obj;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Browse panel scroll position
 
@@ -178,13 +193,13 @@ async function load_page(
 
         // Default to an empty string if any parameter is null or undefined
         url = `/page/${encodeURIComponent(archive_id)}`;
-        if (subarchive_id) { 
+        if (subarchive_id) {
             url += `/${encodeURIComponent(subarchive_id)}`;
-            if (fond_id) { 
+            if (fond_id) {
                 url += `/${encodeURIComponent(fond_id)}`;
-                if (opus_id) { 
+                if (opus_id) {
                     url += `/${encodeURIComponent(opus_id)}`;
-                    if (case_id) { 
+                    if (case_id) {
                         url += `/${encodeURIComponent(case_id)}`;
                     }
                 }
@@ -226,7 +241,7 @@ async function load_page(
 
         // after delay to get the page populated, update scroll
         setTimeout(restore_scroll_position, 100);
-        
+
         // Hide the spinner after loading
         hide('browse-spinner');
         show('browse-page-content');
@@ -276,7 +291,7 @@ async function load_page_by_title(page_title, compare=null) {
 
         // after delay to get the page populated, update scroll
         setTimeout(restore_scroll_position, 100);
-        
+
         // Hide the spinner after loading
         hide('browse-spinner');
         show('browse-page-content');
@@ -309,13 +324,13 @@ async function download_page() {
     try {
         // Default to an empty string if any parameter is null or undefined
         url = `/download/${encodeURIComponent(current_page.archive)}`;
-        if (current_page.archive) { 
+        if (current_page.archive) {
             url += `/${encodeURIComponent(current_page.subarchive)}`;
-            if (current_page.fond) { 
+            if (current_page.fond) {
                 url += `/${encodeURIComponent(current_page.fond)}`;
-                if (current_page.opus) { 
+                if (current_page.opus) {
                     url += `/${encodeURIComponent(current_page.opus)}`;
-                    if (current_page.case) { 
+                    if (current_page.case) {
                         url += `/${encodeURIComponent(current_page.case)}`;
                     }
                 }
@@ -490,7 +505,26 @@ function on_row_click(page_data, index) {
 
 // render a data page
 function render_page_data(data) {
-    const is_comparison = 'refmod' in data && data.refmod != data.lastmod;
+    var is_comparison = 'refmod' in data && data.refmod != data.lastmod;
+    var resolve_enable = needs_resolve(data);
+
+    if (resolve_enable) {
+        // check for false alarm in page update
+        const resolve_info = get_resolve_info(data.name);
+        console.log("resolve info for", data.name, "==", resolve_info);
+        if (resolve_info && resolve_info.last_resolved > data.lastmod) {
+            // not an actual update - offer to simply resolve it
+            if (confirm("The latest modification of this page precedes the comparison date due to a false change detection. It is safe to clear this page's unresolved status. Click OK to clear it.")) {
+                const path = data.name.split('/');
+                const archive = path[0].split('-');
+                const new_path = archive.concat(path.slice(1)).join(',')
+                resolve_page_update(new_path, deep=false);
+                data.refmod = null;
+                is_comparison = false;
+                resolve_enable = false;
+            }
+        }
+    }
 
     const title_elem = document.getElementById('page-title');
     title_elem.textContent = data.name.replace("-_","");
@@ -603,7 +637,7 @@ function render_page_data(data) {
                 switch (item.link_edit) {
                 case 'added':
                     //console.log('link added:', cell_content);
-                    cell_content = 
+                    cell_content =
                         `<button class="btn btn-success btn-sm" style="opacity: 0.5;">
                             <i class="bi bi-link-45deg"></i>
                         </button> &nbsp;` + cell_content;
@@ -611,7 +645,7 @@ function render_page_data(data) {
                     break;
                 case 'changed':
                     //console.log('link changed:', cell_content);
-                    cell_content = 
+                    cell_content =
                         `<button class="btn btn-warning btn-sm" style="opacity: 0.5;">
                             <i class="bi bi-link-45deg"></i>
                         </button> &nbsp;` + cell_content;
@@ -649,14 +683,14 @@ function render_page_data(data) {
     show_if('comparing-badge', is_comparison);
     show_if('no-differences-badge', is_comparison && !any_edit);
     show_if('empty-page-badge', children.length == 0);
-    show_if('needs-resolve-badge', needs_resolve(data));
+    show_if('needs-resolve-badge', resolve_enable);
     //show_if('translating-badge', data.translating ?? false);
     //show_if('progress-container', data.translating ?? false);
 
 
 
     // set button enables
-    enable_if("resolve-btn", needs_resolve(data));
+    enable_if("resolve-btn", resolve_enable);
     enable_if("translate-btn", data.needs_translation);
     //enable_if("download-btn", true);
 
@@ -673,7 +707,7 @@ function render_history(data) {
         hide('new-page-badge');
 
         const selector = document.getElementById('version-select');
-        const select_header = 'refmod' in data ? 'Stop Comparing' : 'Select Version';
+        const select_header = 'refmod' in data && data.refmod != null? 'Stop Comparing' : 'Select Version';
         selector.innerHTML = `<option value="" selected>${select_header}</option>`;
         selector.disabled = false;
 
@@ -833,7 +867,7 @@ async function load_watchlist(check_all=false, initial_load=false) {
     const data = await response.json();
     console.log('watchlist:', data)
     watchlist = data;
-    
+
     // Check if the watchlist is empty on initial load
     if (initial_load && watchlist.length == 0) {
         open_add_to_watchlist_dialog();
@@ -919,7 +953,7 @@ async function check_watchlist(archive, subarchive, quiet=false, render=true) {
         if (render) {
             // Hide the spinner
             show('unresolved-updates-container');
-            hide('unresolved-updates-loading-spinner');       
+            hide('unresolved-updates-loading-spinner');
             render_unresolved_items();
         }
         if (!quiet && data.unresolved.length == 0)
@@ -946,7 +980,7 @@ async function check_all_watchlists() {
     await Promise.all(promises);
 
     show('unresolved-updates-container');
-    hide('unresolved-updates-loading-spinner');       
+    hide('unresolved-updates-loading-spinner');
     console.log('check_all_watchlists: render_unresolved');
     render_unresolved_items();
 }
@@ -1026,7 +1060,7 @@ function page_path(page) {
 }
 
 function needs_resolve(page) {
-    if (!path_to_node) 
+    if (!path_to_node)
         return false;
     const path = page_path(page);
     //console.log('needs_resolve:', path);
@@ -1098,8 +1132,8 @@ function mark_resolved(node_id) {
     const full_path = node._full_path || name;
     var deep = false;
     const confirm_message = has_children?
-        `${full_path} has unresolved subsidiary pages. Resolve all subsidiaries?` : 
-        `Resolve ${full_path}?`; 
+        `${full_path} has unresolved subsidiary pages. Resolve all subsidiaries?` :
+        `Resolve ${full_path}?`;
     if (confirm(confirm_message)) {
         console.log('resolving all children');
     }
@@ -1118,7 +1152,7 @@ function mark_resolved(node_id) {
 // called from resolve button on browse page
 function resolve_page() {
     const path = page_path(current_page);
-    if (!path_to_node) 
+    if (!path_to_node)
         return false;
     const node = path_to_node[path];
     if (mark_resolved(node._id)) {
@@ -1287,7 +1321,7 @@ function render_unresolved_items() {
 
     node_map = {};
     path_to_node = {};
-    document.getElementById(container_id).innerHTML = ''; 
+    document.getElementById(container_id).innerHTML = '';
 
     // Sort by keys in unresolved_updates
     const sorted_keys = Object.keys(unresolved_updates).sort(); // alphabetical sort
@@ -1377,7 +1411,7 @@ function on_loaded() {
 
             const email = document.getElementById('resetEmail').value;
             console.log('reset password:', email)
-            
+
             const response = await fetch('/reset_password', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},

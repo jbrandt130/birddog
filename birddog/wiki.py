@@ -1108,19 +1108,24 @@ class PageTracker:
         self._cutoff_date = max(updates.items(), key=lambda x: x[1])[1]
         any_change = False
 
-        candidates = []
+        # collect updates that differ from known updates and normalize page titles
+        candidate_updates = {}
         for page, mod_date in updates.items():
             if mod_date != self._mod_dates.get(page):
-                candidates.append(canonicalize_title(page))
+                candidate_updates[canonicalize_title(page)] = mod_date
 
-        if candidates:
-            # check if these new pages exist
-            check = batch_page_exists(candidates)
-            for page in candidates:
+        if candidate_updates:
+            # check if these candidate pages exist
+            candidate_pages = list(candidate_updates.keys())
+            check = batch_page_exists(candidate_pages)
+            for page in candidate_pages:
                 if check[page]:
-                    self._mod_dates[page] = updates[page]
-                    any_change = True
-
+                    # check if the page is within an allowed archive root
+                    if page.split("/", 1)[0] in ARCHIVES_BY_ROOT:
+                        self._mod_dates[page] = candidate_updates[page]
+                        any_change = True
+                    else:
+                        _logger.info(f"PageTracker ignoring page {page} (unknown root)")
         return any_change
 
     def add_titles(self, titles):
