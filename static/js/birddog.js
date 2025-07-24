@@ -104,6 +104,11 @@ async function update_translation_progress(data) {
                 console.log('checking translation progress...')
                 const response = await fetch('/translate');
                 if (!response.ok) {
+                    if (response.status === 404) {
+                        alert('Your session may have expired. Please log in again.');
+                        location.reload();
+                        return;
+                    }
                     throw new Error(`Polling failed: ${response.statusText}`);
                 }
                 const new_data = await response.json();
@@ -224,6 +229,11 @@ async function load_page(
         if (!response.ok) {
             hide('browse-spinner');
             show('browse-page-content');
+            if (response.status === 404) {
+                alert('Your session may have expired. Please log in again.');
+                location.reload();
+                return;
+            }
             throw new Error(`HTTP error! Status: ${response.status}`);
         }
 
@@ -274,6 +284,11 @@ async function load_page_by_title(page_title, compare=null) {
         if (!response.ok) {
             hide('browse-spinner');
             show('browse-page-content');
+            if (response.status === 404) {
+                alert('Your session may have expired. Please log in again.');
+                location.reload();
+                return;
+            }
             throw new Error(`HTTP error! Status: ${response.status}`);
         }
 
@@ -313,6 +328,11 @@ async function translate_page() {
     console.log('translating:', path);
     const response = await fetch(`/translate/${path}`);
     if (!response.ok) {
+        if (response.status === 404) {
+            alert('Your session may have expired. Please log in again.');
+            location.reload();
+            return;
+        }
         throw new Error(`Failed to resolve: ${response.statusText}`);
     }
     const data = await response.json();
@@ -354,6 +374,11 @@ async function download_page() {
             // Hide the spinner after loading
             hide('browse-spinner');
             show('browse-page-content');
+            if (response.status === 404) {
+                alert('Your session may have expired. Please log in again.');
+                location.reload();
+                return;
+            }
             throw new Error(`HTTP error! Status: ${response.status}`);
         }
 
@@ -404,7 +429,14 @@ async function open_export_modal() {
   try {
     const title = current_page.title;
     const response = await fetch(`/export?title=${encodeURIComponent(title)}`);
-    if (!response.ok) throw new Error(`Failed to load export config: ${response.status}`);
+    if (!response.ok) {
+        if (response.status === 404) {
+            alert('Your session may have expired. Please log in again.');
+            location.reload();
+            return;
+        }
+        throw new Error(`Failed to load export config: ${response.status}`);
+    }
     const data = await response.json();
     console.log("export data:", data)
 
@@ -799,40 +831,43 @@ function update_archive_select() {
     });
 }
 
-function populate_archive_select() {
-    //console.log("populate_archive_select(): ", bootstrap)
+async function populate_archive_select() {
+    console.log("populate_archive_select");
     const archive_select_btn = document.getElementById('archive-select-btn');
     const archive_select_modal = new bootstrap.Modal(document.getElementById('archiveSelectModal'));
     const archive_select = document.getElementById('archiveSelect');
     const confirm_selection_btn = document.getElementById('confirmSelectionBtn');
 
-    // Fetch archives from the server
+    confirm_selection_btn.disabled = true;
+
     async function fetch_archives() {
         try {
+            console.log("fetching /archives");
             const response = await fetch('/archives');
             if (!response.ok) {
+                if (response.status === 404) {
+                    alert('Your session may have expired. Please log in again.');
+                    location.reload();
+                    return null;
+                }
                 throw new Error(`Failed to fetch archives: ${response.statusText}`);
             }
-            archives = await response.json();
-            console.log('archive list loaded:', archives);
-            // Sort by first element, then by second
-            archives.sort((a, b) => {
+            const archive_list = await response.json();
+            archive_list.sort((a, b) => {
                 const firstCompare = a[0].localeCompare(b[0]);
                 return firstCompare !== 0 ? firstCompare : a[1].localeCompare(b[1]);
             });
-            populate_archive_select_dropdown(archives);
-            populate_watchlist_archive_select(archives);
+            return archive_list;
         } catch (error) {
             console.error('Error fetching archives:', error);
             alert('Failed to load archives. Please try again.');
+            return null;
         }
     }
 
-    // Populate the archive dropdown
-    function populate_archive_select_dropdown(archives) {
+    function populate_archive_select_dropdown(archive_list) {
         archive_select.innerHTML = '<option value="-1" selected>Select an archive...</option>';
-        archives.forEach((archive, index) => {
-            //console.log(archive);
+        archive_list.forEach((archive, index) => {
             const option = document.createElement('option');
             const value = `${archive[0]}-${archive[1]}`.replace("-_", "");
             option.value = index;
@@ -841,22 +876,27 @@ function populate_archive_select() {
         });
     }
 
-    fetch_archives();  // Fetch latest archive list when the modal opens
+    archives = await fetch_archives();
+    if (!archives || archives.length === 0) return;
 
-    // Handle Confirm button click
-    confirm_selection_btn.addEventListener('click', () => {
-        const archive_index = archive_select.value;
-        if (!archive_index || archive_index < 0 || archive_index >= archives.length) {
+    populate_archive_select_dropdown(archives);
+    populate_watchlist_archive_select(archives);
+    confirm_selection_btn.disabled = false;
+
+    confirm_selection_btn.onclick = () => {
+        const archive_index = parseInt(archive_select.value, 10);
+        if (isNaN(archive_index) || archive_index < 0 || archive_index >= archives.length) {
             alert('Please select an archive.');
             return;
         }
         const selected_archive = archives[archive_index];
         console.log(`Selected Archive: ${selected_archive[0]}-${selected_archive[1]}`);
         load_page(
-            archive_id=selected_archive[0],
-            subarchive_id=selected_archive[1])
+            archive_id = selected_archive[0],
+            subarchive_id = selected_archive[1]
+        );
         archive_select_modal.hide();
-    });
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -864,6 +904,11 @@ function populate_archive_select() {
 
 async function load_watchlist(check_all=false, initial_load=false) {
     const response = await fetch('/watchlist');
+    if (response.status === 404) {
+        alert('Your session may have expired. Please log in again.');
+        location.reload();
+        return;
+    }
     const data = await response.json();
     console.log('watchlist:', data)
     watchlist = data;
@@ -939,6 +984,13 @@ async function check_watchlist(archive, subarchive, quiet=false, render=true) {
         hide('unresolved-updates-container');
 
         const response = await fetch(`/watchlist/${archive}/${subarchive}/check?tree`);
+
+        if (response.status === 404) {
+            alert('Your session may have expired. Please log in again.');
+            location.reload();
+            return;
+        }
+
         if (!response.ok) {
             // Hide the spinner
             show('unresolved-updates-container');
@@ -965,7 +1017,8 @@ async function check_watchlist(archive, subarchive, quiet=false, render=true) {
         show('unresolved-updates-container');
         hide('unresolved-updates-loading-spinner');
         console.error('Error checking updates:', error);
-        alert('Failed to check updates.');
+        if (!quiet)
+            alert('Failed to check updates.');
     }
 }
 
@@ -975,6 +1028,7 @@ async function check_all_watchlists() {
 
     const promises = watchlist.map(item =>
         check_watchlist(item.archive, item.subarchive, true, false)
+            .catch(err => console.error(`Error in ${item.archive}-${item.subarchive}:`, err))
     );
 
     await Promise.all(promises);
@@ -984,6 +1038,7 @@ async function check_all_watchlists() {
     console.log('check_all_watchlists: render_unresolved');
     render_unresolved_items();
 }
+
 
 // Populate the archive select dropdown
 async function populate_watchlist_archive_select(archives) {
@@ -1033,6 +1088,12 @@ async function confirm_add_to_watchlist() {
             cutoff_date: cutoff_date
         })
     });
+
+    if (response.status === 404) {
+        alert('Your session may have expired. Please log in again.');
+        location.reload();
+        return;
+    }
 
     hide('watchlist-loading-spinner');
     show('watchlist-container');
@@ -1108,6 +1169,11 @@ async function resolve_page_update(page_name, deep=false) {
             url += '&deep=1';
         const response = await fetch(url);
         if (!response.ok) {
+            if (response.status === 404) {
+                alert('Your session may have expired. Please log in again.');
+                location.reload();
+                return;
+            }
             throw new Error(`Failed to resolve: ${response.statusText}`);
         }
 
@@ -1353,7 +1419,7 @@ function setup_back_button_interceptor() {
     });
 }
 
-function on_loaded() {
+async function on_loaded() {
     // Login form submit button
     const login = document.getElementById('loginForm');
     if (login) {
@@ -1553,7 +1619,14 @@ function on_loaded() {
                 body: JSON.stringify(payload)
               })
               .then(response => {
-                if (!response.ok) throw new Error("Export failed");
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        alert('Your session may have expired. Please log in again.');
+                        location.reload();
+                        return;
+                    }
+                    throw new Error("Export failed");
+                }
                 // Extract filename from Content-Disposition header (if available)
                 const contentDisposition = response.headers.get('Content-Disposition');
                 filename = contentDisposition
@@ -1589,15 +1662,19 @@ function on_loaded() {
         input.max = today;  // only allow up to today
         input.min = "2000-01-01";  // hard-coded example start date
 
-        setTimeout(setup_back_button_interceptor, 1000);
+        //setTimeout(setup_back_button_interceptor, 1000);
 
         // Populate the interface
+        console.log("loading watchlist")
         load_watchlist(check_all=true, initial_load=true);
 
         // archive select listener
-        populate_archive_select();
+        console.log("loading archive select");
+        await populate_archive_select();
+        console.log("archives =", archives);
 
         // start with a default browse page (FIXME: remember user's last page)
+        console.log("loading browse page")
         console.log("start_title=", start_title);
         if (start_title) {
             load_page_by_title(start_title);
