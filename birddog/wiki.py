@@ -697,6 +697,82 @@ def mw_page_doc_url(page):
         return links[0]
     return None
 
+
+def _extract_table(table_code, page_title, page_links, all_page_links):
+    header, rows = _parse_wikitext_table(table_code)
+
+    # format header
+    header = [form_text_item(cell.strip()) for cell in header]
+
+    # process rows
+    children = []
+    for cells in rows:
+        row_data = []
+        for cell_text in cells:
+            #_logger.info(f"cell: {cell_text}")
+            cell_wikicode = mwparserfromhell.parse(cell_text)
+            # Extract internal links
+            links = cell_wikicode.filter_wikilinks()
+            link = None
+            if links:
+                #print(links)
+                link_target = str(links[0].title).strip()
+                _safe_remove(page_links["internal_links"], link_target)
+                if not link_target.startswith("#"):
+                    link = _expand_link_target(link_target, page_title)
+                    #print("link target expanded:", link_target, link)
+                    all_page_links.add(link)
+            else:
+                # External links as fallback
+                ext_links = cell_wikicode.filter_external_links()
+                if ext_links:
+                    link = str(ext_links[0].url).strip()
+
+            # Clean text (strip wikitext markup)
+            text = cell_wikicode.strip_code().strip('./ ')
+            row_data.append({'text': form_text_item(text), 'link': link})
+        children.append(row_data)
+
+    if not header and not children:
+        # try to populate a "table" if there is either a list of subpages or commons links
+        sub_pages = [link for link in page_links["internal_links"] if link.startswith("/")]
+        if sub_pages:
+            # synthesize a table from list of links to subpages
+            header = [ form_text_item("-") ]
+            for link_target in sub_pages:
+                link = _expand_link_target(link_target, page_title)
+                all_page_links.add(link)
+                _safe_remove(page_links["internal_links"], link_target)
+                text = form_text_item(link_target.strip("./ "))
+                children.append([{'text': text, 'link': link}])
+        else:
+            sub_pages = list(page_links["commons_links"])
+            if len(sub_pages) > 1:
+                # synthesize a table from list of links commons files
+                header = [ form_text_item("-") ]
+                for link in sub_pages:
+                    _safe_remove(page_links["commons_links"], link)
+                    text = link.replace("https://commons.wikimedia.org/wiki/", "")
+                    text = text.replace("File:", "")
+                    text = text.replace("_", " ")
+                    text = form_text_item(text)
+                    children.append([{'text': text, 'link': link, 'exists': True}])
+
+    # Collect unique linked page titles (relative titles like '/1/' etc.)
+    link_existence = _check_page_existence_chunked(all_page_links)
+    #link_existence = {}
+    for row in children:
+        for cell in row:
+            if cell['link']:
+                cell['exists'] = link_existence.get(cell["link"], True)  # True by default
+                # ARCHIVE_BASE is implicit for child links that are within the media wiki
+                cell["link"] = cell["link"].replace(ARCHIVE_BASE, "")
+
+    return {
+        "header": header,
+        "children": children
+    }
+
 def mw_read_page(page_title, oldid=None):
     # extract title from url if necessary
     page_title = get_title(page_title)
@@ -750,80 +826,16 @@ def mw_read_page(page_title, oldid=None):
     }
 
     # Table data
-    tables = [t for t in wikicode.filter_tags() if _is_table(t)]
+    wiki_tables = [t for t in wikicode.filter_tags() if _is_table(t)]
     header = []
     children = []
     all_page_links = set()
 
-    if tables:
-        table_code = tables[0].contents # assume first table
-        header, rows = _parse_wikitext_table(table_code)
-
-        # format header
-        header = [form_text_item(cell.strip()) for cell in header]
-
-        # process rows
-        for cells in rows:
-            row_data = []
-            for cell_text in cells:
-                #_logger.info(f"cell: {cell_text}")
-                cell_wikicode = mwparserfromhell.parse(cell_text)
-                # Extract internal links
-                links = cell_wikicode.filter_wikilinks()
-                link = None
-                if links:
-                    #print(links)
-                    link_target = str(links[0].title).strip()
-                    _safe_remove(page_links["internal_links"], link_target)
-                    if not link_target.startswith("#"):
-                        link = _expand_link_target(link_target, page_title)
-                        #print("link target expanded:", link_target, link)
-                        all_page_links.add(link)
-                else:
-                    # External links as fallback
-                    ext_links = cell_wikicode.filter_external_links()
-                    if ext_links:
-                        link = str(ext_links[0].url).strip()
-
-                # Clean text (strip wikitext markup)
-                text = cell_wikicode.strip_code().strip('./ ')
-                row_data.append({'text': form_text_item(text), 'link': link})
-            children.append(row_data)
-
-    if not header and not children:
-        # try to populate a "table" if there is either a list of subpages or commons links
-        sub_pages = [link for link in page_links["internal_links"] if link.startswith("/")]
-        if sub_pages:
-            # synthesize a table from list of links to subpages
-            header = [ form_text_item("-") ]
-            for link_target in sub_pages:
-                link = _expand_link_target(link_target, page_title)
-                all_page_links.add(link)
-                _safe_remove(page_links["internal_links"], link_target)
-                text = form_text_item(link_target.strip("./ "))
-                children.append([{'text': text, 'link': link}])
-        else:
-            sub_pages = list(page_links["commons_links"])
-            if len(sub_pages) > 1:
-                # synthesize a table from list of links commons files
-                header = [ form_text_item("-") ]
-                for link in sub_pages:
-                    _safe_remove(page_links["commons_links"], link)
-                    text = link.replace("https://commons.wikimedia.org/wiki/", "")
-                    text = text.replace("File:", "")
-                    text = text.replace("_", " ")
-                    text = form_text_item(text)
-                    children.append([{'text': text, 'link': link, 'exists': True}])
-
-    # Collect unique linked page titles (relative titles like '/1/' etc.)
-    link_existence = _check_page_existence_chunked(all_page_links)
-    #link_existence = {}
-    for row in children:
-        for cell in row:
-            if cell['link']:
-                cell['exists'] = link_existence.get(cell["link"], True)  # True by default
-                # ARCHIVE_BASE is implicit for child links that are within the media wiki
-                cell["link"] = cell["link"].replace(ARCHIVE_BASE, "")
+    if wiki_tables:
+        table_code = wiki_tables[0].contents # assume first table
+        table = _extract_table(table_code, page_title, page_links, all_page_links)
+        header = table["header"]
+        children = table["children"]
 
     page["header"] = header
     page["children"] = children
@@ -1282,7 +1294,7 @@ class HistoryLRU:
 # Document link extraction from wikitext
 
 def _wiki_content_url(titles):
-    batch_titles = '|'.join([quote(f'{WIKI_NAMESPACE}:{t}') for t in titles])
+    batch_titles = '|'.join([quote(t) for t in titles])
     return (f'{ARCHIVE_BASE}/w/api.php?'
             'action=query&format=json&prop=revisions&'
             'rvprop=content&rvslots=main&'
@@ -1348,15 +1360,14 @@ def _chunked(iterable, size):
 def batch_fetch_document_links(titles, map_to_url=True, chunk_size=20):
     if not isinstance(titles, (list, tuple)):
         titles = [titles]
-
+    titles = [canonicalize_title(title) for title in titles]
     result = {}
-
     for chunk in _chunked(titles, chunk_size):
         data = fetch_url(_wiki_content_url(chunk), json=True)
         if not 'query' in data:
             _logger.error(f'batch_fetch_document_links returned:\n    {data}')
         for page in data['query']['pages'].values():
-            title = page['title'].split(':', 1)[-1]  # strip 'Архів:' prefix
+            title = page['title'] # .split(':', 1)[-1]  # strip 'Архів:' prefix
             try:
                 wikitext = page['revisions'][0]['slots']['main']['*']
                 links = _extract_file_links(wikitext)

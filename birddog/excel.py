@@ -143,6 +143,7 @@ def _map_index(column_header_map, index):
 
     return None
 
+
 def _set_url(cell, link_flag, url, edit_cell):
     if link_flag == "exists":
         cell.hyperlink = url
@@ -152,6 +153,22 @@ def _set_url(cell, link_flag, url, edit_cell):
         cell.font = copy(edit_cell['nonexistent'].font)
     else: # "unlinked" status
         cell.font = copy(edit_cell['unlinked'].font)
+
+def _update_edit_state(entry, edit_state):
+    edit_update = entry.get('edit')
+    if edit_update == 'added':
+        return edit_update
+    if edit_update == 'changed' and edit_state != 'added':
+        return edit_update
+    return edit_state
+
+def _update_link_status(entry, prev_link_status):
+    cur_link_status = link_status(entry)
+    if cur_link_status == 'exists':
+        return cur_link_status
+    if cur_link_status == 'linked' and prev_link_status != 'exists':
+        return cur_link_status
+    return prev_link_status
 
 def _process_table_column(page, column_header_map, edit_cell, sheet, cell, parse, match):
     row = cell.row
@@ -169,20 +186,21 @@ def _process_table_column(page, column_header_map, edit_cell, sheet, cell, parse
         if parse['expr'] == 'child':
             if mapped_index_list is not None:
                 cell_value = []
+                cell_hyperlink = None
+                cell_link_status = None
+                cell_edit_status = None
                 for mapped_index in mapped_index_list:
                     if mapped_index < len(child):
-                        item = child[mapped_index]
-                        cell_value.append(unescape(get_text(item['text'])))
-                        if 'edit' in item:
-                            edit = item['edit']
-                            if edit in edit_cell:
-                                child_cell.fill = copy(edit_cell[edit].fill)
-                    if parse['modifier'] == 'linked':
-                        url = _child_url(child)
-                        _set_url(child_cell, link_status(item), url, edit_cell)
-                    elif parse['modifier'] == 'doc_link':
-                        url = _child_doc_url(child)
-                        _set_url(child_cell, link_status(item), url, edit_cell)
+                        table_entry = child[mapped_index]
+                        cell_value.append(unescape(get_text(table_entry['text'])))
+                        cell_edit_status = _update_edit_state(table_entry, cell_edit_status)
+                        cell_link_status = _update_link_status(table_entry, cell_link_status)
+                if cell_edit_status in edit_cell:
+                    child_cell.fill = copy(edit_cell[cell_edit_status].fill)
+                if parse['modifier'] == 'linked':
+                    _set_url(child_cell, cell_link_status, _child_url(child), edit_cell)
+                elif parse['modifier'] == 'doc_link':
+                    _set_url(child_cell, cell_link_status, _child_doc_url(child), edit_cell)
                 child_cell.value = "; ".join(cell_value)
         elif parse['expr'] == 'empty':
             child_cell.value = ''

@@ -367,6 +367,7 @@ class Page:
                     titles.append(f"{self.title}/{get_text(child[0]['text'])}")
             if items:
                 need_save = False
+                _logger.info(f'load_child_document_links: fetching {len(titles)} links')
                 doc_links = batch_fetch_document_links(titles)
                 for i, title in zip(items, titles):
                     links = doc_links.get(title)
