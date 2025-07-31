@@ -733,45 +733,21 @@ def _extract_table(table_code, page_title, page_links, all_page_links):
             row_data.append({'text': form_text_item(text), 'link': link})
         children.append(row_data)
 
-    if not header and not children:
-        # try to populate a "table" if there is either a list of subpages or commons links
-        sub_pages = [link for link in page_links["internal_links"] if link.startswith("/")]
-        if sub_pages:
-            # synthesize a table from list of links to subpages
-            header = [ form_text_item("-") ]
-            for link_target in sub_pages:
-                link = _expand_link_target(link_target, page_title)
-                all_page_links.add(link)
-                _safe_remove(page_links["internal_links"], link_target)
-                text = form_text_item(link_target.strip("./ "))
-                children.append([{'text': text, 'link': link}])
-        else:
-            sub_pages = list(page_links["commons_links"])
-            if len(sub_pages) > 1:
-                # synthesize a table from list of links commons files
-                header = [ form_text_item("-") ]
-                for link in sub_pages:
-                    _safe_remove(page_links["commons_links"], link)
-                    text = link.replace("https://commons.wikimedia.org/wiki/", "")
-                    text = text.replace("File:", "")
-                    text = text.replace("_", " ")
-                    text = form_text_item(text)
-                    children.append([{'text': text, 'link': link, 'exists': True}])
-
-    # Collect unique linked page titles (relative titles like '/1/' etc.)
-    link_existence = _check_page_existence_chunked(all_page_links)
-    #link_existence = {}
-    for row in children:
-        for cell in row:
-            if cell['link']:
-                cell['exists'] = link_existence.get(cell["link"], True)  # True by default
-                # ARCHIVE_BASE is implicit for child links that are within the media wiki
-                cell["link"] = cell["link"].replace(ARCHIVE_BASE, "")
-
     return {
         "header": header,
         "children": children
     }
+
+def _check_table_link_existence(tables, all_page_links):
+    # Collect unique linked page titles (relative titles like '/1/' etc.)
+    link_existence = _check_page_existence_chunked(all_page_links)
+    for table in tables:
+        for row in table["children"]:
+            for cell in row:
+                if cell['link']:
+                    cell['exists'] = link_existence.get(cell["link"], True)  # True by default
+                    # ARCHIVE_BASE is implicit for child links that are within the media wiki
+                    cell["link"] = cell["link"].replace(ARCHIVE_BASE, "")
 
 def mw_read_page(page_title, oldid=None):
     # extract title from url if necessary
@@ -825,20 +801,49 @@ def mw_read_page(page_title, oldid=None):
         "other_links": page_links
     }
 
-    # Table data
+    # Table extraction
     wiki_tables = [t for t in wikicode.filter_tags() if _is_table(t)]
-    header = []
-    children = []
     all_page_links = set()
+    tables = [
+        _extract_table(table.contents, page_title, page_links, all_page_links) for table in wiki_tables
+        ]
+    for i, table in enumerate(tables):
+        table["name"] = f"Table {i+1}"
 
-    if wiki_tables:
-        table_code = wiki_tables[0].contents # assume first table
-        table = _extract_table(table_code, page_title, page_links, all_page_links)
-        header = table["header"]
-        children = table["children"]
+    if not tables:
+        # try to populate a "table" if there is either a list of subpages or commons links
+        children = []
+        sub_pages = [link for link in page_links["internal_links"] if link.startswith("/")]
+        if sub_pages:
+            # synthesize a table from list of links to subpages
+            for link_target in sub_pages:
+                link = _expand_link_target(link_target, page_title)
+                all_page_links.add(link)
+                _safe_remove(page_links["internal_links"], link_target)
+                text = form_text_item(link_target.strip("./ "))
+                children.append([{'text': text, 'link': link}])
+        else:
+            sub_pages = list(page_links["commons_links"])
+            if len(sub_pages) > 1:
+                # synthesize a table from list of links commons files
+                for link in sub_pages:
+                    _safe_remove(page_links["commons_links"], link)
+                    text = link.replace("https://commons.wikimedia.org/wiki/", "")
+                    text = text.replace("File:", "")
+                    text = text.replace("_", " ")
+                    text = form_text_item(text)
+                    children.append([{'text': text, 'link': link, 'exists': True}])
+        if children:
+            tables.append({
+                "name": "Linked Pages",
+                "header": [ form_text_item("Linked Pages") ],
+                "children": children
+                })
 
-    page["header"] = header
-    page["children"] = children
+    # determine if linked items in tables are to existing pages
+    _check_table_link_existence(tables, all_page_links)
+
+    page["tables"] = tables
 
     # Last modified date via API `revisions` (for this oldid)
     params_rev = {
@@ -903,13 +908,35 @@ def report_page_changes(page):
     for key in ['title', 'description']:
         if page[key]['edit'] is not None:
             _logger.info(f'{key}: {page[key]["edit"]}')
-    for child in page['children']:
-        index = get_text(child[0]['text'])
-        for i, item in enumerate(child):
-            if 'edit' in item and item['edit'] is not None:
-                _logger.info(f'{index}[{i}] ({item["edit"]}): {get_text(item["text"])}')
-            if 'link_edit' in item and item['link_edit'] is not None:
-                _logger.info(f'{index}[{i}] (link {item["link_edit"]}): {item["link"]}')
+    for table in page["tables"]:
+        for child in table["children"]:
+            index = get_text(child[0]['text'])
+            for i, item in enumerate(child):
+                if 'edit' in item and item['edit'] is not None:
+                    _logger.info(f'{index}[{i}] ({item["edit"]}): {get_text(item["text"])}')
+                if 'link_edit' in item and item['link_edit'] is not None:
+                    _logger.info(f'{index}[{i}] (link {item["link_edit"]}): {item["link"]}')
+
+def _check_table_changes(table, ref_table):
+    ref_children = dict((c[0]['text']['uk'], c) for c in ref_table['children'])
+    _logger.info(f"_check_table_changes: {table['name']} vs {ref_table['name']}")
+    for child in table['children']:
+        #print("checking child:", child)
+        index = child[0]['text']['uk']
+        if index in ref_children:
+            ref_child = ref_children[index]
+            #_logger.info(f"comparing: {child} to {ref_child}")
+            for item, ref_item in zip(child, ref_child):
+                changed = item['text']['uk'] != ref_item['text']['uk']
+                item['edit'] = 'changed' if changed else None
+                if is_linked(item):
+                    if is_linked(ref_item):
+                        item['link_edit'] = 'changed' if item['link'] != ref_item['link'] else None
+                    else:
+                        item['link_edit'] = 'added'
+        else:
+            for item in child:
+                item['edit'] = 'added'
 
 def check_page_changes(page, reference, report=False):
     """
@@ -930,24 +957,18 @@ def check_page_changes(page, reference, report=False):
         else:
             page['doc_link_edit'] = 'added'
 
-    ref_children = dict((get_text(c[0]['text']), c) for c in reference['children'])
-    for child in page['children']:
-        #print("checking child:", child)
-        index = get_text(child[0]['text'])
-        if index in ref_children:
-            ref_child = ref_children[index]
-            #print("comparing:", child, "to", ref_child)
-            for item, ref_item in zip(child, ref_child):
-                changed = not equal_text(item['text'], ref_item['text'])
-                item['edit'] = 'changed' if changed else None
-                if is_linked(item):
-                    if is_linked(ref_item):
-                        item['link_edit'] = 'changed' if item['link'] != ref_item['link'] else None
-                    else:
-                        item['link_edit'] = 'added'
-        else:
-            for item in child:
-                item['edit'] = 'added'
+    for table in page["tables"]:
+        found_match = False
+        for ref_table in reference["tables"]:
+            if table["name"] == ref_table["name"]:
+                _check_table_changes(table, ref_table)
+                found_match = True
+                break
+        if not found_match:
+            for child in table['children']:
+                for item in child:
+                    item["edit"] = "added"
+
     if report:
         report_page_changes(page)
 

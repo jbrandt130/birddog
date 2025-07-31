@@ -36,8 +36,7 @@ class Test(unittest.TestCase):
             'dates', 
             'notes', 
             'other_links', 
-            'header', 
-            'children', 
+            'tables',
             'lastmod', 
             'link', 
             'doc_link']))

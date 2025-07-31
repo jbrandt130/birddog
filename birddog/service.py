@@ -28,10 +28,7 @@ from flask import (
     g)
 
 # Birddog packages
-from birddog.runtime import Runtime, PageLRU
-from birddog.core import (
-    ArchiveWatcher,
-    )
+from birddog.runtime import Runtime, PageLRU, ArchiveWatcher
 from birddog.excel import export_page, list_templates
 from birddog.cache import (
     load_cached_object,
@@ -44,7 +41,7 @@ from birddog.wiki import (
     page_address,
     lineage
     )
-from birddog.ai import list_column_classes
+from birddog.ai import list_column_classes, classify_table_columns
 from birddog.utility import get_text
 from birddog.logging import (
     get_logger,
@@ -196,8 +193,8 @@ class User:
         self.preferences[key] = value
         self.save()
 
-    def get_preference(self, key):
-        return self.preferences.get(key)
+    def get_preference(self, key, default_value=None):
+        return self.preferences.get(key, default_value)
 
     def save(self):
         with self._lock:
@@ -540,24 +537,28 @@ def download_file():
             if compare:
                 page = _compare_page(page, compare)
 
-            _logger.info(f'exporting spreadsheet to memory buffer')
-            clean_name = ascii_filename(page.name if page.name else "unnamed")
-
-            user.set_preference(f"export_{page.title}",
-                {
-                    "template": data["template"],
-                    "column_map": data["column_map"]
-                })
+            page_defaults_key = f"export_{page.title}"
+            defaults = user.get_preference(page_defaults_key, dict())
+            defaults["template"] = data["template"]
+            defaults["table"] = data["table"]
+            column_map = defaults.get("column_map", dict())
+            column_map[data["table"]] = data["column_map"]
+            table_names = [table["name"] for table in page.tables]
+            column_map = {key: value for key, value in column_map.items() if key in table_names}
+            defaults["column_map"] = column_map
+            user.set_preference(page_defaults_key, defaults)
 
             excel_io = BytesIO()
             export_page(
                 page, 
                 excel_io, 
+                table_name=data["table"],
                 template=data["template"], 
                 column_map=data["column_map"], 
                 lru=runtime.page_lru)
             excel_io.seek(0)  # Rewind buffer for reading
 
+            clean_name = ascii_filename(page.name if page.name else "unnamed")
             return send_file(
                 excel_io,
                 as_attachment=True,
@@ -605,24 +606,40 @@ def export_dialog():
     templates = list_templates()
     # allow for case pages to be downloaded by choosing opus as default, otherwise
     # match template name to kind of page (archive, fond, opus)
-    column_headers = [get_text(item) for item in page.header]
-    column_headers = _make_unique(column_headers)
+
+    column_headers = {}
+    for table in page.tables:
+        column_headers[table["name"]] = _make_unique([get_text(item) for item in table["header"]])
+
+    #column_headers = [get_text(item) for item in page.header]
+    #column_headers = _make_unique(column_headers)
     default_template = None
-    header_map = None
+    header_map = {}
+    default_table = None
 
     defaults = user.get_preference(f"export_{page.title}")
     if defaults:
         default_template = defaults.get("template")
-        header_map = defaults.get("column_map")
+        header_map = defaults.get("column_map", dict())
+        default_table = defaults.get("table")
     if not default_template:
         default_template = (
-            [item for item in list_templates() if page.kind in item] or ["opus.xlsx"])[0]   
-    if not header_map:
-        header_map = { key: [val] for key, val in page.column_header_map.items()}
+            [item for item in list_templates() if page.kind in item] or ["opus.xlsx"])[0]
+    if not default_table:
+        default_table = page.tables[0]["name"] if page.tables else ""
+    for table in page.tables:
+        if table["name"] not in header_map:
+            classification = classify_table_columns(table)
+            # form mapping from column header type to column index
+            header_map[table["name"]] = { 
+                col_type: [i] for i, col_type in enumerate(classification["mapping"]) 
+                }
+            _logger.info(f"inferred header map: {header_map}")
 
     data = {
         "title":                page_title,
         "default_template":     default_template,
+        "default_table":        default_table,
         "templates":            templates, 
         "column_classes":       list_column_classes(), 
         "column_headers":       column_headers,

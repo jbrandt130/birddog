@@ -9,13 +9,13 @@ import time
 import threading
 import queue
 
+import regex
 from cachetools import LRUCache
 
 from birddog.cache import load_cached_object, save_cached_object, CacheMissError
 from birddog.core import (
     Archive,
     Page,
-    ArchiveWatcher,
     )
 from birddog.wiki import (
     ARCHIVE_BY_TITLE,
@@ -90,6 +90,168 @@ class PageLRU:
                 page = Page(title, runtime=runtime)
             self._lru[title] = page
             return page
+
+# ----------------------------------------------------------------------------
+# Update watcher
+
+# Unicode-aware parsing
+_DASH_CHARS = r"\-\u2010\u2011\u2012\u2013\u2014"
+_ALPHA_DASH = fr"[\p{{L}}{_DASH_CHARS}]*"
+_pattern = regex.compile(fr"^({_ALPHA_DASH})(\d+)({_ALPHA_DASH})$")
+
+def _parse_string(s):
+    match = _pattern.fullmatch(s)
+    if match:
+        prefix, number, suffix = match.groups()
+        return (int(number), prefix, suffix)
+    return (float('inf'), s, '')
+
+def _sort_keys(keys):
+    return sorted(keys, key=_parse_string)
+
+def _flatten_hierarchy(d, prefix=None):
+    result = []
+    prefix = prefix or []
+
+    children = [k for k in d if k != 'unresolved']
+    sorted_children = _sort_keys(children)
+
+    for key in sorted_children:
+        current_path = prefix + [key]
+        full_path_str = '/'.join(current_path)
+
+        value = d[key]
+        unresolved = value.get('unresolved') if isinstance(value, dict) else None
+
+        result.append((full_path_str, unresolved))
+
+        if isinstance(value, dict):
+            result.extend(_flatten_hierarchy(value, current_path))
+
+    return result
+
+def _make_tree(unresolved):
+    root = {}
+    for key, value in unresolved.items():
+        address = key.rstrip(',')
+        address = address.replace(",", "-", 1)
+        address = address.split(',')
+        pos = root
+        for item in address:
+            if item not in pos:
+                pos[item] = {}
+            pos = pos[item]
+        pos['unresolved'] = value
+    return root
+
+class ArchiveWatcher:
+    def __init__(self, archive, subarchive, cutoff_date):
+        self._archive = archive
+        if not subarchive:
+            subarchive = Archive(archive).subarchive
+        self._subarchive = subarchive
+        self._cutoff_date = cutoff_date
+        self._last_checked_date = cutoff_date
+        self._resolved = {}
+        self._unresolved = {}
+
+    def save(self):
+        return {
+            'version': 'v2',
+            'archive': self._archive,
+            'subarchive': self._subarchive,
+            'cutoff_date': self._cutoff_date,
+            'resolved': self._resolved,
+            'unresolved': self._unresolved,
+            'last_checked_date': self._last_checked_date
+        }
+
+    @staticmethod
+    def load(data):
+        watcher = ArchiveWatcher(data['archive'], data['subarchive'], data['cutoff_date'])
+        version = data.get("version", "v1")  # default to legacy
+
+        # normalize unresolved (assume format is fine)
+        watcher._unresolved = data.get('unresolved', {})
+        watcher._last_checked_date = data.get('last_checked_date', watcher._cutoff_date)
+
+        # normalize resolved entries for legacy versions
+        if version == "v1":
+            cutoff_date = watcher._cutoff_date
+            watcher._resolved = {
+                k: (
+                    [{"modified": v, "last_resolved": cutoff_date}]
+                    if not isinstance(v, list) else v
+                )
+                for k, v in data.get('resolved', {}).items()
+            }
+        else:
+            watcher._resolved = data.get('resolved', {})
+
+        return watcher
+
+    @staticmethod
+    def key(archive, subarchive, fond=None, opus=None, case=None):
+        return ','.join((archive, subarchive, fond or '', opus or '', case or ''))
+
+    @property
+    def resolved(self):
+        return self._resolved
+
+    @property
+    def unresolved(self):
+        return self._unresolved
+
+    @property
+    def cutoff_date(self):
+        return self._cutoff_date
+
+    @property
+    def unresolved_tree(self):
+        return _flatten_hierarchy(_make_tree(self.unresolved))
+
+    def _last_resolved_date(self, item):
+        entries = self._resolved.get(item, [])
+        return entries[-1]["last_resolved"] if entries else self._cutoff_date
+
+    def check(self, page_manager):
+        # register just in case it hasn't been already
+        page_manager.register_archive(self._archive, self._subarchive)
+        # retrieve updates from page manager
+        updates, _ = page_manager.get_updates(self._archive, self._subarchive, self._last_checked_date)
+        if updates:
+            for item, mod_date in updates.items():
+                # Get most recent resolved mod date (if any)
+                latest_resolved = self._resolved[item][-1]["modified"] if item in self._resolved else None
+                if mod_date >= self._last_checked_date and (latest_resolved is None or mod_date > latest_resolved):
+                    self._unresolved[item] = {
+                        "modified": mod_date,
+                        "last_resolved": self._last_resolved_date(item)
+                    }
+            #_logger.info(f'ArchiveWatcher.check() unresolved: {json.dumps(self._unresolved, indent=4)}')
+            self._last_checked_date = max(max(updates.values()), self._last_checked_date)
+
+    def resolve(self, item, deep=False):
+        #_logger.info(f'ArchiveWatcher.resolve: before\n\tunresolved: {self._unresolved}\n\tresolved: {self._resolved}')
+        if deep:
+            _logger.info(f'ArchiveWatcher: deep resolve: {item}')
+            item = item.rstrip(',').split(",")
+            for key in list(self.unresolved.keys()):
+                split_key = key.split(",")[:len(item)]
+                if split_key == item:
+                    unresolved_item = self._unresolved.pop(key)
+                    _logger.info(f'ArchiveWatcher: deep resolving subitem: {key}; {item}; {unresolved_item}')
+                    self._resolved.setdefault(key, []).append(unresolved_item)
+        elif item in self._unresolved:
+            unresolved_item = self._unresolved.pop(item)
+            self._resolved.setdefault(item, []).append(unresolved_item)
+        #_logger.info(f'ArchiveWatcher.resolve: after\n\tunresolved: {self._unresolved}\n\tresolved: {self._resolved}')
+
+    def unresolve(self, item):
+        if item in self._resolved and self._resolved[item]:
+            self._unresolved[item] = self._resolved[item].pop()
+            if not self._resolved[item]:  # Clean up empty lists
+                del self._resolved[item]
 
 # ----------------------------------------------------------------------------
 # Page Update Manager
@@ -260,3 +422,5 @@ class Runtime:
 
     def lookup_by_title(self, title):
         return self._page_lru.lookup_by_title(title, runtime=self)
+
+

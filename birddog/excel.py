@@ -17,6 +17,7 @@ from openpyxl.utils.cell import get_column_letter
 
 from birddog.utility import get_text, is_linked, link_status
 from birddog.wiki import ARCHIVE_BASE
+from birddog.ai import classify_table_columns
 
 from birddog.logging import get_logger
 _logger = get_logger()
@@ -170,7 +171,7 @@ def _update_link_status(entry, prev_link_status):
         return cur_link_status
     return prev_link_status
 
-def _process_table_column(page, column_header_map, edit_cell, sheet, cell, parse, match):
+def _process_table_column(table, column_header_map, edit_cell, sheet, cell, parse, match):
     row = cell.row
     col = cell.column
     index = parse['index']
@@ -178,7 +179,7 @@ def _process_table_column(page, column_header_map, edit_cell, sheet, cell, parse
     if index is not None or mapped_index_list is not None:
         _logger.info(f'column map: {index} -> {mapped_index_list}')
     cell_text = _get_cell_text(cell)
-    for child in page.children:
+    for child in table["children"]:
         child_cell = sheet.cell(row=row, column=col)
         if child_cell.row != cell.row:
             # propagate border, style, font, and alignment to all rows
@@ -247,9 +248,9 @@ def list_templates():
     pattern = os.path.join(_TEMPLATE_DIR, '*.xlsx')
     return [os.path.basename(f) for f in glob.glob(pattern)]
 
-def export_page(page, dest_file=None, template=None, column_map=None, lru=None):
+def export_page(page, dest_file=None, template=None, table_name=None, column_map=None, lru=None):
     # load template file that matches this kind of page
-    _logger.info(f"export_page({page.title}: template='{template}', column_map='{column_map}')")
+    _logger.info(f"export_page({page.title}: template='{template}', table_name='{table_name}', column_map='{column_map}')")
     if not template:
         template_file = f'{_TEMPLATE_DIR}/{page.kind}.xlsx'
     else:
@@ -262,13 +263,17 @@ def export_page(page, dest_file=None, template=None, column_map=None, lru=None):
     max_col_letter = get_column_letter(max_col)
     _logger.info(f'sheet dimensions: {max_row} rows, {max_col} cols')
 
-    # construct column header map if needed
-    column_header_map = column_map if column_map else page.column_header_map
-
     _process_title(page, sheet)
 
+    # determine selected table for export
+    if not table_name:
+        table_name = page.tables[0]["name"] if page.tables else ""
+    table = page.lookup_table(table_name)
+    # construct column header map if needed
+    column_header_map = column_map if column_map else classify_table_columns(table)
+
     # move rows below the table downward to make room for table rows
-    num_children = len(page.children)
+    num_children = len(table["children"])
     first_child_row = _locate_first_child_row(sheet)
     last_child_row = first_child_row + max(num_children, 1) - 1
     _logger.info(f"export_page: first_child_row={first_child_row}, last_child_row={last_child_row}")
@@ -304,7 +309,7 @@ def export_page(page, dest_file=None, template=None, column_map=None, lru=None):
         for match, parse in zip(matches, parses):
             if parse['expr'] in ['empty', 'child', 'col']:
                 _process_table_column(
-                    page, 
+                    table, 
                     column_header_map, 
                     edit_cell, 
                     sheet, 

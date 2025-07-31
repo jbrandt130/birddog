@@ -13,6 +13,9 @@ const months                = [
     'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'
     ];
 
+const closed_icon = "bi-plus-circle-fill";
+const open_icon = "bi-dash-circle-fill";
+
 // ---------------------------------------------------------------------------
 // HELPER FUNCTIONS
 
@@ -340,151 +343,33 @@ async function translate_page() {
     update_translation_progress(data);
 }
 
-async function download_page() {
-    try {
-        // Default to an empty string if any parameter is null or undefined
-        url = `/download/${encodeURIComponent(current_page.archive)}`;
-        if (current_page.archive) {
-            url += `/${encodeURIComponent(current_page.subarchive)}`;
-            if (current_page.fond) {
-                url += `/${encodeURIComponent(current_page.fond)}`;
-                if (current_page.opus) {
-                    url += `/${encodeURIComponent(current_page.opus)}`;
-                    if (current_page.case) {
-                        url += `/${encodeURIComponent(current_page.case)}`;
-                    }
-                }
-            }
-        }
-        if ("refmod" in current_page) {
-            url += `?compare=${current_page.refmod}`
-        }
-        console.log(`Fetching data from: ${url}`);
-
-        // Show the spinner
-        show('browse-spinner');
-        hide('browse-page-content');
-
-        // Make the GET request
-        const response = await fetch(url, {
-            method: 'GET'
-        });
-
-        if (!response.ok) {
-            // Hide the spinner after loading
-            hide('browse-spinner');
-            show('browse-page-content');
-            if (response.status === 404) {
-                alert('Your session may have expired. Please log in again.');
-                location.reload();
-                return;
-            }
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-
-        // Convert the response to a Blob
-        const blob = await response.blob();
-
-        // Create an object URL for the Blob
-        const blobUrl = window.URL.createObjectURL(blob);
-
-        // Extract filename from Content-Disposition header (if available)
-        const contentDisposition = response.headers.get('Content-Disposition');
-        const filename = contentDisposition
-            ? contentDisposition.split('filename=')[1]?.replace(/['"]/g, '')
-            : 'download.xlsx';
-
-        // Create a hidden <a> element to trigger the download
-        const link = document.createElement('a');
-        link.href = blobUrl;
-        link.setAttribute('download', filename);
-        document.body.appendChild(link);
-
-        // Trigger download
-        link.click();
-
-        // Clean up
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(blobUrl);
-
-        // Hide the spinner after loading
-        hide('browse-spinner');
-        show('browse-page-content');
-
-    } catch (error) {
-        // Hide the spinner after loading
-        hide('browse-spinner');
-        show('browse-page-content');
-
-        console.error('Error loading page:', error.message);
-        alert(`Failed to load data: ${error.message}`);
-    }
-}
-
 function sanitize_id(column_name) {
   return 'export_' + column_name.toLowerCase().replace(/\s+/g, '_');
 }
 
-async function open_export_modal() {
-  try {
-    const title = current_page.title;
-    const response = await fetch(`/export?title=${encodeURIComponent(title)}`);
-    if (!response.ok) {
-        if (response.status === 404) {
-            alert('Your session may have expired. Please log in again.');
-            location.reload();
-            return;
-        }
-        throw new Error(`Failed to load export config: ${response.status}`);
-    }
-    const data = await response.json();
-    console.log("export data:", data)
-
-    const {
-      column_headers,
-      column_classes,
-      column_header_map,
-      default_template,
-      templates,
-      title: page_title
-    } = data;
-
-    // Set modal title
-    document.getElementById("exportModalLabel").textContent = `Download: ${page_title}`;
-
-    // Populate the template dropdown
-    const templateSelect = document.getElementById("templateSelect");
-    templateSelect.innerHTML = templates.map(t => {
-      const displayName = t.replace(/\.xlsx$/i, '')
-                           .replace(/_/g, ' ')
-                           .replace(/\b\w/g, c => c.toUpperCase());
-      return `<option value="${t}">${displayName}</option>`;
-    }).join("");
-    templateSelect.value = default_template;
-
-    // Render column assignment inputs
-    const container = document.getElementById("export-columns-container");
-    container.innerHTML = "";  // Clear any previous content
+function render_export_column_assignments(table_name, column_classes, column_headers, column_header_map) {
+    const column_container = document.getElementById("export-columns-container");
+    column_container.innerHTML = "";
     const tagify_map = {};
 
-    column_classes.forEach(col => {
-      const col_id = sanitize_id(col);
+    column_classes.forEach(column_class => {
+      const column_id = sanitize_id(column_class);
       const div = document.createElement("div");
       div.className = "mb-3";
       div.innerHTML = `
-        <label class="form-label">Export Column: ${col}</label>
-        <input class="form-control tag-input" id="${col_id}" placeholder="Select source columns...">
+        <label class="form-label">Export Column: ${column_class}</label>
+        <input class="form-control tag-input" id="${column_id}" placeholder="Select source columns...">
       `;
-      container.appendChild(div);
+      column_container.appendChild(div);
     });
 
     // Initialize Tagify for each input
-    column_classes.forEach(col => {
-      const inputId = sanitize_id(col);
-      const input = document.getElementById(inputId);
+    column_classes.forEach(column_class => {
+      const input_id = sanitize_id(column_class);
+      const input = document.getElementById(input_id);
       if (input) {
         const tagify = new Tagify(input, {
-          whitelist: column_headers,
+          whitelist: column_headers[table_name],
           dropdown: {
             enabled: 0,
             fuzzySearch: true,
@@ -493,30 +378,114 @@ async function open_export_modal() {
           enforceWhitelist: true,
           duplicates: true
         });
-        tagify_map[col] = tagify;
+        tagify_map[column_class] = tagify;
 
-        // Prepopulate from column_header_map if available
-        const headerIndices = column_header_map[col];
-        if (headerIndices !== undefined) {
+        // Prepopulate from column_header_map
+        const header_indices = column_header_map[table_name][column_class];
+        if (header_indices !== undefined) {
           tagify.removeAllTags();
-          headerIndices.forEach(headerIndex => {
-            if (column_headers[headerIndex]) {
-                tagify.addTags([column_headers[headerIndex]]);
+          header_indices.forEach(header_index => {
+            const header = column_headers[table_name][header_index];
+            if (header) {
+              tagify.addTags([header]);
             }
           });
         }
       }
     });
+    return tagify_map;
+}
+
+async function open_export_modal() {
+  try {
+    const page_title = current_page.title;
+    const response = await fetch(`/export?title=${encodeURIComponent(page_title)}`);
+    if (!response.ok) {
+      if (response.status === 404) {
+        alert('Your session may have expired. Please log in again.');
+        location.reload();
+        return;
+      }
+      throw new Error(`Failed to load export config: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log("export data:", data);
+
+    const {
+      column_headers,
+      column_classes,
+      column_header_map,
+      default_template,
+      default_table,
+      templates,
+      title: export_page_title
+    } = data;
+
+    const num_tables = Object.keys(column_headers).length;
+
+    // Set modal title
+    document.getElementById("exportModalLabel").textContent = `Download: ${export_page_title}`;
+
+    // Populate the template dropdown
+    const template_select = document.getElementById("templateSelect");
+    template_select.innerHTML = templates.map(template => {
+      const display_name = template
+        .replace(/\.xlsx$/i, '')
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+      return `<option value="${template}">${display_name}</option>`;
+    }).join("");
+    template_select.value = default_template;
+
+    // populate the table selection dropdown (if needed)
+    if (num_tables > 1) {
+        // more than one table
+        const table_select = document.getElementById("tableSelect");
+        table_select.innerHTML = Object.keys(column_headers).map(table_name => {
+            return `<option value="${table_name}">${table_name}</option>`;
+        }).join("");
+        table_select.value = default_table;
+
+        // Attach event listener to update column assignments on change
+        table_select.addEventListener("change", (event) => {
+            const selected_table = event.target.value;
+            const new_tagify_map = render_export_column_assignments(
+                selected_table,
+                column_classes,
+                column_headers,
+                column_header_map
+            );
+            window._export_tagify_map = new_tagify_map;
+        });
+
+        show("table-select-container");
+    }
+    else {
+        hide("table-select-container");
+    }
+
+    // Render column assignment inputs
+    let tagify_map = {};
+    if (num_tables > 0) {
+        tagify_map = render_export_column_assignments(default_table, column_classes, column_headers, column_header_map);
+        show("export-columns-container");
+    }
+    else {
+        hide("export-columns-container");
+        document.getElementById("tableSelect").value = "";
+    }
 
     // Save for use on submit
     window._export_tagify_map = tagify_map;
     window._export_column_classes = column_classes;
-    window._export_page_title = page_title;
+    window._export_page_title = export_page_title;
     window._export_column_headers = column_headers;
+    window._export_num_tables = num_tables;
 
     // Show the modal
-    const modal = new bootstrap.Modal(document.getElementById("exportModal"));
-    modal.show();
+    const export_modal = new bootstrap.Modal(document.getElementById("exportModal"));
+    export_modal.show();
 
   } catch (err) {
     console.error("Failed to open export modal:", err);
@@ -524,15 +493,100 @@ async function open_export_modal() {
   }
 }
 
+
 // ---------------------------------------------------------------------------
 // UI RENDERING AND HANDLERS
 
 // handle table row click
-function on_row_click(page_data, index) {
-    console.log(`click on:  ${page_data.title}[${index}]`);
-    const child_title = page_data.children[index][0].link.replace("/wiki/","");
-    console.log(`child title: ${child_title}`)
+function on_row_click(table_data, index) {
+    //console.log(`click on:  ${page_data.title}[${index}]`);
+    const child_title = table_data.children[index][0].link.replace("/wiki/","");
+    console.log(`on_row_click: child title = ${child_title}`)
     load_page_by_title(child_title);
+}
+
+// insert a table
+function render_table(table_element, table_data, is_comparison) {
+    const children = table_data.children;
+    const header = table_data.header;
+    const header_elem = table_element.querySelector('thead');
+    var row = '<tr>';
+    header.forEach((item, index) => {
+        row += `<th>${get_text(item) || ''}</th>`;
+    });
+    row += '</tr>';
+    header_elem.innerHTML = row;
+
+    const body_elem = table_element.querySelector('tbody');
+    body_elem.innerHTML = ''; // Clear existing content
+
+    var row_added = false;
+    var any_edit = false;
+    children.forEach((child, index) => {
+        var row_edited = false;
+        const row_elem = document.createElement('tr');
+        child.forEach((item, index) => {
+            const cell_elem = document.createElement('td');
+            var cell_content = '';
+            cell_content += get_text(item.text) || '';
+            if (is_comparison && 'edit' in item) {
+                switch (item.edit) {
+                case 'added':
+                    cell_elem.classList.add('table-success');
+                    row_edited = true;
+                    break;
+                case 'changed':
+                    cell_elem.classList.add('table-warning');
+                    row_edited = true;
+                    break;
+                default:
+                    break;
+                }
+            }
+            if (is_comparison && 'link_edit' in item) {
+                switch (item.link_edit) {
+                case 'added':
+                    //console.log('link added:', cell_content);
+                    cell_content =
+                        `<button class="btn btn-success btn-sm" style="opacity: 0.5;">
+                            <i class="bi bi-link-45deg"></i>
+                        </button> &nbsp;` + cell_content;
+                    row_edited = true;
+                    break;
+                case 'changed':
+                    //console.log('link changed:', cell_content);
+                    cell_content =
+                        `<button class="btn btn-warning btn-sm" style="opacity: 0.5;">
+                            <i class="bi bi-link-45deg"></i>
+                        </button> &nbsp;` + cell_content;
+                    row_edited = true;
+                    break;
+                default:
+                    break;
+                }
+            }
+            cell_elem.innerHTML = cell_content;
+            row_elem.appendChild(cell_elem)
+        });
+        if (row_edited)
+            any_edit = true;
+        if (!is_comparison || row_edited) {
+            // only add the row if not doing comparison or there is a change to show
+            if (is_linked(child[0])) {
+                // Add click event listener
+                row_elem.addEventListener('click', () => on_row_click(table_data, index));
+            }
+            else {
+                row_elem.classList.add('table-secondary', 'disabled');
+                row_elem.style.pointerEvents = 'none';
+                row_elem.style.opacity = '0.4'; // Dim for better visibility
+            }
+
+            body_elem.appendChild(row_elem);
+            row_added = true;
+        }
+    });
+    return any_edit;
 }
 
 // render a data page
@@ -630,101 +684,82 @@ function render_page_data(data) {
     const source_link_elem = document.getElementById('source-link');
     source_link_elem.setAttribute('href', data.link);
 
-    const children = data.children;
-    const header = data.header;
-    const header_elem = document.getElementById('page_table').querySelector('thead');
-    var row = '<tr>';
-    header.forEach((item, index) => {
-        row += `<th>${get_text(item) || ''}</th>`;
-    });
-    row += '</tr>';
-    header_elem.innerHTML = row;
+    // render all tables
+    const container = document.getElementById('page-table-container');
+    container.innerHTML = '';  // Clear existing content
+    let any_children = false;
 
-    const body_elem = document.getElementById('page_table').querySelector('tbody');
-    body_elem.innerHTML = ''; // Clear existing content
-
-    var row_added = false;
-    children.forEach((child, index) => {
-        var row_edited = false;
-        const row_elem = document.createElement('tr');
-        child.forEach((item, index) => {
-            const cell_elem = document.createElement('td');
-            var cell_content = '';
-            cell_content += get_text(item.text) || '';
-            if (is_comparison && 'edit' in item) {
-                switch (item.edit) {
-                case 'added':
-                    cell_elem.classList.add('table-success');
-                    row_edited = true;
-                    break;
-                case 'changed':
-                    cell_elem.classList.add('table-warning');
-                    row_edited = true;
-                    break;
-                default:
-                    break;
-                }
-            }
-            if (is_comparison && 'link_edit' in item) {
-                switch (item.link_edit) {
-                case 'added':
-                    //console.log('link added:', cell_content);
-                    cell_content =
-                        `<button class="btn btn-success btn-sm" style="opacity: 0.5;">
-                            <i class="bi bi-link-45deg"></i>
-                        </button> &nbsp;` + cell_content;
-                    row_edited = true;
-                    break;
-                case 'changed':
-                    //console.log('link changed:', cell_content);
-                    cell_content =
-                        `<button class="btn btn-warning btn-sm" style="opacity: 0.5;">
-                            <i class="bi bi-link-45deg"></i>
-                        </button> &nbsp;` + cell_content;
-                    row_edited = true;
-                    break;
-                default:
-                    break;
-                }
-            }
-            cell_elem.innerHTML = cell_content;
-            row_elem.appendChild(cell_elem)
-        });
-        if (row_edited)
-            any_edit = true;
-        if (!is_comparison || row_edited) {
-            // only add the row if not doing comparison or there is a change to show
-            if (data.kind != 'case' && is_linked(child[0])) {
-                // Add click event listener
-                row_elem.addEventListener('click', () => on_row_click(data, index));
-            }
-            else {
-                row_elem.classList.add('table-secondary', 'disabled');
-                row_elem.style.pointerEvents = 'none';
-                row_elem.style.opacity = '0.4'; // Dim for better visibility
-            }
-
-            body_elem.appendChild(row_elem);
-            row_added = true;
+    if (data.tables.length === 1) {
+        const table_data = data.tables[0];
+        if (table_data.children.length > 0) {
+            any_children = true;
         }
-    });
 
-    // watch button is only visible for archive level pages
-    //show_if('archive-watch-btn', data.kind == 'archive')
+        const table = document.createElement('table');
+        table.className = 'table table-striped table-hover';
+        table.innerHTML = '<thead class="table-light position-sticky top-0" style="z-index: 1;"></thead><tbody></tbody>';
+
+        container.appendChild(table);
+        if (render_table(table, table_data, is_comparison)) {
+            any_edit = true;
+        }
+    } else {
+        data.tables.forEach((table_data, i) => {
+            const section = document.createElement('div');
+            section.className = 'mb-3';
+
+            const headerId = `tableHeading${i}`;
+            const collapseId = `tableCollapse${i}`;
+            const is_first = i === 0;
+
+            section.innerHTML = `
+              <div class="d-flex align-items-center mb-2">
+                <button class="btn btn-link d-flex align-items-center" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="${is_first}" aria-controls="${collapseId}">
+                  <i class="bi ${is_first ? open_icon : closed_icon} me-2" id="icon-${i}"></i>
+                  ${table_data.name}
+                </button>
+              </div>
+              <div id="${collapseId}" class="collapse ${is_first ? 'show' : ''}">
+                <table class="table table-striped table-hover">
+                  <thead class="table-light position-sticky top-0" style="z-index: 1;"></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            `;
+
+            container.appendChild(section);
+
+            // Attach event listener to update icon
+            const collapseEl = section.querySelector(`#${collapseId}`);
+            collapseEl.addEventListener('show.bs.collapse', () => {
+                const icon = section.querySelector(`#icon-${i}`);
+                icon.classList.remove(closed_icon);
+                icon.classList.add(open_icon);
+            });
+            collapseEl.addEventListener('hide.bs.collapse', () => {
+                const icon = section.querySelector(`#icon-${i}`);
+                icon.classList.remove(open_icon);
+                icon.classList.add(closed_icon);
+            });
+
+            const table = section.querySelector('table');
+            if (table_data.children.length > 0) {
+                any_children = true;
+            }
+            if (render_table(table, table_data, is_comparison)) {
+                any_edit = true;
+            }
+        });
+    }
 
     show_if('comparing-badge', is_comparison);
     show_if('no-differences-badge', is_comparison && !any_edit);
-    show_if('empty-page-badge', children.length == 0);
+    show_if('empty-page-badge', !any_children);
     show_if('needs-resolve-badge', resolve_enable);
-    //show_if('translating-badge', data.translating ?? false);
-    //show_if('progress-container', data.translating ?? false);
-
-
 
     // set button enables
     enable_if("resolve-btn", resolve_enable);
     enable_if("translate-btn", data.needs_translation);
-    //enable_if("download-btn", true);
 
     render_breadcrumbs(data);
     update_archive_select();
@@ -1227,9 +1262,6 @@ function resolve_page() {
     }
 }
 
-const closed_icon = "bi-plus-circle-fill";
-const open_icon = "bi-dash-circle-fill";
-
 function render_node(name, node) {
     const node_id = 'id_' + Math.random().toString(36).substring(2, 10);
     node._id = node_id;
@@ -1580,26 +1612,41 @@ async function on_loaded() {
         });
 
         document.getElementById("submitExport").addEventListener("click", () => {
-            const selectedTemplate = document.getElementById("templateSelect").value;
+            const selected_template = document.getElementById("templateSelect").value;
+            let selected_table = document.getElementById("tableSelect").value;
+            if (!Object.keys(window._export_column_headers).includes(selected_table)) {
+                if (window._export_num_tables > 0) {
+                    selected_table = Object.keys(window._export_column_headers)[0];
+                }
+                else {
+                    selected_table = "";
+                }
+            }
+            console.log(`export: template=${selected_template}, table=${selected_table}`)
 
             // map selected labels to indices
+            console.log(window._export_column_headers)
             const column_map = {};
-            window._export_column_classes.forEach(col => {
-                const tagify = window._export_tagify_map[col];
-                if (tagify) {
-                  column_map[col] = tagify.value.map(tag => {
-                    const idx = window._export_column_headers.indexOf(tag.value);
-                    if (idx === -1) {
-                      console.warn(`Header not found: "${tag.value}"`);
+            if (window._export_num_tables > 0) {
+                window._export_column_classes.forEach(col => {
+                    const tagify = window._export_tagify_map[col];
+                    if (tagify) {
+                      column_map[col] = tagify.value.map(tag => {
+                        const idx = window._export_column_headers[selected_table].indexOf(tag.value);
+                        if (idx === -1) {
+                          console.warn(`Header not found: "${tag.value}"`);
+                        }
+                        return idx;
+                      }).filter(i => i !== -1);  // ignore unfound labels
                     }
-                    return idx;
-                  }).filter(i => i !== -1);  // ignore unfound labels
-                }
-            });
+                });
+            }
 
+            // prepare POST payload
             const payload = {
                 title: window._export_page_title,
-                template: selectedTemplate,
+                template: selected_template,
+                table: selected_table,
                 column_map: column_map
             };
 

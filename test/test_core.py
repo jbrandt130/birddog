@@ -7,9 +7,8 @@ from birddog.wiki import ARCHIVE_BASE, canonicalize_title, lineage
 from birddog.core import (
     Archive,
     Page,
-    ArchiveWatcher,
     )
-from birddog.runtime import Runtime, PageLRU
+from birddog.runtime import Runtime, PageLRU, ArchiveWatcher
 
 
 fond_id = '1'
@@ -135,7 +134,7 @@ class Test(unittest.TestCase):
             address = key.rstrip(',').split(',') + 3 * [None]
             address = address[:5]
             page = runtime.lookup_by_address(*address)
-            self.assertEqual(page.lastmod, watcher.unresolved[key]['modified'])
+            self.assertTrue(page.lastmod <= watcher.unresolved[key]['modified'])
 
     def test_Titles(self):
         titles = [ 

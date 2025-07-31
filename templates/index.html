@@ -375,19 +375,7 @@
       </div>
     </div>
     <div id="page-table-container" class="mt-4">
-      <table id="page_table" class="table table-striped table-hover">
-        <thead class="table-light position-sticky top-0" style="z-index: 1;">
-          <tr>
-            <th>Index</th>
-            <th>Description</th>
-            <th>Year Range</th>
-            <th>Comments</th>
-          </tr>
-        </thead>
-        <tbody>
-          <!-- Rows will be populated dynamically -->
-        </tbody>
-      </table>
+      <!-- Table containers will be injected dynamically here -->
     </div>
   </div>
 </div>
@@ -489,6 +477,14 @@
         <div class="mb-4">
           <label for="templateSelect" class="form-label">Page Type</label>
           <select id="templateSelect" class="form-select">
+            <!-- Options will be added dynamically -->
+          </select>
+        </div>
+
+        <!-- Export Table Selection -->
+        <div id="table-select-container" class="mb-4">
+          <label for="tableSelect" class="form-label">Table</label>
+          <select id="tableSelect" class="form-select">
             <!-- Options will be added dynamically -->
           </select>
         </div>

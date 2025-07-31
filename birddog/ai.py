@@ -234,8 +234,8 @@ def _normalize(labels, required_labels, other_label="OTHER"):
 
     return normalized, is_usable, is_valid
 
-def _default_labels(page):
-    return ["ID", "DESCRIPTION", "DATE"] + ["OTHER"] * (len(page.header) - 3)
+def _default_labels(table):
+    return ["ID", "DESCRIPTION", "DATE"] + ["OTHER"] * (len(table["header"]) - 3)
 
 _total_inferences = 0
 _successful_inferences = 0
@@ -243,48 +243,51 @@ _successful_inferences = 0
 def list_column_classes():
     return ["ID", "DESCRIPTION", "DATE"]
 
-def classify_table_columns(page):
-    global _backoff_until, _successful_inferences, _total_inferences
-    classes = {
-        "DATE": "A column indicating a single date or a date range",
-        "DESCRIPTION": "A column containing a textual description of the item",
-        "ID": "A unique row identifier, number, or code"
-    }
-    hints = "\n".join([
-        "The ID column is always first.",
-        ""])
-    now = time.time()
-    if now < _backoff_until:
-        return {
-            "mapping": _default_labels(page),
-            "success": False
-            }
+_table_column_classifer_enabled = False
 
-    max_rows = 3
-    rows = [ [ item['text']['uk'] for item in row ] for row in page.children[:max_rows] ]
-    try:
-        _total_inferences += 1
-        mapping = table_column_classifier(
-            [col['uk'] for col in page.header], classes, sample_rows=rows, hints=hints)
-        mapping, is_usable, is_valid = _normalize(mapping, classes.keys())
-        if not is_usable:
-            mapping = _default_labels(page)
-        if is_valid:
-            _successful_inferences += 1
-        _logger.info(f'classify_table_columns result (valid={is_valid}): {mapping}')
-        _logger.info(f'classify_table_columns success rate: {_successful_inferences}/{_total_inferences}'
-                     f' ({100. * _successful_inferences / _total_inferences}%)')
-        return {
-            "mapping": mapping,
-            "success": is_valid
-            }
-    except ServiceError as e:
-        _logger.error(f"ServiceError: {e.cause}")
-        _backoff_until = time.time() + _BACKOFF_DURATION
-        _logger.warning("Rate limit hit. Backing off table classification until %s",
-                           datetime.fromtimestamp(_backoff_until).isoformat())
+def classify_table_columns(table):
+    if _table_column_classifer_enabled:
+        global _backoff_until, _successful_inferences, _total_inferences
+        classes = {
+            "DATE": "A column indicating a single date or a date range",
+            "DESCRIPTION": "A column containing a textual description of the item",
+            "ID": "A unique row identifier, number, or code"
+        }
+        hints = "\n".join([
+            "The ID column is always first.",
+            ""])
+        now = time.time()
+        if now < _backoff_until:
+            return {
+                "mapping": _default_labels(table),
+                "success": False
+                }
+
+        max_rows = 3
+        rows = [ [ item['text']['uk'] for item in row ] for row in table["children"][:max_rows] ]
+        try:
+            _total_inferences += 1
+            mapping = table_column_classifier(
+                [col['uk'] for col in table["header"]], classes, sample_rows=rows, hints=hints)
+            mapping, is_usable, is_valid = _normalize(mapping, classes.keys())
+            if not is_usable:
+                mapping = _default_labels(table)
+            if is_valid:
+                _successful_inferences += 1
+            _logger.info(f'classify_table_columns result (valid={is_valid}): {mapping}')
+            _logger.info(f'classify_table_columns success rate: {_successful_inferences}/{_total_inferences}'
+                         f' ({100. * _successful_inferences / _total_inferences}%)')
+            return {
+                "mapping": mapping,
+                "success": is_valid
+                }
+        except ServiceError as e:
+            _logger.error(f"ServiceError: {e.cause}")
+            _backoff_until = time.time() + _BACKOFF_DURATION
+            _logger.warning("Rate limit hit. Backing off table classification until %s",
+                               datetime.fromtimestamp(_backoff_until).isoformat())
     # unable to run inference - return fallback and let caller know
     return {
-        "mapping": _default_labels(page),
+        "mapping": _default_labels(table),
         "success": False
         }
