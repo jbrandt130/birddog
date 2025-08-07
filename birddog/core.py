@@ -81,7 +81,7 @@ class Page:
                 if history:
                     self._page["lastmod"] = history[0]["modified"]
                 # proactively get document links
-                self.load_child_document_links(update_cache=False)
+                # self.load_child_document_links(update_cache=False)
                 self._cache_save()
 
     class LookupError(Exception):
@@ -330,6 +330,7 @@ class Page:
             return Page(child_title, runtime=self._runtime)
 
         # last ditch: search children lists
+        """
         for child_id in self.child_ids:
             child = self.lookup(child_id)
             if child:
@@ -342,6 +343,7 @@ class Page:
                         if self._runtime:
                             return self._runtime.lookup_by_title(child_title)
                         return Page(child_title, runtime=self._runtime)
+        """
 
         # can't find it - go ahead and adopt
         self.adopt(entry_id, child_title)

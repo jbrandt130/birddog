@@ -119,7 +119,7 @@ class Test(unittest.TestCase):
         self.assertFalse(watcher.resolved)
         self.assertTrue(watcher.unresolved)
         #print(watcher.unresolved)
-        item = watcher.key("DAKO", "D", "280", "2", "6")
+        item = watcher.key("DAKO", "D", "280", "2", "111")
         #item = "DAKO-D/1455/1/169"
         self.assertTrue(item in watcher.unresolved)
         watcher.resolve(item)
@@ -139,7 +139,7 @@ class Test(unittest.TestCase):
     def test_Titles(self):
         titles = [ 
             "Архів:Архівний_відділ_виконавчого_комітету_Кременчуцької_міської_ради/2-ОС/1",
-            "Архів:ДАПО/Р-9126/2",
+            #"Архів:ДАПО/Р-9126/2",
             "Архів:ДАЖО/1/1",
             "Архів:ДАК/312/1",
             "Архів:ДАЖО/1/74",

@@ -12,30 +12,7 @@ import requests
 from collections import deque
 from datetime import datetime
 
-# EPHEMERAL SYSTEM LOGGING --------------------------------------------------
-
-#
-# deployment environment sniffer
-
-"""
-_environment = None
-def detect_environment():
-    global _environment
-    if not _environment:
-        _environment = "local"
-        try:
-            r = requests.get("http://169.254.169.254/latest/meta-data/", timeout=0.1)
-            if r.status_code == 200:
-                _environment = "aws"
-        except requests.RequestException:
-            pass
-    return _environment
-"""
-
-def detect_environment():
-    if os.environ.get("BIRDDOG_AWS_ENVIRONMENT"):
-        return "aws"
-    return "local"
+from birddog.env import detect_environment
 
 # EPHEMERAL SYSTEM LOGGING --------------------------------------------------
 

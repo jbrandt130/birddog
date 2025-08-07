@@ -29,6 +29,8 @@ from birddog.utility import (
     is_linked,
     )
 
+from birddog.store import get_mod_date_store
+
 from birddog.logging import get_logger
 _logger = get_logger()
 
@@ -1076,6 +1078,9 @@ def get_last_mod(titles):
     Return a dict of {page_title: last_modified_datetime} using fast batched 'prop=info' queries.
     Input: str or list of str (page titles)
     Output: dict {title: datetime or None}
+
+    Note that this is an upper bound on the mod date. There can be template changes that affect
+    the "touched" value, even if the page content is unchanged.
     """
     if isinstance(titles, str):
         titles = [titles]
@@ -1093,19 +1098,24 @@ def get_last_mod(titles):
         }
 
         response = fetch_url(API_URL, params=params, json=True)
-        pages = response.get("query", {}).get("pages", {})
+        query = response.get("query")
+        if query:
+            title_mapping = {}
+            normalized = query.get("normalized", {})
+            for item in normalized:
+                title_mapping[item["to"]] = item["from"]
 
-        for page in pages.values():
-            title = page.get("title")
-            touched = page.get("touched")
-            result[title] = from_utc_format(touched) if touched else None
+            pages = query.get("pages", {})
+            for page in pages.values():
+                title = page.get("title")
+                title = title_mapping.get(title, title)
+                touched = page.get("touched")
+                result[title] = from_utc_format(touched) if touched else None
 
-        # Fill in None for missing titles (e.g., typos or deleted pages)
-        for title in batch:
-            result.setdefault(title, None)
-
-        #if i < len(titles):
-        #    time.sleep(5)
+            # Fill in None for missing titles (e.g., typos or deleted pages)
+            for title in batch:
+                if title not in result:
+                    result.setdefault(title, None)
 
     return result
 
@@ -1113,56 +1123,47 @@ def get_last_mod(titles):
 # Keep persistable list of latest mod date per page title
 
 class PageTracker:
-    def __init__(self, mod_dates=None, cutoff_date=None):
-        self._mod_dates = mod_dates if mod_dates else {}
+    def __init__(self, cutoff_date=None):
         self._cutoff_date = cutoff_date
+        self._mod_date_store = get_mod_date_store()
 
     def to_dict(self):
         return {
-            'mod_dates':        self._mod_dates,
             'cutoff_date':      self._cutoff_date,
         }
 
     @classmethod
     def from_dict(cls, d):
-        return cls(
-            mod_dates=d['mod_dates'],
-            cutoff_date=d['cutoff_date'],
-            )
+        return cls(cutoff_date=d['cutoff_date'])
 
-    def least_recent(self):
-        return min(self._mod_dates.items(), key=lambda x: x[1])
-
-    def most_recent(self):
-        return max(self._mod_dates.items(), key=lambda x: x[1])
-
-    def update(self):
-        updates = get_recent_changes(cutoff_date=self._cutoff_date)
-        self._cutoff_date = max(updates.items(), key=lambda x: x[1])[1]
-        any_change = False
-
+    def _update_mod_dates(self, updates):
         # collect updates that differ from known updates and normalize page titles
-        candidate_updates = {}
-        for page, mod_date in updates.items():
-            if mod_date != self._mod_dates.get(page):
-                candidate_updates[canonicalize_title(page)] = mod_date
+        candidate_updates = self._mod_date_store.get_newer_updates(updates)
 
         if candidate_updates:
             # check if these candidate pages exist
-            candidate_pages = list(candidate_updates.keys())
-            check = batch_page_exists(candidate_pages)
-            for page in candidate_pages:
-                if check[page]:
-                    # check if the page is within an allowed archive root
-                    if page.split("/", 1)[0] in ARCHIVES_BY_ROOT:
-                        self._mod_dates[page] = candidate_updates[page]
-                        any_change = True
-                    else:
-                        _logger.info(f"PageTracker ignoring page {page} (unknown root)")
-        return any_change
+            pages = candidate_updates.keys()
+            check = batch_page_exists(list(pages))
+            candidate_updates = { 
+                page: candidate_updates[page] for page in pages 
+                if check.get(page) and page.split("/", 1)[0] in ARCHIVES_BY_ROOT
+                }
+            if candidate_updates:
+                self._mod_date_store.batch_store_updates(candidate_updates)
+                return True
+        return False
+
+    def update(self):
+        updates = get_recent_changes(cutoff_date=self._cutoff_date)
+        if not updates:
+            return False
+        self._cutoff_date = max(updates.values())
+        return self._update_mod_dates(updates)
 
     def add_titles(self, titles):
-        new_titles = [canonicalize_title(title) for title in titles if title not in self._mod_dates]
+        new_titles = self._mod_date_store.get_missing_titles([
+            canonicalize_title(title) for title in titles])
+
         if new_titles:
             # validate title existence
             check = batch_page_exists(new_titles)
@@ -1172,27 +1173,14 @@ class PageTracker:
 
         updates = get_last_mod(new_titles)
         _logger.info(f'add_titles: found {len(updates)} updates')
-        any_change = False
-        for page, mod_date in updates.items():
-            if mod_date != self._mod_dates.get(page):
-                any_change = True
-                self._mod_dates[page] = mod_date
-        return any_change
+        return self._update_mod_dates(updates)
 
     def get_updates(self, prefix, cutoff_date=None):
         prefix = prefix.replace("_", " ")
         if not prefix.startswith(WIKI_NAMESPACE):
             prefix = f"{WIKI_NAMESPACE}:{prefix}"
-        def selected(title, mod_date):
-            return title.startswith(prefix) and (not cutoff_date or mod_date >= cutoff_date)
-        result = { title: mod_date for title, mod_date in self._mod_dates.items() if selected(title, mod_date)}
-        return result
 
-    def __getitem__(self, key):
-        return self._mod_dates[key]
-
-    def __contains__(self, key):
-        return key in self._mod_dates
+        return self._mod_date_store.query_by_prefix(prefix, cutoff_date)
 
 # -------------------------------------------------------------------------------
 # Page revision history handling (using wiki API)

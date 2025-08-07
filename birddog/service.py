@@ -163,7 +163,7 @@ class User:
                 return watcher.unresolved_tree
             return [{'name': k, **v} for k, v in watcher.unresolved.items()]
 
-    def resolve_item(self, archive, subarchive, fond=None, opus=None, case=None, tree=False):
+    def resolve_item(self, archive, subarchive, fond=None, opus=None, case=None, tree=False, deep=False):
         key = _watchlist_key(archive, subarchive)
 
         with self._lock:
@@ -179,8 +179,8 @@ class User:
             watcher = ArchiveWatcher.load(watcher_data)
 
             resolve_key = ArchiveWatcher.key(archive, subarchive, fond, opus, case)
-            _logger.info(f'Resolving {resolve_key}')
-            watcher.resolve(resolve_key, deep=tree)
+            _logger.info(f'Resolving {resolve_key}, deep={deep}, tree={tree}')
+            watcher.resolve(resolve_key, deep=deep)
 
             save_cached_object(watcher.save(), path)
 
@@ -733,13 +733,14 @@ def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
         return error_response, status
 
     tree = request.args.get('tree') is not None
+    deep = request.args.get('deep') is not None
 
-    _logger.info(f'resolve_update: {archive}, {subarchive}, {fond}, {opus}, {case}')
+    _logger.info(f'resolve_update(deep={deep}): {archive}, {subarchive}, {fond}, {opus}, {case}')
     try:
         result = user.resolve_item(
             archive, subarchive,
             fond=fond, opus=opus, case=case,
-            tree=tree
+            tree=tree, deep=deep
         )
 
         return jsonify({'success': True, 'unresolved': result}), 200

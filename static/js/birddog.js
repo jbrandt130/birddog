@@ -1198,7 +1198,7 @@ function view_changes(full_path, modified, last_resolved) {
 async function resolve_page_update(page_name, deep=false) {
     try {
         const path = page_name.replace(/,+$/, '').replace(/,/g, '/');
-        console.log('Resolving:', path);
+        console.log('Resolving:', path, "deep=", deep);
         var url = `/resolve/${path}?tree=1`;
         if (deep)
             url += '&deep=1';
