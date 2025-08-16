@@ -329,6 +329,7 @@ class PageUpdateManager(HeartbeatManager):
     _HEARTBEAT_INTERVAL             = 30 # seconds
     _PAGE_UPDATE_CHECK_INTERVAL     = 60 * 15 # seconds
     _TITLE_BATCH_SIZE               = 50
+    _API_DELAY                      = 1
 
     def __init__(self, page_lru=None):
         self._lru = page_lru if page_lru else PageLRU()
@@ -398,7 +399,7 @@ class PageUpdateManager(HeartbeatManager):
         if self._pending_titles:
             batch = self._pending_titles[:PageUpdateManager._TITLE_BATCH_SIZE]
             _logger.info(f"PageUpdateManager: adding batch of {len(batch)} titles to tracker ({len(self._pending_titles)} remaining)")
-            self._tracker.add_titles(batch)
+            self._tracker.add_titles(batch, api_delay=PageUpdateManager._API_DELAY)
             # finally delete batch from pending titles (after successfully adding)
             del self._pending_titles[:PageUpdateManager._TITLE_BATCH_SIZE]
             self.save()

@@ -1081,7 +1081,7 @@ def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500,
 # -------------------------------------------------------------------------------
 # Get most recent page modification dates within given namespace
 
-def get_last_mod(titles):
+def get_last_mod(titles, api_delay=0):
     """
     Return a dict of {page_title: last_content_modified_datetime} using 'prop=revisions'.
     This avoids inflated 'touched' timestamps from template updates, purges, or file usage.
@@ -1124,6 +1124,9 @@ def get_last_mod(titles):
                     result[original_title] = None
         else:
             result[title] = None
+
+        if api_delay > 0:
+            time.sleep(api_delay)
 
     return result
 
@@ -1169,7 +1172,7 @@ class PageTracker:
         self._cutoff_date = max(updates.values())
         return self._update_mod_dates(updates)
 
-    def add_titles(self, titles):
+    def add_titles(self, titles, api_delay=0):
         new_titles = self._mod_date_store.get_missing_titles([
             canonicalize_title(title) for title in titles])
 
@@ -1180,7 +1183,7 @@ class PageTracker:
         if not new_titles:
             return False
 
-        updates = get_last_mod(new_titles)
+        updates = get_last_mod(new_titles, api_delay)
         _logger.info(f'add_titles: found {len(updates)} updates')
         return self._update_mod_dates(updates)
 
