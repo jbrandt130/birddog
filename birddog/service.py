@@ -146,13 +146,14 @@ class User:
             path = _watcher_cache_path(self.email, archive, subarchive)
             try:
                 watcher_data = load_cached_object(path)
-                watcher = ArchiveWatcher.load(watcher_data)
+                watcher = ArchiveWatcher.load(watcher_data, runtime=runtime)
             except CacheMissError:
                 watcher = ArchiveWatcher(
                     archive, subarchive,
-                    self.watchlist[key]['cutoff_date'])
+                    self.watchlist[key]['cutoff_date'],
+                    runtime=runtime)
 
-            watcher.check(runtime.update_manager)
+            watcher.check()
             save_cached_object(watcher.save(), path)
 
             self.watchlist[key]['last_checked_date'] = datetime.now().strftime('%Y,%m,%d,%H:%M')
@@ -472,11 +473,18 @@ def page_data(archive=None, subarchive=None, fond=None, opus=None, case=None):
         return error_response, status
 
     try:
-        if not archive:
-            page_title = request.args.get('title')
-            (archive, subarchive, fond, opus, case) = page_address(page_title)
-        _logger.info(f"/page request: {archive}, {subarchive}, {fond}, {opus}, {case}")
-        page = runtime.lookup_by_address(archive, subarchive, fond, opus, case)
+        page = None
+        page_title = request.args.get('title')
+        if page_title:
+            #page_title = request.args.get('title')
+            _logger.info(f'/page looking up title: {page_title}')
+            page = runtime.lookup_by_title(page_title)
+            address = page_address(page_title)
+            _logger.info(f'/page mapping title to address: {address}')
+            (archive, subarchive, fond, opus, case) = address
+        else:
+            _logger.info(f"/page request: {archive}, {subarchive}, {fond}, {opus}, {case}")
+            page = runtime.lookup_by_address(archive, subarchive, fond, opus, case)
         if page:
             compare = request.args.get('compare')
             if compare:
@@ -723,15 +731,18 @@ def check_watchlist_item(archive, subarchive):
     except KeyError:
         return jsonify({'error': 'Watchlist item not found'}), 404
 
+
+@app.route('/resolve', methods=['GET'])
 @app.route('/resolve/<archive>/<subarchive>', methods=['GET'])
 @app.route('/resolve/<archive>/<subarchive>/<fond>', methods=['GET'])
 @app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
 @app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
-def resolve_update(archive, subarchive, fond=None, opus=None, case=None):
+def resolve_update(archive=None, subarchive=None, fond=None, opus=None, case=None):
     user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
 
+    page_title = request.args.get('title')
     tree = request.args.get('tree') is not None
     deep = request.args.get('deep') is not None
 

@@ -310,6 +310,7 @@ class Page:
             adoptees["children"].append(row)
 
     def lookup(self, entry_id):
+        _logger.info(f"Page.lookup title={self.title}, entry_id={entry_id}")
         row = self._find_child_row(entry_id)
         if row:
             url = row[0].get("link", "")

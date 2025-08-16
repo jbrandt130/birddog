@@ -212,6 +212,5 @@ def get_mod_date_store():
         if detect_environment() == "aws":
             _mod_date_store = DynamoDBModDateStore()
         else:
-            _mod_date_store = DynamoDBModDateStore()
-            #_mod_date_store = SQLiteModDateStore()
+            _mod_date_store = SQLiteModDateStore()
     return _mod_date_store

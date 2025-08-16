@@ -170,6 +170,14 @@ def page_name(title):
 def is_archive(title):
     return canonicalize_title(title) in ARCHIVE_BY_TITLE
 
+def page_title_from_address(address):
+    if isinstance(address, list):
+        address = tuple(address)
+    tail = "/".join(address[2:]).rstrip("/")
+    if not tail:
+        return ARCHIVE_BY_ADDRESS[address[:2]]
+    return "/".join([archive_root(*address[:2]), tail])
+
 # -------------------------------------------------------------------------------
 # namespace id lookup (utility)
 
@@ -1154,7 +1162,8 @@ class PageTracker:
         return False
 
     def update(self):
-        updates = get_recent_changes(cutoff_date=self._cutoff_date)
+        #updates = get_recent_changes(cutoff_date=self._cutoff_date)
+        updates = get_recent_changes(cutoff_date=None)
         if not updates:
             return False
         self._cutoff_date = max(updates.values())

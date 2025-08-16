@@ -25,6 +25,7 @@ from birddog.wiki import (
     get_all_pages,
     page_address,
     PageTracker,
+    page_title_from_address,
     )
 
 from birddog.logging import get_logger
@@ -99,6 +100,13 @@ _DASH_CHARS = r"\-\u2010\u2011\u2012\u2013\u2014"
 _ALPHA_DASH = fr"[\p{{L}}{_DASH_CHARS}]*"
 _pattern = regex.compile(fr"^({_ALPHA_DASH})(\d+)({_ALPHA_DASH})$")
 
+def _title_from_name(name):
+    parts = name.split("/", 1)
+    archive, subarchive = parts[0].split("-")
+    if len(parts) == 1:
+        return ARCHIVE_BY_ADDRESS[(archive, subarchive)]
+    return f"{archive_root(archive, subarchive)}/{parts[1]}"
+
 def _parse_string(s):
     match = _pattern.fullmatch(s)
     if match:
@@ -115,7 +123,6 @@ def _flatten_hierarchy(d, prefix=None):
 
     children = [k for k in d if k != 'unresolved']
     sorted_children = _sort_keys(children)
-
     for key in sorted_children:
         current_path = prefix + [key]
         full_path_str = '/'.join(current_path)
@@ -128,7 +135,12 @@ def _flatten_hierarchy(d, prefix=None):
         if isinstance(value, dict):
             result.extend(_flatten_hierarchy(value, current_path))
 
-    return result
+    def _gen_title(item):
+        if not item[1]:
+            return (item[0], { "title": _title_from_name(item[0]) })
+        return item
+
+    return [_gen_title(item) for item in result]
 
 def _make_tree(unresolved):
     root = {}
@@ -145,7 +157,8 @@ def _make_tree(unresolved):
     return root
 
 class ArchiveWatcher:
-    def __init__(self, archive, subarchive, cutoff_date):
+    def __init__(self, archive, subarchive, cutoff_date, runtime=None):
+        self._runtime = runtime if runtime else Runtime()
         self._archive = archive
         if not subarchive:
             subarchive = Archive(archive).subarchive
@@ -157,7 +170,7 @@ class ArchiveWatcher:
 
     def save(self):
         return {
-            'version': 'v2',
+            'version': 'v3',
             'archive': self._archive,
             'subarchive': self._subarchive,
             'cutoff_date': self._cutoff_date,
@@ -167,8 +180,8 @@ class ArchiveWatcher:
         }
 
     @staticmethod
-    def load(data):
-        watcher = ArchiveWatcher(data['archive'], data['subarchive'], data['cutoff_date'])
+    def load(data, runtime=None):
+        watcher = ArchiveWatcher(data['archive'], data['subarchive'], data['cutoff_date'], runtime=runtime)
         version = data.get("version", "v1")  # default to legacy
 
         # normalize unresolved (assume format is fine)
@@ -187,6 +200,16 @@ class ArchiveWatcher:
             }
         else:
             watcher._resolved = data.get('resolved', {})
+
+        if version == "v2":
+            # patch missing titles in unresolved and resolved lists
+            for key, unresolved_item in watcher._unresolved.items():
+                if "title" not in unresolved_item:
+                    unresolved_item["title"] = page_title_from_address(key.split(","))
+            for key, resolved_items in watcher._resolved.items():
+                for resolved_items in resolved_items:
+                    if "title" not in resolved_items:
+                        resolved_items["title"] = page_title_from_address(key.split(","))
 
         return watcher
 
@@ -214,19 +237,24 @@ class ArchiveWatcher:
         entries = self._resolved.get(item, [])
         return entries[-1]["last_resolved"] if entries else self._cutoff_date
 
-    def check(self, page_manager):
+    def check(self):
         # register just in case it hasn't been already
-        page_manager.register_archive(self._archive, self._subarchive)
+        page_manager = self._runtime.update_manager
         # retrieve updates from page manager
-        updates, _ = page_manager.get_updates(self._archive, self._subarchive, self._last_checked_date)
+        updates, _ = page_manager.get_updates(self._archive, self._subarchive)
+        _logger.info(f"ArchiveWatcher.check: found {len(updates)} updates.")
         if updates:
-            for item, mod_date in updates.items():
+            for title, mod_date in updates.items():
+                address = page_address(title)
+                assert address[0] == self._archive and address[1] == self._subarchive
+                item = ArchiveWatcher.key(*address)
                 # Get most recent resolved mod date (if any)
-                latest_resolved = self._resolved[item][-1]["modified"] if item in self._resolved else None
-                if mod_date >= self._last_checked_date and (latest_resolved is None or mod_date > latest_resolved):
+                latest_resolved = self._resolved[item][-1]["modified"] if item in self._resolved else self._cutoff_date
+                if latest_resolved is None or mod_date > latest_resolved:
                     self._unresolved[item] = {
                         "modified": mod_date,
-                        "last_resolved": self._last_resolved_date(item)
+                        "last_resolved": self._last_resolved_date(item),
+                        "title": title
                     }
             #_logger.info(f'ArchiveWatcher.check() unresolved: {json.dumps(self._unresolved, indent=4)}')
             self._last_checked_date = max(max(updates.values()), self._last_checked_date)
@@ -376,6 +404,7 @@ class PageUpdateManager(HeartbeatManager):
         self._request_queue.put((archive, subarchive))
 
     def get_updates(self, archive, subarchive, cutoff_date=None):
+        self.register_archive(archive, subarchive)
         prefix = archive_root(archive, subarchive)
         _logger.info(f"PageUpdateManager.get_updates: prefix={prefix}")
         updates_pending = self.busy
@@ -384,11 +413,9 @@ class PageUpdateManager(HeartbeatManager):
         result = {}
         for title, mod_date in updates.items():
             try:
-                # FIXME: remove address translation - ArchiveWatcher should run on titles
                 address = page_address(title)
                 if address[:2] == (archive, subarchive):
-                    key = ArchiveWatcher.key(*address)
-                    result[key] = mod_date
+                    result[title] = mod_date
             except ValueError:
                 _logger.error(f"PageUpdateManager.get_updates: cannot find title {title}. Skipping...")
         return result, updates_pending

@@ -591,10 +591,12 @@ function render_table(table_element, table_data, is_comparison) {
 
 // render a data page
 function render_page_data(data) {
+    const false_comparison = 'refmod' in data && data.refmod >= data.lastmod
     var is_comparison = 'refmod' in data && data.refmod != data.lastmod;
     var resolve_enable = needs_resolve(data);
 
-    if (resolve_enable) {
+
+    if (resolve_enable && false_comparison) {
         // check for false alarm in page update
         const resolve_info = get_resolve_info(data.name);
         console.log("resolve info for", data.name, "==", resolve_info);
@@ -1178,18 +1180,10 @@ function build_tree(data_list) {
     return root;
 }
 
-function view_changes(full_path, modified, last_resolved) {
-    console.log("Viewing changes for", full_path, last_resolved);
-    const path = full_path.split('/');
-    const archive = path[0].split('-');
+function view_changes(page_title, modified, last_resolved) {
+    console.log("Viewing changes for", page_title, last_resolved);
     compare = last_resolved ?? null;
-    load_page(
-        archive[0],
-        subarchive_id=archive[1],
-        fond_id=path.length > 1? path[1] : null,
-        opus_id=path.length > 2? path[2] : null,
-        case_id=path.length > 3? path[3] : null,
-        compare=compare);
+    load_page_by_title(page_title, compare=compare);
     // Switch to the browse tab
     show_tab('nav-browse-tab');
 }
@@ -1231,6 +1225,7 @@ function mark_resolved(node_id) {
     const node = node_map[node_id];
     const has_children = Object.keys(node).some(key => !key.startsWith('_'));
     const full_path = node._full_path || name;
+    const page_title = node._meta.title;
     var deep = false;
     const confirm_message = has_children?
         `${full_path} has unresolved subsidiary pages. Resolve all subsidiaries?` :
@@ -1272,14 +1267,15 @@ function render_node(name, node) {
     path_to_node[full_path] = node;
     const modified = meta? meta.modified : '';
     const last_resolved = meta? meta.last_resolved : '';
-    //console.log(last_resolved);
+    const page_title = meta? meta.title : '';
+    //console.log("render_node:", full_path, page_title);
 
-    const update_text = meta ? `Latest Update: ${format_date(meta.modified, true)}` : '';
-    const resolved_text = meta ? `Last Resolved: ${format_date(meta.last_resolved, true)}` : '';
+    const update_text = meta && meta.modified ? `Latest Update: ${format_date(meta.modified, true)}` : '';
+    const resolved_text = meta && meta.last_resolved ? `Last Resolved: ${format_date(meta.last_resolved, true)}` : '';
 
     const button_html =
     `<button class="btn btn-sm btn-primary" title="View Changes" onclick="view_changes(
-        '${full_path.replace(/'/g, "\\'")}', '${modified}', '${last_resolved}')">
+        '${page_title}', '${modified}', '${last_resolved}')">
           <i class="bi bi-eye"></i>
         </button>
         <button class="btn btn-sm btn-primary" title="Mark Resolved" onclick="mark_resolved('${node_id}')">
@@ -1423,7 +1419,7 @@ function render_unresolved_items() {
 
     // Sort by keys in unresolved_updates
     const sorted_keys = Object.keys(unresolved_updates).sort(); // alphabetical sort
-    //console.log(`render_unresolved_items: sorted_keys=${sorted_keys}`);
+    console.log(`render_unresolved_items: sorted_keys=${sorted_keys}`);
 
     sorted_keys.forEach(key => {
         const item = unresolved_updates[key];
