@@ -397,9 +397,10 @@ class PageUpdateManager(HeartbeatManager):
         # 3. Insert batch of pending titles into tracker
         if self._pending_titles:
             batch = self._pending_titles[:PageUpdateManager._TITLE_BATCH_SIZE]
-            del self._pending_titles[:PageUpdateManager._TITLE_BATCH_SIZE]
             _logger.info(f"PageUpdateManager: adding batch of {len(batch)} titles to tracker ({len(self._pending_titles)} remaining)")
             self._tracker.add_titles(batch)
+            # finally delete batch from pending titles (after successfully adding)
+            del self._pending_titles[:PageUpdateManager._TITLE_BATCH_SIZE]
             self.save()
         self._busy = False
 
