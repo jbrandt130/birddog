@@ -112,10 +112,10 @@ class Test(unittest.TestCase):
 
     def test_ArchiveWatcher(self):
         runtime = Runtime()
-        watcher = ArchiveWatcher("DAKO", "D", cutoff_date="2025,03,01")
+        watcher = ArchiveWatcher("DAKO", "D", cutoff_date="2025,03,01", runtime=runtime)
         self.assertFalse(watcher.resolved)
         self.assertFalse(watcher.unresolved)
-        watcher.check(runtime.update_manager)
+        watcher.check()
         self.assertFalse(watcher.resolved)
         self.assertTrue(watcher.unresolved)
         #print(watcher.unresolved)
@@ -129,7 +129,7 @@ class Test(unittest.TestCase):
         self.assertTrue(item in watcher.unresolved)
         self.assertFalse(item in watcher.resolved)
         watcher = ArchiveWatcher('DADNO', 'R', '2025,03,01')
-        watcher.check(runtime.update_manager)
+        watcher.check()
         for key in list(watcher.unresolved.keys())[::77]:
             address = key.rstrip(',').split(',') + 3 * [None]
             address = address[:5]

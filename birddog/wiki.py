@@ -929,7 +929,7 @@ def report_page_changes(page):
 
 def _check_table_changes(table, ref_table):
     ref_children = dict((c[0]['text']['uk'], c) for c in ref_table['children'])
-    _logger.info(f"_check_table_changes: {table['name']} vs {ref_table['name']}")
+    #_logger.info(f"_check_table_changes: {table['name']} vs {ref_table['name']}")
     for child in table['children']:
         #print("checking child:", child)
         index = child[0]['text']['uk']
@@ -1083,26 +1083,25 @@ def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500,
 
 def get_last_mod(titles):
     """
-    Return a dict of {page_title: last_modified_datetime} using fast batched 'prop=info' queries.
+    Return a dict of {page_title: last_content_modified_datetime} using 'prop=revisions'.
+    This avoids inflated 'touched' timestamps from template updates, purges, or file usage.
+
     Input: str or list of str (page titles)
     Output: dict {title: datetime or None}
-
-    Note that this is an upper bound on the mod date. There can be template changes that affect
-    the "touched" value, even if the page content is unchanged.
     """
     if isinstance(titles, str):
         titles = [titles]
 
     result = {}
-    for i in range(0, len(titles), 50):
-        batch = titles[i:i+50]
-        title_str = "|".join(batch)
 
+    for title in titles:
         params = {
             "action": "query",
             "format": "json",
-            "prop": "info",
-            "titles": title_str,
+            "prop": "revisions",
+            "rvlimit": 1,
+            "rvprop": "timestamp",
+            "titles": title,
         }
 
         response = fetch_url(API_URL, params=params, json=True)
@@ -1115,15 +1114,16 @@ def get_last_mod(titles):
 
             pages = query.get("pages", {})
             for page in pages.values():
-                title = page.get("title")
-                title = title_mapping.get(title, title)
-                touched = page.get("touched")
-                result[title] = from_utc_format(touched) if touched else None
+                revs = page.get("revisions")
+                actual_title = page.get("title")
+                original_title = title_mapping.get(actual_title, actual_title)
 
-            # Fill in None for missing titles (e.g., typos or deleted pages)
-            for title in batch:
-                if title not in result:
-                    result.setdefault(title, None)
+                if revs:
+                    result[original_title] = from_utc_format(revs[0]["timestamp"])
+                else:
+                    result[original_title] = None
+        else:
+            result[title] = None
 
     return result
 

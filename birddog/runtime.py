@@ -170,7 +170,7 @@ class ArchiveWatcher:
 
     def save(self):
         return {
-            'version': 'v3',
+            'version': 'v4',
             'archive': self._archive,
             'subarchive': self._subarchive,
             'cutoff_date': self._cutoff_date,
@@ -210,6 +210,11 @@ class ArchiveWatcher:
                 for resolved_items in resolved_items:
                     if "title" not in resolved_items:
                         resolved_items["title"] = page_title_from_address(key.split(","))
+
+        if version < "v4":
+            # dispose of all unresolved items - force refresh
+            watcher._unresolved = {}
+            watcher.check()
 
         return watcher
 
@@ -323,7 +328,7 @@ class PageUpdateManager(HeartbeatManager):
     _PAGE_UPDATE_MANAGER_PATH       = "page_update_manager.json"
     _HEARTBEAT_INTERVAL             = 30 # seconds
     _PAGE_UPDATE_CHECK_INTERVAL     = 60 * 15 # seconds
-    _TITLE_BATCH_SIZE               = 500
+    _TITLE_BATCH_SIZE               = 50
 
     def __init__(self, page_lru=None):
         self._lru = page_lru if page_lru else PageLRU()
@@ -392,8 +397,8 @@ class PageUpdateManager(HeartbeatManager):
         # 3. Insert batch of pending titles into tracker
         if self._pending_titles:
             batch = self._pending_titles[:PageUpdateManager._TITLE_BATCH_SIZE]
-            _logger.info(f"PageUpdateManager: adding batch of {len(batch)} titles to tracker")
             del self._pending_titles[:PageUpdateManager._TITLE_BATCH_SIZE]
+            _logger.info(f"PageUpdateManager: adding batch of {len(batch)} titles to tracker ({len(self._pending_titles)} remaining)")
             self._tracker.add_titles(batch)
             self.save()
         self._busy = False
