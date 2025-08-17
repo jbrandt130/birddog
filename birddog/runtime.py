@@ -28,6 +28,7 @@ from birddog.wiki import (
     page_title_from_address,
     )
 from birddog.store import get_string_queue_store
+from birddog.env import detect_environment
 
 from birddog.logging import get_logger
 _logger = get_logger()
@@ -334,6 +335,7 @@ class PageUpdateManager(HeartbeatManager):
     _API_DELAY                      = 1
 
     def __init__(self, page_lru=None):
+        _logger.info(f"PageUpdateManager.init(): detect_environment=={detect_environment()}")
         self._lru = page_lru if page_lru else PageLRU()
         self._request_queue = queue.Queue()
         self._queue_store = get_string_queue_store()
@@ -404,8 +406,8 @@ class PageUpdateManager(HeartbeatManager):
                     titles = get_all_pages(prefix=root)
                     if titles:
                         self._append_titles(titles)
-                        self._registered_archives.add(key)
-                        self.save()
+                    self._registered_archives.add(key)
+                    self.save()
                     self._busy = False
                     return
             except queue.Empty:
@@ -416,6 +418,7 @@ class PageUpdateManager(HeartbeatManager):
         if batch:
             _logger.info(f"PageUpdateManager: adding batch of {len(batch)} titles to tracker")
             self._tracker.add_titles(batch, api_delay=PageUpdateManager._API_DELAY)
+            #self._tracker.add_titles(batch)
             # finally delete batch from pending titles (after successfully adding)
             self._pop_titles(len(batch))
         self._busy = False

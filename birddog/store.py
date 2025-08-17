@@ -2,7 +2,7 @@
 # Licensed under the MIT License. See LICENSE file in the project root.
 
 """
-Common logging support
+Common store support
 """
 
 import sys
@@ -15,10 +15,12 @@ from datetime import datetime
 from abc import ABC, abstractmethod
 import sqlite3
 import boto3
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Key, Attr
 from decimal import Decimal
 
 from birddog.env import detect_environment
+#from birddog.logging import get_logger
+#_logger = get_logger()
 
 # mod date store (abstract base class) -----------------------------------
 
@@ -154,6 +156,7 @@ class DynamoDBModDateStore(ModDateStore):
 
         existing = {}
         keys = [self._split_key(t) for t in updates.keys()]
+        print(f"DDB: get_newer_updates - {len(keys)} items")
         for chunk in self._chunked(keys, 100):
             resp = self._client.batch_get_item(
                 RequestItems={self._table_name: {'Keys': chunk}}
@@ -194,15 +197,20 @@ class DynamoDBModDateStore(ModDateStore):
     def query_by_prefix(self, archive_root: str, cutoff_date: str = None) -> dict:
         archive_root = self._normalized_prefix(archive_root)
         kwargs = {'KeyConditionExpression': Key('archive_root').eq(archive_root)}
+
+        items = []
         resp = self._table.query(**kwargs)
-        while 'LastEvaluatedKey' in resp:
-            more = self._table.query(**kwargs, ExclusiveStartKey=resp['LastEvaluatedKey'])
-            resp['Items'].extend(more['Items'])
-        result = {}
-        for item in resp['Items']:
-            if not cutoff_date or item['mod_date'] >= cutoff_date:
-                result[item['title']] = item['mod_date']
-        return result
+        items.extend(resp.get('Items', []))
+
+        lek = resp.get('LastEvaluatedKey')
+        while lek:
+            resp = self._table.query(**kwargs, ExclusiveStartKey=lek)
+            items.extend(resp.get('Items', []))
+            lek = resp.get('LastEvaluatedKey')
+
+        if cutoff_date:
+            return {i['title']: i['mod_date'] for i in items if i['mod_date'] >= cutoff_date}
+        return {i['title']: i['mod_date'] for i in items}
 
 # platform-independent access to mod date store ----------------------------------
 
@@ -382,6 +390,7 @@ _string_queue_store = None
 def get_string_queue_store():
     global _string_queue_store
     if not _string_queue_store:
+        #_logger.info(f"get_string_queue_store: detect_environment=='{detect_environment()}'")
         if detect_environment() == "aws":
             _string_queue_store = DynamoDBStringQueue()
         else:
