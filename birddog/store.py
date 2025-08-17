@@ -7,9 +7,16 @@ Common logging support
 
 import sys
 import os
+import time
 import requests
+import threading
 from collections import deque
 from datetime import datetime
+from abc import ABC, abstractmethod
+import sqlite3
+import boto3
+from boto3.dynamodb.conditions import Key
+from decimal import Decimal
 
 from birddog.env import detect_environment
 
@@ -36,9 +43,6 @@ class ModDateStore:
         return title.split("/", 1)[0].replace("_", " ")
 
 # mod date store (sqlite version) ---------------------------------------
-
-import sqlite3
-import threading
 
 _MOD_DATE_PATH = ".cache/mod_dates.db"
 
@@ -106,8 +110,6 @@ class SQLiteModDateStore(ModDateStore):
 
 # mod date store (dynamodb version) ---------------------------------------
 
-import boto3
-from boto3.dynamodb.conditions import Key
 
 class DynamoDBModDateStore(ModDateStore):
     def __init__(self, table_name='birddog_mod_dates'):
@@ -214,3 +216,174 @@ def get_mod_date_store():
         else:
             _mod_date_store = SQLiteModDateStore()
     return _mod_date_store
+
+# string queue (abstract version) ---------------------------------------
+
+class StringQueue(ABC):
+    @abstractmethod
+    def append(self, queue_name: str, strings: list):
+        """Append a list of strings to the end of the named queue."""
+        pass
+
+    @abstractmethod
+    def peek(self, queue_name: str, n: int) -> list:
+        """Return the first n items from the front of the queue without removing them."""
+        pass
+
+    @abstractmethod
+    def pop(self, queue_name: str, n: int):
+        """Remove the first n items from the queue."""
+        pass
+
+    @abstractmethod
+    def length(self, queue_name: str) -> int:
+        """Return the number of items in the named queue."""
+        pass
+
+# string queue (sqlite version) ---------------------------------------
+
+_STRING_QUEUE_PATH = ".cache/string_queues.db"
+
+class SQLiteStringQueue(StringQueue):
+    def __init__(self, db_path=_STRING_QUEUE_PATH):
+        self._db_path = db_path
+        os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
+        with sqlite3.connect(self._db_path) as conn:
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS queue (
+                    queue_name TEXT,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    value TEXT NOT NULL
+                )
+            ''')
+
+    def append(self, queue_name: str, strings: list):
+        if not strings:
+            return
+        with sqlite3.connect(self._db_path) as conn:
+            conn.executemany(
+                "INSERT INTO queue (queue_name, value) VALUES (?, ?)",
+                [(queue_name, s) for s in strings]
+            )
+
+    def peek(self, queue_name: str, n: int) -> list:
+        with sqlite3.connect(self._db_path) as conn:
+            cur = conn.execute(
+                "SELECT value FROM queue WHERE queue_name = ? ORDER BY id ASC LIMIT ?",
+                (queue_name, n)
+            )
+            return [row[0] for row in cur.fetchall()]
+
+    def pop(self, queue_name: str, n: int):
+        with sqlite3.connect(self._db_path) as conn:
+            cur = conn.execute(
+                "SELECT id FROM queue WHERE queue_name = ? ORDER BY id ASC LIMIT ?",
+                (queue_name, n)
+            )
+            ids_to_delete = [row[0] for row in cur.fetchall()]
+            if ids_to_delete:
+                conn.executemany("DELETE FROM queue WHERE id = ?", [(i,) for i in ids_to_delete])
+
+    def length(self, queue_name: str) -> int:
+        with sqlite3.connect(self._db_path) as conn:
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM queue WHERE queue_name = ?",
+                (queue_name,)
+            )
+            return cur.fetchone()[0]
+
+# string queue (dynamodb version) ---------------------------------------
+
+class DynamoDBStringQueue(StringQueue):
+    def __init__(self, table_name='birddog_string_queues'):
+        self._table_name = table_name
+        self._dynamodb = boto3.resource('dynamodb')
+        self._client = boto3.client('dynamodb')
+        self._ensure_table_exists()
+        self._table = self._dynamodb.Table(table_name)
+
+    def _ensure_table_exists(self):
+        if self._table_name in self._client.list_tables()['TableNames']:
+            return
+        print(f"Creating DynamoDB table '{self._table_name}'...")
+        self._dynamodb.create_table(
+            TableName=self._table_name,
+            KeySchema=[
+                {'AttributeName': 'queue_name', 'KeyType': 'HASH'},
+                {'AttributeName': 'ts', 'KeyType': 'RANGE'}
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'queue_name', 'AttributeType': 'S'},
+                {'AttributeName': 'ts', 'AttributeType': 'N'}
+            ],
+            BillingMode='PAY_PER_REQUEST'
+        ).wait_until_exists()
+
+    def _now(self):
+        return time.time()
+
+    def append(self, queue_name: str, strings: list):
+        if not strings:
+            return
+        now = Decimal(str(time.time()))
+        with self._table.batch_writer() as batch:
+            for i, value in enumerate(strings):
+                ts = now + Decimal(i) * Decimal('0.000001')
+                batch.put_item(Item={
+                    'queue_name': queue_name,
+                    'ts': ts,
+                    'value': value
+                })
+
+    def peek(self, queue_name: str, n: int) -> list:
+        resp = self._table.query(
+            KeyConditionExpression=Key('queue_name').eq(queue_name),
+            Limit=n,
+            ScanIndexForward=True
+        )
+        return [item['value'] for item in resp['Items']]
+
+    def pop(self, queue_name: str, n: int):
+        resp = self._table.query(
+            KeyConditionExpression=Key('queue_name').eq(queue_name),
+            Limit=n,
+            ScanIndexForward=True
+        )
+        with self._table.batch_writer() as batch:
+            for item in resp['Items']:
+                batch.delete_item(Key={
+                    'queue_name': queue_name,
+                    'ts': item['ts']
+                })
+
+    def length(self, queue_name: str) -> int:
+        total = 0
+        last_evaluated_key = None
+        while True:
+            kwargs = {
+                'KeyConditionExpression': Key('queue_name').eq(queue_name),
+                'Select': 'COUNT',
+                'ExclusiveStartKey': last_evaluated_key
+            } if last_evaluated_key else {
+                'KeyConditionExpression': Key('queue_name').eq(queue_name),
+                'Select': 'COUNT'
+            }
+            resp = self._table.query(**kwargs)
+            total += resp['Count']
+            last_evaluated_key = resp.get('LastEvaluatedKey')
+            if not last_evaluated_key:
+                break
+        return total
+
+# platform-independent access to string queue ----------------------------------
+
+_string_queue_store = None
+
+def get_string_queue_store():
+    global _string_queue_store
+    if not _string_queue_store:
+        if detect_environment() == "aws":
+            _string_queue_store = DynamoDBStringQueue()
+        else:
+            _string_queue_store = SQLiteStringQueue()
+    return _string_queue_store

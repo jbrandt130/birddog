@@ -27,6 +27,7 @@ from birddog.wiki import (
     PageTracker,
     page_title_from_address,
     )
+from birddog.store import get_string_queue_store
 
 from birddog.logging import get_logger
 _logger = get_logger()
@@ -326,6 +327,7 @@ class HeartbeatManager:
 
 class PageUpdateManager(HeartbeatManager):
     _PAGE_UPDATE_MANAGER_PATH       = "page_update_manager.json"
+    _PENDING_TITLES_QUEUE           = "pending_titles"
     _HEARTBEAT_INTERVAL             = 30 # seconds
     _PAGE_UPDATE_CHECK_INTERVAL     = 60 * 15 # seconds
     _TITLE_BATCH_SIZE               = 50
@@ -334,26 +336,40 @@ class PageUpdateManager(HeartbeatManager):
     def __init__(self, page_lru=None):
         self._lru = page_lru if page_lru else PageLRU()
         self._request_queue = queue.Queue()
+        self._queue_store = get_string_queue_store()
         self._last_check = 0
         self._busy = False
         super().__init__(interval=PageUpdateManager._HEARTBEAT_INTERVAL)
         self.load()
 
+    def _append_titles(self, titles):
+        self._queue_store.append(PageUpdateManager._PENDING_TITLES_QUEUE, titles)
+
+    def _peek_titles(self, n):
+        return self._queue_store.peek(PageUpdateManager._PENDING_TITLES_QUEUE, n)
+
+    def _pop_titles(self, n):
+        self._queue_store.pop(PageUpdateManager._PENDING_TITLES_QUEUE, n)
+
     def load(self):
         try:
             data = load_cached_object(PageUpdateManager._PAGE_UPDATE_MANAGER_PATH)
             self._tracker = PageTracker.from_dict(data["tracker"])
-            self._pending_titles = data["pending_titles"]
             self._registered_archives = set(data["registered_archives"])
+
+            # one time check for old format
+            pending_titles = data.get("pending_titles")
+            if pending_titles:
+                self._append_titles(pending_titles)
+                self.save()
+
         except CacheMissError:
             self._tracker = PageTracker()
-            self._pending_titles = []
             self._registered_archives = set()
 
     def save(self):
         save_cached_object({
             "tracker": self._tracker.to_dict(),
-            "pending_titles": self._pending_titles,
             "registered_archives": list(self._registered_archives),
         }, PageUpdateManager._PAGE_UPDATE_MANAGER_PATH)
 
@@ -362,7 +378,7 @@ class PageUpdateManager(HeartbeatManager):
         return not self._request_queue.empty() or self._busy
 
     def heartbeat(self):
-        #_logger.info("PageUpdateManager heartbeat...")
+        _logger.info("PageUpdateManager heartbeat...")
         self._busy = True
 
         # 1. Update tracker periodically
@@ -387,7 +403,7 @@ class PageUpdateManager(HeartbeatManager):
                     # inventory all pages that start with archive root and add latest mod times to tracker
                     titles = get_all_pages(prefix=root)
                     if titles:
-                        self._pending_titles.extend(titles)
+                        self._append_titles(titles)
                         self._registered_archives.add(key)
                         self.save()
                     self._busy = False
@@ -396,13 +412,12 @@ class PageUpdateManager(HeartbeatManager):
                 pass  # should not happen, but safe
 
         # 3. Insert batch of pending titles into tracker
-        if self._pending_titles:
-            batch = self._pending_titles[:PageUpdateManager._TITLE_BATCH_SIZE]
-            _logger.info(f"PageUpdateManager: adding batch of {len(batch)} titles to tracker ({len(self._pending_titles)} remaining)")
+        batch = self._peek_titles(PageUpdateManager._TITLE_BATCH_SIZE)
+        if batch:
+            _logger.info(f"PageUpdateManager: adding batch of {len(batch)} titles to tracker")
             self._tracker.add_titles(batch, api_delay=PageUpdateManager._API_DELAY)
             # finally delete batch from pending titles (after successfully adding)
-            del self._pending_titles[:PageUpdateManager._TITLE_BATCH_SIZE]
-            self.save()
+            self._pop_titles(len(batch))
         self._busy = False
 
     def register_archive(self, archive, subarchive):

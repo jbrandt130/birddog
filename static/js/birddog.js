@@ -336,7 +336,7 @@ async function translate_page() {
             location.reload();
             return;
         }
-        throw new Error(`Failed to resolve: ${response.statusText}`);
+        throw new Error(`Failed during translation progress check: ${response.statusText}`);
     }
     const data = await response.json();
     console.log('translate_page:', data)
