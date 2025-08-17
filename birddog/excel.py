@@ -188,20 +188,20 @@ def _process_table_column(table, column_header_map, edit_cell, sheet, cell, pars
             if mapped_index_list is not None:
                 cell_value = []
                 cell_hyperlink = None
-                cell_link_status = None
                 cell_edit_status = None
                 for mapped_index in mapped_index_list:
                     if mapped_index < len(child):
                         table_entry = child[mapped_index]
                         cell_value.append(unescape(get_text(table_entry['text'])))
                         cell_edit_status = _update_edit_state(table_entry, cell_edit_status)
-                        cell_link_status = _update_link_status(table_entry, cell_link_status)
                 if cell_edit_status in edit_cell:
                     child_cell.fill = copy(edit_cell[cell_edit_status].fill)
                 if parse['modifier'] == 'linked':
-                    _set_url(child_cell, cell_link_status, _child_url(child), edit_cell)
+                    child_link_status = link_status(child[0])
+                    _set_url(child_cell, child_link_status, _child_url(child), edit_cell)
                 elif parse['modifier'] == 'doc_link':
-                    _set_url(child_cell, cell_link_status, _child_doc_url(child), edit_cell)
+                    doc_link_status = link_status(child[1]) if len(child) > 1 else "unlinked"
+                    _set_url(child_cell, doc_link_status, _child_doc_url(child), edit_cell)
                 child_cell.value = "; ".join(cell_value)
         elif parse['expr'] == 'empty':
             child_cell.value = ''
