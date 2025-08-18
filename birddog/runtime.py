@@ -331,8 +331,8 @@ class PageUpdateManager(HeartbeatManager):
     _PENDING_TITLES_QUEUE           = "pending_titles"
     _HEARTBEAT_INTERVAL             = 30 # seconds
     _PAGE_UPDATE_CHECK_INTERVAL     = 60 * 15 # seconds
-    _TITLE_BATCH_SIZE               = 50
     _API_DELAY                      = 1
+    _TITLE_BATCH_SIZE               = max(int(_HEARTBEAT_INTERVAL / _API_DELAY + .5), 1)
 
     def __init__(self, page_lru=None):
         _logger.info(f"PageUpdateManager.init(): detect_environment=={detect_environment()}")

@@ -541,7 +541,7 @@ def download_file():
         if page:
             page.prepare_to_download()
             # put the page into a comparison state if requested
-            compare = request.args.get('compare')
+            compare = data["compare"]
             if compare:
                 page = _compare_page(page, compare)
 

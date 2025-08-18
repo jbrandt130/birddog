@@ -194,6 +194,7 @@ def _process_table_column(table, column_header_map, edit_cell, sheet, cell, pars
                         table_entry = child[mapped_index]
                         cell_value.append(unescape(get_text(table_entry['text'])))
                         cell_edit_status = _update_edit_state(table_entry, cell_edit_status)
+                        #_logger.info(f"cell value: {table_entry}, edit status: {cell_edit_status}")
                 if cell_edit_status in edit_cell:
                     child_cell.fill = copy(edit_cell[cell_edit_status].fill)
                 if parse['modifier'] == 'linked':

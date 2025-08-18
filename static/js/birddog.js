@@ -480,6 +480,7 @@ async function open_export_modal() {
     window._export_tagify_map = tagify_map;
     window._export_column_classes = column_classes;
     window._export_page_title = export_page_title;
+    window._export_compare = current_page.refmod ?? null;
     window._export_column_headers = column_headers;
     window._export_num_tables = num_tables;
 
@@ -1643,7 +1644,8 @@ async function on_loaded() {
                 title: window._export_page_title,
                 template: selected_template,
                 table: selected_table,
-                column_map: column_map
+                column_map: column_map,
+                compare: window._export_compare
             };
 
             // Show the spinner
