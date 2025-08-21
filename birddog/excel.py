@@ -48,6 +48,8 @@ def _child_sheetname(page, child):
     return f'sheetname-{unescape(get_text(child[0]["text"]))}'
 
 def _child_doc_url(child):
+    if len(child) < 2:
+        return None
     link = child[1]["link"]
     return ARCHIVE_BASE + link if link is not None else None
 

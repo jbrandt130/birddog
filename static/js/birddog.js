@@ -149,6 +149,54 @@ function get_resolve_info(page_name) {
   return null;
 }
 
+function get_next_unresolved_item(page_name) {
+    const updates = window.unresolved_updates;
+    // first pass: look within current archive
+    for (const prefix in updates) {
+        if (page_name.startsWith(prefix)) {
+            const entries = updates[prefix];
+            var candidate = null;
+            var candidate_obj = null;
+            for (let i = 0; i < entries.length; i++) {
+                const [title, obj] = entries[i];
+                if (title > page_name && obj.hasOwnProperty("modified")) {
+                    if (candidate == null || candidate > title) {
+                        candidate = title;
+                        candidate_obj = obj;
+                    }
+                }
+            }
+            if (candidate_obj != null) {
+                return candidate_obj;
+            }
+        }
+    }
+
+    // second pass: look to lexically next archive
+    for (const prefix in updates) {
+        if (page_name < prefix) {
+            const entries = updates[prefix];
+            for (const [title, obj] of entries) {
+                if (obj.hasOwnProperty("modified")) {
+                    return obj;
+                }
+            }
+        }
+    }
+
+    // third pass: look for first unresolved item
+    for (const prefix in updates) {
+        const entries = updates[prefix];
+        for (const [title, obj] of entries) {
+            if (obj.hasOwnProperty("modified")) {
+                return obj;
+            }
+        }
+    }
+
+    return null;
+}
+
 // ---------------------------------------------------------------------------
 // Browse panel scroll position
 
@@ -596,11 +644,9 @@ function render_page_data(data) {
     var is_comparison = 'refmod' in data && data.refmod != data.lastmod;
     var resolve_enable = needs_resolve(data);
 
-
     if (resolve_enable && false_comparison) {
         // check for false alarm in page update
         const resolve_info = get_resolve_info(data.name);
-        console.log("resolve info for", data.name, "==", resolve_info);
         if (resolve_info && resolve_info.last_resolved > data.lastmod) {
             // not an actual update - offer to simply resolve it
             if (confirm("The latest modification of this page precedes the comparison date due to a false change detection. It is safe to clear this page's unresolved status. Click OK to clear it.")) {
@@ -761,7 +807,8 @@ function render_page_data(data) {
     show_if('needs-resolve-badge', resolve_enable);
 
     // set button enables
-    enable_if("resolve-btn", resolve_enable);
+    show_if("resolve-btn", resolve_enable);
+    show_if("next-unresolved-btn", !resolve_enable);
     enable_if("translate-btn", data.needs_translation);
 
     render_breadcrumbs(data);
@@ -1253,8 +1300,18 @@ function resolve_page() {
         return false;
     const node = path_to_node[path];
     if (mark_resolved(node._id)) {
-        enable_if("resolve-btn", false);
+        hide("resolve-btn");
+        show("next-unresolved-btn");
         hide('needs-resolve-badge');
+    }
+}
+
+// called from next unresolved button on browse page
+function next_unresolved() {
+    const next_unresolved = get_next_unresolved_item(current_page.name);
+    console.log("next unresolved: ", next_unresolved);
+    if (next_unresolved != null) {
+        view_changes(next_unresolved.title, next_unresolved.modified, next_unresolved.last_resolved);
     }
 }
 

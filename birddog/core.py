@@ -382,7 +382,7 @@ class Page:
             titles = []
             for i, child in enumerate(self.children):
                 #_logger.info(f"load_child_document_links: {self.name}: {child}")
-                if is_linked(child[0]) and not is_linked(child[1]):
+                if is_linked(child[0]) and len(child) > 1 and not is_linked(child[1]):
                     items.append(i)
                     titles.append(f"{self.title}/{get_text(child[0]['text'])}")
             if items:

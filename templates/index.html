@@ -55,7 +55,7 @@
 <!-- nav bar -->
 <nav class="navbar navbar-expand-lg bg-body-tertiary fixed-top" id="nav-brand-tab" role="tablist">
   <div class="container-fluid">
-    <a class="navbar-brand" href="#">
+    <a class="navbar-brand" id="nav-home-logo" data-bs-toggle="tab" href="#nav-home" role="tab">
       <img src="static/birddog.png" alt="Bird Dog" width="48" height="48">
     </a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNavAltMarkup" aria-controls="navbarNavAltMarkup" aria-expanded="false" aria-label="Toggle navigation">
@@ -360,6 +360,9 @@
                 </button>
                 <button id="resolve-btn" class="btn btn-primary" onclick="resolve_page()" title="Mark Resolved">
                   <i class="bi bi-check-square"></i>
+                </button>
+                <button id="next-unresolved-btn" class="btn btn-primary" onclick="next_unresolved()" title="Next Unresolved">
+                  <i class="bi bi-arrow-right-square"></i>
                 </button>
               </div>
 
