@@ -241,6 +241,7 @@ def sniff_subarchives(archive):
         for item in div.find_all('a'):
             if item.has_attr('title'):
                 if item['title'].startswith(archive) or item['title'].replace(" ", "_").startswith(archive):
+                    _logger.info(f"found link: {item['href']}")
                     if 'redlink' not in item['href']:
                         parsed = item['title'].split('/')
                         if len(parsed) == 2 and parsed[1] != 'видання':
@@ -265,7 +266,8 @@ def update_master_archive_list():
 
     archives = {}
     for archive_name, archive in manifest["archives"].items():
-        _logger.info(f"Searching {archive_name}")
+        time.sleep(1)
+        _logger.info(f"Searching {archive_name} ({archive})")
         archives[archive_name] = sniff_subarchives(archive)
         translate_page(archives[archive_name])
         for sub, value in archives[archive_name].items():

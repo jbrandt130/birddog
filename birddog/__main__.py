@@ -4,6 +4,7 @@ from birddog.wiki import update_master_archive_list
 def main():
     if len(sys.argv) < 2:
         print("Usage: python -m birddog <command>")
+        print("       available commands: update_master_archive_list")
         sys.exit(1)
 
     command = sys.argv[1]
