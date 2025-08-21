@@ -80,8 +80,6 @@ class Page:
                 history = self.history(limit=1)
                 if history:
                     self._page["lastmod"] = history[0]["modified"]
-                # proactively get document links
-                # self.load_child_document_links(update_cache=False)
                 self._cache_save()
 
     class LookupError(Exception):
@@ -376,7 +374,7 @@ class Page:
             return True
         return False
 
-    def load_child_document_links(self, update_cache=True):
+    def load_child_document_links(self, update_cache=False):
         if self.kind == 'opus':
             items = []
             titles = []

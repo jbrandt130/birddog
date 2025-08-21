@@ -539,6 +539,9 @@ def download_file():
     try:
         page = runtime.lookup_by_title(data["title"])
         if page:
+            # avoid persisting any subsequent changes
+            page = page.detached_copy()
+
             page.prepare_to_download()
             # put the page into a comparison state if requested
             compare = data["compare"]
