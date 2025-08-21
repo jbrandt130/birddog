@@ -794,8 +794,8 @@ function render_page_data(data) {
     show_if('needs-resolve-badge', resolve_enable);
 
     // set button enables
-    show_if("resolve-btn", resolve_enable);
-    show_if("next-unresolved-btn", !resolve_enable);
+    enable_if("resolve-btn", resolve_enable);
+    enable_if("next-unresolved-btn", get_next_unresolved_item(current_page.name) != null);
     enable_if("translate-btn", data.needs_translation);
 
     render_breadcrumbs(data);
@@ -1287,8 +1287,8 @@ function resolve_page() {
         return false;
     const node = path_to_node[path];
     if (mark_resolved(node._id)) {
-        hide("resolve-btn");
-        show("next-unresolved-btn");
+        enable_if("resolve-btn", false);
+        //show("next-unresolved-btn");
         hide('needs-resolve-badge');
     }
 }

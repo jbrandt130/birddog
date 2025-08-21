@@ -32,7 +32,7 @@
     #browse-header-card {
       position: sticky;
       top: 70px; /* height of fixed navbar */
-      z-index: 1050;
+      z-index: 1010;
       background: white;
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
@@ -347,24 +347,24 @@
             </div>
             <!-- Right Column: Buttons and Progress Bar -->
             <div class="border rounded p-3 shadow-sm">
-              <!-- Button Group -->
-              <div class="d-flex align-items-center gap-2 mb-3">
-                <a id="source-link" href="#" target="_blank" class="btn btn-primary" title="View Source">
+              <div class="d-flex flex-wrap gap-2">
+                <a id="source-link" href="#" target="_blank" class="btn btn-primary flex-grow-1" style="flex: 1 0 30%;" title="View Source">
                   <i class="bi bi-box-arrow-up-right"></i>
                 </a>
-                <button id="translate-btn" class="btn btn-primary" onclick="translate_page()" title="Translate">
+                <button id="translate-btn" class="btn btn-primary flex-grow-1" style="flex: 1 0 30%;" onclick="translate_page()" title="Translate">
                   <i class="bi bi-translate"></i>
                 </button>
-                <button id="download-btn" class="btn btn-primary" onclick="open_export_modal()" title="Download Spreadsheet">
+                <button id="download-btn" class="btn btn-primary flex-grow-1" style="flex: 1 0 30%;" onclick="open_export_modal()" title="Download Spreadsheet">
                   <i class="bi bi-download"></i>
                 </button>
-                <button id="resolve-btn" class="btn btn-primary" onclick="resolve_page()" title="Mark Resolved">
+                <button id="resolve-btn" class="btn btn-primary flex-grow-1" style="flex: 1 0 30%;" onclick="resolve_page()" title="Mark Resolved">
                   <i class="bi bi-check-square"></i>
                 </button>
-                <button id="next-unresolved-btn" class="btn btn-primary" onclick="next_unresolved()" title="Next Unresolved">
+                <button id="next-unresolved-btn" class="btn btn-primary flex-grow-1" style="flex: 1 0 30%;" onclick="next_unresolved()" title="Next Unresolved">
                   <i class="bi bi-arrow-right-square"></i>
                 </button>
               </div>
+            </div>
 
               <!-- Progress Bar -->
               <div id="progress-container" class="progress d-none" style="height: 20px;">
