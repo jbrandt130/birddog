@@ -84,7 +84,7 @@ async function update_translation_progress(data) {
 
     for (const item of translations) {
         //console.log(item.page_name, current_page.name);
-        if (item.page_name == current_page.name) {
+        if (item.title == current_page.title) {
             const progress_bar = document.getElementById("progress-bar");
             if (progress_bar) {
                 const percent = (item.progress / item.total * 100).toFixed(1);
@@ -124,13 +124,7 @@ async function update_translation_progress(data) {
     else {
         // reload in case we're on the translated page
         // FIXME: don't do this if not on a translated page
-        load_page(
-            current_page.archive,
-            current_page.subarchive,
-            current_page.fond,
-            current_page.opus,
-            current_page.case,
-            compare=current_page.refmod ?? null);
+        load_page_by_title(current_page.title, compare=current_page.refmod ?? null);
     }
 }
 
@@ -368,16 +362,9 @@ async function load_page_by_title(page_title, compare=null) {
 }
 
 async function translate_page() {
-    //console.log('translate', current_page.name);
-    const path = [
-        current_page.archive,
-        current_page.subarchive,
-        current_page.fond || '',
-        current_page.opus || '',
-        current_page.case || '']
-        .join('/').replace(/\/+$/, '');
-    console.log('translating:', path);
-    const response = await fetch(`/translate/${path}`);
+    const page_title = current_page.title;
+    console.log('translating:', page_title);
+    const response = await fetch(`/translate?title=${page_title}`);
     if (!response.ok) {
         if (response.status === 404) {
             alert('Your session may have expired. Please log in again.');
@@ -1584,38 +1571,9 @@ async function on_loaded() {
         selector.addEventListener('change', (event) => {
             const version = event.target.value;
             console.log(`Comparing to: ${version}`);
-            load_page(
-                current_page.archive,
-                current_page.subarchive,
-                current_page.fond,
-                current_page.opus,
-                current_page.case,
-                compare=version);
+            load_page_by_title(current_page.title, compare=version);
             //alert(`Comparing to version ${selectedVersion}`)
         });
-
-        // Handle Unresolved Updates Row Click
-        const unresolved_updates_body = document.getElementById('unresolved-updates-body');
-        if (unresolved_updates_body) {
-            unresolved_updates_body.addEventListener('click', (event) => {
-                const row = event.target.closest('tr');
-                if (row) {
-                    const page_id = row.dataset.pageId.split(','); // Accesses data-page-id
-                    const last_resolved = row.dataset.lastResolved; // Accesses data-last-resolved
-                    console.log(`Page ID: ${page_id}, Last Resolved: ${last_resolved}`);
-                    try {
-                        // load the selected page
-                        load_page(page_id[0], page_id[1], page_id[2], page_id[3], page_id[4],
-                            compare=last_resolved);
-                        // Switch to the browse tab
-                        show_tab('nav-browse-tab');
-                    } catch (error) {
-                        console.error('Error fetching archives:', error);
-                        alert('Failed to load', page_id);
-                    }
-                }
-            });
-        }
 
         // Attach click event to the whole table body
         const watchlist_body = document.getElementById('watchlist-body');

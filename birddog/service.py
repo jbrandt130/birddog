@@ -785,6 +785,7 @@ def _active_translations(email):
         user_tasks = _task_id_map.get(email, [])
         return [{
             'page_name': _translation_tasks[tid]['page'].name,
+            'title': _translation_tasks[tid]['page'].title,
             'progress': _translation_tasks[tid]['progress'],
             'total': _translation_tasks[tid]['total'],
             'running': _translation_tasks[tid]['running']
@@ -811,7 +812,7 @@ def _translation_completion(task_id, results):
 
 def _start_translation(email, page):
     with _translation_lock:
-        task_id = next((k for k, v in _translation_tasks.items() if v["page"].name == page.name), None)
+        task_id = next((k for k, v in _translation_tasks.items() if v["page"].title == page.title), None)
         if not task_id:
             task_id = page.translate(
                 asynchronous=True,
@@ -832,19 +833,18 @@ def _start_translation(email, page):
             _add_user_task(email, task_id)
 
 @app.route('/translate', methods=['GET'])
-@app.route('/translate/<archive>/<subarchive>', methods=['GET'])
-@app.route('/translate/<archive>/<subarchive>/<fond>', methods=['GET'])
-@app.route('/translate/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
-@app.route('/translate/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
 def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=None):
     user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
-    if archive:
-        page = runtime.lookup_by_address(archive, subarchive, fond, opus, case)
-        if page:
-            # start new translation
-            _start_translation(user.email, page)
+
+    page = None
+    page_title = request.args.get('title')
+    if page_title:
+        page = runtime.lookup_by_title(page_title)
+    if page:
+        # start new translation
+        _start_translation(user.email, page)
     return jsonify({
         'success': True,
         'translations': _active_translations(user.email)}), 200
