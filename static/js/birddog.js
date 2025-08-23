@@ -1315,8 +1315,8 @@ function render_node(name, node) {
     const page_title = meta? meta.title : '';
     //console.log("render_node:", full_path, page_title);
 
-    const update_text = meta && meta.modified ? `Latest Update: ${format_date(meta.modified, true)}` : '';
-    const resolved_text = meta && meta.last_resolved ? `Last Resolved: ${format_date(meta.last_resolved, true)}` : '';
+    const update_text = meta && meta.modified ? `Latest Update: ${format_date(meta.modified, false)}` : '';
+    const resolved_text = meta && meta.last_resolved ? `Last Resolved: ${format_date(meta.last_resolved, false)}` : '';
 
     const button_html =
     `<button class="btn btn-sm btn-primary" title="View Changes" onclick="view_changes(

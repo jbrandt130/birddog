@@ -1051,7 +1051,7 @@ def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500,
         "format": "json",
         "list": "recentchanges",
         "rcnamespace": namespace,
-        "rcprop": "title|timestamp",
+        "rcprop": "title|timestamp|user",
         "rclimit": limit,
         "rcend": to_utc_format(cutoff_date),
         "rcdir": "older",  # go backward in time
@@ -1068,9 +1068,10 @@ def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500,
         for rc in data.get("query", {}).get("recentchanges", []):
             title = rc["title"]
             timestamp = rc["timestamp"]
+            user = rc["user"]
             if title not in seen_pages:
                 seen_pages.add(title)
-                latest_mods[title] = from_utc_format(timestamp)
+                latest_mods[title] = { "timestamp": from_utc_format(timestamp), "user": user }
 
         if "continue" in data:
             cont = data["continue"]
@@ -1182,6 +1183,8 @@ class PageTracker:
             updates = get_recent_changes(cutoff_date=None)
         if not updates:
             return False
+        # strip user out for now - requires a update_store schema change
+        updates = {key: value["timestamp"] for key, value in updates.items()}
         self._cutoff_date = max(updates.values())
         return self._update_mod_dates(updates)
 

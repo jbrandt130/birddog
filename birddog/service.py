@@ -403,7 +403,7 @@ def _extract_oldid(url):
     match = re.search(r'oldid=(\d+)', url)
     return int(match.group(1)) if match else 0
 
-def _compress_history(history, max_entries=30):
+def _compress_history(history, max_entries=50):
 
     # Sort by modified date, then by oldid DESCENDING (newer edit first)
     history = sorted(
@@ -436,8 +436,7 @@ def _compress_history(history, max_entries=30):
     compressed = sorted(hist_by_day.values(), key=lambda x: x['modified'], reverse=True)
 
     # Drop oldest if still above limit
-    if len(compressed) > max_entries:
-        compressed = compressed[:max_entries]
+    #compressed = compressed[:max_entries]
 
     #_logger.info(f'_compress_history: compressed={json.dumps(compressed, indent=4)}')
 
