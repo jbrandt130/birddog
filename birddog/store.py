@@ -11,11 +11,13 @@ import time
 import requests
 import threading
 from collections import deque
+from typing import List, Tuple
 from datetime import datetime
 from abc import ABC, abstractmethod
 import sqlite3
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
+
 from decimal import Decimal
 
 from birddog.env import detect_environment
@@ -239,8 +241,8 @@ class StringQueue(ABC):
         pass
 
     @abstractmethod
-    def pop(self, queue_name: str, n: int):
-        """Remove the first n items from the queue."""
+    def pop(self, queue_name: str, n: int) -> list:
+        """Remove and return the first n items from the queue."""
         pass
 
     @abstractmethod
@@ -282,15 +284,26 @@ class SQLiteStringQueue(StringQueue):
             )
             return [row[0] for row in cur.fetchall()]
 
-    def pop(self, queue_name: str, n: int):
+    def pop(self, queue_name: str, n: int) -> list[str]:
+        if n <= 0:
+            return []
         with sqlite3.connect(self._db_path) as conn:
+            # Lock rows so another process can't interleave deletes
+            conn.execute("BEGIN IMMEDIATE")
             cur = conn.execute(
-                "SELECT id FROM queue WHERE queue_name = ? ORDER BY id ASC LIMIT ?",
+                "SELECT id, value FROM queue WHERE queue_name = ? "
+                "ORDER BY id ASC LIMIT ?",
                 (queue_name, n)
             )
-            ids_to_delete = [row[0] for row in cur.fetchall()]
-            if ids_to_delete:
-                conn.executemany("DELETE FROM queue WHERE id = ?", [(i,) for i in ids_to_delete])
+            rows = cur.fetchall()
+            if not rows:
+                return []
+            ids = [r[0] for r in rows]
+            # Delete just the selected rows
+            placeholders = ",".join("?" for _ in ids)
+            conn.execute(f"DELETE FROM queue WHERE id IN ({placeholders})", ids)
+            # The context manager will commit here
+            return [r[1] for r in rows]
 
     def length(self, queue_name: str) -> int:
         with sqlite3.connect(self._db_path) as conn:
@@ -351,18 +364,23 @@ class DynamoDBStringQueue(StringQueue):
         )
         return [item['value'] for item in resp['Items']]
 
-    def pop(self, queue_name: str, n: int):
+    def pop(self, queue_name: str, n: int) -> list[str]:
+        if n <= 0:
+            return []
         resp = self._table.query(
             KeyConditionExpression=Key('queue_name').eq(queue_name),
             Limit=n,
-            ScanIndexForward=True
+            ScanIndexForward=True,     # oldest first
+            ConsistentRead=True        # reduce staleness on concurrent writers
         )
+        items = resp.get('Items', [])
+        if not items:
+            return []
+        values = [it['value'] for it in items]
         with self._table.batch_writer() as batch:
-            for item in resp['Items']:
-                batch.delete_item(Key={
-                    'queue_name': queue_name,
-                    'ts': item['ts']
-                })
+            for it in items:
+                batch.delete_item(Key={'queue_name': queue_name, 'ts': it['ts']})
+        return values
 
     def length(self, queue_name: str) -> int:
         total = 0
@@ -396,3 +414,227 @@ def get_string_queue_store():
         else:
             _string_queue_store = SQLiteStringQueue()
     return _string_queue_store
+
+# key value store (abstract version) ---------------------------------------
+
+class KeyValueStore(ABC):
+    @abstractmethod
+    def insert(self, namespace: str, key: str, value: str):
+        pass
+
+    @abstractmethod
+    def remove(self, namespace: str, key: str):
+        pass
+
+    @abstractmethod
+    def remove_all(self, namespace: str):
+        pass
+
+    @abstractmethod
+    def get(self, namespace: str, key: str) -> str:
+        pass
+
+    @abstractmethod
+    def get_all(self, namespace: str) -> list:
+        pass
+
+    @abstractmethod
+    def count(self, namespace: str) -> int:
+        pass
+
+# key value store (sqlite version) ---------------------------------------
+
+_KEY_VALUE_STORE_PATH = ".cache/key_value_store.db"
+
+class SQLiteKeyValueStore(KeyValueStore):
+    def __init__(self, db_path: str = _KEY_VALUE_STORE_PATH):
+        self._db_path = db_path
+        self._init_db()
+
+    def _conn(self) -> sqlite3.Connection:
+        return sqlite3.connect(self._db_path)
+
+    def _init_db(self):
+        with self._conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS kv (
+                    namespace TEXT NOT NULL,
+                    key       TEXT NOT NULL,
+                    value     TEXT NOT NULL,
+                    PRIMARY KEY (namespace, key)
+                )
+            """)
+            conn.commit()
+
+    # --- API ---
+
+    def insert(self, namespace: str, key: str, value: str):
+        if not isinstance(value, str):
+            raise TypeError("value must be str")
+        with self._conn() as conn:
+            conn.execute("""
+                INSERT INTO kv(namespace, key, value)
+                VALUES (?, ?, ?)
+                ON CONFLICT(namespace, key) DO UPDATE SET value=excluded.value
+            """, (namespace, key, value))
+            conn.commit()
+
+    def remove(self, namespace: str, key: str):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM kv WHERE namespace = ? AND key = ?", (namespace, key))
+            conn.commit()
+
+    def remove_all(self, namespace: str):
+        with self._conn() as conn:
+            conn.execute("DELETE FROM kv WHERE namespace = ?", (namespace,))
+            conn.commit()
+
+    def get(self, namespace: str, key: str) -> str:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT value FROM kv WHERE namespace = ? AND key = ?",
+                (namespace, key)
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise KeyError(f"{namespace}:{key} not found")
+            return row[0]
+
+    def get_all(self, namespace: str) -> List[Tuple[str, str]]:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT key, value FROM kv WHERE namespace = ? ORDER BY key",
+                (namespace,)
+            )
+            return [(k, v) for (k, v) in cur.fetchall()]
+
+    def count(self, namespace: str) -> int:
+        with self._conn() as conn:
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM kv WHERE namespace = ?",
+                (namespace,)
+            )
+            return int(cur.fetchone()[0])
+
+# key value store (dynamodb version) ---------------------------------------
+
+class DynamoDBKeyValueStore:
+    def __init__(self, table_name='birddog_key_value_store'):
+        self._table_name = table_name
+        self._dynamodb = boto3.resource('dynamodb')
+        self._client = boto3.client('dynamodb')
+        self._ensure_table_exists()
+        self._table = self._dynamodb.Table(table_name)
+
+    def _ensure_table_exists(self):
+        if self._table_name in self._client.list_tables()['TableNames']:
+            return
+        print(f"Creating DynamoDB table '{self._table_name}'...")
+        self._dynamodb.create_table(
+            TableName=self._table_name,
+            KeySchema=[
+                {'AttributeName': 'namespace', 'KeyType': 'HASH'},
+                {'AttributeName': 'key',       'KeyType': 'RANGE'},
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'namespace', 'AttributeType': 'S'},
+                {'AttributeName': 'key',       'AttributeType': 'S'},
+            ],
+            BillingMode='PAY_PER_REQUEST'
+        ).wait_until_exists()
+
+    # --- methods ---
+
+    def insert(self, namespace: str, key: str, value: str):
+        if not isinstance(value, str):
+            raise TypeError("value must be str")
+        self._table.put_item(Item={
+            "namespace": namespace,
+            "key": key,
+            "value": value
+        })
+
+    def remove(self, namespace: str, key: str):
+        self._table.delete_item(Key={"namespace": namespace, "key": key})
+
+    def remove_all(self, namespace: str):
+        resp = self._table.query(
+            KeyConditionExpression=Key("namespace").eq(namespace),
+            ProjectionExpression="#ns,#k",
+            ExpressionAttributeNames={"#ns": "namespace", "#k": "key"},
+        )
+        items = resp.get("Items", [])
+        while "LastEvaluatedKey" in resp:
+            resp = self._table.query(
+                KeyConditionExpression=Key("namespace").eq(namespace),
+                ProjectionExpression="#ns,#k",
+                ExpressionAttributeNames={"#ns": "namespace", "#k": "key"},
+                ExclusiveStartKey=resp["LastEvaluatedKey"],
+            )
+            items.extend(resp.get("Items", []))
+
+        if items:
+            with self._table.batch_writer() as batch:
+                for item in items:
+                    batch.delete_item(Key={"namespace": item["namespace"], "key": item["key"]})
+
+    def get(self, namespace: str, key: str) -> str:
+        resp = self._table.get_item(
+            Key={"namespace": namespace, "key": key},
+            ProjectionExpression="#v",
+            ExpressionAttributeNames={"#v": "value"},
+        )
+        item = resp.get("Item")
+        if not item:
+            raise KeyError(f"{namespace}:{key} not found")
+        val = item.get("value")
+        return val if isinstance(val, str) else ("" if val is None else str(val))
+
+    def get_all(self, namespace: str):
+        items = []
+        resp = self._table.query(
+            KeyConditionExpression=Key("namespace").eq(namespace),
+            ProjectionExpression="#k,#v",
+            ExpressionAttributeNames={"#k": "key", "#v": "value"},
+        )
+        items.extend((it["key"], it.get("value", "")) for it in resp.get("Items", []))
+        while "LastEvaluatedKey" in resp:
+            resp = self._table.query(
+                KeyConditionExpression=Key("namespace").eq(namespace),
+                ProjectionExpression="#k,#v",
+                ExpressionAttributeNames={"#k": "key", "#v": "value"},
+                ExclusiveStartKey=resp["LastEvaluatedKey"],
+            )
+            items.extend((it["key"], it.get("value", "")) for it in resp.get("Items", []))
+        items.sort(key=lambda kv: kv[0])
+        return items
+
+    def count(self, namespace: str) -> int:
+        resp = self._table.query(
+            KeyConditionExpression=Key("namespace").eq(namespace),
+            Select="COUNT",
+        )
+        count = resp.get("Count", 0)
+        while "LastEvaluatedKey" in resp:
+            resp = self._table.query(
+                KeyConditionExpression=Key("namespace").eq(namespace),
+                Select="COUNT",
+                ExclusiveStartKey=resp["LastEvaluatedKey"],
+            )
+            count += resp.get("Count", 0)
+        return int(count)
+
+# platform-independent access to key value store ----------------------------------
+
+_key_value_store = None
+
+def get_key_value_store():
+    global _key_value_store
+    if not _key_value_store:
+        #_logger.info(f"get_string_queue_store: detect_environment=='{detect_environment()}'")
+        if detect_environment() == "aws":
+            _key_value_store = DynamoDBKeyValueStore()
+        else:
+            #_key_value_store = DynamoDBKeyValueStore()
+            _key_value_store = SQLiteKeyValueStore()
+    return _key_value_store

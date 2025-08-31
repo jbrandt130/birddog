@@ -6,7 +6,6 @@ Ukraine records archive monitor and scraper.
 """
 
 import time
-import threading
 import queue
 
 import regex
@@ -27,8 +26,10 @@ from birddog.wiki import (
     PageTracker,
     page_title_from_address,
     )
+from birddog.translate import TranslationManager
 from birddog.store import get_string_queue_store
 from birddog.env import detect_environment
+from birddog.utility import HeartbeatManager
 
 from birddog.logging import get_logger
 _logger = get_logger()
@@ -46,7 +47,7 @@ class PageLRU:
         def address(self):
             return self._address
 
-    def __init__(self, maxsize=500, reset_limit=60 * 60):
+    def __init__(self, maxsize=100, reset_limit=5 * 60):
         self._reset_limit = reset_limit # seconds
         self._timer_start = time.time()
         self._lru = LRUCache(maxsize=maxsize)
@@ -291,41 +292,6 @@ class ArchiveWatcher:
 # ----------------------------------------------------------------------------
 # Page Update Manager
 
-class HeartbeatManager:
-    def __init__(self, interval=1.0):
-        self.interval = interval
-        self._stop_event = threading.Event()
-        self._thread = threading.Thread(target=self._run_heartbeat, daemon=True)
-        self._started = False
-
-    def __enter__(self):
-        self.start()
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.stop()
-
-    def start(self):
-        if not self._started:
-            self._thread.start()
-            self._started = True
-
-    def _run_heartbeat(self):
-        while not self._stop_event.is_set():
-            try:
-                self.heartbeat()
-            except Exception as e:
-                _logger.info(f"Heartbeat error: {e}")
-            time.sleep(self.interval)
-
-    def heartbeat(self):
-        """Override this method in subclasses to perform periodic actions."""
-        _logger.info("Heartbeat...")
-
-    def stop(self):
-        self._stop_event.set()
-        self._thread.join()
-
 class PageUpdateManager(HeartbeatManager):
     _PAGE_UPDATE_MANAGER_PATH       = "page_update_manager.json"
     _PENDING_TITLES_QUEUE           = "pending_titles"
@@ -351,7 +317,7 @@ class PageUpdateManager(HeartbeatManager):
         return self._queue_store.peek(PageUpdateManager._PENDING_TITLES_QUEUE, n)
 
     def _pop_titles(self, n):
-        self._queue_store.pop(PageUpdateManager._PENDING_TITLES_QUEUE, n)
+        return self._queue_store.pop(PageUpdateManager._PENDING_TITLES_QUEUE, n)
 
     def load(self):
         try:
@@ -414,11 +380,12 @@ class PageUpdateManager(HeartbeatManager):
                 pass  # should not happen, but safe
 
         # 3. Insert batch of pending titles into tracker
+        # FIXME: This won't work if more than one Runtime instance is running
+        # FIXME: Atomically pop the batch and reinsert them if add_titles fails?
         batch = self._peek_titles(PageUpdateManager._TITLE_BATCH_SIZE)
         if batch:
             _logger.info(f"PageUpdateManager: adding batch of {len(batch)} titles to tracker")
             self._tracker.add_titles(batch, api_delay=PageUpdateManager._API_DELAY)
-            #self._tracker.add_titles(batch)
             # finally delete batch from pending titles (after successfully adding)
             self._pop_titles(len(batch))
         self._busy = False
@@ -454,6 +421,7 @@ class Runtime:
     def __init__(self):
         self._page_lru = PageLRU(maxsize=Runtime._LRU_SIZE)
         self._update_manager = PageUpdateManager(page_lru=self._page_lru)
+        self._translation_manager = TranslationManager(self)
 
     @property
     def page_lru(self):
@@ -474,5 +442,12 @@ class Runtime:
 
     def lookup_by_title(self, title):
         return self._page_lru.lookup_by_title(title, runtime=self)
+
+    def start_translation(self, page):
+        self._translation_manager.translate(page)
+
+    def get_active_translations(self):
+        return self._translation_manager.active_tasks()
+
 
 

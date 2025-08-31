@@ -6,8 +6,10 @@ from birddog.utility import (
     form_text_item,
     equal_text,
     get_text,
+    )
+from birddog.translate import (
     needs_translation,
-    translate_page,
+    translate_structure,
     )
 
 # ------------------ UTILITY UNIT TESTS ------------------ 
@@ -23,18 +25,15 @@ class Test(unittest.TestCase):
         for text in ['', 'a12', '-13', '098-', 'x1']:
             self.assertFalse(is_numeric(text))
         for text in ['123', '', 'сторінку']:
-            item1a = form_text_item(text, translate=False)
-            item1b = form_text_item(text, translate=False)
-            item2 = form_text_item(text, translate=True)
+            item1a = form_text_item(text)
+            item1b = form_text_item(text)
+            item2 = form_text_item(text)
             self.assertTrue(equal_text(item1b, item2))
             self.assertTrue(equal_text(item1a, item2))
             self.assertTrue(get_text(item1a) == text)
         self.assertTrue(
             needs_translation(
-                form_text_item('відредаговано', translate=False)))
-        self.assertFalse(
-            needs_translation(
-                form_text_item('відредаговано', translate=True)))
+                form_text_item('відредаговано')))
         self.assertFalse(needs_translation(form_text_item('123')))
         self.assertFalse(needs_translation(form_text_item('')))
         item1 = {
@@ -48,7 +47,7 @@ class Test(unittest.TestCase):
             'def': [{'uk': 'востаннє', 'en': 'last'}, 5], 
             'ghi': {'abc': {'uk': 'сторінку', 'en': 'page'}}
             }
-        translate_page(item2)
+        translate_structure(item2)
         self.assertTrue(item2 == item2_translated)
 
 if __name__ == "__main__":

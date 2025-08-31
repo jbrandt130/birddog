@@ -25,11 +25,10 @@ from birddog.utility import (
     form_text_item,
     format_date,
     get_text,
-    translate_page,
     is_linked,
     )
-
 from birddog.store import get_mod_date_store
+from birddog.translate import translate_structure
 
 from birddog.logging import get_logger
 _logger = get_logger()
@@ -269,7 +268,7 @@ def update_master_archive_list():
         time.sleep(1)
         _logger.info(f"Searching {archive_name} ({archive})")
         archives[archive_name] = sniff_subarchives(archive)
-        translate_page(archives[archive_name])
+        translate_structure(archives[archive_name])
         for sub, value in archives[archive_name].items():
             if sub == "Р":  # make sure Cyrillic Р maps to Latin R
                 _logger.info("Mapping Cyrillic Р to Latin R")
@@ -286,7 +285,7 @@ def update_master_archive_list():
             "title": form_text_item(fond_title),
             "subarchive": form_text_item(fond_name[1])
         }
-        translate_page(item)
+        translate_structure(item)
         if not archives.get(fond_name[0]):
             archives[fond_name[0]] = {}
         archives[fond_name[0]][fond_name[1]] = item
@@ -1183,7 +1182,7 @@ class PageTracker:
             updates = get_recent_changes(cutoff_date=None)
         if not updates:
             return False
-        # strip user out for now - requires a update_store schema change
+        # FIXME: strip user out for now - requires a update_store schema change
         updates = {key: value["timestamp"] for key, value in updates.items()}
         self._cutoff_date = max(updates.values())
         return self._update_mod_dates(updates)
@@ -1274,7 +1273,7 @@ def get_page_history_from_cutoff(page_title, cutoff_date):
 # History LRU
 
 class HistoryLRU:
-    def __init__(self, maxsize=500, reset_limit=60 * 60):
+    def __init__(self, maxsize=100, reset_limit=5 * 60):
         self._reset_limit = reset_limit  # seconds
         self._timer_start = time.time()
         self._lru = LRUCache(maxsize=maxsize)

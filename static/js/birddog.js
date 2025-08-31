@@ -87,8 +87,7 @@ async function update_translation_progress(data) {
         if (item.title == current_page.title) {
             const progress_bar = document.getElementById("progress-bar");
             if (progress_bar) {
-                const percent = (item.progress / item.total * 100).toFixed(1);
-                //console.log(`Updating progress for ${item.page_name}: ${percent}%`);
+                const percent = (100. * item.progress / item.total).toFixed(1);
                 progress_bar.style.width = `${percent}%`;
                 progress_bar.setAttribute("aria-valuenow", percent);
                 progress_bar.textContent = ''; //`${percent}%`;

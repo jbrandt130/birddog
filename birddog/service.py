@@ -1,3 +1,6 @@
+# (c) 2025 Jonathan Brandt
+# Licensed under the MIT License. See LICENSE file in the project root.
+
 # system packages
 import os
 import threading
@@ -768,71 +771,15 @@ def resolve_update(archive=None, subarchive=None, fond=None, opus=None, case=Non
 
 # ---- TRANSLATION MANAGEMENT -------------------------------------------------
 
-_translation_tasks = {}
-_task_id_map = {}
-_translation_lock = threading.RLock()
-
-def _add_user_task(email, task_id):
-    with _translation_lock:
-        if not email in _task_id_map:
-            _task_id_map[email] = []
-        if task_id not in _task_id_map[email]:
-            _task_id_map[email].append(task_id)
-
 def _active_translations(email):
-    with _translation_lock:
-        user_tasks = _task_id_map.get(email, [])
-        return [{
-            'page_name': _translation_tasks[tid]['page'].name,
-            'title': _translation_tasks[tid]['page'].title,
-            'progress': _translation_tasks[tid]['progress'],
-            'total': _translation_tasks[tid]['total'],
-            'running': _translation_tasks[tid]['running']
-        } for tid in user_tasks]
-
-def _translation_progress(task_id, progress, total):
-    with _translation_lock:
-        item = _translation_tasks[task_id]
-        page = item['page']
-        item['progress'] = progress
-        item['total'] = total
-        item['running'] = True
-    _logger.info(f'translation progress: {page.name} {progress}/{total} {float(progress)/float(total)*100.:.1f}%')
-
-def _translation_completion(task_id, results):
-    with _translation_lock:
-        item = _translation_tasks[task_id]
-        item['running'] = False
-        for user, tasks in _task_id_map.items():
-            _task_id_map[user] = [task for task in tasks if task != task_id]
-        if task_id in _translation_tasks:
-            del _translation_tasks[task_id]
-    _logger.info(f'translation completed: {item["page"].name}')
-
-def _start_translation(email, page):
-    with _translation_lock:
-        task_id = next((k for k, v in _translation_tasks.items() if v["page"].title == page.title), None)
-        if not task_id:
-            task_id = page.translate(
-                asynchronous=True,
-                progress_callback=_translation_progress,
-                completion_callback=_translation_completion)
-            if task_id:
-                _logger.info(f'translation started ({_hide(email)}): {page.name}')
-                _translation_tasks[task_id] = {
-                    'page': page,
-                    'progress': 0,
-                    'total': 1,
-                    'running': True,
-                }
-                _add_user_task(email, task_id)
-        else:
-            # page is already being translated, possibly by another user
-            # add to users tasks so user gets progress/completion
-            _add_user_task(email, task_id)
+    return [{
+        'title': task["name"],
+        'progress': task["completed"],
+        'total': task["length"],
+    } for task in runtime.get_active_translations()]
 
 @app.route('/translate', methods=['GET'])
-def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=None):
+def translate(archive=None, subarchive=None, fond=None, opus=None, case=None):
     user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
@@ -843,7 +790,7 @@ def translate_page(archive=None, subarchive=None, fond=None, opus=None, case=Non
         page = runtime.lookup_by_title(page_title)
     if page:
         # start new translation
-        _start_translation(user.email, page)
+        runtime.start_translation(page)
     return jsonify({
         'success': True,
         'translations': _active_translations(user.email)}), 200

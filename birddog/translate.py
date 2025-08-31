@@ -1,19 +1,17 @@
 # (c) 2025 Jonathan Brandt
 # Licensed under the MIT License. See LICENSE file in the project root.
 
-"""Translation support from Ukrainian to English with async queue"""
+"""Translation support from Ukrainian to English with async Translation manager"""
 
-from time import sleep
 import os
-import threading
-import uuid
-import queue
+import time
 from httpcore._exceptions import ReadTimeout, ConnectTimeout
 
 import requests
 from deep_translator import GoogleTranslator, DeeplTranslator
 from google.cloud import translate_v2 as google_translate
 
+from birddog.task import TaskManager
 from birddog.logging import get_logger
 _logger = get_logger()
 
@@ -61,14 +59,6 @@ else:
 
 # --- Basic Translation Logic ---
 
-def is_english(text):
-    """True if argument is decodable to ascii (misnomer?)"""
-    try:
-        text.encode(encoding='utf-8').decode('ascii')
-    except UnicodeDecodeError:
-        return False
-    return True
-
 def translation(text):
     """ Translate single text string or list/tuple of strings. Returns None on failure. """
     result = None
@@ -82,86 +72,84 @@ def translation(text):
             break
         except (requests.Timeout, ReadTimeout, ConnectTimeout):
             _logger.info("translation timeout. retrying...")
-        sleep(wait_time)
+        time.sleep(wait_time)
         wait_time *= 2
     return result
 
-# --- Async Queue Infrastructure ---
+# --- TRANSLATION SUPPORT ---
 
-_NUM_WORKERS = 8
+def needs_translation(item):
+    """True if text item needs to be translated to English"""
+    return isinstance(item, dict) and 'uk' in item and 'en' not in item
+
+def _traverse_page(obj, select_fn, action_fn):
+    if select_fn(obj):
+        action_fn(obj)
+    elif isinstance(obj, (list, tuple)):
+        for value in obj:
+            _traverse_page(value, select_fn, action_fn)
+    elif isinstance(obj, dict):
+        for value in obj.values():
+            _traverse_page(value, select_fn, action_fn)
+
+def get_translation_items(page):
+    batch = []
+    _traverse_page(page,
+        needs_translation,
+        lambda obj: batch.append(obj['uk']))
+    return batch
+
+def apply_translation(page, translation_map):
+    def _apply_trans(obj):
+        mapping = translation_map.get(obj['uk'])
+        if mapping:
+            obj['en'] = mapping
+
+    _traverse_page(page,
+        needs_translation,
+        _apply_trans)
+
+def translate_structure(structure, dry_run=False):
+    items = get_translation_items(structure)
+    if items and not dry_run:
+        _logger.info(f'Batch translation: {len(items)} items...')
+        start = time.time()
+        result = translation(items)
+        elapsed = time.time() - start
+        _logger.info(f'    ...completed ({elapsed:.2f} sec.)')
+        translation_map = { x[0]: x[1] for x in zip(items, result) }
+        apply_translation(structure, translation_map)
+    return len(items)
+
+# --- ASYNC TRANSLATION MANAGER ---
+
 _BATCH_SIZE = 10 if _USE_GOOGLE_CLOUD_TRANSLATE else 5 # google cloud is faster than the alternatives
 
-_task_queue = queue.Queue()
-_task_registry = {}
-_task_lock = threading.Lock()
+class TranslationManager(TaskManager):
+    def __init__(self, runtime):
+        self._runtime = runtime
+        super().__init__("TranslationManager", auto_start=True)
 
-class TranslationTask:
-    def __init__(self, task_id, batch, progress_cb, completion_cb):
-        self.task_id = task_id
-        self.batch = batch
-        self.progress_cb = progress_cb
-        self.completion_cb = completion_cb
-        self.cancelled = threading.Event()
+    def execute_subtask(self, subtask):
+        result = translation(subtask['payload'])
+        # save translation pairs in resulting payload
+        subtask['payload'] = [list(x) for x in zip(subtask['payload'], result)]
 
-    def cancel(self):
-        self.cancelled.set()
+    def complete_task(self, task_desc, subtasks):
+        print("TranslationManager.complete:", task_desc['name'])
+        translation_map = {}
+        for subtask in subtasks:
+            for item in subtask['payload']:
+                translation_map[item[0]] = item[1]
+        page = self._runtime.lookup_by_title(task_desc['name'])
+        page.apply_translation(translation_map)
 
-    def run(self):
-        results = []
-        chunk_size = _BATCH_SIZE
-        total = len(self.batch)
-        for i in range(0, total, chunk_size):
-            if self.cancelled.is_set():
-                _logger.info(f"Task {self.task_id} cancelled.")
-                return
-            chunk = self.batch[i:i+chunk_size]
-            chunk_result = translation(chunk)
-            if chunk_result is None:
-                chunk_result = [None] * len(chunk)
-            results.extend(chunk_result)
-            if self.progress_cb:
-                self.progress_cb(self.task_id, min(i + chunk_size, total), total)
-        if self.completion_cb:
-            self.completion_cb(self.task_id, results)
-
-# Background worker pool
-
-_worker_threads = []
-
-def _worker():
-    while True:
-        task = _task_queue.get()
-        if task is None:
-            break  # Sentinel for shutdown
-        task.run()
-        with _task_lock:
-            _task_registry.pop(task.task_id, None)
-
-for _ in range(_NUM_WORKERS):
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
-    _worker_threads.append(t)
-
-# --- Public Interface ---
-
-def queue_translation(batch, progress_callback=None, completion_callback=None):
-    task_id = str(uuid.uuid4())
-    task = TranslationTask(task_id, batch, progress_callback, completion_callback)
-    with _task_lock:
-        _task_registry[task_id] = task
-    _task_queue.put(task)
-    return task_id
-
-def cancel_translation(task_id):
-    with _task_lock:
-        task = _task_registry.get(task_id)
-        if task:
-            task.cancel()
-            return True
-    return False
-
-def is_translation_running(task_id=None):
-    with _task_lock:
-        if task_id is not None:
-            return task_id in _task_registry
-        return bool(_task_registry)
+    def translate(self, page):
+        task_name = page.title
+        items = get_translation_items(page._page)
+        total = len(items)
+        if total > 0:
+            batches = []
+            for i in range(0, total, _BATCH_SIZE):
+                batches.append(items[i:i+_BATCH_SIZE])
+            self.create(task_name, batches)

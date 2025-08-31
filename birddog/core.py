@@ -13,7 +13,6 @@ from birddog.utility import (
     get_text,
     match_text,
     form_text_item,
-    translate_page,
     is_linked
     )
 from birddog.cache import load_cached_object, save_cached_object, CacheMissError
@@ -35,7 +34,10 @@ from birddog.wiki import (
     batch_fetch_document_links,
     )
 from birddog.ai import classify_table_columns
-
+from birddog.translate import (
+    get_translation_items,
+    apply_translation,
+    )
 from birddog.logging import get_logger
 _logger = get_logger()
 
@@ -308,7 +310,7 @@ class Page:
             adoptees["children"].append(row)
 
     def lookup(self, entry_id):
-        _logger.info(f"Page.lookup title={self.title}, entry_id={entry_id}")
+        #_logger.info(f"Page.lookup title={self.title}, entry_id={entry_id}")
         row = self._find_child_row(entry_id)
         if row:
             url = row[0].get("link", "")
@@ -355,24 +357,11 @@ class Page:
 
     @property
     def needs_translation(self):
-        return translate_page(self._page, dry_run=True) > 0
+        return len(get_translation_items(self._page)) > 0
 
-    def translate(self, asynchronous=False, progress_callback=None, completion_callback=None):
-        if asynchronous:
-            if not self.needs_translation:
-                return False # nothing to translate
-            def completion_cb(task_id, results):
-                # set up completion callback to update the cache
-                if results:
-                    self._cache_save()
-                # chain to caller
-                if completion_callback:
-                    completion_callback(task_id, results)
-            return translate_page(self._page, asynchronous=True, progress_callback=progress_callback, completion_callback=completion_cb)
-        if translate_page(self._page) > 0:
-            self._cache_save()
-            return True
-        return False
+    def apply_translation(self, translation_map):
+        apply_translation(self._page, translation_map)
+        self._cache_save()
 
     def load_child_document_links(self, update_cache=False):
         if self.kind == 'opus':

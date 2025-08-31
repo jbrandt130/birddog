@@ -11,14 +11,9 @@ import time
 import json
 import requests
 import random
-from threading import Lock, Semaphore
+from threading import Lock, Semaphore, Event, Thread
 from datetime import datetime, timezone
 from collections import deque
-
-from birddog.translate import (
-    translation,
-    is_english,
-    queue_translation)
 
 from birddog.logging import get_logger
 _logger = get_logger()
@@ -169,7 +164,15 @@ def is_numeric(text):
     """True if string is one or more digits or a dash separated numeric range."""
     return re.fullmatch(number_pattern, text.strip()) is not None
 
-def form_text_item(source_text, translate=False):
+def is_english(text):
+    """True if argument is decodable to ascii (misnomer?)"""
+    try:
+        text.encode(encoding='utf-8').decode('ascii')
+    except UnicodeDecodeError:
+        return False
+    return True
+
+def form_text_item(source_text):
     """Form a multilingual text item from a fragment of text.
     A text item is a dict containing keys "uk" and "en", representing the
     Ukrainian and English versions of the text, respectively.
@@ -181,8 +184,6 @@ def form_text_item(source_text, translate=False):
     result = { 'uk': source_text }
     if not source_text or is_numeric(source_text) or is_english(source_text):
         result['en'] = source_text
-    if translate:
-        result['en'] = translation(source_text)
     return result
 
 def equal_text(item1, item2):
@@ -203,55 +204,39 @@ def match_text(text_item, text):
     of a multilingual text item."""
     return text == text_item.get('uk') or text == text_item.get('en')
 
-def needs_translation(item):
-    """True if text item needs to be translated to English"""
-    return isinstance(item, dict) and 'uk' in item and 'en' not in item
+# BACKGROUND PROCESSING ----------------------------------------------------------
 
-def translate_page(
-    page,
-    dry_run=False,
-    asynchronous=False,
-    progress_callback=None,
-    completion_callback=None):
-    """Traverse a page and translate all untranslated text items.
-    The changes are done in place on each multilingual text item.
-    Returns the total number of items translated.
-    """
-    batch = []
-    items = []
+class HeartbeatManager:
+    def __init__(self, interval=1.0):
+        self.interval = interval
+        self._stop_event = Event()
+        self._thread = Thread(target=self._run_heartbeat, daemon=True)
+        self._started = False
 
-    # recursive function to traverse down dictionaries and lists
-    # to find all multilingual text items and queue them into an
-    # array for batch translation.
-    def queue_items(obj, batch, items):
-        if needs_translation(obj):
-            batch.append(obj['uk'])
-            items.append(obj)
-        elif isinstance(obj, (list, tuple)):
-            for value in obj:
-                queue_items(value, batch, items)
-        elif isinstance(obj, dict):
-            for value in obj.values():
-                queue_items(value, batch, items)
+    def __enter__(self):
+        self.start()
+        return self
 
-    def store_result(items, batch):
-        for i, value in enumerate(batch):
-            items[i]['en'] = value
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.stop()
 
-    queue_items(page, batch, items)
+    def start(self):
+        if not self._started:
+            self._thread.start()
+            self._started = True
 
-    if batch and not dry_run:
-        if asynchronous:
-            def completion_cb(task_id, result):
-                store_result(items, result)
-                if completion_callback:
-                    completion_callback(task_id, result)
-            return queue_translation(batch, progress_callback, completion_cb)
-        else:
-            _logger.info(f'Batch translation: {len(batch)} items...')
-            start = time.time()
-            batch = translation(batch)
-            elapsed = time.time() - start
-            _logger.info(f'    ...completed ({elapsed:.2f} sec.)')
-            store_result(items, batch)
-    return len(batch)
+    def _run_heartbeat(self):
+        while not self._stop_event.is_set():
+            try:
+                self.heartbeat()
+            except Exception as e:
+                _logger.info(f"Heartbeat error: {e}")
+            time.sleep(self.interval)
+
+    def heartbeat(self):
+        """Override this method in subclasses to perform periodic actions."""
+        _logger.info("Heartbeat...")
+
+    def stop(self):
+        self._stop_event.set()
+        self._thread.join()
