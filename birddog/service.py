@@ -776,7 +776,7 @@ def _active_translations(email):
         'title': task["name"],
         'progress': task["completed"],
         'total': task["length"],
-    } for task in runtime.get_active_translations()]
+    } for task in runtime.active_translations]
 
 @app.route('/translate', methods=['GET'])
 def translate(archive=None, subarchive=None, fond=None, opus=None, case=None):
@@ -792,7 +792,8 @@ def translate(archive=None, subarchive=None, fond=None, opus=None, case=None):
         # start new translation
         runtime.start_translation(page)
     return jsonify({
-        'success': True,
+        'enabled': runtime.translation_enabled,
+        'available': runtime.translation_available,
         'translations': _active_translations(user.email)}), 200
 
 # ---- LOG ACCESS ---------------------------------------------------------------

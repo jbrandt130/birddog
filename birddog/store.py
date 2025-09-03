@@ -548,6 +548,8 @@ class DynamoDBKeyValueStore:
     def insert(self, namespace: str, key: str, value: str):
         if not isinstance(value, str):
             raise TypeError("value must be str")
+        if not isinstance(key, str):
+            raise TypeError("key must be str")
         self._table.put_item(Item={
             "namespace": namespace,
             "key": key,
@@ -555,6 +557,8 @@ class DynamoDBKeyValueStore:
         })
 
     def remove(self, namespace: str, key: str):
+        if not isinstance(key, str):
+            raise TypeError("key must be str")
         self._table.delete_item(Key={"namespace": namespace, "key": key})
 
     def remove_all(self, namespace: str):
@@ -579,6 +583,8 @@ class DynamoDBKeyValueStore:
                     batch.delete_item(Key={"namespace": item["namespace"], "key": item["key"]})
 
     def get(self, namespace: str, key: str) -> str:
+        if not isinstance(key, str):
+            raise TypeError("key must be str")
         resp = self._table.get_item(
             Key={"namespace": namespace, "key": key},
             ProjectionExpression="#v",

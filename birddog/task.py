@@ -42,19 +42,25 @@ class TaskManager(HeartbeatManager):
     def _completed_id(self, task_id):
        return f"{self._completed_prefix}.{task_id}"
 
-    def _queue_subtask(self, payload, index, task_id):
-        subtask = {
+    @staticmethod
+    def _form_subtask(payload, index, task_id):
+        return {
             "task_id": task_id,
             "index": index,
-            "payload": payload
+            "payload": payload        
         }
-        #_logger.info(f"_queue_subtask: {subtask}")
+
+    def _queue_subtask(self, subtask):
         self._queue_store.append(self._pending_id, [json.dumps(subtask)])
+
+    def _queue_subtasks(self, batch):
+        batch = [json.dumps(item) for item in batch]
+        self._queue_store.append(self._pending_id, batch)
 
     def _requeue_subtask(self, subtask):
         self._key_value_store.remove(self._in_process_id, self._subtask_id(subtask))
         _logger.info(f"TaskManager requeueing subtask: {self._subtask_id(subtask)}")
-        self._queue_subtask(subtask["payload"], subtask["index"], subtask["task_id"])
+        self._queue_subtask(subtask)
 
     def _next_subtask(self):
         item = self._queue_store.pop(self._pending_id, 1)
@@ -77,7 +83,7 @@ class TaskManager(HeartbeatManager):
         task_id = subtask["task_id"]
         self._key_value_store.insert(
             self._completed_id(task_id), 
-            subtask["index"], 
+            str(subtask["index"]), 
             json.dumps(subtask))
 
         # update task progress
@@ -158,6 +164,12 @@ class TaskManager(HeartbeatManager):
             return json.loads(item)
         raise KeyError("Unknown task_id")
 
+    def lookup_by_name(self, task_name):
+        for task in self.active_tasks():
+            if task['name'] == task_name:
+                return task
+        raise KeyError("Unknown task name")
+
     def active_tasks(self): 
         items = self._key_value_store.get_all(self._active_id)
         return [json.loads(item[1]) for item in items]
@@ -178,8 +190,10 @@ class TaskManager(HeartbeatManager):
         }
         self._store_task(task_desc)
 
-        for i, item in enumerate(subtasks):
-            self._queue_subtask(item, i, task_id)
+        batch = [self._form_subtask(item, i, task_id) for i, item in enumerate(subtasks)]
+        self._queue_subtasks(batch)
+        #for i, item in enumerate(subtasks):
+        #    self._queue_subtask(self._form_subtask(item, i, task_id))
         _logger.info(f"TaskManager starting task {task_id}")
         self._spawn_worker()
         return task_id

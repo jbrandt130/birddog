@@ -444,10 +444,21 @@ class Runtime:
         return self._page_lru.lookup_by_title(title, runtime=self)
 
     def start_translation(self, page):
-        self._translation_manager.translate(page)
+        if self.translation_enabled:
+            self._translation_manager.translate(page)
 
-    def get_active_translations(self):
+    @property
+    def active_translations(self):
         return self._translation_manager.active_tasks()
+
+    @property
+    def translation_available(self):
+        return self._translation_manager.available
+
+    @property
+    def translation_enabled(self):
+        return self._translation_manager.enabled
+
 
 
 

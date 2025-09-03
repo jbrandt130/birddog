@@ -77,11 +77,17 @@ function show_tab(tab_id) {
 
 async function update_translation_progress(data) {
     console.log('translate result:', data);
-    const translations = data.translations || [];
 
     hide('progress-container');
     hide('translating-badge');
 
+    if (!data.available) {
+        alert("Translation service is temporarily unavailable. Please try again later.");
+        load_page_by_title(current_page.title, compare=current_page.refmod ?? null);
+        return;
+    }
+
+    const translations = data.translations || [];
     for (const item of translations) {
         //console.log(item.page_name, current_page.name);
         if (item.title == current_page.title) {
@@ -363,6 +369,8 @@ async function load_page_by_title(page_title, compare=null) {
 async function translate_page() {
     const page_title = current_page.title;
     console.log('translating:', page_title);
+    show('translating-badge');
+    enable_if("translate-btn", false);
     const response = await fetch(`/translate?title=${page_title}`);
     if (!response.ok) {
         if (response.status === 404) {

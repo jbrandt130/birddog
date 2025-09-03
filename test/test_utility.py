@@ -10,6 +10,7 @@ from birddog.utility import (
 from birddog.translate import (
     needs_translation,
     translate_structure,
+    TranslationDisabledError,
     )
 
 # ------------------ UTILITY UNIT TESTS ------------------ 
@@ -47,8 +48,11 @@ class Test(unittest.TestCase):
             'def': [{'uk': 'востаннє', 'en': 'last'}, 5], 
             'ghi': {'abc': {'uk': 'сторінку', 'en': 'page'}}
             }
-        translate_structure(item2)
-        self.assertTrue(item2 == item2_translated)
+        try:
+            translate_structure(item2)
+            self.assertTrue(item2 == item2_translated)
+        except TranslationDisabledError:
+            print("Translation is disabled. Skipping translation test.")
 
 if __name__ == "__main__":
     unittest.main()
