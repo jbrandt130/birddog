@@ -116,10 +116,11 @@ class TaskManager(HeartbeatManager):
                 self._mark_subtask_in_process(subtask)
                 try:
                     self.execute_subtask(subtask)
-                    self._mark_subtask_completed(subtask)
                 except Exception as e:
                     _logger.error(f"Exception in worker subtask: {e}, requeueing")
                     self._requeue_subtask(subtask)
+                    continue
+                self._mark_subtask_completed(subtask)
             else:
                 # no work left, exit
                 return
