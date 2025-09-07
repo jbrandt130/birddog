@@ -1,18 +1,35 @@
 #!/bin/bash
-
-# If eb is missing do this one-time initialization:
-#       brew install awsebcli
-
 set -e  # Exit on error
 
 APP_NAME="birddog"
 ENV_NAME="birddog-env"
-REGION="us-east-1"
+REGION="us-east-2"
 PLATFORM="Python 3.13"
 INSTANCE_TYPE="t3.micro"
+PROFILE="birddog-admin"
 
+# Warn if a different profile was set outside
+if [ -n "$AWS_PROFILE" ] && [ "$AWS_PROFILE" != "$PROFILE" ]; then
+  echo "⚠️  Warning: AWS_PROFILE in shell is '$AWS_PROFILE'; overriding with '$PROFILE'."
+fi
+
+# Clean any raw keys so they can't override profiles
+#unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+
+# ✅ Make the profile visible to all child processes (EB CLI, botocore)
+export AWS_PROFILE="$PROFILE"
+export AWS_SDK_LOAD_CONFIG=1
+export AWS_DEFAULT_REGION="$REGION"
+
+# Optional: fail fast if creds not resolvable
+if ! aws sts get-caller-identity >/dev/null 2>&1; then
+  echo "❌ AWS profile '$AWS_PROFILE' not usable. Run:  aws configure --profile $AWS_PROFILE"
+  exit 1
+fi
+
+# --- functions ---
 function init() {
-  echo "🔧 Running EB init setup..."
+  echo "🔧 Running EB init setup with profile '$PROFILE'..."
   eb init "$APP_NAME" --platform "$PLATFORM" --region "$REGION"
   echo "✅ Setup complete."
 }
@@ -22,15 +39,15 @@ function deploy() {
     echo "🚀 Environment '$ENV_NAME' already exists. Skipping creation."
   else
     echo "🚀 Creating Elastic Beanstalk environment: $ENV_NAME..."
-    eb create "$ENV_NAME" --single --instance_type "$INSTANCE_TYPE"
+    eb create "$ENV_NAME" --single --instance_type "$INSTANCE_TYPE" \
+      --service-role aws-elasticbeanstalk-service-role \
+      --instance_profile birddog-ec2-role --envvars BIRDDOG_AWS_ENVIRONMENT=1
     echo "✅ Environment created."
   fi
 
-  echo "🔐 Setting environment variables from shell..."
+  echo "🔐 Setting environment variables (no AWS creds)..."
   eb setenv \
-    AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
-    AWS_DEFAULT_REGION="$AWS_DEFAULT_REGION" \
-    AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+    AWS_DEFAULT_REGION="$REGION" \
     OPENAI_API_KEY="$OPENAI_API_KEY" \
     DEEPL_API_KEY="$DEEPL_API_KEY" \
     BIRDDOG_AWS_ENVIRONMENT=1 \
@@ -40,6 +57,7 @@ function deploy() {
     BIRDDOG_SMTP_PORT="$BIRDDOG_SMTP_PORT" \
     BIRDDOG_SMTP_SERVER="$BIRDDOG_SMTP_SERVER" \
     BIRDDOG_SMTP_USERNAME="$BIRDDOG_SMTP_USERNAME"
+
   eb printenv
 
   echo "📦 Deploying application..."
@@ -54,19 +72,18 @@ function deploy() {
 function redeploy() {
   echo "📦 Redeploying application..."
   eb deploy
-
   echo "📊 Checking environment status..."
   eb status
-
   echo "✅ Redeploy complete."
 }
 
 function terminate() {
   echo "🔥 Terminating environment: $ENV_NAME"
-  eb terminate "$ENV_NAME" --force 
+  eb terminate "$ENV_NAME" --force
   echo "✅ Environment terminated."
 }
 
+# --- command dispatcher ---
 case "$1" in
   init)
     init
