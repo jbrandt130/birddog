@@ -12,8 +12,7 @@ import requests
 import time
 import threading
 from collections import deque
-from datetime import datetime
-
+from datetime import datetime, timedelta, UTC, timezone
 import sqlite3
 
 import boto3
@@ -25,6 +24,19 @@ import pandas as pd
 from birddog.env import detect_environment
 
 _SQLLITE_LOG_PATH = ".cache/logs.db"
+
+def _iso_utc(dt) -> str:
+    """Normalize to ISO-8601 UTC with microseconds (e.g., '2025-09-08T19:13:45.123456+00:00')."""
+    if isinstance(dt, str):
+        ts = pd.to_datetime(dt, utc=True, errors="raise")
+        dt = ts.to_pydatetime()
+    if isinstance(dt, datetime):
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt.isoformat(timespec="microseconds")
+    raise TypeError("start_time/end_time must be datetime or ISO string")
 
 # EPHEMERAL SYSTEM LOGGING --------------------------------------------------
 
@@ -276,7 +288,7 @@ class ServiceLogger:
         raise NotImplementedError
 
     @staticmethod
-    def summarize_service_usage(df: pd.DataFrame, by=["resource", "method"], sample_interval_minutes=None) -> pd.DataFrame:
+    def summarize_service_usage(df: pd.DataFrame, by=None, sample_interval_minutes=None) -> pd.DataFrame:
         """
         Summarize a service-call log DataFrame.
 
@@ -290,6 +302,8 @@ class ServiceLogger:
         -------
         DataFrame with columns: <by...>, count, cumulative_size, cumulative_duration
         """
+        if not by:
+            by = ["resource", "method"]
         if isinstance(by, str):
             by = [by]
 
@@ -347,12 +361,17 @@ class SQLLiteServiceLogger(ServiceLogger):
                     path TEXT,
                     size INTEGER,
                     duration INTEGER
-                )
+                );
+            ''')
+            conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_service_logs_ts ON service_logs(timestamp);
             ''')
             conn.commit()
 
     def log_service_call(self, resource, method, path, size, duration):
-        timestamp = datetime.utcnow().isoformat()
+        # timezone-aware ISO string; include microseconds for ordering fidelity
+        timestamp = datetime.now(UTC).isoformat(timespec="microseconds")
+
         with self._lock, sqlite3.connect(self._db_path) as conn:
             conn.execute(
                 '''
@@ -364,34 +383,123 @@ class SQLLiteServiceLogger(ServiceLogger):
                     resource,
                     method,
                     path,
-                    int(size),
-                    int(duration * 1000)
+                    int(size or 0),
+                    int((duration or 0) * 1000),  # ms, consistent with your other loggers
                 )
             )
             conn.commit()
 
     def load_logs(self, start_time, end_time):
-        with sqlite3.connect(self._db_path) as conn:
-            query = """
+        start_s = _iso_utc(start_time)
+        end_s   = _iso_utc(end_time)
+
+        query = """
             SELECT * FROM service_logs
-            WHERE timestamp BETWEEN ? and ?
-            """
-            if isinstance(start_time, datetime):
-                start_time = start_time.isoformat()
-            if isinstance(end_time, datetime):
-                end_time = end_time.isoformat()
-            df = pd.read_sql_query(query, conn, params=(start_time, end_time))
-            df["timestamp"] = pd.to_datetime(df["timestamp"])
-            return df
+            WHERE timestamp BETWEEN ? AND ?
+        """
+        with sqlite3.connect(self._db_path) as conn:
+            df = pd.read_sql_query(query, conn, params=(start_s, end_s))
+
+        if not df.empty:
+            # Stored as ISO strings with +00:00; parse as UTC
+            df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+        return df
 
 # DYNAMODB-BASED SERVICE CALL LOGGING ------------------------
 
-class DynamoDBServiceLogger:
-    def log_service_call(self, resouce, method, path, size, duration):
-        raise NotImplementedError
+_DYNAMODB_SERVICE_TABLE_NAME = "birddog_service_logs"
+
+class DynamoDBServiceLogger(ServiceLogger):
+    def __init__(self, table_name=_DYNAMODB_SERVICE_TABLE_NAME):
+        super().__init__()
+        self._ensure_dynamodb_log_table(table_name)
+        self._table = boto3.resource("dynamodb").Table(table_name)
+        self._lock = threading.Lock()
+
+    def log_service_call(self, resource, method, path, size, duration):
+        """
+        Store one service-call log entry.
+          - size: bytes (None -> 0)
+          - duration: seconds (float) -> stored as milliseconds (int), mirroring SQLite/Event logger
+        """
+        timestamp = datetime.utcnow().isoformat()
+        with self._lock:
+            self._table.put_item(Item={
+                "PK": "LOG",
+                "timestamp": timestamp,
+                "resource": resource,
+                "method": method,
+                "path": path,
+                "size": int(size or 0),
+                "duration": int((duration or 0) * 1000),
+            })
 
     def load_logs(self, start_time, end_time):
-        raise NotImplementedError
+        """
+        Load logs in [start_time, end_time] (inclusive) into a pandas DataFrame.
+        Accepts datetimes or ISO8601 strings. Returns an empty DF if none found.
+        """
+        if isinstance(start_time, datetime):
+            start_time = start_time.isoformat()
+        if isinstance(end_time, datetime):
+            end_time = end_time.isoformat()
+
+        response = self._table.query(
+            KeyConditionExpression=Key("PK").eq("LOG") & Key("timestamp").between(start_time, end_time)
+        )
+
+        items = response.get("Items", [])
+
+        # Pagination
+        while "LastEvaluatedKey" in response:
+            response = self._table.query(
+                KeyConditionExpression=Key("PK").eq("LOG") & Key("timestamp").between(start_time, end_time),
+                ExclusiveStartKey=response["LastEvaluatedKey"]
+            )
+            items.extend(response.get("Items", []))
+
+        df = pd.DataFrame(items)
+        if not df.empty:
+            # Normalize types/columns to match SQLite logger conventions
+            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            if "size" in df.columns:
+                df["size"] = pd.to_numeric(df["size"], errors="coerce").fillna(0).astype("int64")
+            else:
+                df["size"] = 0
+            if "duration" in df.columns:
+                # duration stored in milliseconds to mirror sibling class
+                df["duration"] = pd.to_numeric(df["duration"], errors="coerce").fillna(0).astype("int64")
+            else:
+                df["duration"] = 0
+            for c in ("resource", "method", "path"):
+                if c not in df.columns:
+                    df[c] = ""
+            # Optional: sort by time
+            df = df.sort_values("timestamp").reset_index(drop=True)
+
+        return df
+
+    def _ensure_dynamodb_log_table(self, table_name=_DYNAMODB_SERVICE_TABLE_NAME):
+        dynamodb = boto3.client("dynamodb")
+        existing_tables = dynamodb.list_tables()["TableNames"]
+        if table_name in existing_tables:
+            return
+
+        dynamodb.create_table(
+            TableName=table_name,
+            KeySchema=[
+                {"AttributeName": "PK", "KeyType": "HASH"},          # Partition key
+                {"AttributeName": "timestamp", "KeyType": "RANGE"}   # Sort key
+            ],
+            AttributeDefinitions=[
+                {"AttributeName": "PK", "AttributeType": "S"},
+                {"AttributeName": "timestamp", "AttributeType": "S"}
+            ],
+            BillingMode="PAY_PER_REQUEST"
+        )
+
+        waiter = boto3.resource("dynamodb").meta.client.get_waiter("table_exists")
+        waiter.wait(TableName=table_name)
 
 # SERVICE CALL CONTEXT MANAGER ------------------------------
 

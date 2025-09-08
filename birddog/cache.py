@@ -114,26 +114,30 @@ else:
             response = s3.get_object(Bucket=CACHE_NAME, Key=path)
         except s3.exceptions.NoSuchKey:
             return None
-        body = response['Body'].read().decode("utf-8")
-        return body
+        return response['Body'].read().decode("utf-8")
 
     def save_cached_object(obj, object_path):
         """Store JSON serialized version of object keyed on object_path"""
         _create_bucket()
-        with _cache_lock:
-            _put_item(object_path, json.dumps(obj))
+        payload = json.dumps(obj)
+        with LogService("S3", "save", path=object_path, size=len(payload)):
+            with _cache_lock:
+                _put_item(object_path, payload)
 
     def load_cached_object(object_path):
         """Return object previously saved at object_path.
         Raises CacheMissError if cache entry is missing.
         """
         _create_bucket()
-        with _cache_lock:
-            item = _get_item(object_path)
-            if not item:
-                raise CacheMissError(object_path)
+        with LogService("S3", "load", path=object_path) as log:
+            with _cache_lock:
+                item = _get_item(object_path)
+                if not item:
+                    raise CacheMissError(object_path)
+            log.size = len(item)
         return json.loads(item)
 
     def remove_cached_object(object_path):
         _create_bucket()
-        s3.delete_object(Bucket=CACHE_NAME, Key=object_path)
+        with LogService("S3", "remove", path=object_path):
+            s3.delete_object(Bucket=CACHE_NAME, Key=object_path)

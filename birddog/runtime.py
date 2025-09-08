@@ -417,60 +417,80 @@ class PageUpdateManager(HeartbeatManager):
 # Resource usage monitor
 
 _KILL_LIMITS = [
-    { 
+    {
         "timedelta": { "minutes": 5},
         "limits": [
-            { 
-                "resource": "StringQueue", 
-                "metric": "size_per_minute", 
-                "threshold": 5000 
+            {
+                "resource": "StringQueue",
+                "metric": "count_per_minute",
+                "threshold": 300
             },
-            { 
-                "resource": "KVStore", 
-                "metric": "size_per_minute", 
-                "threshold": 5000 
+            {
+                "resource": "KVStore",
+                "metric": "count_per_minute",
+                "threshold": 1000
             },
-            { 
-                "resource": "DummyTranslator", 
-                "metric": "size_per_minute", 
-                "threshold": 5000 
+            {
+                "resource": "DummyTranslator",
+                "metric": "size_per_minute",
+                "threshold": 50000
             },
-            { 
-                "resource": "DummyTranslator", 
-                "metric": "count_per_minute", 
-                "threshold": 500 
+            {
+                "resource": "DummyTranslator",
+                "metric": "count_per_minute",
+                "threshold": 100
+            },
+            {
+                "resource": "GoogleCloudTranslate",
+                "metric": "size_per_minute",
+                "threshold": 50000
+            },
+            {
+                "resource": "GoogleCloudTranslate",
+                "metric": "count_per_minute",
+                "threshold": 100
             },
         ]
     },
-    { 
+    {
         "timedelta": { "hours": 1},
         "limits": [
-            { 
-                "resource": "StringQueue", 
-                "metric": "size_per_minute", 
-                "threshold": 2500 
+            {
+                "resource": "StringQueue",
+                "metric": "count_per_minute",
+                "threshold": 100
             },
-            { 
-                "resource": "KVStore", 
-                "metric": "size_per_minute", 
-                "threshold": 2500 
+            {
+                "resource": "KVStore",
+                "metric": "count_per_minute",
+                "threshold": 1000
             },
-            { 
-                "resource": "DummyTranslator", 
-                "metric": "size_per_minute", 
-                "threshold": 2500 
+            {
+                "resource": "DummyTranslator",
+                "metric": "size_per_minute",
+                "threshold": 5000
             },
-            { 
-                "resource": "DummyTranslator", 
-                "metric": "count_per_minute", 
-                "threshold": 250 
+            {
+                "resource": "DummyTranslator",
+                "metric": "count_per_minute",
+                "threshold": 50
+            },
+            {
+                "resource": "GoogleCloudTranslate",
+                "metric": "size_per_minute",
+                "threshold": 5000
+            },
+            {
+                "resource": "GoogleCloudTranslate",
+                "metric": "count_per_minute",
+                "threshold": 50
             },
         ]
     },
 ]
 
 class KillSwitch(HeartbeatManager):
-    _HEARTBEAT_INTERVAL             = 10 # seconds
+    _HEARTBEAT_INTERVAL             = 30 # seconds
 
     def __init__(self, runtime):
         self._runtime = runtime
@@ -482,15 +502,14 @@ class KillSwitch(HeartbeatManager):
         self._runtime.stop()
 
     def heartbeat(self):
-        _logger.info("KillSwitch heartbeat...")
-
+        #_logger.info("KillSwitch heartbeat...")
         now = datetime.now(UTC)
         for limit_spec in _KILL_LIMITS:
             delta = timedelta(**limit_spec["timedelta"])
             df = ServiceLogger.get_logger().load_logs(now - delta, now)
             summary = ServiceLogger.summarize_service_usage(
-                df, 
-                by="resource", 
+                df,
+                by="resource",
                 sample_interval_minutes=delta.total_seconds() / 60.)
             for limit in limit_spec["limits"]:
                 resource = limit["resource"]

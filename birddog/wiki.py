@@ -1159,27 +1159,23 @@ class PageTracker:
 
     def _update_mod_dates(self, updates):
         # collect updates that differ from known updates and normalize page titles
-        with _t("_update_mod_dates.get_newer_updates"):
-            candidate_updates = self._mod_date_store.get_newer_updates(updates)
+        candidate_updates = self._mod_date_store.get_newer_updates(updates)
 
         if candidate_updates:
             # check if these candidate pages exist
             pages = candidate_updates.keys()
-            with _t("_update_mod_dates.batch_page_exists"):
-                check = batch_page_exists(list(pages))
+            check = batch_page_exists(list(pages))
             candidate_updates = { 
                 page: candidate_updates[page] for page in pages 
                 if check.get(page) and page.split("/", 1)[0] in ARCHIVES_BY_ROOT
                 }
             if candidate_updates:
-                with _t("_update_mod_dates.batch_store_updates"):
-                    self._mod_date_store.batch_store_updates(candidate_updates)
+                self._mod_date_store.batch_store_updates(candidate_updates)
                 return True
         return False
 
     def update(self):
-        with _t("update.get_recent_changes"):
-            updates = get_recent_changes(cutoff_date=None)
+        updates = get_recent_changes(cutoff_date=None)
         if not updates:
             return False
         # FIXME: strip user out for now - requires a update_store schema change
@@ -1188,16 +1184,13 @@ class PageTracker:
         return self._update_mod_dates(updates)
 
     def add_titles(self, titles, api_delay=0):
-        with _t("get_missing_titles"):
-            new_titles = self._mod_date_store.get_missing_titles([canonicalize_title(t) for t in titles])
+        new_titles = self._mod_date_store.get_missing_titles([canonicalize_title(t) for t in titles])
         if new_titles:
-            with _t("add_titles.batch_page_exists"):
-                check = batch_page_exists(new_titles)
+            check = batch_page_exists(new_titles)
             new_titles = [t for t in new_titles if check.get(t)]
         if not new_titles:
             return False
-        with _t("add_titles.get_last_mod"):
-            updates = get_last_mod(new_titles, api_delay)
+        updates = get_last_mod(new_titles, api_delay)
         _logger.info('add_titles: found %d updates', len(updates))
         return self._update_mod_dates(updates)
 
@@ -1205,8 +1198,7 @@ class PageTracker:
         prefix = prefix.replace("_", " ")
         if not prefix.startswith(WIKI_NAMESPACE):
             prefix = f"{WIKI_NAMESPACE}:{prefix}"
-        with _t("mod_date_store.query_by_prefix"):
-            return self._mod_date_store.query_by_prefix(prefix, cutoff_date)
+        return self._mod_date_store.query_by_prefix(prefix, cutoff_date)
 
 # -------------------------------------------------------------------------------
 # Page revision history handling (using wiki API)

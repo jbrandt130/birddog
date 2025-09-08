@@ -834,8 +834,8 @@ def service_usage_dashboard():
     #    return error_response, status
 
     range_opt = request.args.get("range", "24h")
+    by_resource_opt = request.args.get("by_resource", None)
     now = datetime.now(UTC)
-
     delta = {
         "5m": timedelta(minutes=5),
         "1h": timedelta(hours=1),    
@@ -844,10 +844,12 @@ def service_usage_dashboard():
         "30d": timedelta(days=30),
     }.get(range_opt, timedelta(days=1))
 
+    by = "resource" if by_resource_opt else None
     df = ServiceLogger.get_logger().load_logs(now - delta, now)
     summary = ServiceLogger.summarize_service_usage(
         df, 
-        sample_interval_minutes=delta.total_seconds() / 60.)
+        sample_interval_minutes=delta.total_seconds() / 60.,
+        by=by)
     
     return render_template("service_usage.html",
         summary=summary.to_dict(orient="records"),

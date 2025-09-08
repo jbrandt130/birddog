@@ -32,7 +32,7 @@ _logger = get_logger()
 
 # --- Translation globals ---
 
-_ENABLE_TRANSLATION = True
+_ENABLE_TRANSLATION = False
 
 _USE_DUMMY_TRANSLATE = True
 _USE_GOOGLE_CLOUD_TRANSLATE = os.getenv("BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE", None) in ("true", "True", "1")
@@ -158,7 +158,7 @@ class GoogleCloudTranslator(Translator):
     def translate(self, text: TextLike) -> TextLike:
         self._check_quota_local()
         try:
-            with LogService("GCP", "translate", size=json_size(text)):
+            with LogService("GoogleCloudTranslate", "translate", size=json_size(text)):
                 result = self._client.translate(text, source_language=self._source, target_language=self._target)
             if isinstance(text, (list, tuple)):
                 out = [item["translatedText"] for item in result]

@@ -137,7 +137,6 @@ class DynamoDBModDateStore(ModDateStore):
         existing_tables = self._client.list_tables()['TableNames']
         if self._table_name in existing_tables:
             return
-        print(f"Creating DynamoDB table '{self._table_name}'...")
         self._dynamodb.create_table(
             TableName=self._table_name,
             KeySchema=[
@@ -150,7 +149,6 @@ class DynamoDBModDateStore(ModDateStore):
             ],
             BillingMode='PAY_PER_REQUEST'
         ).wait_until_exists()
-        print(f"Table '{self._table_name}' created successfully.")
 
     def _split_key(self, title):
         archive_root = self._normalized_prefix(title)
@@ -168,14 +166,14 @@ class DynamoDBModDateStore(ModDateStore):
 
         existing = {}
         keys = [self._split_key(t) for t in updates.keys()]
-        print(f"DDB: get_newer_updates - {len(keys)} items")
-        for chunk in self._chunked(keys, 100):
-            resp = self._client.batch_get_item(
-                RequestItems={self._table_name: {'Keys': chunk}}
-            )
-            for item in resp['Responses'].get(self._table_name, []):
-                existing[item['title']['S']] = item['mod_date']['S']
-
+        with LogService("ModDateStore", "get_newer_updates") as log:
+            for chunk in self._chunked(keys, 100):
+                resp = self._client.batch_get_item(
+                    RequestItems={self._table_name: {'Keys': chunk}}
+                )
+                for item in resp['Responses'].get(self._table_name, []):
+                    existing[item['title']['S']] = item['mod_date']['S']
+                log.size = json_size(existing)
         return {
             title: mod_date
             for title, mod_date in updates.items()
@@ -183,14 +181,15 @@ class DynamoDBModDateStore(ModDateStore):
         }
 
     def batch_store_updates(self, updates: dict):
-        with self._table.batch_writer() as batch:
-            for title, mod_date in updates.items():
-                archive_root = self._normalized_prefix(title)
-                batch.put_item(Item={
-                    'archive_root': archive_root,
-                    'title': title,
-                    'mod_date': mod_date
-                })
+        with LogService("ModDateStore", "batch_store_updates", size=json_size(updates)):
+            with self._table.batch_writer() as batch:
+                for title, mod_date in updates.items():
+                    archive_root = self._normalized_prefix(title)
+                    batch.put_item(Item={
+                        'archive_root': archive_root,
+                        'title': title,
+                        'mod_date': mod_date
+                    })
 
     def get_missing_titles(self, titles: list) -> list:
         if not titles:
@@ -198,12 +197,13 @@ class DynamoDBModDateStore(ModDateStore):
 
         present = set()
         keys = [self._split_key(t) for t in titles]
-        for chunk in self._chunked(keys, 100):
-            resp = self._client.batch_get_item(
-                RequestItems={self._table_name: {'Keys': chunk}}
-            )
-            present.update(item['title']['S'] for item in resp['Responses'].get(self._table_name, []))
-
+        with LogService("ModDateStore", "get_missing_titles") as log:
+            for chunk in self._chunked(keys, 100):
+                resp = self._client.batch_get_item(
+                    RequestItems={self._table_name: {'Keys': chunk}}
+                )
+                present.update(item['title']['S'] for item in resp['Responses'].get(self._table_name, []))
+            log.size = json_size(list(present))
         return [t for t in titles if t not in present]
 
     def query_by_prefix(self, archive_root: str, cutoff_date: str = None) -> dict:
@@ -211,15 +211,16 @@ class DynamoDBModDateStore(ModDateStore):
         kwargs = {'KeyConditionExpression': Key('archive_root').eq(archive_root)}
 
         items = []
-        resp = self._table.query(**kwargs)
-        items.extend(resp.get('Items', []))
-
-        lek = resp.get('LastEvaluatedKey')
-        while lek:
-            resp = self._table.query(**kwargs, ExclusiveStartKey=lek)
+        with LogService("ModDateStore", "query_by_prefix", path=archive_root) as log:
+            resp = self._table.query(**kwargs)
             items.extend(resp.get('Items', []))
-            lek = resp.get('LastEvaluatedKey')
 
+            lek = resp.get('LastEvaluatedKey')
+            while lek:
+                resp = self._table.query(**kwargs, ExclusiveStartKey=lek)
+                items.extend(resp.get('Items', []))
+                lek = resp.get('LastEvaluatedKey')
+            log.size = json_size(items)
         if cutoff_date:
             return {i['title']: i['mod_date'] for i in items if i['mod_date'] >= cutoff_date}
         return {i['title']: i['mod_date'] for i in items}
@@ -343,7 +344,6 @@ class DynamoDBStringQueue(StringQueue):
     def _ensure_table_exists(self):
         if self._table_name in self._client.list_tables()['TableNames']:
             return
-        print(f"Creating DynamoDB table '{self._table_name}'...")
         self._dynamodb.create_table(
             TableName=self._table_name,
             KeySchema=[
@@ -364,58 +364,64 @@ class DynamoDBStringQueue(StringQueue):
         if not strings:
             return
         now = Decimal(str(time.time()))
-        with self._table.batch_writer() as batch:
-            for i, value in enumerate(strings):
-                ts = now + Decimal(i) * Decimal('0.000001')
-                batch.put_item(Item={
-                    'queue_name': queue_name,
-                    'ts': ts,
-                    'value': value
-                })
+        with LogService("StringQueue", "append", path=queue_name, size=json_size(strings)):
+            with self._table.batch_writer() as batch:
+                for i, value in enumerate(strings):
+                    ts = now + Decimal(i) * Decimal('0.000001')
+                    batch.put_item(Item={
+                        'queue_name': queue_name,
+                        'ts': ts,
+                        'value': value
+                    })
 
     def peek(self, queue_name: str, n: int) -> list:
-        resp = self._table.query(
-            KeyConditionExpression=Key('queue_name').eq(queue_name),
-            Limit=n,
-            ScanIndexForward=True
-        )
+        with LogService("StringQueue", "peek", path=queue_name) as log:
+            resp = self._table.query(
+                KeyConditionExpression=Key('queue_name').eq(queue_name),
+                Limit=n,
+                ScanIndexForward=True
+            )
+            log.size = json_size(resp)
         return [item['value'] for item in resp['Items']]
 
     def pop(self, queue_name: str, n: int) -> list[str]:
         if n <= 0:
             return []
-        resp = self._table.query(
-            KeyConditionExpression=Key('queue_name').eq(queue_name),
-            Limit=n,
-            ScanIndexForward=True,     # oldest first
-            ConsistentRead=True        # reduce staleness on concurrent writers
-        )
-        items = resp.get('Items', [])
-        if not items:
-            return []
-        values = [it['value'] for it in items]
-        with self._table.batch_writer() as batch:
-            for it in items:
-                batch.delete_item(Key={'queue_name': queue_name, 'ts': it['ts']})
+        with LogService("StringQueue", "pop", path=queue_name) as log:
+            resp = self._table.query(
+                KeyConditionExpression=Key('queue_name').eq(queue_name),
+                Limit=n,
+                ScanIndexForward=True,     # oldest first
+                ConsistentRead=True        # reduce staleness on concurrent writers
+            )
+            items = resp.get('Items', [])
+            if not items:
+                return []
+            values = [it['value'] for it in items]
+            with self._table.batch_writer() as batch:
+                for it in items:
+                    batch.delete_item(Key={'queue_name': queue_name, 'ts': it['ts']})
+            log.size = json_size(items)
         return values
 
     def length(self, queue_name: str) -> int:
         total = 0
         last_evaluated_key = None
-        while True:
-            kwargs = {
-                'KeyConditionExpression': Key('queue_name').eq(queue_name),
-                'Select': 'COUNT',
-                'ExclusiveStartKey': last_evaluated_key
-            } if last_evaluated_key else {
-                'KeyConditionExpression': Key('queue_name').eq(queue_name),
-                'Select': 'COUNT'
-            }
-            resp = self._table.query(**kwargs)
-            total += resp['Count']
-            last_evaluated_key = resp.get('LastEvaluatedKey')
-            if not last_evaluated_key:
-                break
+        with LogService("StringQueue", "length", path=queue_name):
+            while True:
+                kwargs = {
+                    'KeyConditionExpression': Key('queue_name').eq(queue_name),
+                    'Select': 'COUNT',
+                    'ExclusiveStartKey': last_evaluated_key
+                } if last_evaluated_key else {
+                    'KeyConditionExpression': Key('queue_name').eq(queue_name),
+                    'Select': 'COUNT'
+                }
+                resp = self._table.query(**kwargs)
+                total += resp['Count']
+                last_evaluated_key = resp.get('LastEvaluatedKey')
+                if not last_evaluated_key:
+                    break
         return total
 
 # platform-independent access to string queue ----------------------------------
@@ -555,7 +561,6 @@ class DynamoDBKeyValueStore:
     def _ensure_table_exists(self):
         if self._table_name in self._client.list_tables()['TableNames']:
             return
-        print(f"Creating DynamoDB table '{self._table_name}'...")
         self._dynamodb.create_table(
             TableName=self._table_name,
             KeySchema=[
@@ -576,84 +581,92 @@ class DynamoDBKeyValueStore:
             raise TypeError("value must be str")
         if not isinstance(key, str):
             raise TypeError("key must be str")
-        self._table.put_item(Item={
-            "namespace": namespace,
-            "key": key,
-            "value": value
-        })
+        with LogService("KVStore", "insert", path=namespace, size=len(key) + len(value)):
+            self._table.put_item(Item={
+                "namespace": namespace,
+                "key": key,
+                "value": value
+            })
 
     def remove(self, namespace: str, key: str):
         if not isinstance(key, str):
             raise TypeError("key must be str")
-        self._table.delete_item(Key={"namespace": namespace, "key": key})
+        with LogService("KVStore", "remove", path=namespace, size=len(key)):
+            self._table.delete_item(Key={"namespace": namespace, "key": key})
 
     def remove_all(self, namespace: str):
-        resp = self._table.query(
-            KeyConditionExpression=Key("namespace").eq(namespace),
-            ProjectionExpression="#ns,#k",
-            ExpressionAttributeNames={"#ns": "namespace", "#k": "key"},
-        )
-        items = resp.get("Items", [])
-        while "LastEvaluatedKey" in resp:
+        with LogService("KVStore", "remove_all", path=namespace):
             resp = self._table.query(
                 KeyConditionExpression=Key("namespace").eq(namespace),
                 ProjectionExpression="#ns,#k",
                 ExpressionAttributeNames={"#ns": "namespace", "#k": "key"},
-                ExclusiveStartKey=resp["LastEvaluatedKey"],
             )
-            items.extend(resp.get("Items", []))
+            items = resp.get("Items", [])
+            while "LastEvaluatedKey" in resp:
+                resp = self._table.query(
+                    KeyConditionExpression=Key("namespace").eq(namespace),
+                    ProjectionExpression="#ns,#k",
+                    ExpressionAttributeNames={"#ns": "namespace", "#k": "key"},
+                    ExclusiveStartKey=resp["LastEvaluatedKey"],
+                )
+                items.extend(resp.get("Items", []))
 
-        if items:
-            with self._table.batch_writer() as batch:
-                for item in items:
-                    batch.delete_item(Key={"namespace": item["namespace"], "key": item["key"]})
+            if items:
+                with self._table.batch_writer() as batch:
+                    for item in items:
+                        batch.delete_item(Key={"namespace": item["namespace"], "key": item["key"]})
 
     def get(self, namespace: str, key: str) -> str:
         if not isinstance(key, str):
             raise TypeError("key must be str")
-        resp = self._table.get_item(
-            Key={"namespace": namespace, "key": key},
-            ProjectionExpression="#v",
-            ExpressionAttributeNames={"#v": "value"},
-        )
-        item = resp.get("Item")
-        if not item:
-            raise KeyError(f"{namespace}:{key} not found")
+        with LogService("KVStore", "get", path=namespace) as log:
+            resp = self._table.get_item(
+                Key={"namespace": namespace, "key": key},
+                ProjectionExpression="#v",
+                ExpressionAttributeNames={"#v": "value"},
+            )
+            item = resp.get("Item")
+            if not item:
+                raise KeyError(f"{namespace}:{key} not found")
+            log.size = json_size(item)
         val = item.get("value")
         return val if isinstance(val, str) else ("" if val is None else str(val))
 
     def get_all(self, namespace: str):
         items = []
-        resp = self._table.query(
-            KeyConditionExpression=Key("namespace").eq(namespace),
-            ProjectionExpression="#k,#v",
-            ExpressionAttributeNames={"#k": "key", "#v": "value"},
-        )
-        items.extend((it["key"], it.get("value", "")) for it in resp.get("Items", []))
-        while "LastEvaluatedKey" in resp:
+        with LogService("KVStore", "get_all", path=namespace) as log:
             resp = self._table.query(
                 KeyConditionExpression=Key("namespace").eq(namespace),
                 ProjectionExpression="#k,#v",
                 ExpressionAttributeNames={"#k": "key", "#v": "value"},
-                ExclusiveStartKey=resp["LastEvaluatedKey"],
             )
             items.extend((it["key"], it.get("value", "")) for it in resp.get("Items", []))
-        items.sort(key=lambda kv: kv[0])
+            while "LastEvaluatedKey" in resp:
+                resp = self._table.query(
+                    KeyConditionExpression=Key("namespace").eq(namespace),
+                    ProjectionExpression="#k,#v",
+                    ExpressionAttributeNames={"#k": "key", "#v": "value"},
+                    ExclusiveStartKey=resp["LastEvaluatedKey"],
+                )
+                items.extend((it["key"], it.get("value", "")) for it in resp.get("Items", []))
+            log.size = json_size(items)
+            items.sort(key=lambda kv: kv[0])
         return items
 
     def count(self, namespace: str) -> int:
-        resp = self._table.query(
-            KeyConditionExpression=Key("namespace").eq(namespace),
-            Select="COUNT",
-        )
-        count = resp.get("Count", 0)
-        while "LastEvaluatedKey" in resp:
+        with LogService("KVStore", "count", path=namespace):
             resp = self._table.query(
                 KeyConditionExpression=Key("namespace").eq(namespace),
                 Select="COUNT",
-                ExclusiveStartKey=resp["LastEvaluatedKey"],
             )
-            count += resp.get("Count", 0)
+            count = resp.get("Count", 0)
+            while "LastEvaluatedKey" in resp:
+                resp = self._table.query(
+                    KeyConditionExpression=Key("namespace").eq(namespace),
+                    Select="COUNT",
+                    ExclusiveStartKey=resp["LastEvaluatedKey"],
+                )
+                count += resp.get("Count", 0)
         return int(count)
 
 # platform-independent access to key value store ----------------------------------
