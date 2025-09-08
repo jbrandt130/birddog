@@ -50,15 +50,17 @@ from birddog.logging import (
     get_logger,
     get_log_buffer,
     detect_environment,
-    get_event_logger,
+    EventLogger,
+    ServiceLogger,
     summarize_duration_by_path_group,
-    user_histogram)
-
+    user_histogram,
+    )
 
 # ---- INITIALIZATION  --------------------------------------------------
 
 _logger = get_logger()
-_event_logger = get_event_logger()
+_event_logger = EventLogger.get_logger()
+#get_event_logger()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMPLATES_DIR = os.path.join(BASE_DIR, 'templates')
@@ -277,6 +279,12 @@ def _get_current_user():
     if not user:
         return None, jsonify({'error': 'Not found'}), 404
 
+    if runtime.killed:
+        return None, jsonify({
+            "error": "Service unavailable",
+            "reason": "Birddog runtime emergency shutdown"
+        }), 503
+
     return user, None, None
 
 # ---- FRONT END PAGES --------------------------------------------------------
@@ -284,16 +292,20 @@ def _get_current_user():
 # Home Route (Shows the landing page)
 @app.route('/')
 def home():
-    user_session = session.get('user')
+    user_session = None
     start_title = None
-    if user_session:
-        user, error_response, status = _get_current_user()
-        if user:
-            start_title = user.get_preference("last_page")
+    if not runtime.killed:
+        user_session = session.get('user')
+        start_title = None
+        if user_session:
+            user, error_response, status = _get_current_user()
+            if user:
+                start_title = user.get_preference("last_page")
     return render_template(
         'index.html', 
         user=user_session, 
-        start_title=start_title, 
+        start_title=start_title,
+        killed=runtime.killed, 
         debug=app.debug)
 
 # ---- SESSION MANAGEMENT -----------------------------------------------------
@@ -813,6 +825,35 @@ def logs_view():
         return error_response, status
     return render_template("logs.html")
 
+# ---- SERVICE LOG ACCESS ---------------------------------------------------------------
+
+@app.route("/service_usage")
+def service_usage_dashboard():
+    #user, error_response, status = _get_current_user()
+    #if error_response:
+    #    return error_response, status
+
+    range_opt = request.args.get("range", "24h")
+    now = datetime.now(UTC)
+
+    delta = {
+        "5m": timedelta(minutes=5),
+        "1h": timedelta(hours=1),    
+        "24h": timedelta(days=1),
+        "7d": timedelta(days=7),
+        "30d": timedelta(days=30),
+    }.get(range_opt, timedelta(days=1))
+
+    df = ServiceLogger.get_logger().load_logs(now - delta, now)
+    summary = ServiceLogger.summarize_service_usage(
+        df, 
+        sample_interval_minutes=delta.total_seconds() / 60.)
+    
+    return render_template("service_usage.html",
+        summary=summary.to_dict(orient="records"),
+        selected_range=range_opt,
+    )
+
 # ---- APP METRICS ---------------------------------------------------------------
 
 @app.before_request
@@ -864,30 +905,43 @@ def metrics_dashboard():
 users = Users(session)
 
 def create_app():
-    global runtime
-    # Only run this once during WSGI app startup
-    if runtime is None:
-        runtime = Runtime()
-        runtime.start()  # don't use `with`; call `start()` explicitly
+    # Build/configure the Flask app here, but DO NOT start runtime here.
     return app
 
+def start_runtime_once():
+    global runtime
+    if runtime is None:
+        runtime = Runtime()
+        runtime.start()
+
 # Required for WSGI: this is the callable Gunicorn or EB will look for
-application = create_app()
+if __name__ != "__main__":
+    application = create_app()
+    # Safe to start here: no reloader in production; runs once per worker.
+    if detect_environment() == "aws":
+        start_runtime_once()
 
 # Local development entry point
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--debug", action="store_true", help="Run in debug mode")
-    parser.add_argument("--port", type=int, default=2002, help="Port to run the server on")
+    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--port", type=int, default=2002)
     args = parser.parse_args()
 
-    # Local version uses the same startup logic
-    create_app()
-    _logger.info(f"Birddog starting: environment == {detect_environment()}")
+    app = create_app()
+
+    # If using the reloader, only start runtime in the reloader CHILD process.
+    use_reloader = bool(args.debug)
+    if use_reloader:
+        if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+            start_runtime_once()
+    else:
+        start_runtime_once()
 
     app.run(
         debug=args.debug,
         port=args.port,
-        host="0.0.0.0"
+        host="0.0.0.0",
+        use_reloader=use_reloader
     )

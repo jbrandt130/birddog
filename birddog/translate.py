@@ -26,7 +26,8 @@ from google.api_core.exceptions import (
 )
 
 from birddog.task import TaskManager
-from birddog.logging import get_logger
+from birddog.utility import json_size
+from birddog.logging import get_logger, LogService
 _logger = get_logger()
 
 # --- Translation globals ---
@@ -157,7 +158,8 @@ class GoogleCloudTranslator(Translator):
     def translate(self, text: TextLike) -> TextLike:
         self._check_quota_local()
         try:
-            result = self._client.translate(text, source_language=self._source, target_language=self._target)
+            with LogService("GCP", "translate", size=json_size(text)):
+                result = self._client.translate(text, source_language=self._source, target_language=self._target)
             if isinstance(text, (list, tuple)):
                 out = [item["translatedText"] for item in result]
                 if len(out) != len(text):
@@ -275,20 +277,21 @@ class DummyTranslator(_LocalRateLimitMixin):
         # simulate faults
         self._maybe_fault()
 
-        # normal path
-        if isinstance(text, (list, tuple)):
-            out = [self._produce(t) for t in text]
+        with LogService("DummyTranslator", "translate", size=json_size(text)):
+            # normal path
+            if isinstance(text, (list, tuple)):
+                out = [self._produce(t) for t in text]
 
-            # Optional: simulate a contract bug in the adapter
-            if self._p_contract > 0.0 and self._rand() < self._p_contract:
-                out = out[:-1] or out  # drop one to trigger mismatch
+                # Optional: simulate a contract bug in the adapter
+                if self._p_contract > 0.0 and self._rand() < self._p_contract:
+                    out = out[:-1] or out  # drop one to trigger mismatch
 
-            if len(out) != len(text):
-                raise IncompleteTranslationError(expected=len(text), got=len(out))
-            return out
+                if len(out) != len(text):
+                    raise IncompleteTranslationError(expected=len(text), got=len(out))
+                return out
 
-        if isinstance(text, str):
-            return self._produce(text)
+            if isinstance(text, str):
+                return self._produce(text)
 
         # Bad caller input → permanent
         raise PermanentServiceError(provider=self._provider, original=TypeError(f"Invalid input type: {type(text)}"))
@@ -412,7 +415,7 @@ class TranslationManager(TaskManager):
     def __init__(self, runtime):
         self._runtime = runtime
         self._available = True
-        super().__init__("TranslationManager", auto_start=True)
+        super().__init__("TranslationManager")
 
     def execute_subtask(self, subtask):
         """

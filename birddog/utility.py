@@ -43,6 +43,9 @@ def link_status(item):
         return "linked"
     return "unlinked"
 
+def json_size(obj) -> int:
+    return len(json.dumps(obj, ensure_ascii=False).encode("utf-8"))
+
 #
 # page loading
 
@@ -213,13 +216,6 @@ class HeartbeatManager:
         self._thread = Thread(target=self._run_heartbeat, daemon=True)
         self._started = False
 
-    def __enter__(self):
-        self.start()
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.stop()
-
     def start(self):
         if not self._started:
             self._thread.start()
@@ -228,7 +224,8 @@ class HeartbeatManager:
     def _run_heartbeat(self):
         while not self._stop_event.is_set():
             try:
-                self.heartbeat()
+                if self._started:
+                    self.heartbeat()
             except Exception as e:
                 _logger.info(f"Heartbeat error: {e}")
             time.sleep(self.interval)
@@ -240,3 +237,5 @@ class HeartbeatManager:
     def stop(self):
         self._stop_event.set()
         self._thread.join()
+        self._started = False
+

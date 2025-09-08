@@ -70,7 +70,7 @@
           <a class="nav-link" id="nav-profile-tab" data-bs-toggle="tab" href="#nav-profile" role="tab">Profile</a>
           <a class="nav-link" id="nav-profile-tab" href="https://github.com/jbrandt130/birddog/blob/main/docs/help.md" target="birddog_help">Help</a>
           <a class="nav-link" id="nav-profile-tab" href="/logs" target="birddog_logs">Logs</a>
-          <a class="nav-link" id="nav-profile-tab" href="/metrics" target="birddog_metrics">Metrics</a>
+          <a class="nav-link" id="nav-profile-tab" href="/service_usage" target="birddog_usage">Usage</a>
         {% endif %}
       </div>
 
@@ -199,6 +199,10 @@
   }
 </script>
   </div>
+
+  {% elif killed %}
+
+<h2>Sorry! Bird Dog is currently unavailable. Please try again later or contact the administrator.</h2>
 
   {% else %}
 

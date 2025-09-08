@@ -8,7 +8,7 @@ import os
 from threading import Lock
 from pathlib import Path
 
-from birddog.logging import get_logger
+from birddog.logging import get_logger, LogService
 _logger = get_logger()
 
 _cache_lock = Lock() # could be overkill?
@@ -43,21 +43,25 @@ if USE_LOCAL_FILESYSTEM:
         """Store JSON serialized version of object at object_path location relative to CACHE_DIR"""
         path = _cache_path(object_path)
         _make_path_if_needed(path)
-        with _cache_lock:
-            with open(path, 'w', encoding="utf8") as file:
-                file.write(json.dumps(obj))
+        payload = json.dumps(obj)
+        with LogService("local_fs", "save", path=object_path, size=len(payload)):
+            with _cache_lock:
+                with open(path, 'w', encoding="utf8") as file:
+                    file.write(payload)
 
     def load_cached_object(object_path):
         """Return object previously saved at object_path relative to CACHE_DIR.
         Raises CacheMissError if cache entry is missing.
         """
         path = _cache_path(object_path)
-        with _cache_lock:
-            try:
-                with open(path, encoding="utf8") as file:
-                    buffer = file.read()
-            except FileNotFoundError:
-                raise CacheMissError(object_path)
+        with LogService("local_fs", "load", path=object_path) as log:
+            with _cache_lock:
+                try:
+                    with open(path, encoding="utf8") as file:
+                        buffer = file.read()
+                except FileNotFoundError:
+                    raise CacheMissError(object_path)
+            log.size = len(buffer)
         return json.loads(buffer)
 
     def remove_cached_object(object_path):

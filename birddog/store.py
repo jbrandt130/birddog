@@ -21,8 +21,9 @@ from boto3.dynamodb.conditions import Key, Attr
 from decimal import Decimal
 
 from birddog.env import detect_environment
-#from birddog.logging import get_logger
-#_logger = get_logger()
+from birddog.utility import json_size
+from birddog.logging import get_logger, LogService
+_logger = get_logger()
 
 # mod date store (abstract base class) -----------------------------------
 
@@ -68,11 +69,14 @@ class SQLiteModDateStore(ModDateStore):
             return {}
         titles = list(updates.keys())
         placeholders = ",".join("?" for _ in titles)
-        with sqlite3.connect(self._db_path) as conn:
-            cur = conn.execute(
-                f"SELECT title, mod_date FROM mod_dates WHERE title IN ({placeholders})", titles
-            )
-            existing = {row[0]: row[1] for row in cur.fetchall()}
+        with LogService("ModDateStore", "get_newer_updates") as log:
+            with sqlite3.connect(self._db_path) as conn:
+                cur = conn.execute(
+                    f"SELECT title, mod_date FROM mod_dates WHERE title IN ({placeholders})", titles
+                )
+                payload = cur.fetchall()
+            log.size = json_size(payload)
+            existing = {row[0]: row[1] for row in payload}
         return {
             title: mod_date
             for title, mod_date in updates.items()
@@ -80,40 +84,46 @@ class SQLiteModDateStore(ModDateStore):
         }
 
     def batch_store_updates(self, updates: dict):
-        with sqlite3.connect(self._db_path) as conn:
-            conn.executemany(
-                "REPLACE INTO mod_dates (archive_root, title, mod_date) VALUES (?, ?, ?)",
-                [
-                    (self._normalized_prefix(title), title, mod_date)
-                    for title, mod_date in updates.items()
-                ]
-            )
+        with LogService("ModDateStore", "batch_store_updates", size=json_size(updates)):
+            with sqlite3.connect(self._db_path) as conn:
+                conn.executemany(
+                    "REPLACE INTO mod_dates (archive_root, title, mod_date) VALUES (?, ?, ?)",
+                    [
+                        (self._normalized_prefix(title), title, mod_date)
+                        for title, mod_date in updates.items()
+                    ]
+                )
 
     def get_missing_titles(self, titles: list) -> list:
         if not titles:
             return []
-        with sqlite3.connect(self._db_path) as conn:
-            cur = conn.execute("SELECT title FROM mod_dates")
-        stored_titles = {row[0] for row in cur.fetchall()}
+        with LogService("ModDateStore", "get_missing_titles") as log:
+            with sqlite3.connect(self._db_path) as conn:
+                cur = conn.execute("SELECT title FROM mod_dates")
+                payload = cur.fetchall()
+            log.size = json_size(payload)
+            stored_titles = {row[0] for row in payload}
         return [title for title in titles if title not in stored_titles]
 
     def query_by_prefix(self, archive_root: str, cutoff_date: str = None) -> dict:
         archive_root = self._normalized_prefix(archive_root)
-        with sqlite3.connect(self._db_path) as conn:
-            if cutoff_date:
-                cur = conn.execute(
-                    "SELECT title, mod_date FROM mod_dates WHERE archive_root = ? AND mod_date >= ?",
-                    (archive_root, cutoff_date)
-                )
-            else:
-                cur = conn.execute(
-                    "SELECT title, mod_date FROM mod_dates WHERE archive_root = ?",
-                    (archive_root,)
-                )
-        return {row[0]: row[1] for row in cur.fetchall()}
+        with LogService("ModDateStore", "query_by_prefix", path=archive_root) as log:
+            with sqlite3.connect(self._db_path) as conn:
+                if cutoff_date:
+                    cur = conn.execute(
+                        "SELECT title, mod_date FROM mod_dates WHERE archive_root = ? AND mod_date >= ?",
+                        (archive_root, cutoff_date)
+                    )
+                else:
+                    cur = conn.execute(
+                        "SELECT title, mod_date FROM mod_dates WHERE archive_root = ?",
+                        (archive_root,)
+                    )
+                payload = cur.fetchall()
+            log.size = json_size(payload)
+        return {row[0]: row[1] for row in payload}
 
 # mod date store (dynamodb version) ---------------------------------------
-
 
 class DynamoDBModDateStore(ModDateStore):
     def __init__(self, table_name='birddog_mod_dates'):
@@ -270,48 +280,55 @@ class SQLiteStringQueue(StringQueue):
     def append(self, queue_name: str, strings: list):
         if not strings:
             return
-        with sqlite3.connect(self._db_path) as conn:
-            conn.executemany(
-                "INSERT INTO queue (queue_name, value) VALUES (?, ?)",
-                [(queue_name, s) for s in strings]
-            )
+        with LogService("StringQueue", "append", path=queue_name, size=json_size(strings)):
+            with sqlite3.connect(self._db_path) as conn:
+                conn.executemany(
+                    "INSERT INTO queue (queue_name, value) VALUES (?, ?)",
+                    [(queue_name, s) for s in strings]
+                )
 
     def peek(self, queue_name: str, n: int) -> list:
-        with sqlite3.connect(self._db_path) as conn:
-            cur = conn.execute(
-                "SELECT value FROM queue WHERE queue_name = ? ORDER BY id ASC LIMIT ?",
-                (queue_name, n)
-            )
-            return [row[0] for row in cur.fetchall()]
+        with LogService("StringQueue", "peek", path=queue_name) as log:
+            with sqlite3.connect(self._db_path) as conn:
+                cur = conn.execute(
+                    "SELECT value FROM queue WHERE queue_name = ? ORDER BY id ASC LIMIT ?",
+                    (queue_name, n)
+                )
+                payload = cur.fetchall()
+            log.size = json_size(payload)
+        return [row[0] for row in payload]
 
     def pop(self, queue_name: str, n: int) -> list[str]:
         if n <= 0:
             return []
-        with sqlite3.connect(self._db_path) as conn:
-            # Lock rows so another process can't interleave deletes
-            conn.execute("BEGIN IMMEDIATE")
-            cur = conn.execute(
-                "SELECT id, value FROM queue WHERE queue_name = ? "
-                "ORDER BY id ASC LIMIT ?",
-                (queue_name, n)
-            )
-            rows = cur.fetchall()
-            if not rows:
-                return []
-            ids = [r[0] for r in rows]
-            # Delete just the selected rows
-            placeholders = ",".join("?" for _ in ids)
-            conn.execute(f"DELETE FROM queue WHERE id IN ({placeholders})", ids)
-            # The context manager will commit here
+        with LogService("StringQueue", "pop", path=queue_name) as log:
+            with sqlite3.connect(self._db_path) as conn:
+                # Lock rows so another process can't interleave deletes
+                conn.execute("BEGIN IMMEDIATE")
+                cur = conn.execute(
+                    "SELECT id, value FROM queue WHERE queue_name = ? "
+                    "ORDER BY id ASC LIMIT ?",
+                    (queue_name, n)
+                )
+                rows = cur.fetchall()
+                log.size = json_size(rows)
+                if not rows:
+                    return []
+                ids = [r[0] for r in rows]
+                # Delete just the selected rows
+                placeholders = ",".join("?" for _ in ids)
+                conn.execute(f"DELETE FROM queue WHERE id IN ({placeholders})", ids)
+                # The context manager will commit here
             return [r[1] for r in rows]
 
     def length(self, queue_name: str) -> int:
-        with sqlite3.connect(self._db_path) as conn:
-            cur = conn.execute(
-                "SELECT COUNT(*) FROM queue WHERE queue_name = ?",
-                (queue_name,)
-            )
-            return cur.fetchone()[0]
+        with LogService("StringQueue", "length", path=queue_name):
+            with sqlite3.connect(self._db_path) as conn:
+                cur = conn.execute(
+                    "SELECT COUNT(*) FROM queue WHERE queue_name = ?",
+                    (queue_name,)
+                )
+                return cur.fetchone()[0]
 
 # string queue (dynamodb version) ---------------------------------------
 
@@ -471,50 +488,59 @@ class SQLiteKeyValueStore(KeyValueStore):
     def insert(self, namespace: str, key: str, value: str):
         if not isinstance(value, str):
             raise TypeError("value must be str")
-        with self._conn() as conn:
-            conn.execute("""
-                INSERT INTO kv(namespace, key, value)
-                VALUES (?, ?, ?)
-                ON CONFLICT(namespace, key) DO UPDATE SET value=excluded.value
-            """, (namespace, key, value))
-            conn.commit()
+        with LogService("KVStore", "insert", path=namespace, size=len(key) + len(value)):
+            with self._conn() as conn:
+                conn.execute("""
+                    INSERT INTO kv(namespace, key, value)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(namespace, key) DO UPDATE SET value=excluded.value
+                """, (namespace, key, value))
+                conn.commit()
 
     def remove(self, namespace: str, key: str):
-        with self._conn() as conn:
-            conn.execute("DELETE FROM kv WHERE namespace = ? AND key = ?", (namespace, key))
-            conn.commit()
+        with LogService("KVStore", "remove", path=namespace, size=len(key)):
+            with self._conn() as conn:
+                conn.execute("DELETE FROM kv WHERE namespace = ? AND key = ?", (namespace, key))
+                conn.commit()
 
     def remove_all(self, namespace: str):
-        with self._conn() as conn:
-            conn.execute("DELETE FROM kv WHERE namespace = ?", (namespace,))
-            conn.commit()
+        with LogService("KVStore", "remove_all", path=namespace):
+            with self._conn() as conn:
+                conn.execute("DELETE FROM kv WHERE namespace = ?", (namespace,))
+                conn.commit()
 
     def get(self, namespace: str, key: str) -> str:
-        with self._conn() as conn:
-            cur = conn.execute(
-                "SELECT value FROM kv WHERE namespace = ? AND key = ?",
-                (namespace, key)
-            )
-            row = cur.fetchone()
-            if row is None:
-                raise KeyError(f"{namespace}:{key} not found")
+        with LogService("KVStore", "get", path=namespace) as log:
+            with self._conn() as conn:
+                cur = conn.execute(
+                    "SELECT value FROM kv WHERE namespace = ? AND key = ?",
+                    (namespace, key)
+                )
+                row = cur.fetchone()
+                if row is None:
+                    raise KeyError(f"{namespace}:{key} not found")
+            log.size = json_size(row)
             return row[0]
 
     def get_all(self, namespace: str) -> List[Tuple[str, str]]:
-        with self._conn() as conn:
-            cur = conn.execute(
-                "SELECT key, value FROM kv WHERE namespace = ? ORDER BY key",
-                (namespace,)
-            )
-            return [(k, v) for (k, v) in cur.fetchall()]
+        with LogService("KVStore", "get_all", path=namespace) as log:
+            with self._conn() as conn:
+                cur = conn.execute(
+                    "SELECT key, value FROM kv WHERE namespace = ? ORDER BY key",
+                    (namespace,)
+                )
+                payload = cur.fetchall()
+            log.size = json_size(payload)
+        return [(k, v) for (k, v) in payload]
 
     def count(self, namespace: str) -> int:
-        with self._conn() as conn:
-            cur = conn.execute(
-                "SELECT COUNT(*) FROM kv WHERE namespace = ?",
-                (namespace,)
-            )
-            return int(cur.fetchone()[0])
+        with LogService("KVStore", "count", path=namespace):
+            with self._conn() as conn:
+                cur = conn.execute(
+                    "SELECT COUNT(*) FROM kv WHERE namespace = ?",
+                    (namespace,)
+                )
+                return int(cur.fetchone()[0])
 
 # key value store (dynamodb version) ---------------------------------------
 

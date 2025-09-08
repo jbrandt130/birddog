@@ -7,6 +7,7 @@ Ukraine records archive monitor and scraper.
 
 import time
 import queue
+from datetime import datetime, timedelta, UTC
 
 import regex
 from cachetools import LRUCache
@@ -31,7 +32,7 @@ from birddog.store import get_string_queue_store
 from birddog.env import detect_environment
 from birddog.utility import HeartbeatManager
 
-from birddog.logging import get_logger
+from birddog.logging import get_logger, ServiceLogger
 _logger = get_logger()
 
 # ----------------------------------------------------------------------------
@@ -413,6 +414,97 @@ class PageUpdateManager(HeartbeatManager):
         return result, updates_pending
 
 # ----------------------------------------------------------------------------
+# Resource usage monitor
+
+_KILL_LIMITS = [
+    { 
+        "timedelta": { "minutes": 5},
+        "limits": [
+            { 
+                "resource": "StringQueue", 
+                "metric": "size_per_minute", 
+                "threshold": 5000 
+            },
+            { 
+                "resource": "KVStore", 
+                "metric": "size_per_minute", 
+                "threshold": 5000 
+            },
+            { 
+                "resource": "DummyTranslator", 
+                "metric": "size_per_minute", 
+                "threshold": 5000 
+            },
+            { 
+                "resource": "DummyTranslator", 
+                "metric": "count_per_minute", 
+                "threshold": 500 
+            },
+        ]
+    },
+    { 
+        "timedelta": { "hours": 1},
+        "limits": [
+            { 
+                "resource": "StringQueue", 
+                "metric": "size_per_minute", 
+                "threshold": 2500 
+            },
+            { 
+                "resource": "KVStore", 
+                "metric": "size_per_minute", 
+                "threshold": 2500 
+            },
+            { 
+                "resource": "DummyTranslator", 
+                "metric": "size_per_minute", 
+                "threshold": 2500 
+            },
+            { 
+                "resource": "DummyTranslator", 
+                "metric": "count_per_minute", 
+                "threshold": 250 
+            },
+        ]
+    },
+]
+
+class KillSwitch(HeartbeatManager):
+    _HEARTBEAT_INTERVAL             = 10 # seconds
+
+    def __init__(self, runtime):
+        self._runtime = runtime
+        super().__init__(interval=KillSwitch._HEARTBEAT_INTERVAL)
+
+    def _trigger(self, resource, metric, threshold, value):
+        _logger.info(f"KillSwitch._trigger(resource={resource}, metric={metric}, threshold={threshold}, value={value})")
+        time.sleep(1)
+        self._runtime.stop()
+
+    def heartbeat(self):
+        _logger.info("KillSwitch heartbeat...")
+
+        now = datetime.now(UTC)
+        for limit_spec in _KILL_LIMITS:
+            delta = timedelta(**limit_spec["timedelta"])
+            df = ServiceLogger.get_logger().load_logs(now - delta, now)
+            summary = ServiceLogger.summarize_service_usage(
+                df, 
+                by="resource", 
+                sample_interval_minutes=delta.total_seconds() / 60.)
+            for limit in limit_spec["limits"]:
+                resource = limit["resource"]
+                threshold = limit["threshold"]
+                metric = limit["metric"]
+                stat = summary.loc[summary["resource"].eq(resource), metric]
+                value = int(stat.iloc[0]) if not stat.empty else 0
+                #_logger.info(f'killswitch: resource={resource}, metric={metric}, value={value}')
+                if value >= threshold:
+                    self._trigger(resource, metric, threshold, value)
+                    return
+
+
+# ----------------------------------------------------------------------------
 # Birddog Runtime
 
 class Runtime:
@@ -422,6 +514,8 @@ class Runtime:
         self._page_lru = PageLRU(maxsize=Runtime._LRU_SIZE)
         self._update_manager = PageUpdateManager(page_lru=self._page_lru)
         self._translation_manager = TranslationManager(self)
+        self._killswitch = KillSwitch(self)
+        self._state = "ok"
 
     @property
     def page_lru(self):
@@ -432,7 +526,20 @@ class Runtime:
         return self._update_manager
 
     def start(self):
+        _logger.info(f"Runtime starting...")
         self._update_manager.start()
+        if self.translation_enabled:
+            self._translation_manager.start()
+        self._killswitch.start()
+
+    def stop(self):
+        if self._state != "killed":
+            # halt all threads and go into a stopped state
+            _logger.info("Runtime stopping")
+            self._update_manager.stop()
+            self._translation_manager.stop()
+            #self._killswitch.stop()
+            self._state = "killed"
 
     def lookup_address(self, title):
         return page_address(title)
@@ -459,6 +566,6 @@ class Runtime:
     def translation_enabled(self):
         return self._translation_manager.enabled
 
-
-
-
+    @property
+    def killed(self):
+        return self._state == "killed"
