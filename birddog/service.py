@@ -859,13 +859,22 @@ def service_usage_dashboard():
         runtime_state=runtime.state,
     )
 
-@app.route("/good_boy")
+@app.route("/good_dog")
 def unpause():
     #user, error_response, status = _get_current_user()
     #if error_response:
     #    return error_response, status
     if runtime.state != "running":
         runtime.unpause()
+    return jsonify({'success': True, 'runstate': runtime.state}), 200
+
+@app.route("/bad_dog")
+def pause():
+    #user, error_response, status = _get_current_user()
+    #if error_response:
+    #    return error_response, status
+    if runtime.state != "paused":
+        runtime.pause()
     return jsonify({'success': True, 'runstate': runtime.state}), 200
 
 # ---- APP METRICS ---------------------------------------------------------------
