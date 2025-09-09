@@ -844,16 +844,18 @@ def service_usage_dashboard():
         "30d": timedelta(days=30),
     }.get(range_opt, timedelta(days=1))
 
-    by = "resource" if by_resource_opt else None
+    by = "resource" if by_resource_opt and by_resource_opt != "0" else None
     df = ServiceLogger.get_logger().load_logs(now - delta, now)
     summary = ServiceLogger.summarize_service_usage(
         df, 
         sample_interval_minutes=delta.total_seconds() / 60.,
         by=by)
+    summary=summary.to_dict(orient="records")
     
     return render_template("service_usage.html",
-        summary=summary.to_dict(orient="records"),
+        summary=summary,
         selected_range=range_opt,
+        by_resource=by_resource_opt,
     )
 
 # ---- APP METRICS ---------------------------------------------------------------
