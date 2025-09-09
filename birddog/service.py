@@ -279,7 +279,7 @@ def _get_current_user():
     if not user:
         return None, jsonify({'error': 'Not found'}), 404
 
-    if runtime.killed:
+    if runtime.state != "running":
         return None, jsonify({
             "error": "Service unavailable",
             "reason": "Birddog runtime emergency shutdown"
@@ -294,7 +294,7 @@ def _get_current_user():
 def home():
     user_session = None
     start_title = None
-    if not runtime.killed:
+    if runtime.state == "running":
         user_session = session.get('user')
         start_title = None
         if user_session:
@@ -305,7 +305,7 @@ def home():
         'index.html', 
         user=user_session, 
         start_title=start_title,
-        killed=runtime.killed, 
+        runtime_state=runtime.state, 
         debug=app.debug)
 
 # ---- SESSION MANAGEMENT -----------------------------------------------------
@@ -856,7 +856,17 @@ def service_usage_dashboard():
         summary=summary,
         selected_range=range_opt,
         by_resource=by_resource_opt,
+        runtime_state=runtime.state,
     )
+
+@app.route("/good_boy")
+def unpause():
+    #user, error_response, status = _get_current_user()
+    #if error_response:
+    #    return error_response, status
+    if runtime.state != "running":
+        runtime.unpause()
+    return jsonify({'success': True, 'runstate': runtime.state}), 200
 
 # ---- APP METRICS ---------------------------------------------------------------
 

@@ -23,6 +23,7 @@ done
 if $DEBUG_MODE; then
   echo "!!! STARTING BIRDDOG IN DEBUG MODE !!!"
   export BIRDDOG_USE_LOCAL_CACHE=True
+  export BIRDDOG_TRANSLATION_DEBUG=True
   EXTRA_ARGS+=("--debug")
   PORT=2003
 fi

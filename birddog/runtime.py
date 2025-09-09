@@ -431,6 +431,16 @@ _KILL_LIMITS = [
                 "threshold": 1000
             },
             {
+                "resource": "ModDateStore",
+                "metric": "count_per_minute",
+                "threshold": 10
+            },
+            {
+                "resource": "ModDateStore",
+                "metric": "size_per_minute",
+                "threshold": 4000000
+            },
+            {
                 "resource": "DummyTranslator",
                 "metric": "size_per_minute",
                 "threshold": 50000
@@ -453,7 +463,7 @@ _KILL_LIMITS = [
         ]
     },
     {
-        "timedelta": { "hours": 1},
+        "timedelta": { "minutes": 30},
         "limits": [
             {
                 "resource": "StringQueue",
@@ -464,6 +474,16 @@ _KILL_LIMITS = [
                 "resource": "KVStore",
                 "metric": "count_per_minute",
                 "threshold": 1000
+            },
+            {
+                "resource": "ModDateStore",
+                "metric": "count_per_minute",
+                "threshold": 10
+            },
+            {
+                "resource": "ModDateStore",
+                "metric": "size_per_minute",
+                "threshold": 4000000
             },
             {
                 "resource": "DummyTranslator",
@@ -499,7 +519,7 @@ class KillSwitch(HeartbeatManager):
     def _trigger(self, resource, metric, threshold, value):
         _logger.info(f"KillSwitch._trigger(resource={resource}, metric={metric}, threshold={threshold}, value={value})")
         time.sleep(1)
-        self._runtime.stop()
+        self._runtime.pause()
 
     def heartbeat(self):
         #_logger.info("KillSwitch heartbeat...")
@@ -534,7 +554,7 @@ class Runtime:
         self._update_manager = PageUpdateManager(page_lru=self._page_lru)
         self._translation_manager = TranslationManager(self)
         self._killswitch = KillSwitch(self)
-        self._state = "ok"
+        self._state = "ready"
 
     @property
     def page_lru(self):
@@ -545,20 +565,29 @@ class Runtime:
         return self._update_manager
 
     def start(self):
-        _logger.info(f"Runtime starting...")
-        self._update_manager.start()
-        if self.translation_enabled:
-            self._translation_manager.start()
-        self._killswitch.start()
+        if self._state == "ready":
+            _logger.info(f"Runtime starting...")
+            self._update_manager.start()
+            if self.translation_enabled:
+                self._translation_manager.start()
+            self._killswitch.start()
+            self._state = "running"
 
-    def stop(self):
-        if self._state != "killed":
-            # halt all threads and go into a stopped state
-            _logger.info("Runtime stopping")
-            self._update_manager.stop()
-            self._translation_manager.stop()
-            #self._killswitch.stop()
-            self._state = "killed"
+    def pause(self):
+        if self._state == "running":
+            # pause all threads
+            _logger.info("Runtime pausing")
+            self._update_manager.hold()
+            self._translation_manager.hold()
+            self._state = "paused"
+
+    def unpause(self):
+        if self._state == "paused":
+            # unpause all threads
+            _logger.info("Runtime unpausing")
+            self._update_manager.release()
+            self._translation_manager.release()
+            self._state = "running"
 
     def lookup_address(self, title):
         return page_address(title)
@@ -586,5 +615,5 @@ class Runtime:
         return self._translation_manager.enabled
 
     @property
-    def killed(self):
-        return self._state == "killed"
+    def state(self):
+        return self._state

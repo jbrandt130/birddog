@@ -33,11 +33,15 @@
           {{ 'checked' if by_resource|int == 1 else '' }}
           onchange="this.form.submit()"
         >
-        <label class="form-check-label" for="by_resource">By Resource</label>
+        <label class="form-check-label" for="by_resource">Summarize By Resource</label>
       </div>
 
-      <!-- Ensure 0 is sent when unchecked -->
-      <input type="hidden" name="by_resource" value="0">
+      <!-- Runtime state -->
+      {% if runtime_state == 'running' %}
+      <span class="badge bg-success">RUNNING</span>
+      {% elif runtime_state == 'paused' %}
+      <span class="badge bg-danger">PAUSED</span>
+      {% endif %}
     </form>
 
     <!-- Usage stats table -->

@@ -215,16 +215,29 @@ class HeartbeatManager:
         self._stop_event = Event()
         self._thread = Thread(target=self._run_heartbeat, daemon=True)
         self._started = False
+        self._held = False
 
     def start(self):
         if not self._started:
             self._thread.start()
             self._started = True
 
+    def stop(self):
+        if self._started:
+            self._stop_event.set()
+            self._thread.join()
+            self._started = False
+
+    def hold(self):
+        self._held = True
+
+    def release(self):
+        self._held = False
+
     def _run_heartbeat(self):
         while not self._stop_event.is_set():
             try:
-                if self._started:
+                if self._started and not self._held:
                     self.heartbeat()
             except Exception as e:
                 _logger.info(f"Heartbeat error: {e}")
@@ -233,9 +246,3 @@ class HeartbeatManager:
     def heartbeat(self):
         """Override this method in subclasses to perform periodic actions."""
         _logger.info("Heartbeat...")
-
-    def stop(self):
-        self._stop_event.set()
-        self._thread.join()
-        self._started = False
-

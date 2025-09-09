@@ -33,10 +33,17 @@ _logger = get_logger()
 # --- Translation globals ---
 
 _ENABLE_TRANSLATION = False
-
 _USE_DUMMY_TRANSLATE = True
 _USE_GOOGLE_CLOUD_TRANSLATE = os.getenv("BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE", None) in ("true", "True", "1")
 _DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", None)
+
+if os.getenv("BIRDDOG_TRANSLATION_DEBUG", None) in ("true", "True", "1"):
+    _logger.info("Translation is enabled. Using dummy translator")
+    _ENABLE_TRANSLATION = True
+    _USE_DUMMY_TRANSLATE = True
+
+if _ENABLE_TRANSLATION and not _USE_DUMMY_TRANSLATE and _USE_GOOGLE_CLOUD_TRANSLATE:
+    _logger.info("Translation is enabled. Using GCP translator")
 
 _MAX_TRANSLATE_REQUESTS_PER_HOUR = 1000  # example, adjust as needed
 
