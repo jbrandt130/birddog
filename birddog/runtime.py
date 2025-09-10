@@ -433,12 +433,12 @@ _KILL_LIMITS = [
             {
                 "resource": "ModDateStore",
                 "metric": "count_per_minute",
-                "threshold": 10
+                "threshold": 50
             },
             {
                 "resource": "ModDateStore",
                 "metric": "size_per_minute",
-                "threshold": 4000000
+                "threshold": 10000000
             },
             {
                 "resource": "DummyTranslator",
@@ -478,12 +478,12 @@ _KILL_LIMITS = [
             {
                 "resource": "ModDateStore",
                 "metric": "count_per_minute",
-                "threshold": 10
+                "threshold": 50
             },
             {
                 "resource": "ModDateStore",
                 "metric": "size_per_minute",
-                "threshold": 4000000
+                "threshold": 5000000
             },
             {
                 "resource": "DummyTranslator",
@@ -527,20 +527,21 @@ class KillSwitch(HeartbeatManager):
         for limit_spec in _KILL_LIMITS:
             delta = timedelta(**limit_spec["timedelta"])
             df = ServiceLogger.get_logger().load_logs(now - delta, now)
-            summary = ServiceLogger.summarize_service_usage(
-                df,
-                by="resource",
-                sample_interval_minutes=delta.total_seconds() / 60.)
-            for limit in limit_spec["limits"]:
-                resource = limit["resource"]
-                threshold = limit["threshold"]
-                metric = limit["metric"]
-                stat = summary.loc[summary["resource"].eq(resource), metric]
-                value = int(stat.iloc[0]) if not stat.empty else 0
-                #_logger.info(f'killswitch: resource={resource}, metric={metric}, value={value}')
-                if value >= threshold:
-                    self._trigger(resource, metric, threshold, value)
-                    return
+            if df is not None and not df.empty:
+                summary = ServiceLogger.summarize_service_usage(
+                    df,
+                    by="resource",
+                    sample_interval_minutes=delta.total_seconds() / 60.)
+                for limit in limit_spec["limits"]:
+                    resource = limit["resource"]
+                    threshold = limit["threshold"]
+                    metric = limit["metric"]
+                    stat = summary.loc[summary["resource"].eq(resource), metric]
+                    value = int(stat.iloc[0]) if not stat.empty else 0
+                    #_logger.info(f'killswitch: resource={resource}, metric={metric}, value={value}')
+                    if value >= threshold:
+                        self._trigger(resource, metric, threshold, value)
+                        return
 
 
 # ----------------------------------------------------------------------------
