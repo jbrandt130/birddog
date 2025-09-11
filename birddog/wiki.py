@@ -1148,6 +1148,7 @@ class PageTracker:
         self._cutoff_date = cutoff_date
         self._mod_date_store = get_mod_date_store()
         self._update_cache = {}
+        self._known_titles = self._mod_date_store.get_all_titles()
 
     def to_dict(self):
         return {
@@ -1172,6 +1173,7 @@ class PageTracker:
                 }
             if candidate_updates:
                 self._mod_date_store.batch_store_updates(candidate_updates)
+                self._known_titles.update(set(candidate_updates.keys()))
                 # invalidate cache for any prefixes getting updates
                 prefixes = [
                     self._mod_date_store.normalized_prefix(title) 
@@ -1194,15 +1196,18 @@ class PageTracker:
         return self._update_mod_dates(updates)
 
     def add_titles(self, titles, api_delay=0):
-        new_titles = self._mod_date_store.get_missing_titles([canonicalize_title(t) for t in titles])
+        titles = {canonicalize_title(t) for t in titles}
+        #_logger.info(f'1 titles type: {type(titles)}, self._known_titles type: {type(self._known_titles)}')
+        new_titles = titles - self._known_titles
         if new_titles:
+            new_titles = list(new_titles)
             check = batch_page_exists(new_titles)
             new_titles = [t for t in new_titles if check.get(t)]
-        if not new_titles:
-            return False
-        updates = get_last_mod(new_titles, api_delay)
-        _logger.info('add_titles: found %d updates', len(updates))
-        return self._update_mod_dates(updates)
+            if not new_titles:
+                return False
+            updates = get_last_mod(new_titles, api_delay)
+            _logger.info('add_titles: found %d updates', len(updates))
+            return self._update_mod_dates(updates)
 
     def get_updates(self, prefix, cutoff_date=None):
         prefix = prefix.replace("_", " ")

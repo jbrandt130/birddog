@@ -11,6 +11,8 @@ import time
 import json
 import requests
 import random
+import traceback
+import sys
 from threading import Lock, Semaphore, Event, Thread
 from datetime import datetime, timezone
 from collections import deque
@@ -240,7 +242,9 @@ class HeartbeatManager:
                 if self._started and not self._held:
                     self.heartbeat()
             except Exception as e:
-                _logger.info(f"Heartbeat error: {e}")
+                _logger.error(f"Exception during heartbeat: {e}")
+                tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
+                _logger.error(f"Stack trace:\n{tb_str}")
             time.sleep(self.interval)
 
     def heartbeat(self):

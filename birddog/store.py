@@ -36,9 +36,14 @@ class ModDateStore:
         """Persist multiple updates to the store."""
         raise NotImplementedError
 
+    def get_all_titles(self: list) -> set:
+        """Return set of all titles in the store."""
+        raise NotImplementedError
+
     def get_missing_titles(self, titles: list) -> list:
         """Return list of titles that are not in the store."""
-        raise NotImplementedError
+        all_titles = self.get_all_titles()
+        return [title for title in titles if title not in all_titles]
 
     def query_by_prefix(self, prefix: str, cutoff_date: str = None) -> dict:
         """Return {title: mod_date} for entries with matching prefix and optional date filter."""
@@ -94,16 +99,13 @@ class SQLiteModDateStore(ModDateStore):
                     ]
                 )
 
-    def get_missing_titles(self, titles: list) -> list:
-        if not titles:
-            return []
-        with LogService("ModDateStore", "get_missing_titles") as log:
+    def get_all_titles(self) -> set:
+        with LogService("ModDateStore", "get_all_titles") as log:
             with sqlite3.connect(self._db_path) as conn:
                 cur = conn.execute("SELECT title FROM mod_dates")
                 payload = cur.fetchall()
             log.size = json_size(payload)
-            stored_titles = {row[0] for row in payload}
-        return [title for title in titles if title not in stored_titles]
+            return {row[0] for row in payload}
 
     def query_by_prefix(self, archive_root: str, cutoff_date: str = None) -> dict:
         archive_root = self.normalized_prefix(archive_root)
@@ -191,20 +193,36 @@ class DynamoDBModDateStore(ModDateStore):
                         'mod_date': mod_date
                     })
 
-    def get_missing_titles(self, titles: list) -> list:
-        if not titles:
-            return []
+    def get_all_titles(self) -> set:
+        """Return the set of all titles in the table (bandwidth-efficient)."""
+        titles = set()
+        # 'title' isn't a reserved word, but alias it anyway for safety
+        expr_names = {'#t': 'title'}
 
-        present = set()
-        keys = [self._split_key(t) for t in titles]
-        with LogService("ModDateStore", "get_missing_titles") as log:
-            for chunk in self._chunked(keys, 100):
-                resp = self._client.batch_get_item(
-                    RequestItems={self._table_name: {'Keys': chunk}}
+        with LogService("ModDateStore", "get_all_titles") as log:
+            resp = self._table.scan(
+                ProjectionExpression='#t',
+                ExpressionAttributeNames=expr_names
+            )
+            items = resp.get('Items', [])
+            titles.update(i['title'] for i in items)
+
+            lek = resp.get('LastEvaluatedKey')
+            while lek:
+                resp = self._table.scan(
+                    ProjectionExpression='#t',
+                    ExpressionAttributeNames=expr_names,
+                    ExclusiveStartKey=lek
                 )
-                present.update(item['title']['S'] for item in resp['Responses'].get(self._table_name, []))
-            log.size = json_size(list(present))
-        return [t for t in titles if t not in present]
+                items = resp.get('Items', [])
+                titles.update(i['title'] for i in items)
+                lek = resp.get('LastEvaluatedKey')
+
+            # Optional: log approximate JSON size of the payload we would have returned
+            # (kept consistent with your existing pattern)
+            log.size = json_size(list(titles))
+
+        return titles
 
     def query_by_prefix(self, archive_root: str, cutoff_date: str = None) -> dict:
         archive_root = self.normalized_prefix(archive_root)
