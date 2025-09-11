@@ -1147,6 +1147,7 @@ class PageTracker:
     def __init__(self, cutoff_date=None):
         self._cutoff_date = cutoff_date
         self._mod_date_store = get_mod_date_store()
+        self._update_cache = {}
 
     def to_dict(self):
         return {
@@ -1171,6 +1172,15 @@ class PageTracker:
                 }
             if candidate_updates:
                 self._mod_date_store.batch_store_updates(candidate_updates)
+                # invalidate cache for any prefixes getting updates
+                prefixes = [
+                    self._mod_date_store.normalized_prefix(title) 
+                    for title in candidate_updates.keys()]
+                for prefix in prefixes:
+                    # FIXME: this caching mechanism only works if there is only one PageTracker instance
+                    if prefix in self._update_cache.keys():
+                        _logger.info(f"PageTracker: invalidating cached updates for archive prefix {prefix}")
+                        del self._update_cache[prefix]
                 return True
         return False
 
@@ -1198,7 +1208,13 @@ class PageTracker:
         prefix = prefix.replace("_", " ")
         if not prefix.startswith(WIKI_NAMESPACE):
             prefix = f"{WIKI_NAMESPACE}:{prefix}"
-        return self._mod_date_store.query_by_prefix(prefix, cutoff_date)
+        if prefix not in self._update_cache:
+            _logger.info(f"PageTracker: refreshing update cache for {prefix}")
+            self._update_cache[prefix] = self._mod_date_store.query_by_prefix(prefix, cutoff_date)
+        else:
+            _logger.info(f"PageTracker: update cache hit for {prefix}")
+
+        return self._update_cache[prefix]
 
 # -------------------------------------------------------------------------------
 # Page revision history handling (using wiki API)

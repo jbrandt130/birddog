@@ -44,7 +44,7 @@ class ModDateStore:
         """Return {title: mod_date} for entries with matching prefix and optional date filter."""
         raise NotImplementedError
 
-    def _normalized_prefix(self, title):
+    def normalized_prefix(self, title):
         return title.split("/", 1)[0].replace("_", " ")
 
 # mod date store (sqlite version) ---------------------------------------
@@ -89,7 +89,7 @@ class SQLiteModDateStore(ModDateStore):
                 conn.executemany(
                     "REPLACE INTO mod_dates (archive_root, title, mod_date) VALUES (?, ?, ?)",
                     [
-                        (self._normalized_prefix(title), title, mod_date)
+                        (self.normalized_prefix(title), title, mod_date)
                         for title, mod_date in updates.items()
                     ]
                 )
@@ -106,7 +106,7 @@ class SQLiteModDateStore(ModDateStore):
         return [title for title in titles if title not in stored_titles]
 
     def query_by_prefix(self, archive_root: str, cutoff_date: str = None) -> dict:
-        archive_root = self._normalized_prefix(archive_root)
+        archive_root = self.normalized_prefix(archive_root)
         with LogService("ModDateStore", "query_by_prefix", path=archive_root) as log:
             with sqlite3.connect(self._db_path) as conn:
                 if cutoff_date:
@@ -151,7 +151,7 @@ class DynamoDBModDateStore(ModDateStore):
         ).wait_until_exists()
 
     def _split_key(self, title):
-        archive_root = self._normalized_prefix(title)
+        archive_root = self.normalized_prefix(title)
         return {'archive_root': {'S': archive_root}, 'title': {'S': title}}
 
     def _chunked(self, iterable, size):
@@ -184,7 +184,7 @@ class DynamoDBModDateStore(ModDateStore):
         with LogService("ModDateStore", "batch_store_updates", size=json_size(updates)):
             with self._table.batch_writer() as batch:
                 for title, mod_date in updates.items():
-                    archive_root = self._normalized_prefix(title)
+                    archive_root = self.normalized_prefix(title)
                     batch.put_item(Item={
                         'archive_root': archive_root,
                         'title': title,
@@ -207,7 +207,7 @@ class DynamoDBModDateStore(ModDateStore):
         return [t for t in titles if t not in present]
 
     def query_by_prefix(self, archive_root: str, cutoff_date: str = None) -> dict:
-        archive_root = self._normalized_prefix(archive_root)
+        archive_root = self.normalized_prefix(archive_root)
         kwargs = {'KeyConditionExpression': Key('archive_root').eq(archive_root)}
 
         items = []
