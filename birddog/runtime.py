@@ -438,7 +438,7 @@ _KILL_LIMITS = [
             {
                 "resource": "ModDateStore",
                 "metric": "size_per_minute",
-                "threshold": 10000000
+                "threshold": 50000000
             },
             {
                 "resource": "DummyTranslator",
@@ -483,7 +483,7 @@ _KILL_LIMITS = [
             {
                 "resource": "ModDateStore",
                 "metric": "size_per_minute",
-                "threshold": 5000000
+                "threshold": 10000000
             },
             {
                 "resource": "DummyTranslator",
@@ -527,7 +527,7 @@ class KillSwitch(HeartbeatManager):
         for limit_spec in _KILL_LIMITS:
             delta = timedelta(**limit_spec["timedelta"])
             df = ServiceLogger.get_logger().load_logs(now - delta, now)
-            if df is not None and not df.empty:
+            if not df.empty:
                 summary = ServiceLogger.summarize_service_usage(
                     df,
                     by="resource",
