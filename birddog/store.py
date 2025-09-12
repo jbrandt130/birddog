@@ -399,8 +399,12 @@ class DynamoDBStringQueue(StringQueue):
                 Limit=n,
                 ScanIndexForward=True
             )
-            log.size = json_size(resp)
-        return [item['value'] for item in resp['Items']]
+            items = resp.get('Items', [])
+            if not items:
+                return []
+            values = [it['value'] for it in items]
+            log.size = json_size(items)
+        return values
 
     def pop(self, queue_name: str, n: int) -> list[str]:
         if n <= 0:
