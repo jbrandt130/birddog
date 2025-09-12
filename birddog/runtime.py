@@ -256,6 +256,8 @@ class ArchiveWatcher:
             for title, mod_date in updates.items():
                 address = page_address(title)
                 assert address[0] == self._archive and address[1] == self._subarchive
+                if len(address) >= 6:
+                    _logger.info(f"Watcher.check: address={address}")
                 item = ArchiveWatcher.key(*address)
                 # Get most recent resolved mod date (if any)
                 latest_resolved = self._resolved[item][-1]["modified"] if item in self._resolved else self._cutoff_date

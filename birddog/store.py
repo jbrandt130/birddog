@@ -393,11 +393,14 @@ class DynamoDBStringQueue(StringQueue):
                     })
 
     def peek(self, queue_name: str, n: int) -> list:
+        """Return (but do not remove) up to n items from the queue."""
         with LogService("StringQueue", "peek", path=queue_name) as log:
             resp = self._table.query(
                 KeyConditionExpression=Key('queue_name').eq(queue_name),
                 Limit=n,
-                ScanIndexForward=True
+                ScanIndexForward=True,
+                ProjectionExpression='#v',
+                ExpressionAttributeNames={'#v': 'value'}   # alias in case "value" conflicts
             )
             items = resp.get('Items', [])
             if not items:
@@ -406,23 +409,32 @@ class DynamoDBStringQueue(StringQueue):
             log.size = json_size(items)
         return values
 
+
     def pop(self, queue_name: str, n: int) -> list[str]:
+        """Return and remove up to n items from the queue."""
         if n <= 0:
             return []
+
         with LogService("StringQueue", "pop", path=queue_name) as log:
             resp = self._table.query(
                 KeyConditionExpression=Key('queue_name').eq(queue_name),
                 Limit=n,
-                ScanIndexForward=True,     # oldest first
-                ConsistentRead=True        # reduce staleness on concurrent writers
+                ScanIndexForward=True,    # oldest first
+                ConsistentRead=True,      # avoid staleness under concurrent writers
+                ProjectionExpression='#ts, #v',
+                ExpressionAttributeNames={'#ts': 'ts', '#v': 'value'}
             )
             items = resp.get('Items', [])
             if not items:
                 return []
+
             values = [it['value'] for it in items]
+
+            # delete only the attributes needed for the key
             with self._table.batch_writer() as batch:
                 for it in items:
                     batch.delete_item(Key={'queue_name': queue_name, 'ts': it['ts']})
+
             log.size = json_size(items)
         return values
 

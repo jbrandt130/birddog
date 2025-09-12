@@ -46,7 +46,7 @@ def link_status(item):
     return "unlinked"
 
 def json_size(obj) -> int:
-    return len(json.dumps(obj, ensure_ascii=False).encode("utf-8"))
+    return len(json.dumps(obj, ensure_ascii=False, default=float).encode("utf-8"))
 
 #
 # page loading
