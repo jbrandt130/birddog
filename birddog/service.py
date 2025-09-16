@@ -182,7 +182,7 @@ class User:
             except CacheMissError:
                 raise FileNotFoundError('No watcher found')
 
-            watcher = ArchiveWatcher.load(watcher_data)
+            watcher = ArchiveWatcher.load(watcher_data, runtime=runtime)
 
             resolve_key = ArchiveWatcher.key(archive, subarchive, fond, opus, case)
             _logger.info(f'Resolving {resolve_key}, deep={deep}, tree={tree}')

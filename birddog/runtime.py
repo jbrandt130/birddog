@@ -162,7 +162,8 @@ def _make_tree(unresolved):
 
 class ArchiveWatcher:
     def __init__(self, archive, subarchive, cutoff_date, runtime=None):
-        self._runtime = runtime if runtime else Runtime()
+        _logger.info(f"ArchiveWatcher init (runtime={runtime})")
+        self._runtime = runtime
         self._archive = archive
         if not subarchive:
             subarchive = Archive(archive).subarchive
@@ -440,7 +441,7 @@ _KILL_LIMITS = [
             {
                 "resource": "ModDateStore",
                 "metric": "size_per_minute",
-                "threshold": 50000000
+                "threshold": 100000000
             },
             {
                 "resource": "DummyTranslator",
@@ -485,7 +486,7 @@ _KILL_LIMITS = [
             {
                 "resource": "ModDateStore",
                 "metric": "size_per_minute",
-                "threshold": 10000000
+                "threshold": 50000000
             },
             {
                 "resource": "DummyTranslator",
