@@ -456,12 +456,12 @@ _KILL_LIMITS = [
             {
                 "resource": "GoogleCloudTranslate",
                 "metric": "size_per_minute",
-                "threshold": 50000
+                "threshold": 100000
             },
             {
                 "resource": "GoogleCloudTranslate",
                 "metric": "count_per_minute",
-                "threshold": 100
+                "threshold": 200
             },
         ]
     },
@@ -501,12 +501,12 @@ _KILL_LIMITS = [
             {
                 "resource": "GoogleCloudTranslate",
                 "metric": "size_per_minute",
-                "threshold": 5000
+                "threshold": 50000
             },
             {
                 "resource": "GoogleCloudTranslate",
                 "metric": "count_per_minute",
-                "threshold": 50
+                "threshold": 100
             },
         ]
     },

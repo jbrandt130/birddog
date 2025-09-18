@@ -14,7 +14,7 @@ if [ -n "$AWS_PROFILE" ] && [ "$AWS_PROFILE" != "$PROFILE" ]; then
 fi
 
 # Clean any raw keys so they can't override profiles
-#unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 
 # ✅ Make the profile visible to all child processes (EB CLI, botocore)
 export AWS_PROFILE="$PROFILE"
@@ -48,8 +48,7 @@ function deploy() {
   echo "🔐 Setting environment variables (no AWS creds)..."
   eb setenv \
     AWS_DEFAULT_REGION="$REGION" \
-    OPENAI_API_KEY="$OPENAI_API_KEY" \
-    DEEPL_API_KEY="$DEEPL_API_KEY" \
+    GOOGLE_TRANSLATE_API_KEY="$GOOGLE_TRANSLATE_API_KEY" \
     BIRDDOG_AWS_ENVIRONMENT=1 \
     BIRDDOG_SECRET_KEY="$BIRDDOG_SECRET_KEY" \
     BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE="$BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE" \

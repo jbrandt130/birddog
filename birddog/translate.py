@@ -8,6 +8,7 @@ import time
 import random
 import math
 import threading
+import html
 from collections import deque
 from dataclasses import dataclass
 from typing import Optional, Sequence, Union, Protocol
@@ -32,15 +33,15 @@ _logger = get_logger()
 
 # --- Translation globals ---
 
-_ENABLE_TRANSLATION = False
-_USE_DUMMY_TRANSLATE = True
+_ENABLE_TRANSLATION = True
+_USE_DUMMY_TRANSLATE = False
 _USE_GOOGLE_CLOUD_TRANSLATE = os.getenv("BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE", None) in ("true", "True", "1")
 _DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", None)
 
 if os.getenv("BIRDDOG_TRANSLATION_DEBUG", None) in ("true", "True", "1"):
     _logger.info("Translation is enabled. Using dummy translator")
     _ENABLE_TRANSLATION = True
-    _USE_DUMMY_TRANSLATE = True
+    #_USE_DUMMY_TRANSLATE = True
 
 if _ENABLE_TRANSLATION and not _USE_DUMMY_TRANSLATE and _USE_GOOGLE_CLOUD_TRANSLATE:
     _logger.info("Translation is enabled. Using GCP translator")
@@ -139,6 +140,7 @@ class GoogleCloudTranslator(Translator):
 
     def _map_exc(self, e: BaseException) -> TranslationError:
         # Retryable classes
+        _logger.info(f"Translation exception: {e}")
         if isinstance(e, (ServiceUnavailable, DeadlineExceeded, InternalServerError, RetryError)):
             return TransientServiceError(provider=self._provider, status_code=getattr(e, "code", None), original=e)
         if isinstance(e, (TooManyRequests, ResourceExhausted)):
@@ -178,6 +180,159 @@ class GoogleCloudTranslator(Translator):
 
     def translate_batch(self, text: Sequence[str]) -> Sequence[str]:
         return self.translate(text)  # supports batch
+
+# --- Google Cloud translator (REST client) ---
+
+class GoogleCloudTranslatorREST(Translator):
+    """
+    Uses v2 REST with API key if GOOGLE_TRANSLATE_API_KEY is set.
+    Otherwise uses translate_v2.Client() (service account / ADC).
+    """
+    _V2_ENDPOINT = "https://translation.googleapis.com/language/translate/v2"
+
+    def __init__(self, source="uk", target="en", *, provider_name="gcloud", timeout=10):
+        self._provider = provider_name
+        self._source = source
+        self._target = target
+        self._timeout = timeout
+
+        self._api_key = os.getenv("GOOGLE_TRANSLATE_API_KEY")
+        self._use_rest = bool(self._api_key)
+        if self._use_rest:
+            _logger.info(f"GoogleCloudTranslatorREST using REST API")
+
+        if not self._use_rest:
+            # falls back to your existing client (needs service-account/ADC)
+            self._client = google_translate.Client()
+
+        # local quota guard
+        self._lock = threading.Lock()
+        self._timestamps = deque()
+
+    # ----------- quota guard (unchanged behavior) -----------------------------
+    def _check_quota_local(self):
+        now, cutoff = time.time(), time.time() - 3600
+        with self._lock:
+            while self._timestamps and self._timestamps[0] < cutoff:
+                self._timestamps.popleft()
+            if len(self._timestamps) >= _MAX_TRANSLATE_REQUESTS_PER_HOUR:
+                raise QuotaExceededError(provider=self._provider, retry_after_seconds=60)
+            self._timestamps.append(now)
+
+    # ----------- exception mapping (works for REST + client) ------------------
+    def _map_exc(self, e: BaseException) -> TranslationError:
+        _logger.info(f"Translation exception: {e}")
+        # Retryable (Google client)
+        if isinstance(e, (ServiceUnavailable, DeadlineExceeded, InternalServerError, RetryError)):
+            return TransientServiceError(provider=self._provider, status_code=getattr(e, "code", None), original=e)
+        if isinstance(e, (TooManyRequests, ResourceExhausted)):
+            retry_after = getattr(getattr(e, "response", None), "retry_after", None)
+            secs = None
+            if retry_after:
+                try: secs = float(retry_after)
+                except Exception: pass
+            return QuotaExceededError(provider=self._provider, retry_after_seconds=secs, original=e)
+        # Non-retryable (Google client)
+        if isinstance(e, (InvalidArgument, PermissionDenied, FailedPrecondition, Unauthorized, NotFound)):
+            return PermanentServiceError(provider=self._provider, status_code=getattr(e, "code", None), original=e)
+        if isinstance(e, GoogleAPICallError):
+            return PermanentServiceError(provider=self._provider, status_code=getattr(e, "code", None), original=e)
+
+        # REST/requests path
+        if isinstance(e, (Timeout, ReadTimeout, ConnectTimeout, RequestsConnectionError)):
+            return TransientServiceError(provider=self._provider, original=e)
+
+        # If we bubbled an HTTP error with a response, classify by status
+        resp = getattr(e, "response", None)
+        status = getattr(resp, "status_code", None)
+        if isinstance(status, int):
+            if status == 429:
+                return QuotaExceededError(provider=self._provider, original=e)
+            if 500 <= status < 600:
+                return TransientServiceError(provider=self._provider, status_code=status, original=e)
+            # 4xx default: permanent
+            if 400 <= status < 500:
+                return PermanentServiceError(provider=self._provider, status_code=status, original=e)
+
+        return PermanentServiceError(provider=self._provider, original=e)
+
+    # ----------- public API ---------------------------------------------------
+    def translate(self, text: TextLike) -> TextLike:
+        self._check_quota_local()
+        try:
+            if self._use_rest:
+                with LogService("GoogleCloudTranslate", "translate", size=json_size(text)):
+                    return self._translate_v2_rest(text)
+            else:
+                with LogService("GoogleCloudTranslate", "translate", size=json_size(text)):
+                    return self._translate_v2_client(text)
+        except Exception as e:
+            raise self._map_exc(e)
+
+    def translate_batch(self, text: Sequence[str]) -> Sequence[str]:
+        return self.translate(text)  # both paths support batch
+
+    # ----------- v2 via REST (API key) ---------------------------------------
+    def _translate_v2_rest(self, text: TextLike) -> TextLike:
+        is_list = isinstance(text, (list, tuple))
+        q = list(text) if is_list else [text]
+
+        params = {
+            "key": self._api_key,
+            "source": self._source,
+            "target": self._target,
+            "format": "text",
+        }
+
+        # modest backoff for transient faults
+        wait = 1.0
+        for attempt in range(5):
+            try:
+                resp = requests.post(
+                    self._V2_ENDPOINT,
+                    params=params,
+                    data=[("q", s) for s in q],  # repeated q
+                    timeout=self._timeout,
+                )
+                resp.raise_for_status()
+                payload = resp.json()
+                # REST v2: payload["data"]["translations"] -> list of dicts
+                translations = payload["data"]["translations"]
+                out = [html.unescape(t["translatedText"]) for t in translations]
+                if is_list:
+                    if len(out) != len(q):
+                        raise IncompleteTranslationError(expected=len(q), got=len(out))
+                    return out
+                return out[0]
+            except requests.RequestException as ex:
+                # classify by HTTP status; retry only on 5xx/timeout
+                status = getattr(ex.response, "status_code", None)
+                retryable = isinstance(ex, (Timeout, ReadTimeout, ConnectTimeout, RequestsConnectionError)) or (
+                    isinstance(status, int) and (status >= 500)
+                )
+                if not retryable or attempt == 4:
+                    raise
+                time.sleep(wait)
+                wait *= 2
+
+    # ----------- v2 via client (service account) ------------------------------
+    def _translate_v2_client(self, text: TextLike) -> TextLike:
+        if isinstance(text, (list, tuple)):
+            result = self._client.translate(
+                text,
+                source_language=self._source,
+                target_language=self._target,
+                format_="text",
+            )
+            return [html.unescape(r["translatedText"]) for r in result]
+        else:
+            result = self._client.translate(
+                text,
+                source_language=self._source,
+                target_language=self._target,
+                format_="text",
+            )
+            return html.unescape(result["translatedText"])
 
 # --- Dummy translator (for debug) ---
 
@@ -315,7 +470,8 @@ if _ENABLE_TRANSLATION:
     elif _USE_GOOGLE_CLOUD_TRANSLATE:
         #_logger.info(f'Using Google Cloud translation API (credentials file:{os.getenv("GOOGLE_APPLICATION_CREDENTIALS")})')
         _logger.info('Using Google Cloud translation API')
-        _translator = GoogleCloudTranslator(source="uk", target="en")
+        #_translator = GoogleCloudTranslator(source="uk", target="en")
+        _translator = GoogleCloudTranslatorREST(source="uk", target="en")
     elif _DEEPL_API_KEY:
         _logger.info('Using DeepL translation API')
         _translator = DeeplTranslator(api_key=_DEEPL_API_KEY, source="uk", target="en", use_free_api=True)
