@@ -120,70 +120,6 @@ class _LocalRateLimitMixin:
 # --- Google Cloud service support ---
 
 class GoogleCloudTranslator(Translator):
-    def __init__(self, source="uk", target="en", *, provider_name="gcloud"):
-        self._provider = provider_name
-        self._source = source
-        self._target = target
-        self._client = google_translate.Client()
-        self._lock = threading.Lock()
-        self._timestamps = deque()
-
-    def _check_quota_local(self):
-        # app-level throttling (optional)
-        now, cutoff = time.time(), time.time() - 3600
-        with self._lock:
-            while self._timestamps and self._timestamps[0] < cutoff:
-                self._timestamps.popleft()
-            if len(self._timestamps) >= _MAX_TRANSLATE_REQUESTS_PER_HOUR:
-                raise QuotaExceededError(provider=self._provider, retry_after_seconds=60)
-            self._timestamps.append(now)
-
-    def _map_exc(self, e: BaseException) -> TranslationError:
-        # Retryable classes
-        _logger.info(f"Translation exception: {e}")
-        if isinstance(e, (ServiceUnavailable, DeadlineExceeded, InternalServerError, RetryError)):
-            return TransientServiceError(provider=self._provider, status_code=getattr(e, "code", None), original=e)
-        if isinstance(e, (TooManyRequests, ResourceExhausted)):
-            retry_after = getattr(getattr(e, "response", None), "retry_after", None)
-            secs = None
-            if retry_after:
-                try:
-                    secs = float(retry_after)
-                except Exception:
-                    pass
-            return QuotaExceededError(provider=self._provider, retry_after_seconds=secs, original=e)
-        # Non-retryable
-        if isinstance(e, (InvalidArgument, PermissionDenied, FailedPrecondition, Unauthorized, NotFound)):
-            return PermanentServiceError(provider=self._provider, status_code=getattr(e, "code", None), original=e)
-        if isinstance(e, GoogleAPICallError):
-            # default: treat unknown Google errors as non-retryable
-            return PermanentServiceError(provider=self._provider, status_code=getattr(e, "code", None), original=e)
-        # Networking fallbacks if you have any raw httpx/requests paths
-        if isinstance(e, (Timeout, ReadTimeout, ConnectTimeout, RequestsConnectionError)):
-            return TransientServiceError(provider=self._provider, original=e)
-        # Last resort
-        return PermanentServiceError(provider=self._provider, original=e)
-
-    def translate(self, text: TextLike) -> TextLike:
-        self._check_quota_local()
-        try:
-            with LogService("GoogleCloudTranslate", "translate", size=json_size(text)):
-                result = self._client.translate(text, source_language=self._source, target_language=self._target)
-            if isinstance(text, (list, tuple)):
-                out = [item["translatedText"] for item in result]
-                if len(out) != len(text):
-                    raise IncompleteTranslationError(expected=len(text), got=len(out))
-                return out
-            return result["translatedText"]
-        except Exception as e:
-            raise self._map_exc(e)
-
-    def translate_batch(self, text: Sequence[str]) -> Sequence[str]:
-        return self.translate(text)  # supports batch
-
-# --- Google Cloud translator (REST client) ---
-
-class GoogleCloudTranslatorREST(Translator):
     """
     Uses v2 REST with API key if GOOGLE_TRANSLATE_API_KEY is set.
     Otherwise uses translate_v2.Client() (service account / ADC).
@@ -199,7 +135,7 @@ class GoogleCloudTranslatorREST(Translator):
         self._api_key = os.getenv("GOOGLE_TRANSLATE_API_KEY")
         self._use_rest = bool(self._api_key)
         if self._use_rest:
-            _logger.info(f"GoogleCloudTranslatorREST using REST API")
+            _logger.info(f"GoogleCloudTranslator using REST API")
 
         if not self._use_rest:
             # falls back to your existing client (needs service-account/ADC)
@@ -471,7 +407,7 @@ if _ENABLE_TRANSLATION:
         #_logger.info(f'Using Google Cloud translation API (credentials file:{os.getenv("GOOGLE_APPLICATION_CREDENTIALS")})')
         _logger.info('Using Google Cloud translation API')
         #_translator = GoogleCloudTranslator(source="uk", target="en")
-        _translator = GoogleCloudTranslatorREST(source="uk", target="en")
+        _translator = GoogleCloudTranslator(source="uk", target="en")
     elif _DEEPL_API_KEY:
         _logger.info('Using DeepL translation API')
         _translator = DeeplTranslator(api_key=_DEEPL_API_KEY, source="uk", target="en", use_free_api=True)

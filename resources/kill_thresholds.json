@@ -1,0 +1,96 @@
+[
+    {
+        "timedelta": {
+            "minutes": 5
+        },
+        "limits": [
+            {
+                "resource": "StringQueue",
+                "metric": "count_per_minute",
+                "threshold": 300
+            },
+            {
+                "resource": "KVStore",
+                "metric": "count_per_minute",
+                "threshold": 1000
+            },
+            {
+                "resource": "ModDateStore",
+                "metric": "count_per_minute",
+                "threshold": 50
+            },
+            {
+                "resource": "ModDateStore",
+                "metric": "size_per_minute",
+                "threshold": 100000000
+            },
+            {
+                "resource": "DummyTranslator",
+                "metric": "size_per_minute",
+                "threshold": 50000
+            },
+            {
+                "resource": "DummyTranslator",
+                "metric": "count_per_minute",
+                "threshold": 100
+            },
+            {
+                "resource": "GoogleCloudTranslate",
+                "metric": "size_per_minute",
+                "threshold": 100000
+            },
+            {
+                "resource": "GoogleCloudTranslate",
+                "metric": "count_per_minute",
+                "threshold": 200
+            }
+        ]
+    },
+    {
+        "timedelta": {
+            "minutes": 30
+        },
+        "limits": [
+            {
+                "resource": "StringQueue",
+                "metric": "count_per_minute",
+                "threshold": 100
+            },
+            {
+                "resource": "KVStore",
+                "metric": "count_per_minute",
+                "threshold": 1000
+            },
+            {
+                "resource": "ModDateStore",
+                "metric": "count_per_minute",
+                "threshold": 50
+            },
+            {
+                "resource": "ModDateStore",
+                "metric": "size_per_minute",
+                "threshold": 50000000
+            },
+            {
+                "resource": "DummyTranslator",
+                "metric": "size_per_minute",
+                "threshold": 5000
+            },
+            {
+                "resource": "DummyTranslator",
+                "metric": "count_per_minute",
+                "threshold": 50
+            },
+            {
+                "resource": "GoogleCloudTranslate",
+                "metric": "size_per_minute",
+                "threshold": 50000
+            },
+            {
+                "resource": "GoogleCloudTranslate",
+                "metric": "count_per_minute",
+                "threshold": 100
+            }
+        ]
+    }
+]

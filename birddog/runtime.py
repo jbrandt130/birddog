@@ -7,6 +7,7 @@ Ukraine records archive monitor and scraper.
 
 import time
 import queue
+import json
 from datetime import datetime, timedelta, UTC
 
 import regex
@@ -419,115 +420,26 @@ class PageUpdateManager(HeartbeatManager):
 # ----------------------------------------------------------------------------
 # Resource usage monitor
 
-_KILL_LIMITS = [
-    {
-        "timedelta": { "minutes": 5},
-        "limits": [
-            {
-                "resource": "StringQueue",
-                "metric": "count_per_minute",
-                "threshold": 300
-            },
-            {
-                "resource": "KVStore",
-                "metric": "count_per_minute",
-                "threshold": 1000
-            },
-            {
-                "resource": "ModDateStore",
-                "metric": "count_per_minute",
-                "threshold": 50
-            },
-            {
-                "resource": "ModDateStore",
-                "metric": "size_per_minute",
-                "threshold": 100000000
-            },
-            {
-                "resource": "DummyTranslator",
-                "metric": "size_per_minute",
-                "threshold": 50000
-            },
-            {
-                "resource": "DummyTranslator",
-                "metric": "count_per_minute",
-                "threshold": 100
-            },
-            {
-                "resource": "GoogleCloudTranslate",
-                "metric": "size_per_minute",
-                "threshold": 100000
-            },
-            {
-                "resource": "GoogleCloudTranslate",
-                "metric": "count_per_minute",
-                "threshold": 200
-            },
-        ]
-    },
-    {
-        "timedelta": { "minutes": 30},
-        "limits": [
-            {
-                "resource": "StringQueue",
-                "metric": "count_per_minute",
-                "threshold": 100
-            },
-            {
-                "resource": "KVStore",
-                "metric": "count_per_minute",
-                "threshold": 1000
-            },
-            {
-                "resource": "ModDateStore",
-                "metric": "count_per_minute",
-                "threshold": 50
-            },
-            {
-                "resource": "ModDateStore",
-                "metric": "size_per_minute",
-                "threshold": 50000000
-            },
-            {
-                "resource": "DummyTranslator",
-                "metric": "size_per_minute",
-                "threshold": 5000
-            },
-            {
-                "resource": "DummyTranslator",
-                "metric": "count_per_minute",
-                "threshold": 50
-            },
-            {
-                "resource": "GoogleCloudTranslate",
-                "metric": "size_per_minute",
-                "threshold": 50000
-            },
-            {
-                "resource": "GoogleCloudTranslate",
-                "metric": "count_per_minute",
-                "threshold": 100
-            },
-        ]
-    },
-]
+_KILL_THRESHOLD_PATH = "resources/kill_thresholds.json"
 
 class KillSwitch(HeartbeatManager):
     _HEARTBEAT_INTERVAL             = 30 # seconds
 
     def __init__(self, runtime):
         self._runtime = runtime
+        with open(_KILL_THRESHOLD_PATH, encoding="utf8") as file:
+            _logger.info(f"KillSwitch: loading thresholds from {_KILL_THRESHOLD_PATH}")
+            self._kill_thresholds = json.loads(file.read())
         super().__init__(interval=KillSwitch._HEARTBEAT_INTERVAL)
 
     def _trigger(self, resource, metric, threshold, value):
-        _logger.info(f"KillSwitch._trigger(resource={resource}, metric={metric}, threshold={threshold}, value={value})")
-        time.sleep(1)
+        _logger.info(f"KillSwitch trigger(resource={resource}, metric={metric}, threshold={threshold}, value={value})")
         self._runtime.pause()
 
     def heartbeat(self):
         #_logger.info("KillSwitch heartbeat...")
         now = datetime.now(UTC)
-        for limit_spec in _KILL_LIMITS:
+        for limit_spec in self._kill_thresholds:
             delta = timedelta(**limit_spec["timedelta"])
             df = ServiceLogger.get_logger().load_logs(now - delta, now)
             if not df.empty:
