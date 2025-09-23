@@ -1484,6 +1484,17 @@ function render_unresolved_items() {
     restore_expanded_nodes(container_id, expanded_paths);
 }
 
+function toggle_page_desc_icon(btn) {
+  const icon = btn.querySelector('i');
+  if (btn.getAttribute('aria-expanded') === 'true') {
+    icon.classList.remove('bi-plus-circle-fill');
+    icon.classList.add('bi-dash-circle-fill');
+  } else {
+    icon.classList.remove('bi-dash-circle-fill');
+    icon.classList.add('bi-plus-circle-fill');
+  }
+}
+
 // ---------------------------------------------------------------------------
 // APP INITIALIZATION
 
