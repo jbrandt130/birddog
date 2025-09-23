@@ -234,25 +234,23 @@ def get_all_pages(namespace=WIKI_NAMESPACE_ID, prefix=None, limit=500):
 
 def sniff_subarchives(archive):
     url = f'{ARCHIVE_BASE}/wiki/{archive}'
+    page = mw_read_page(url)
     result = {}
-    soup = BeautifulSoup(requests.get(url,timeout=10).text, 'lxml')
-    for div in soup.find_all('div', attrs = {'id': 'mw-content-text'}):
-        for item in div.find_all('a'):
-            if item.has_attr('title'):
-                if item['title'].startswith(archive) or item['title'].replace(" ", "_").startswith(archive):
-                    _logger.info(f"found link: {item['href']}")
-                    if 'redlink' not in item['href']:
-                        parsed = item['title'].split('/')
-                        if len(parsed) == 2 and parsed[1] != 'видання':
-                            subarchive = parsed[1]
-                            _logger.info(f'found subarchive: {parsed[0]}-{parsed[1]}')
-                            result[subarchive] = {
-                                'title': form_text_item(item['title']),
-                                'archive': form_text_item(parsed[0]),
-                                'subarchive': form_text_item(parsed[1]),
-                                'description': form_text_item(item.text),
-                                'link': item['href'],
-                                }
+    for table in page["tables"]:
+        for child in table["children"]:
+            entry = child[0]
+            #_logger.info(entry)
+            if entry["exists"] and archive in entry["link"]:
+                subarchive = entry["text"]
+                if subarchive["uk"] != "видання":
+                    _logger.info(f'found subarchive: {archive}-{subarchive["uk"]}')
+                    result[subarchive["uk"]] = {
+                        'title': form_text_item(entry["link"].replace("/wiki/","")),
+                        'archive': form_text_item(archive),
+                        'subarchive': subarchive,
+                        'link': entry["link"],
+                        }
+
     return result
 
 def _comment_string():
@@ -351,12 +349,21 @@ def page_exists(title):
 # -------------------------------------------------------------------------------
 # WikiSource MediaWiki API page download
 
-def get_title(url):
+def get_title(url, include_namespace=True):
+    """Extract title from a wiki URL. Optionally include or strip the namespace."""
     result = url.replace(ARCHIVE_BASE, '')
     result = result.replace('/wiki/', '')
     result = unquote(result)
-    if not result.startswith(f"{WIKI_NAMESPACE}:"):
-        result = f"{WIKI_NAMESPACE}:{result}"
+
+    ns_prefix = f"{WIKI_NAMESPACE}:"
+
+    if include_namespace:
+        if not result.startswith(ns_prefix):
+            result = ns_prefix + result
+    else:
+        if result.startswith(ns_prefix):
+            result = result[len(ns_prefix):]
+
     return result
 
 def _nonexistent_page(page_title):
