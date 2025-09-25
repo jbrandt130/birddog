@@ -87,7 +87,7 @@ def _record_fetch_event():
                 time.sleep(5)
             _last_log_time = now
 
-def fetch_url(url, params=None, json=False, method="GET"):
+def fetch_url(url, params=None, json=False, content=False, method="GET"):
     with _fetch_semaphore:
         attempt = 0
         while attempt < MAX_RETRIES:
@@ -105,7 +105,7 @@ def fetch_url(url, params=None, json=False, method="GET"):
                     raise requests.RequestException(f"Unexpected status: {response.status_code}")
                 
                 _record_fetch_event()
-                return response.json() if json else response.text
+                return response.json() if json else response.content if content else response.text
             except (requests.RequestException, TooManyRequestsError) as e:
                 wait = min(MAX_BACKOFF, BASE_BACKOFF * (2 ** attempt))  # exponential backoff
                 wait += random.uniform(0, 1)  # add jitter

@@ -5,6 +5,7 @@ import os
 import re
 from time import sleep
 import requests
+import mimetypes
 from datetime import datetime
 #from typing import Any, Dict, Optional
 from urllib.parse import quote, unquote, urlparse, parse_qs
@@ -83,11 +84,11 @@ def add_page(page: dict, page_table: dict) -> None:
     """Merge a page entry into the page_table by title."""
     title = page["title"]
     # ensure an entry exists for this title
-    entry = page_table.setdefault(title, {})
+    entry = page_table.setdefault(title, dict())
     # update/merge keys
     entry.update(page)
 
-def process_archive_sheet(ws, page_table={}):
+def process_archive_sheet(ws, page_table=dict()):
     parent_title = get_page_title_from_link(ws["D3"])
     source_type = get_cell_value(ws["C1"])
     add_page({
@@ -121,10 +122,9 @@ def process_archive_sheet(ws, page_table={}):
                 "parent": parent_title,
                 "comments": get_cell_value(ws[f"O{r}"]),
                 }, page_table)
-            #print(f"{title}, {description}, {date_range}, {availability}, {doc_link}")
     return page_table
 
-def process_fond_sheet(ws, page_table={}):
+def process_fond_sheet(ws, page_table=dict()):
     parent_title = get_page_title_from_link(ws["D3"])
     source_type = get_cell_value(ws["C1"])
     add_page({
@@ -157,10 +157,9 @@ def process_fond_sheet(ws, page_table={}):
                 "parent": parent_title,
                 "comments": get_cell_value(ws[f"O{r}"]),
                 }, page_table)
-            #print(f"{title}, {description}, {date_range}, {availability}, {doc_link}")
     return page_table
 
-def process_opus_sheet(ws, page_table={}):
+def process_opus_sheet(ws, page_table=dict()):
     parent_title = get_page_title_from_link(ws["D3"])
     source_type = get_cell_value(ws["C1"])
     add_page({
@@ -199,7 +198,17 @@ def process_opus_sheet(ws, page_table={}):
                 "pages_processed": get_cell_int_value(ws[f"J{r}"]) + get_cell_int_value(ws[f"M{r}"]),
                 "availability": "linked" if get_cell_link(ws[f"A{r}"]) is not None else "unlinked",
                 }, page_table)
-            #print(f"{title}, {description}, {date_range}, {availability}, {doc_link}")
+    return page_table
+
+def process_worksheets(worksheets, page_table=dict()):
+    for sheet in worksheets:
+        _logger.info(f"processing worksheet: {sheet.title}")
+        if get_cell_value(sheet["H1"]):
+            page_table = process_opus_sheet(sheet, page_table)
+        elif get_cell_value(sheet["G1"]):
+            page_table = process_fond_sheet(sheet, page_table)
+        else:
+            page_table = process_archive_sheet(sheet, page_table)
     return page_table
 
 # ------------------------------------------------------------
@@ -251,7 +260,7 @@ class NocoDBClient:
         self._init_id_map()
 
     def _init_id_map(self):
-        self._id_map = {}
+        self._id_map = dict()
         for table_name in ("pages", "documents"):
             records = self.list_records(table_name)
             key_field = _TABLE_KEY_FIELD[table_name]
@@ -285,7 +294,7 @@ class NocoDBClient:
         sleep(_NOCODB_API_DELAY)
         return self._session.get(url, params=params)
 
-    def _post(self, url, json=None):
+    def _post(self, url, json=None, files=None, headers=None):
         sleep(_NOCODB_API_DELAY)
         return self._session.post(url, json=json)
 
@@ -372,6 +381,63 @@ class NocoDBClient:
         response = self._patch(url, json=payload)
         response.raise_for_status()
         return response.json()["Id"]
+
+    def upload_attachment(self, file_path: str):
+        """
+        Uploads a file via /api/v2/storage/upload and returns the file-object list.
+        Uses a *fresh* requests.post (not the session) to avoid any sticky headers.
+        """
+        upload_url = f"{_NOCODB_V2_API_ROOT}/storage/upload"
+
+        # Derive a safe filename and mimetype
+        basename = os.path.basename(file_path)
+        # If the filename has commas or non-ASCII, NocoDB/servers occasionally complain.
+        # Provide a fallback ASCII-only name while preserving the extension.
+        name_root, ext = os.path.splitext(basename)
+        safe_name_root = "".join(ch if ch.isascii() else "_" for ch in name_root)
+        safe_name = (safe_name_root or "upload") + ext
+
+        mime = mimetypes.guess_type(basename)[0] or "application/octet-stream"
+
+        headers = {
+            "xc-token": _NOCODB_API_TOKEN  # NOTE: xc-token (not xc-auth)
+        }
+
+        with open(file_path, "rb") as f:
+            files = {
+                # (filename, fileobj, mimetype)
+                "file": (safe_name, f, mime)
+            }
+            # IMPORTANT: no Content-Type header — requests sets multipart boundaries.
+            resp = requests.post(upload_url, headers=headers, files=files, timeout=30)
+
+        if resp.status_code != 200:
+            # Surface server message to see exactly what it didn't like
+            raise RuntimeError(f"Upload failed {resp.status_code}: {resp.text}")
+
+        return resp.json()  # -> [ { "title", "url", "mimetype", "size", ... } ]
+
+    def set_attachment(self, table_name: str, record_key: str, attachment_field: str, file_path: str):
+        record_id = self._id(table_name, record_key)
+        if not record_id:
+            raise ValueError(f"Unknown {table_name} record for key {record_key}")
+
+        # 1) upload (your hardened uploader)
+        uploaded = self.upload_attachment(file_path)  # list of file objects
+
+        # 2) PATCH via the bulk endpoint (no /{record_id} in the path)
+        url = f"{_NOCODB_V2_API_ROOT}/tables/{_get_table_id(table_name)}/records"
+
+        # v2 bulk API accepts an array of rows to update; sending a single-object array is safest
+        payload = [{
+            "Id": record_id,
+            attachment_field: uploaded  # must be a list (even for one file)
+        }]
+
+        resp = self._patch(url, json=payload)
+        # If your _patch sets Content-Type: application/json (good), you only need xc-token.
+        resp.raise_for_status()
+        return resp.json()  # usually returns number of updated rows or updated row(s)
 
     def upsert_pages(self, page_data):
         if isinstance(page_data, dict):

@@ -8,8 +8,9 @@ Wiki API access functions
 import time
 import json
 import re
+import os
 from datetime import datetime
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlparse
 from itertools import islice
 
 import requests
@@ -382,13 +383,9 @@ def _check_page_existence_chunked(page_links, chunk_size=50):
     title_map = {get_title(link): link for link in page_links}
     titles = list(title_map.keys())
     title_map = {key.replace(" ", "_").lower(): link for key, link in title_map.items()}
-    #for key, value in title_map.items():
-    #    print(key, value)
-    #print("check_page_existence_chunked:", titles)
 
     for i in range(0, len(titles), chunk_size):
         title_batch = "|".join(titles[i:i+chunk_size])
-        #print("batch:", i, "title length:", len(title_batch))
         params = {
             'action': 'query',
             'prop': 'info',
@@ -398,8 +395,6 @@ def _check_page_existence_chunked(page_links, chunk_size=50):
         data = fetch_url(API_URL, params=params, json=True, method="POST")
         for page_data in data['query']['pages'].values():
             title = page_data['title'].replace(" ", "_").lower()
-            #if title == "архів:дажо/1/74/":
-            #    print('\n', title, page_data, params)
             # If invalid or missing, mark as False
             exists = not ('missing' in page_data or 'invalid' in page_data)
             exists_map[title_map[title]] = exists
@@ -1433,3 +1428,170 @@ def batch_fetch_document_links(titles, map_to_url=True, chunk_size=20):
                 result[title] = []
 
     return result
+
+
+# -------------------------------------------------------------------------------
+# Document thumbnail download
+
+def _api_and_default_ns_for_host(host: str) -> tuple[str, str]:
+    """Return (api_url, default_namespace_prefix) for a given wiki host."""
+    if _is_commons_host(host):
+        return "https://commons.wikimedia.org/w/api.php", "File:"
+    # Any language wikisource subdomain (e.g., uk.wikisource.org)
+    if host.endswith(".wikisource.org"):
+        return f"https://{host}/w/api.php", "Файл:"  # Ukrainian default
+    # Generic MediaWiki fallback (rare)
+    return f"https://{host}/w/api.php", "File:"
+
+def _is_commons_host(host: str) -> bool:
+    return host == "commons.wikimedia.org"
+
+def _query_imageinfo(api_url: str, title: str, width: int, page: int) -> dict:
+    params = {
+        "action": "query",
+        "prop": "imageinfo",
+        "iiprop": "url|mime|size",
+        "iiurlwidth": str(width),
+        "redirects": "1",
+        "format": "json",
+        "titles": title,
+        "origin": "*",
+        "iiurlparam": f"page={int(page) if page and page > 0 else 1}",
+    }
+    return fetch_url(api_url, params=params, json=True)
+
+def _first_imageinfo(api_json: dict):
+    pages = api_json.get("query", {}).get("pages", {})
+    if not pages:
+        return None
+    page_block = next(iter(pages.values()))
+    return page_block.get("imageinfo") or None
+
+def _strip_ns(full_title: str) -> str:
+    if full_title.startswith("Файл:"):
+        return full_title[len("Файл:"):]
+    if full_title.startswith("File:"):
+        return full_title[len("File:"):]
+    return full_title
+
+def _special_filepath_url(host: str, title_no_ns: str, width: int, page: int) -> str:
+    # Build Special:FilePath on the same host if possible; for Commons links this is ideal.
+    # Works on Commons and most Wikimedia projects.
+    base = f"https://{host}/wiki/Special:FilePath/{quote(title_no_ns)}?width={width}"
+    if page and page > 1:
+        base += f"&page={int(page)}"
+    return base
+
+def _safe_base_from_title(title: str, page: int, width: int) -> str:
+    base = title.replace("Файл:", "").replace("File:", "").replace("/", "_")
+    if page and page >= 1:
+        base = f"{base}.p{page}"
+    base = f"{base}.w{width}"
+    # keep filename plain printable
+    return "".join(c if c.isprintable() else "_" for c in base)
+
+def _ext_from_url(url: str) -> str:
+    import os as _os
+    path = urlparse(url).path
+    fname = _os.path.basename(path)
+    root, ext = _os.path.splitext(fname)
+    ext = ext.lower()
+    if ext and 2 <= len(ext) <= 5 and ext[1:].isalnum():
+        return _normalize_ext(ext)
+    return ""
+
+def _normalize_ext(ext: str) -> str:
+    mapping = {".jpe": ".jpg", ".jpeg": ".jpg", ".tiff": ".tif", ".svgz": ".svg", ".htm": ".html"}
+    ext = (ext or "").lower()
+    return mapping.get(ext, ext)
+
+def download_thumbnail(
+    file_page_url: str,
+    size: str | int = "medium",
+    page: int = 1,
+    out_dir: str = ".",
+    use_special_filepath_fallback: bool = True,
+) -> dict:
+    width = {"small": 240, "medium": 640}.get(str(size).lower(), 640) if not isinstance(size, int) \
+            else max(32, min(4096, size))
+
+    parsed = urlparse(file_page_url)
+    host = parsed.netloc.lower()
+    path = unquote(parsed.path)
+
+    if "/wiki/" not in path:
+        raise RuntimeError("This does not look like a /wiki/ URL.")
+
+    # Title from the URL
+    title = path.split("/wiki/", 1)[1]
+
+    # Decide default namespace and API endpoint from host
+    api_url, default_ns = _api_and_default_ns_for_host(host)
+
+    # Ensure title has a namespace (use site-appropriate default)
+    if not (title.startswith("Файл:") or title.startswith("File:")):
+        title = default_ns + title
+
+    # Query imageinfo on the site from the URL first
+    data = _query_imageinfo(api_url, title, width, page)
+
+    # If no imageinfo and we are NOT on Commons, retry on Commons API (some files live there)
+    infos = _first_imageinfo(data)
+    if not infos and not _is_commons_host(host):
+        commons_api, commons_ns = _api_and_default_ns_for_host("commons.wikimedia.org")
+        commons_title = title
+        # ensure English File: for Commons
+        if commons_title.startswith("Файл:"):
+            commons_title = "File:" + commons_title[len("Файл:"):]
+        data = _query_imageinfo(commons_api, commons_title, width, page)
+        title = commons_title  # track the title actually used
+        api_url = commons_api   # and API used
+        infos = _first_imageinfo(data)
+
+    if not infos:
+        # Still nothing—surface a helpful error
+        raise RuntimeError(f"No imageinfo found. Response: {json.dumps(data, ensure_ascii=False)[:800]}")
+
+    info = infos[0]
+    thumb_url = info.get("thumburl") or info.get("url")
+    orig_url = info.get("url")
+    api_mime = info.get("mime") or ""
+
+    if not thumb_url:
+        raise RuntimeError("Thumbnail URL not available for this file.")
+
+    # Try the thumbnail URL first
+    try:
+        content = fetch_url(thumb_url, content=True)
+    except Exception as e:
+        # Optional fallback via Special:FilePath (often works through CDN edge cases)
+        if not use_special_filepath_fallback:
+            raise
+        title_no_ns = _strip_ns(title)
+        fallback = _special_filepath_url(host, title_no_ns, width, page)
+        content = fetch_url(fallback, content=True)
+        thumb_url = fallback  # record what actually worked
+
+    # Choose extension: URL path ext → API MIME guess → default .jpg
+    ext = _ext_from_url(thumb_url)
+    if not ext:
+        ext = _normalize_ext(mimetypes.guess_extension(api_mime) or "")
+    if not ext:
+        ext = ".jpg"
+
+    # Save
+    os.makedirs(out_dir, exist_ok=True)
+    base = _safe_base_from_title(title, page, width)
+    saved_path = os.path.join(out_dir, base + ext)
+    with open(saved_path, "wb") as f:
+        f.write(content)
+
+    return {
+        "saved_path": saved_path,
+        "thumb_url": thumb_url,
+        "orig_url": orig_url,
+        "mime": api_mime,
+        "width": width,
+        "api_response": data,
+        "api_used": api_url,
+    }
