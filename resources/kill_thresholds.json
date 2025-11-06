@@ -37,7 +37,7 @@
             {
                 "resource": "GoogleCloudTranslate",
                 "metric": "size_per_minute",
-                "threshold": 100000
+                "threshold": 300000
             },
             {
                 "resource": "GoogleCloudTranslate",

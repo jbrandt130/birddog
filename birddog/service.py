@@ -615,6 +615,7 @@ def _make_unique(string_list):
 
 @app.route("/export")
 def export_dialog():
+    # assemble and return payload for export dialog
     user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status

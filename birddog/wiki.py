@@ -397,7 +397,10 @@ def _check_page_existence_chunked(page_links, chunk_size=50):
             title = page_data['title'].replace(" ", "_").lower()
             # If invalid or missing, mark as False
             exists = not ('missing' in page_data or 'invalid' in page_data)
-            exists_map[title_map[title]] = exists
+            if title not in title_map:
+                _logger.error(f"_check_page_existence_chunked: ignoring unrecognized title: {title}")
+            else:
+                exists_map[title_map[title]] = exists
     return exists_map
 
 def _is_category_link(title):
@@ -418,16 +421,24 @@ def _is_familysearch_url(link):
     return link.startswith("https://www.familysearch.org")
 
 def _expand_link_target(link_target, page_title):
-    link_target = link_target.strip().replace(" ", "_")
-    if not link_target.startswith(('.', '/')):
-        return f"{ARCHIVE_BASE}/wiki/{link_target}"
+    # remove leading and trailing spaces
+    link_target = link_target.strip()
 
+    # check for absolute target reference
+    if not link_target.startswith(('.', '/')):
+        return f"{ARCHIVE_BASE}/wiki/{link_target.replace(" ", "_")}"
+
+    # collapse multiple slashes to single slashes
     link_target = re.sub(r'//+', '/', link_target)
 
-    # Split the page_title into components
+    # split the page_title into components
     base_parts = page_title.strip("/").split("/")
     target_parts = link_target.strip("/").split("/")
 
+    # get rid of stray spaces in path components
+    target_parts = [part.strip() for part in target_parts]
+
+    # build absolute path from relative path spec
     resolved_parts = []
     for part in target_parts:
         if part == "..":
