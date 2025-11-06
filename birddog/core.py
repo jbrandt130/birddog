@@ -371,7 +371,7 @@ class Page:
                 #_logger.info(f"load_child_document_links: {self.name}: {child}")
                 if is_linked(child[0]) and len(child) > 1 and not is_linked(child[1]):
                     items.append(i)
-                    titles.append(f"{self.title}/{get_text(child[0]['text'])}")
+                    titles.append(f"{self.title}/{child[0]['text']['uk']}")
             if items:
                 need_save = False
                 _logger.info(f'load_child_document_links: fetching {len(titles)} links')
@@ -384,7 +384,7 @@ class Page:
                         self.children[i][1]['exists'] = True
                         need_save = True
                 if update_cache and need_save:
-                    #_logger.info(f'load_child_document_links({self.name}) updating cache')
+                    _logger.info(f'load_child_document_links({self.name}) updating cache')
                     self._cache_save()
 
     def prepare_to_download(self):

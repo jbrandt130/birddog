@@ -204,6 +204,7 @@ def _process_table_column(table, column_header_map, edit_cell, sheet, cell, pars
                     _set_url(child_cell, child_link_status, _child_url(child), edit_cell)
                 elif parse['modifier'] == 'doc_link':
                     doc_link_status = link_status(child[1]) if len(child) > 1 else "unlinked"
+                    #_logger.info(f"col B: {get_text(child[0]['text'])}, {doc_link_status}, {_child_doc_url(child)}")
                     _set_url(child_cell, doc_link_status, _child_doc_url(child), edit_cell)
                 child_cell.value = "; ".join(cell_value)
         elif parse['expr'] == 'empty':
