@@ -244,7 +244,7 @@ class Users:
                 user = User.from_dict(email, data)
                 self._cache[email] = user
                 return user
-            except CacheMissError:
+            except (CacheMissError, KeyError):
                 return None
 
     def create(self, email, name, password):
