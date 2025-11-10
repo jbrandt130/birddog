@@ -834,16 +834,17 @@ def service_usage_dashboard():
     #if error_response:
     #    return error_response, status
 
-    range_opt = request.args.get("range", "24h")
+    range_opt = request.args.get("range", "1h")
     by_resource_opt = request.args.get("by_resource", None)
     now = datetime.now(UTC)
     delta = {
         "5m": timedelta(minutes=5),
-        "1h": timedelta(hours=1),    
+        "1h": timedelta(hours=1),
+        "4h": timedelta(hours=4),
+        "8h": timedelta(hours=8),
         "24h": timedelta(days=1),
         "7d": timedelta(days=7),
-        "30d": timedelta(days=30),
-    }.get(range_opt, timedelta(days=1))
+    }.get(range_opt, timedelta(hours=1))
 
     by = "resource" if by_resource_opt and by_resource_opt != "0" else None
     df = ServiceLogger.get_logger().load_logs(now - delta, now)

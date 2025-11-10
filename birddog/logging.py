@@ -72,6 +72,15 @@ def get_logger():
 def get_log_buffer():
     return _log_buffer_handler
 
+
+# helper for log truncation
+
+def _to_iso_utc_str(date_string):
+    if isinstance(date_string, datetime):
+        return date_string.astimezone(UTC).replace(tzinfo=None).isoformat(timespec="microseconds")
+    # assume user passed formatted string
+    return str(date_string)
+
 # PERSISTENT EVENT LOGGING (abstract base class) ------------------------
 
 class EventLogger:
@@ -90,6 +99,10 @@ class EventLogger:
         raise NotImplementedError
 
     def load_logs(self, start_time, end_time):
+        raise NotImplementedError
+
+    def truncate(self, cutoff):
+        """Remove all log entries older than cutoff (inclusive-exclusive: timestamp < cutoff)."""
         raise NotImplementedError
 
 # SQLITE-BASED PERSISTENT EVENT LOGGING ------------------------
@@ -148,6 +161,19 @@ class SQLLiteEventLogger(EventLogger):
             df = pd.read_sql_query(query, conn, params=(start_time, end_time))
             df["timestamp"] = pd.to_datetime(df["timestamp"])
             return df
+
+    def truncate(self, cutoff):
+        # Accept str or datetime; store as ISO string for SQLite datetime() casting
+        cutoff_s = _to_iso_utc_str(cutoff)
+
+        with self._lock, sqlite3.connect(self._db_path) as conn:
+            # datetime() makes the comparison robust to tz/precision differences
+            cur = conn.execute(
+                "DELETE FROM request_logs WHERE datetime(timestamp) < datetime(?)",
+                (cutoff_s,),
+            )
+            conn.commit()
+            return cur.rowcount
 
 # DYNAMODB-BASED PERSISTENT EVENT LOGGING ------------------------
 
@@ -230,6 +256,38 @@ class DynamoDBEventLogger(EventLogger):
         waiter.wait(TableName=table_name)
         #print(f"✅ Table '{table_name}' created and ready.")
 
+    def truncate(self, cutoff):
+        # Match stored format: this table writes naive utcnow().isoformat()
+        cutoff_s = _to_iso_utc_str(cutoff)
+
+        deleted = 0
+        exclusive_start_key = None
+        while True:
+            kwargs = {
+                "KeyConditionExpression": Key("PK").eq("LOG") & Key("timestamp").lt(cutoff_s),
+                "Limit": 100,
+            }
+            if exclusive_start_key:
+                kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+            resp = self._table.query(**kwargs)
+            items = resp.get("Items", [])
+
+            if not items:
+                break
+
+            with self._table.batch_writer() as batch:
+                for it in items:
+                    batch.delete_item(Key={"PK": it["PK"], "timestamp": it["timestamp"]})
+                    deleted += 1
+
+            exclusive_start_key = resp.get("LastEvaluatedKey")
+            if not exclusive_start_key:
+                break
+
+        return deleted
+
+
 # EVENT METRICS --------------------------------------------------
 
 def summarize_duration_by_path_group(df):
@@ -285,6 +343,10 @@ class ServiceLogger:
         raise NotImplementedError
 
     def load_logs(self, start_time, end_time):
+        raise NotImplementedError
+
+    def truncate(self, cutoff):
+        """Remove all log entries older than cutoff (inclusive-exclusive: timestamp < cutoff)."""
         raise NotImplementedError
 
     @staticmethod
@@ -405,6 +467,18 @@ class SQLLiteServiceLogger(ServiceLogger):
             df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
         return df
 
+    def truncate(self, cutoff):
+        # Accept str or datetime; normalize to full ISO-8601 UTC with microseconds (how this table writes)
+        cutoff_s = _to_iso_utc_str(cutoff)
+
+        with self._lock, sqlite3.connect(self._db_path) as conn:
+            cur = conn.execute(
+                "DELETE FROM service_logs WHERE datetime(timestamp) < datetime(?)",
+                (cutoff_s,),
+            )
+            conn.commit()
+            return cur.rowcount
+
 # DYNAMODB-BASED SERVICE CALL LOGGING ------------------------
 
 _DYNAMODB_SERVICE_TABLE_NAME = "birddog_service_logs"
@@ -500,6 +574,37 @@ class DynamoDBServiceLogger(ServiceLogger):
 
         waiter = boto3.resource("dynamodb").meta.client.get_waiter("table_exists")
         waiter.wait(TableName=table_name)
+
+    def truncate(self, cutoff):
+        # Match stored format: this table writes naive utcnow().isoformat()
+        cutoff_s = _to_iso_utc_str(cutoff)
+
+        deleted = 0
+        exclusive_start_key = None
+        while True:
+            kwargs = {
+                "KeyConditionExpression": Key("PK").eq("LOG") & Key("timestamp").lt(cutoff_s),
+                "Limit": 100,
+            }
+            if exclusive_start_key:
+                kwargs["ExclusiveStartKey"] = exclusive_start_key
+
+            resp = self._table.query(**kwargs)
+            items = resp.get("Items", [])
+
+            if not items:
+                break
+
+            with self._table.batch_writer() as batch:
+                for it in items:
+                    batch.delete_item(Key={"PK": it["PK"], "timestamp": it["timestamp"]})
+                    deleted += 1
+
+            exclusive_start_key = resp.get("LastEvaluatedKey")
+            if not exclusive_start_key:
+                break
+
+        return deleted
 
 # SERVICE CALL CONTEXT MANAGER ------------------------------
 

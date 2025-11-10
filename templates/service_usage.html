@@ -17,9 +17,10 @@
       <select id="range" name="range" class="form-select w-auto d-inline" onchange="this.form.submit()">
         <option value="5m" {{ 'selected' if selected_range == '5m' else '' }}>Last 5 Minutes</option>
         <option value="1h" {{ 'selected' if selected_range == '1h' else '' }}>Last Hour</option>
+        <option value="4h" {{ 'selected' if selected_range == '4h' else '' }}>Last 4 Hours</option>
+        <option value="8h" {{ 'selected' if selected_range == '8h' else '' }}>Last 8 Hours</option>
         <option value="24h" {{ 'selected' if selected_range == '24h' else '' }}>Last 24 Hours</option>
         <option value="7d" {{ 'selected' if selected_range == '7d' else '' }}>Last 7 Days</option>
-        <option value="30d" {{ 'selected' if selected_range == '30d' else '' }}>Last 30 Days</option>
       </select>
 
       <!-- By Resource checkbox -->

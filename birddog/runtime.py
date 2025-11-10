@@ -33,7 +33,7 @@ from birddog.store import get_string_queue_store
 from birddog.env import detect_environment
 from birddog.utility import HeartbeatManager
 
-from birddog.logging import get_logger, ServiceLogger
+from birddog.logging import get_logger, ServiceLogger, EventLogger
 _logger = get_logger()
 
 # ----------------------------------------------------------------------------
@@ -383,13 +383,21 @@ class KillSwitch(HeartbeatManager):
 
 class Runtime:
     _LRU_SIZE                = 500
+    _LOG_CUTOFF_DAYS         = 60 # days
 
     def __init__(self):
         self._page_lru = PageLRU(maxsize=Runtime._LRU_SIZE)
         self._update_manager = PageUpdateManager()
         self._translation_manager = TranslationManager(self)
         self._killswitch = KillSwitch(self)
+        self._trim_logs()
         self._state = "ready"
+
+    def _trim_logs(self):
+        cutoff = datetime.now(UTC) - timedelta(days=Runtime._LOG_CUTOFF_DAYS)
+        _logger.info(f"Runtime: truncating log history before {cutoff}")
+        ServiceLogger.get_logger().truncate(cutoff)
+        EventLogger.get_logger().truncate(cutoff)
 
     @property
     def page_lru(self):
