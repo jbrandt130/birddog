@@ -31,6 +31,8 @@ if USE_LOCAL_FILESYSTEM:
     _logger.info(f'Using local folder {CACHE_DIR} for storage.')
 
     def _cache_path(object_path):
+        if os.name == 'nt':         # windows only (remove ":" from path)
+            object_path = object_path.replace(":", "@")
         return f'{CACHE_DIR}/{object_path}'
 
     def _make_path_if_needed(path):
