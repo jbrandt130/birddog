@@ -34,6 +34,15 @@ from birddog.translate import translate_structure
 from birddog.logging import get_logger
 _logger = get_logger()
 
+# -------------------------------------------------------------------------------
+def _t(label):
+    class T:
+        def __enter__(self):
+            self.t0 = time.time()
+        def __exit__(self, *a):
+            _logger.info("TIMER: %s took %.3fs", label, time.time() - self.t0)
+    return T()
+
 # INITIALIZATION --------------------------------------------------------------
 
 # global constants
@@ -1144,95 +1153,6 @@ def get_last_mod(titles, api_delay=0):
             time.sleep(api_delay)
 
     return result
-
-# -------------------------------------------------------------------------------
-# Keep persistable list of latest mod date per page title
-
-def _t(label):
-    class T:
-        def __enter__(self):
-            self.t0 = time.time()
-        def __exit__(self, *a):
-            _logger.info("TIMER: %s took %.3fs", label, time.time() - self.t0)
-    return T()
-
-class PageTracker:
-    def __init__(self, cutoff_date=None):
-        self._cutoff_date = cutoff_date
-        self._mod_date_store = get_mod_date_store()
-        self._update_cache = {}
-        self._known_titles = self._mod_date_store.get_all_titles()
-
-    def to_dict(self):
-        return {
-            'cutoff_date':      self._cutoff_date,
-        }
-
-    @classmethod
-    def from_dict(cls, d):
-        return cls(cutoff_date=d['cutoff_date'])
-
-    def _update_mod_dates(self, updates):
-        # collect updates that differ from known updates and normalize page titles
-        candidate_updates = self._mod_date_store.get_newer_updates(updates)
-
-        if candidate_updates:
-            # check if these candidate pages exist
-            pages = candidate_updates.keys()
-            check = batch_page_exists(list(pages))
-            candidate_updates = { 
-                page: candidate_updates[page] for page in pages 
-                if check.get(page) and page.split("/", 1)[0] in ARCHIVES_BY_ROOT
-                }
-            if candidate_updates:
-                self._mod_date_store.batch_store_updates(candidate_updates)
-                self._known_titles.update(set(candidate_updates.keys()))
-                # invalidate cache for any prefixes getting updates
-                prefixes = [
-                    self._mod_date_store.normalized_prefix(title) 
-                    for title in candidate_updates.keys()]
-                for prefix in prefixes:
-                    # FIXME: this caching mechanism only works if there is only one PageTracker instance
-                    if prefix in self._update_cache.keys():
-                        _logger.info(f"PageTracker: invalidating cached updates for archive prefix {prefix}")
-                        del self._update_cache[prefix]
-                return True
-        return False
-
-    def update(self):
-        updates = get_recent_changes(cutoff_date=None)
-        if not updates:
-            return False
-        # FIXME: strip user out for now - requires a update_store schema change
-        updates = {key: value["timestamp"] for key, value in updates.items()}
-        self._cutoff_date = max(updates.values())
-        return self._update_mod_dates(updates)
-
-    def add_titles(self, titles, api_delay=0):
-        titles = {canonicalize_title(t) for t in titles}
-        #_logger.info(f'1 titles type: {type(titles)}, self._known_titles type: {type(self._known_titles)}')
-        new_titles = titles - self._known_titles
-        if new_titles:
-            new_titles = list(new_titles)
-            check = batch_page_exists(new_titles)
-            new_titles = [t for t in new_titles if check.get(t)]
-            if not new_titles:
-                return False
-            updates = get_last_mod(new_titles, api_delay)
-            _logger.info('add_titles: found %d updates', len(updates))
-            return self._update_mod_dates(updates)
-
-    def get_updates(self, prefix, cutoff_date=None):
-        prefix = prefix.replace("_", " ")
-        if not prefix.startswith(WIKI_NAMESPACE):
-            prefix = f"{WIKI_NAMESPACE}:{prefix}"
-        if prefix not in self._update_cache:
-            _logger.info(f"PageTracker: refreshing update cache for {prefix}")
-            self._update_cache[prefix] = self._mod_date_store.query_by_prefix(prefix, cutoff_date)
-        else:
-            _logger.info(f"PageTracker: update cache hit for {prefix}")
-
-        return self._update_cache[prefix]
 
 # -------------------------------------------------------------------------------
 # Page revision history handling (using wiki API)

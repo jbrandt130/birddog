@@ -25,9 +25,9 @@ from birddog.wiki import (
     archive_root,
     get_all_pages,
     page_address,
-    PageTracker,
     page_title_from_address,
     )
+from birddog.tracker import PageTracker
 from birddog.translate import TranslationManager
 from birddog.store import get_string_queue_store
 from birddog.env import detect_environment
@@ -252,26 +252,32 @@ class ArchiveWatcher:
         # register just in case it hasn't been already
         page_manager = self._runtime.update_manager
         # retrieve updates from page manager
-        updates, _ = page_manager.get_updates(self._archive, self._subarchive)
+        updates = page_manager.get_updates(self._archive, self._subarchive)
         _logger.info(f"ArchiveWatcher.check: found {len(updates)} updates.")
         if updates:
-            for title, mod_date in updates.items():
+            new_cutoff = self._last_checked_date
+            for title, update in updates.items():
                 address = page_address(title)
                 assert address[0] == self._archive and address[1] == self._subarchive
                 if len(address) >= 6:
+                    # FIXME: handle longer addresses correctly
                     _logger.info(f"Watcher.check: ignoring nonconforming address: {address}")
                     continue
                 item = ArchiveWatcher.key(*address)
                 # Get most recent resolved mod date (if any)
+                mod_date = update["timestamp"]
+                new_cutoff = max(mod_date, new_cutoff)
+                user = update.get("user", "")
                 latest_resolved = self._resolved[item][-1]["modified"] if item in self._resolved else self._cutoff_date
                 if latest_resolved is None or mod_date > latest_resolved:
                     self._unresolved[item] = {
                         "modified": mod_date,
                         "last_resolved": self._last_resolved_date(item),
-                        "title": title
+                        "title": title,
+                        "user": user,
                     }
             #_logger.info(f'ArchiveWatcher.check() unresolved: {json.dumps(self._unresolved, indent=4)}')
-            self._last_checked_date = max(max(updates.values()), self._last_checked_date)
+            self._last_checked_date = new_cutoff
 
     def resolve(self, item, deep=False):
         #_logger.info(f'ArchiveWatcher.resolve: before\n\tunresolved: {self._unresolved}\n\tresolved: {self._resolved}')
@@ -301,122 +307,34 @@ class ArchiveWatcher:
 class PageUpdateManager(HeartbeatManager):
     _PAGE_UPDATE_MANAGER_PATH       = "page_update_manager.json"
     _PENDING_TITLES_QUEUE           = "pending_titles"
-    _HEARTBEAT_INTERVAL             = 30 # seconds
-    _PAGE_UPDATE_CHECK_INTERVAL     = 60 * 15 # seconds
+    _HEARTBEAT_INTERVAL             = 60 * 5 # seconds
     _API_DELAY                      = 1
     _TITLE_BATCH_SIZE               = max(int(_HEARTBEAT_INTERVAL / _API_DELAY + .5), 1)
 
-    def __init__(self, page_lru=None):
+    def __init__(self):
         _logger.info(f"PageUpdateManager.init(): detect_environment=={detect_environment()}")
-        self._lru = page_lru if page_lru else PageLRU()
-        self._request_queue = queue.Queue()
-        self._queue_store = get_string_queue_store()
-        self._last_check = 0
-        self._busy = False
+        self._tracker = PageTracker()
         super().__init__(interval=PageUpdateManager._HEARTBEAT_INTERVAL)
-        self.load()
-
-    def _append_titles(self, titles):
-        self._queue_store.append(PageUpdateManager._PENDING_TITLES_QUEUE, titles)
-
-    def _peek_titles(self, n):
-        return self._queue_store.peek(PageUpdateManager._PENDING_TITLES_QUEUE, n)
-
-    def _pop_titles(self, n):
-        return self._queue_store.pop(PageUpdateManager._PENDING_TITLES_QUEUE, n)
-
-    def load(self):
-        try:
-            data = load_cached_object(PageUpdateManager._PAGE_UPDATE_MANAGER_PATH)
-            self._tracker = PageTracker.from_dict(data["tracker"])
-            self._registered_archives = set(data["registered_archives"])
-
-            # one time check for old format
-            pending_titles = data.get("pending_titles")
-            if pending_titles:
-                self._append_titles(pending_titles)
-                self.save()
-
-        except CacheMissError:
-            self._tracker = PageTracker()
-            self._registered_archives = set()
-
-    def save(self):
-        save_cached_object({
-            "tracker": self._tracker.to_dict(),
-            "registered_archives": list(self._registered_archives),
-        }, PageUpdateManager._PAGE_UPDATE_MANAGER_PATH)
-
-    @property
-    def busy(self):
-        return not self._request_queue.empty() or self._busy
 
     def heartbeat(self):
-        _logger.info("PageUpdateManager heartbeat...")
-        self._busy = True
-
-        # 1. Update tracker periodically
-        now = time.time()
-        if now - self._last_check > PageUpdateManager._PAGE_UPDATE_CHECK_INTERVAL:
-            _logger.info("PageUpdateManager: checking for page updates...")
-            if self._tracker.update():
-                self.save()
-            _logger.info("PageUpdateManager: finished update check...")
-            self._last_check = now
-            self._busy = False
-            return
-
-        # 2. Process registration requests
-        if not self._request_queue.empty():
-            try:
-                archive, subarchive = self._request_queue.get_nowait()
-                key = f"{archive}-{subarchive}"
-                if key not in self._registered_archives:
-                    _logger.info(f"PageUpdateManager: registering {archive}-{subarchive}")
-                    root = archive_root(archive, subarchive)
-                    # inventory all pages that start with archive root and add latest mod times to tracker
-                    titles = get_all_pages(prefix=root)
-                    if titles:
-                        self._append_titles(titles)
-                    self._registered_archives.add(key)
-                    self.save()
-                    self._busy = False
-                    return
-            except queue.Empty:
-                pass  # should not happen, but safe
-
-        # 3. Insert batch of pending titles into tracker
-        # FIXME: This won't work if more than one Runtime instance is running
-        # FIXME: Atomically pop the batch and reinsert them if add_titles fails?
-        batch = self._peek_titles(PageUpdateManager._TITLE_BATCH_SIZE)
-        if batch:
-            _logger.info(f"PageUpdateManager: adding batch of {len(batch)} titles to tracker")
-            self._tracker.add_titles(batch, api_delay=PageUpdateManager._API_DELAY)
-            # finally delete batch from pending titles (after successfully adding)
-            self._pop_titles(len(batch))
-        self._busy = False
-
-    def register_archive(self, archive, subarchive):
-        # let the tracker know there's interest in a particular archive
-        # insert (archive, subarchive) into request queue
-        self._request_queue.put((archive, subarchive))
+        _logger.info("PageUpdateManager: checking for page updates...")
+        self._tracker.refresh()
+        _logger.info("PageUpdateManager: finished update check...")
 
     def get_updates(self, archive, subarchive, cutoff_date=None):
-        self.register_archive(archive, subarchive)
         prefix = archive_root(archive, subarchive)
-        _logger.info(f"PageUpdateManager.get_updates: prefix={prefix}")
-        updates_pending = self.busy
+        _logger.info(f"PageUpdateManager.get_updates: prefix={prefix}, cutoff_date={cutoff_date}")
         updates = self._tracker.get_updates(prefix, cutoff_date=cutoff_date)
         _logger.info(f"PageUpdateManager.get_updates: {len(updates)} total updates")
         result = {}
-        for title, mod_date in updates.items():
+        for title, update in updates.items():
             try:
                 address = page_address(title)
                 if address[:2] == (archive, subarchive):
-                    result[title] = mod_date
+                    result[title] = update
             except ValueError:
                 _logger.error(f"PageUpdateManager.get_updates: cannot find title {title}. Skipping...")
-        return result, updates_pending
+        return result
 
 # ----------------------------------------------------------------------------
 # Resource usage monitor
@@ -468,7 +386,7 @@ class Runtime:
 
     def __init__(self):
         self._page_lru = PageLRU(maxsize=Runtime._LRU_SIZE)
-        self._update_manager = PageUpdateManager(page_lru=self._page_lru)
+        self._update_manager = PageUpdateManager()
         self._translation_manager = TranslationManager(self)
         self._killswitch = KillSwitch(self)
         self._state = "ready"

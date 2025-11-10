@@ -1322,7 +1322,12 @@ function render_node(name, node) {
     const page_title = meta? meta.title : '';
     //console.log("render_node:", full_path, page_title);
 
-    const update_text = meta && meta.modified ? `Latest Update: ${format_date(meta.modified, false)}` : '';
+    var update_text = ''
+    if (meta && meta.modified) {
+        update_text = `Latest Update: ${format_date(meta.modified, false)}`;
+        if (meta.user)
+            update_text += ` (user: ${meta.user})`;
+    }
     const resolved_text = meta && meta.last_resolved ? `Last Resolved: ${format_date(meta.last_resolved, false)}` : '';
 
     const button_html =
