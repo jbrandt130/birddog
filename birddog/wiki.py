@@ -28,7 +28,6 @@ from birddog.utility import (
     get_text,
     is_linked,
     )
-from birddog.store import get_mod_date_store
 from birddog.translate import translate_structure
 
 from birddog.logging import get_logger

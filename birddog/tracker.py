@@ -1,6 +1,7 @@
 # (c) 2025 Jonathan Brandt
 # Licensed under the MIT License. See LICENSE file in the project root.
 
+import os
 from birddog.env import detect_environment
 from birddog.wiki import (
     get_recent_changes,
@@ -23,6 +24,7 @@ _SQLITE_PAGE_TRACKER_PATH = ".cache/page_tracker.db"
 class SQLitePageChangeLogTable:
     def __init__(self, db_path=_SQLITE_PAGE_TRACKER_PATH):
         self._db_path = db_path
+        os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
         self._init_db()
 
     def _init_db(self):
@@ -74,6 +76,7 @@ class SQLitePageChangeLogTable:
 class SQLitePageTrackerTable:
     def __init__(self, db_path=_SQLITE_PAGE_TRACKER_PATH):
         self._db_path = db_path
+        os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
         self._init_db()
 
     def _init_db(self):
@@ -524,6 +527,9 @@ class PageTracker:
             if should_include(title, update)
         }
 
+# -------------------------------------------------------------------------------
+# table bootstrapping utilities
+
 def process_tracker_unknowns():
     from time import sleep
     tracker = PageTracker()
@@ -531,3 +537,15 @@ def process_tracker_unknowns():
     while still_more:
         still_more = tracker.initialize_batch_of_unknowns()
         sleep(1)
+
+def copy_page_tracker_to_ddb(batch_size=100, limit=None):
+    ddb_table = DynamoDBPageTrackerTable()
+    page_tracker = PageTracker()
+    entries = list(page_tracker._page_dict.items())
+    if not limit:
+        limit = len(entries)
+    print(f"pushing {limit} entries to DDB, batch_size={batch_size}")
+    for i in range(0, limit, batch_size):
+        print(f"batch {i}")
+        batch = { title: update for title, update in entries[i:(i+batch_size)] }
+        ddb_table.put(batch)
