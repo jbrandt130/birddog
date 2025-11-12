@@ -29,6 +29,7 @@ from birddog.wiki import (
     )
 from birddog.tracker import PageTracker
 from birddog.translate import TranslationManager
+from birddog.excel import ExportManager
 from birddog.store import get_string_queue_store
 from birddog.env import detect_environment
 from birddog.utility import HeartbeatManager
@@ -389,6 +390,7 @@ class Runtime:
         self._page_lru = PageLRU(maxsize=Runtime._LRU_SIZE)
         self._update_manager = PageUpdateManager()
         self._translation_manager = TranslationManager(self)
+        self._export_manager = ExportManager(self)
         self._killswitch = KillSwitch(self)
         self._trim_logs()
         self._state = "ready"
@@ -456,6 +458,10 @@ class Runtime:
     @property
     def translation_enabled(self):
         return self._translation_manager.enabled
+
+    @property
+    def export_manager(self):
+        return self._export_manager
 
     @property
     def state(self):

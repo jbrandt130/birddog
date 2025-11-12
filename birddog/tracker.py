@@ -488,6 +488,7 @@ class PageTracker:
             _logger.info(f"PageTracker.refresh found {len(newer_updates)} page updates")
             self._table.put(newer_updates)
             for title, item in newer_updates.items():
+                #_logger.info(f"{title}, {item}")
                 self._page_dict[title] = item
 
     def initialize_batch_of_unknowns(self, batch_size=50, api_delay=.1):

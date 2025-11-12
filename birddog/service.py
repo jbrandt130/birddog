@@ -39,7 +39,6 @@ from birddog.cache import (
     remove_cached_object,
     CacheMissError)
 from birddog.wiki import (
-    check_page_changes, 
     all_archives, 
     page_address,
     lineage
@@ -457,14 +456,6 @@ def _compress_history(history, max_entries=50):
 
     return compressed
 
-def _compare_page(page, ref_date):
-    # avoid making changes to cached page - work on copy instead
-    result = page.detached_copy()
-    reference = page.detached_copy()
-    reference.revert_to(ref_date)
-    check_page_changes(result, reference)
-    return result
-
 # ---- SERVICE API ------------------------------------------------------------
 
 # List all archives
@@ -500,9 +491,9 @@ def page_data(archive=None, subarchive=None, fond=None, opus=None, case=None):
             _logger.info(f"/page request: {archive}, {subarchive}, {fond}, {opus}, {case}")
             page = runtime.lookup_by_address(archive, subarchive, fond, opus, case)
         if page:
-            compare = request.args.get('compare')
-            if compare:
-                page = _compare_page(page, compare)
+            ref_date = request.args.get('compare')
+            if ref_date:
+                page = page.compare(ref_date)
 
             # recheck page address (which could be different)
             address = page_address(page.title)
@@ -542,26 +533,19 @@ def ascii_filename(name):
 # ---- EXPORT -------------------------------------------------
 
 @app.route('/download', methods=['POST'])
-def download_file():
+def download_file_start():
     user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
 
     data = request.json
     _logger.info(f"download: data={data}")
-
     try:
-        page = runtime.lookup_by_title(data["title"])
+        page_title = data["title"]
+        page = runtime.lookup_by_title(page_title)
         if page:
-            # avoid persisting any subsequent changes
-            page = page.detached_copy()
-
-            page.prepare_to_download()
-            # put the page into a comparison state if requested
-            compare = data["compare"]
-            if compare:
-                page = _compare_page(page, compare)
-
+            # lookup default export settings for this page, if any
+            # and refresh defaults based on request data
             page_defaults_key = f"export_{page.title}"
             defaults = user.get_preference(page_defaults_key, dict())
             defaults["template"] = data["template"]
@@ -573,16 +557,37 @@ def download_file():
             defaults["column_map"] = column_map
             user.set_preference(page_defaults_key, defaults)
 
-            excel_io = BytesIO()
-            export_page(
-                page, 
-                excel_io, 
+            # start export in background
+            task_id = runtime.export_manager.export_page(
+                page_title,
+                compare = data["compare"],
                 table_name=data["table"],
                 template=data["template"], 
-                column_map=data["column_map"], 
-                lru=runtime.page_lru)
-            excel_io.seek(0)  # Rewind buffer for reading
+                column_map=data["column_map"])
 
+            return jsonify({"status": "in-progress", "task_id": task_id}), 202
+        return 'Page not found', 404
+    except FileNotFoundError:
+        _logger.exception(f'File not found: {filepath}')
+        return jsonify({'error': 'Page not found'}), 404
+    except Exception as e:
+        _logger.exception(f'Error: {e}')
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/download', methods=['GET'])
+def download_file_check():
+    user, error_response, status = _get_current_user()
+    if error_response:
+        return error_response, status
+    task_id = request.args.get('task_id')
+    page_title = request.args.get("title")
+    page = runtime.lookup_by_title(page_title)
+    if not page:
+        return 'Page not found', 404
+    if runtime.export_manager.is_complete(task_id):
+        # return file when done
+        excel_io = runtime.export_manager.get_result(task_id)
+        if excel_io:
             clean_name = ascii_filename(page.name if page.name else "unnamed")
             return send_file(
                 excel_io,
@@ -591,13 +596,8 @@ def download_file():
                 mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                 conditional=False
             )
-        return 'Page not found', 404
-    except FileNotFoundError:
-        _logger.exception(f'File not found: {filepath}')
-        return jsonify({'error': 'Page not found'}), 404
-    except Exception as e:
-        _logger.exception(f'Error: {e}')
         return jsonify({'error': 'Internal server error'}), 500
+    return jsonify({"status": "in-progress", "task_id": task_id}), 202
 
 def _make_unique(string_list):
     # ensure strings in a list are unique (for column headers in export dialog)

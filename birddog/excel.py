@@ -4,7 +4,10 @@
 import re
 import string
 import os
+from io import BytesIO
 import glob
+import json
+
 from pathlib import Path
 from copy import copy
 from datetime import datetime
@@ -18,6 +21,8 @@ from openpyxl.utils.cell import get_column_letter
 from birddog.utility import get_text, is_linked, link_status
 from birddog.wiki import ARCHIVE_BASE
 from birddog.ai import classify_table_columns
+from birddog.task import TaskManager
+from birddog.store import get_key_value_store
 
 from birddog.logging import get_logger
 _logger = get_logger()
@@ -252,7 +257,7 @@ def list_templates():
     pattern = os.path.join(_TEMPLATE_DIR, '*.xlsx')
     return [os.path.basename(f) for f in glob.glob(pattern)]
 
-def export_page(page, dest_file=None, template=None, table_name=None, column_map=None, lru=None):
+def export_page(page, dest_file=None, template=None, table_name=None, column_map=None):
     # load template file that matches this kind of page
     _logger.info(f"export_page({page.title}: template='{template}', table_name='{table_name}', column_map='{column_map}')")
     if not template:
@@ -349,3 +354,86 @@ def export_page(page, dest_file=None, template=None, table_name=None, column_map
     if dest_file:
         workbook.save(dest_file)
     return workbook
+
+class ExportManager(TaskManager):
+    _RESULTS_ID = "ExportManager:results"
+    def __init__(self, runtime):
+        self._runtime = runtime
+        self._result_store = get_key_value_store()
+        super().__init__("ExportManager")
+
+    def export_page(self, title, compare=None, table_name=None, template=None, column_map=None):
+        subtask = { 
+            "title": title,
+            "compare": compare,
+            "table_name": table_name,
+            "template": template,
+            "column_map": column_map,
+        }
+        # return task_id to caller for subsequent lookup
+        return self.create(title, [ subtask ])
+
+    def is_complete(self, task_id):
+        try:
+            if self._result_store.get(self._RESULTS_ID, task_id):
+                return True
+            return False
+        except KeyError:
+            return False
+        except Exception as e:
+            raise e
+
+    def get_result(self, task_id):
+        try:
+            result = json.loads(self._result_store.get(self._RESULTS_ID, task_id))
+            if result:
+                payload = result.get("payload")
+                if payload:
+                    output_buffer = BytesIO()
+                    if payload.get("output"):
+                        _logger.info(f"output size: {len(payload['output'])}")
+                        output_buffer.write(bytes.fromhex(payload["output"]))
+                    output_buffer.seek(0)
+                    self._result_store.remove(self._RESULTS_ID, task_id)
+                    return output_buffer
+            return None
+        except KeyError:
+            return None
+        except Exception as e:
+            raise e
+
+    def execute_subtask(self, subtask):
+        payload = subtask["payload"]
+        try:
+            page = self._runtime.lookup_by_title(payload["title"])
+            if page:
+                # avoid persisting any subsequent changes
+                page = page.detached_copy()
+
+                # put page into desired state for export
+                page.prepare_to_download()
+                ref_date = payload.get("compare")
+                if ref_date:
+                    page = page.compare(ref_date)
+
+                # export into output memory buffer
+                output_buffer = BytesIO()
+                export_page(
+                    page, 
+                    output_buffer, 
+                    payload.get("template"), 
+                    payload.get("table_name"),
+                    payload.get("column_map"))
+
+                # serialize output buffer
+                output_buffer.seek(0)
+                payload["output"] = output_buffer.read().hex()
+        except Exception as err:
+            _logger.info(f"Exception in export task: {err}")
+
+    def complete_task(self, task_desc, subtasks):
+        # save result for later pickup
+        self._result_store.insert(
+            self._RESULTS_ID, 
+            task_desc["task_id"], 
+            json.dumps(subtasks[0]))

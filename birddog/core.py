@@ -32,6 +32,7 @@ from birddog.wiki import (
     mw_read_page,
     do_search,
     batch_fetch_document_links,
+    check_page_changes,
     )
 from birddog.ai import classify_table_columns
 from birddog.translate import (
@@ -394,6 +395,14 @@ class Page:
 
     def latest_changes(self, limit=100, offset=0):
         return do_search(self.title.split('/')[0], limit=limit, offset=offset)
+
+    def compare(self, ref_date):
+        page = self.detached_copy()
+        reference = page.detached_copy()
+        reference.revert_to(ref_date)
+        check_page_changes(page, reference)
+        return page
+
 
 class Archive(Page):
     """Represents a top level archive page."""
