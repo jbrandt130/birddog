@@ -638,6 +638,18 @@ function render_page_data(data) {
     var is_comparison = 'refmod' in data && data.refmod != data.lastmod;
     var resolve_enable = needs_resolve(data);
 
+    if (resolve_enable && data.lastmod == "") {
+        // not an actual update - offer to simply resolve it
+        if (confirm("This page no longer exists. It is safe to clear this page's unresolved status. Click OK to clear it.")) {
+            const path = data.name.split('/');
+            const archive = path[0].split('-');
+            const new_path = archive.concat(path.slice(1)).join(',')
+            resolve_page_update(new_path, deep=false);
+            data.refmod = null;
+            is_comparison = false;
+            resolve_enable = false;
+        }        
+    }
     if (resolve_enable && false_comparison) {
         // check for false alarm in page update
         const resolve_info = get_resolve_info(data.name);

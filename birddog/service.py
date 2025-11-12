@@ -44,7 +44,7 @@ from birddog.wiki import (
     lineage
     )
 from birddog.ai import list_column_classes, classify_table_columns
-from birddog.utility import get_text
+from birddog.utility import get_text, system_resource_report
 from birddog.logging import (
     get_logger,
     get_log_buffer,
@@ -584,6 +584,7 @@ def download_file_check():
     page = runtime.lookup_by_title(page_title)
     if not page:
         return 'Page not found', 404
+    _logger.info(f'/download: system resources: {system_resource_report()}')
     if runtime.export_manager.is_complete(task_id):
         # return file when done
         excel_io = runtime.export_manager.get_result(task_id)

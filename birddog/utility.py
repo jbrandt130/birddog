@@ -8,6 +8,7 @@ Utility functions for Bird Dog
 import os
 import re
 import time
+import psutil
 import json
 import requests
 import random
@@ -117,6 +118,55 @@ def fetch_url(url, params=None, json=False, content=False, method="GET"):
 
 class TooManyRequestsError(Exception):
     pass
+
+# SYSTEM RESOURCES --------------------------------------------------------
+
+def system_resource_report(interval=1.0):
+    """
+    Return a snapshot of system resource utilization.
+    Includes memory pressure, CPU load, and network I/O rate.
+    
+    Args:
+        interval (float): seconds to wait for measuring CPU and network deltas.
+    Returns:
+        dict: resource statistics.
+    """
+    # --- CPU ---
+    cpu_percent = psutil.cpu_percent(interval=interval)
+    load_avg = None
+    if hasattr(psutil, "getloadavg"):
+        try:
+            load_avg = psutil.getloadavg()
+        except OSError:
+            load_avg = None
+
+    # --- Memory ---
+    mem = psutil.virtual_memory()
+    swap = psutil.swap_memory()
+    mem_pressure = mem.percent + 0.5 * swap.percent  # heuristic composite
+
+    # --- Network ---
+    net1 = psutil.net_io_counters()
+    time.sleep(interval)
+    net2 = psutil.net_io_counters()
+    bytes_sent_per_sec = (net2.bytes_sent - net1.bytes_sent) / interval
+    bytes_recv_per_sec = (net2.bytes_recv - net1.bytes_recv) / interval
+
+    return {
+        "cpu_percent": cpu_percent,
+        "load_avg": load_avg,
+        "memory": {
+            "total_mb": mem.total / 1e6,
+            "available_mb": mem.available / 1e6,
+            "used_percent": mem.percent,
+            "swap_used_percent": swap.percent,
+            "pressure_index": round(mem_pressure, 1),
+        },
+        "network": {
+            "tx_kbps": bytes_sent_per_sec / 1024,
+            "rx_kbps": bytes_recv_per_sec / 1024,
+        }
+    }
 
 #
 # date handling

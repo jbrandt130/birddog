@@ -81,10 +81,13 @@ class TaskManager(HeartbeatManager):
         # move from in process to completed list
         self._key_value_store.remove(self._in_process_id, self._subtask_id(subtask))
         task_id = subtask["task_id"]
+        value = json.dumps(subtask)
+        _logger.info(f"_mark_subtask_completed: {task_id}: marking subtask complete (len={len(value)})")
         self._key_value_store.insert(
             self._completed_id(task_id), 
             str(subtask["index"]), 
-            json.dumps(subtask))
+            value)
+        _logger.info(f"_mark_subtask_completed: {task_id}: done marking subtask complete")
 
         # update task progress
         task = self.lookup_task(task_id)
