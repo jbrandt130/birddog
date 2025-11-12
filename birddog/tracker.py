@@ -11,7 +11,7 @@ from birddog.wiki import (
     canonicalize_title,
     )
 from birddog.utility import json_size
-from birddog.logging import get_logger, LogService
+from birddog.log import get_logger, LogService
 _logger = get_logger()
 
 

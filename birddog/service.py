@@ -45,7 +45,7 @@ from birddog.wiki import (
     )
 from birddog.ai import list_column_classes, classify_table_columns
 from birddog.utility import get_text, system_resource_report
-from birddog.logging import (
+from birddog.log import (
     get_logger,
     get_log_buffer,
     detect_environment,

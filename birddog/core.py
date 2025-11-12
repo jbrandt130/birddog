@@ -39,7 +39,7 @@ from birddog.translate import (
     get_translation_items,
     apply_translation,
     )
-from birddog.logging import get_logger
+from birddog.log import get_logger
 _logger = get_logger()
 
 #

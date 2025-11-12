@@ -9,7 +9,7 @@ from datetime import datetime
 _backoff_until = 0  # epoch timestamp
 _BACKOFF_DURATION = 4 * 60 * 60  # 4 hours in seconds
 
-from birddog.utility import get_logger
+from birddog.log import get_logger
 _logger = get_logger()
 
 # ---------- AI CLIENT ----------------------------

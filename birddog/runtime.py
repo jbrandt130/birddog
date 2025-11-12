@@ -34,7 +34,7 @@ from birddog.store import get_string_queue_store
 from birddog.env import detect_environment
 from birddog.utility import HeartbeatManager
 
-from birddog.logging import get_logger, ServiceLogger, EventLogger
+from birddog.log import get_logger, ServiceLogger, EventLogger
 _logger = get_logger()
 
 # ----------------------------------------------------------------------------

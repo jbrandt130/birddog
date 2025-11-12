@@ -18,7 +18,7 @@ from threading import Lock, Semaphore, Event, Thread
 from datetime import datetime, timezone
 from collections import deque
 
-from birddog.logging import get_logger
+from birddog.log import get_logger
 _logger = get_logger()
 
 # INITIALIZATION --------------------------------------------------------------

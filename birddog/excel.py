@@ -25,7 +25,7 @@ from birddog.task import TaskManager
 from birddog.cache import load_cached_object, save_cached_object, remove_cached_object, CacheMissError
 from birddog.store import get_key_value_store
 
-from birddog.logging import get_logger
+from birddog.log import get_logger
 _logger = get_logger()
 
 # ------------ HELPER FUNCTIONS ---------------

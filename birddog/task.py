@@ -10,7 +10,7 @@ import ulid
 from birddog.store import get_string_queue_store, get_key_value_store
 from birddog.utility import HeartbeatManager
 
-from birddog.logging import get_logger
+from birddog.log import get_logger
 _logger = get_logger()
 
 _TASK_MANAGER_HEARTBEAT_INTERVAL    = 5.0 # seconds
