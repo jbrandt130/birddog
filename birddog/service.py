@@ -649,6 +649,12 @@ def export_dialog():
         default_template = defaults.get("template")
         header_map = defaults.get("column_map", dict())
         default_table = defaults.get("table")
+        if default_table:
+            # make sure selected table still exists
+            table_names = [table["name"] for table in page.tables]
+            if default_table not in table_names:
+                _logger.info(f"ignoring non-existent table name: {default_table}")
+                default_table = None
     if not default_template:
         default_template = (
             [item for item in list_templates() if page.kind in item] or ["opus.xlsx"])[0]
