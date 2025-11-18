@@ -490,6 +490,7 @@ class PageTracker:
             for title, item in newer_updates.items():
                 #_logger.info(f"{title}, {item}")
                 self._page_dict[title] = item
+        return newer_updates
 
     def initialize_batch_of_unknowns(self, batch_size=50, api_delay=.1):
         new_titles = [title for title, item in self._page_dict.items() if not item.get("timestamp")]

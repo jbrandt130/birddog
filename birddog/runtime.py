@@ -26,6 +26,7 @@ from birddog.wiki import (
     get_all_pages,
     page_address,
     page_title_from_address,
+    parent_title,
     )
 from birddog.tracker import PageTracker
 from birddog.translate import TranslationManager
@@ -309,17 +310,30 @@ class PageUpdateManager(HeartbeatManager):
     _PAGE_UPDATE_MANAGER_PATH       = "page_update_manager.json"
     _PENDING_TITLES_QUEUE           = "pending_titles"
     _HEARTBEAT_INTERVAL             = 60 * 5 # seconds
-    _API_DELAY                      = 1
+    _API_DELAY                      = 1 # seconds
     _TITLE_BATCH_SIZE               = max(int(_HEARTBEAT_INTERVAL / _API_DELAY + .5), 1)
 
-    def __init__(self):
+    def __init__(self, runtime):
         _logger.info(f"PageUpdateManager.init(): detect_environment=={detect_environment()}")
+        self._runtime = runtime
         self._tracker = PageTracker()
         super().__init__(interval=PageUpdateManager._HEARTBEAT_INTERVAL)
 
     def heartbeat(self):
         _logger.info("PageUpdateManager: checking for page updates...")
-        self._tracker.refresh()
+        newer_updates = self._tracker.refresh()
+        if newer_updates:
+            _logger.info(f"PageUpdateManager: found {len(newer_updates)} updates")
+            for title, update in newer_updates.items():
+                # This page may have just been created. 
+                # If so, the parent's link status to this page needs to be
+                # changed to indicate that the this page now exists.
+                parent = parent_title(title)
+                if parent:
+                    parent = self._runtime.lookup_by_title(parent)
+                    if parent.lastmod and parent.lastmod < update["timestamp"]:
+                        # child has been updated - update child link status
+                        parent.set_child_link_status(title, True)
         _logger.info("PageUpdateManager: finished update check...")
 
     def get_updates(self, archive, subarchive, cutoff_date=None):
@@ -388,7 +402,7 @@ class Runtime:
 
     def __init__(self):
         self._page_lru = PageLRU(maxsize=Runtime._LRU_SIZE)
-        self._update_manager = PageUpdateManager()
+        self._update_manager = PageUpdateManager(self)
         self._translation_manager = TranslationManager(self)
         self._export_manager = ExportManager(self)
         self._killswitch = KillSwitch(self)
