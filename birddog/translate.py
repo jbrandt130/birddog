@@ -28,7 +28,7 @@ from google.api_core.exceptions import (
 
 from birddog.task import TaskManager
 from birddog.utility import json_size
-from birddog.logging import get_logger, LogService
+from birddog.log import get_logger, LogService
 _logger = get_logger()
 
 # --- Translation globals ---

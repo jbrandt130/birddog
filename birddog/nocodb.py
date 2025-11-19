@@ -15,7 +15,7 @@ from birddog.wiki import (
     get_title,
     )
 
-from birddog.logging import get_logger
+from birddog.log import get_logger
 _logger = get_logger()
 
 _NOCODB_V3_API_ROOT     = "https://app.nocodb.com/api/v3"

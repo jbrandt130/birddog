@@ -638,6 +638,18 @@ function render_page_data(data) {
     var is_comparison = 'refmod' in data && data.refmod != data.lastmod;
     var resolve_enable = needs_resolve(data);
 
+    if (resolve_enable && data.lastmod == "") {
+        // not an actual update - offer to simply resolve it
+        if (confirm("This page no longer exists. It is safe to clear this page's unresolved status. Click OK to clear it.")) {
+            const path = data.name.split('/');
+            const archive = path[0].split('-');
+            const new_path = archive.concat(path.slice(1)).join(',')
+            resolve_page_update(new_path, deep=false);
+            data.refmod = null;
+            is_comparison = false;
+            resolve_enable = false;
+        }        
+    }
     if (resolve_enable && false_comparison) {
         // check for false alarm in page update
         const resolve_info = get_resolve_info(data.name);
@@ -1589,6 +1601,8 @@ async function on_loaded() {
     // if user is logged in, then start loading the page data
     const user_data_elem = document.getElementById('user-data');
     if (user_data_elem) {
+
+        // ------------------ VERSION SELECT HANDLER ------------------
         // version select listener
         const selector = document.getElementById('version-select');
         selector.addEventListener('change', (event) => {
@@ -1598,6 +1612,7 @@ async function on_loaded() {
             //alert(`Comparing to version ${selectedVersion}`)
         });
 
+        // ------------------ TABLE BODY CLICK HANDLER ------------------
         // Attach click event to the whole table body
         const watchlist_body = document.getElementById('watchlist-body');
         watchlist_body.addEventListener('click', (event) => {
@@ -1615,6 +1630,7 @@ async function on_loaded() {
             }
         });
 
+        // ------------------ CHANGE PASSWORD HANDLER ------------------
         // handler for change password form
         document.getElementById('change-password-form')?.addEventListener('submit', async (e) => {
           e.preventDefault();
@@ -1646,6 +1662,186 @@ async function on_loaded() {
           }
         });
 
+        // ------------------ EXPORT HANDLER ------------------
+        document.getElementById("submitExport").addEventListener("click", () => {
+          const selected_template = document.getElementById("templateSelect").value;
+          let selected_table = document.getElementById("tableSelect").value;
+
+          if (!Object.keys(window._export_column_headers).includes(selected_table)) {
+            if (window._export_num_tables > 0) {
+              selected_table = Object.keys(window._export_column_headers)[0];
+            } else {
+              selected_table = "";
+            }
+          }
+          console.log(`export: template=${selected_template}, table=${selected_table}`);
+
+          // map selected labels to indices
+          console.log(window._export_column_headers);
+          const column_map = {};
+          if (window._export_num_tables > 0) {
+            window._export_column_classes.forEach(col => {
+              const tagify = window._export_tagify_map[col];
+              if (tagify) {
+                column_map[col] = tagify.value
+                  .map(tag => {
+                    const idx = window._export_column_headers[selected_table].indexOf(tag.value);
+                    if (idx === -1) console.warn(`Header not found: "${tag.value}"`);
+                    return idx;
+                  })
+                  .filter(i => i !== -1); // ignore unfound labels
+              }
+            });
+          }
+
+          const payload = {
+            title: window._export_page_title,
+            template: selected_template,
+            table: selected_table,
+            column_map: column_map,
+            compare: window._export_compare
+          };
+
+          // UI state: show spinner, hide page
+          show('browse-spinner');
+          hide('browse-page-content');
+
+          const modal = bootstrap.Modal.getInstance(document.getElementById('exportModal'));
+          if (modal) modal.hide();
+
+          // Tunables for polling
+          const BASE_DELAY_MS = 500;
+          const MAX_DELAY_MS = 3000;
+          const MAX_ATTEMPTS = 180; // ~ up to a few minutes depending on backoff
+
+          // Helpers
+          const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+          function extract_filename(response) {
+            const cd = response.headers.get('Content-Disposition');
+            if (!cd) return 'download.xlsx';
+            const m = /filename\*=UTF-8''([^;]+)|filename="?([^"]+)"?/i.exec(cd);
+            try {
+              if (m?.[1]) return decodeURIComponent(m[1]);
+              if (m?.[2]) return m[2];
+            } catch (_) {}
+            return 'download.xlsx';
+          }
+
+          async function download_blob_response(response) {
+            const filename = extract_filename(response);
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename || 'download.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+          }
+
+          function handle_error_response(response) {
+            if (response.status === 404) {
+              alert('Your session may have expired. Please log in again.');
+              location.reload();
+              return true; // handled
+            }
+            return false; // not handled; caller should throw
+          }
+
+          async function poll_download(task_id, attempt = 0) {
+            const delay = Math.min(BASE_DELAY_MS * Math.pow(1.5, attempt), MAX_DELAY_MS);
+            if (attempt > 0) await sleep(delay);
+
+            let response;
+            try {
+              response = await fetch(`/download?task_id=${encodeURIComponent(task_id)}&title=${window._export_page_title}`, {
+                method: "GET",
+                headers: { "Accept": "application/octet-stream,application/json;q=0.9,*/*;q=0.8" }
+              });
+            } catch (err) {
+              throw new Error(`Network error while polling: ${err?.message || err}`);
+            }
+
+            // Continue polling
+            if (response.status === 202) {
+              // optionally inspect JSON: {status:"in-progress"} (ignored here)
+              if (attempt + 1 >= MAX_ATTEMPTS) {
+                throw new Error("Timed out waiting for export to finish.");
+              }
+              return poll_download(task_id, attempt + 1);
+            }
+
+            if (!response.ok) {
+              if (handle_error_response(response)) return; // session expired handled
+              // Try to parse server-provided message for 4xx/5xx
+              let msg = `Export failed with status ${response.status}`;
+              try {
+                const data = await response.json();
+                if (data?.error) msg += `: ${data.error}`;
+              } catch (_) {
+                // ignore parse errors
+              }
+              throw new Error(msg);
+            }
+
+            // Success: server returned the file as an attachment (e.g., 200)
+            await download_blob_response(response);
+          }
+
+          (async () => {
+            try {
+              // Kick off the export job
+              let post_response;
+              try {
+                post_response = await fetch("/download", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                  body: JSON.stringify(payload)
+                });
+              } catch (err) {
+                throw new Error(`Network error during export start: ${err?.message || err}`);
+              }
+
+              if (post_response.status === 202) {
+                // Expected async case: get task_id
+                let data;
+                try {
+                  data = await post_response.json();
+                } catch (_) {
+                  throw new Error("Malformed 202 response: expected JSON with task_id.");
+                }
+                const task_id = data?.task_id;
+                if (!task_id) {
+                  throw new Error("Server did not provide a task_id.");
+                }
+                await poll_download(task_id);
+              } else if (post_response.ok) {
+                // Back-compat: if server still returns file immediately
+                await download_blob_response(post_response);
+              } else {
+                if (handle_error_response(post_response)) return;
+                let msg = `Export failed with status ${post_response.status}`;
+                try {
+                  const data = await post_response.json();
+                  if (data?.error) msg += `: ${data.error}`;
+                } catch (_) {}
+                throw new Error(msg);
+              }
+
+            } catch (error) {
+              console.error("Export error:", error);
+              alert("Export failed: " + error.message);
+            } finally {
+              // Restore UI
+              hide('browse-spinner');
+              show('browse-page-content');
+            }
+          })();
+        });
+
+        /*
         document.getElementById("submitExport").addEventListener("click", () => {
             const selected_template = document.getElementById("templateSelect").value;
             let selected_table = document.getElementById("tableSelect").value;
@@ -1738,6 +1934,7 @@ async function on_loaded() {
                 show('browse-page-content');
               });
             });
+        */
 
         // constrain range for watchlist cutoff date
         const today = new Date().toISOString().split('T')[0];

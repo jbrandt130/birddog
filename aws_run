@@ -5,7 +5,7 @@ APP_NAME="birddog"
 ENV_NAME="birddog-env"
 REGION="us-east-2"
 PLATFORM="Python 3.13"
-INSTANCE_TYPE="t3.micro"
+INSTANCE_TYPE="t3.small"
 PROFILE="birddog-admin"
 
 # Warn if a different profile was set outside

@@ -8,7 +8,7 @@ import os
 from threading import Lock
 from pathlib import Path
 
-from birddog.logging import get_logger, LogService
+from birddog.log import get_logger, LogService
 _logger = get_logger()
 
 _cache_lock = Lock() # could be overkill?

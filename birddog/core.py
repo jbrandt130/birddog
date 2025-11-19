@@ -32,13 +32,14 @@ from birddog.wiki import (
     mw_read_page,
     do_search,
     batch_fetch_document_links,
+    check_page_changes,
     )
 from birddog.ai import classify_table_columns
 from birddog.translate import (
     get_translation_items,
     apply_translation,
     )
-from birddog.logging import get_logger
+from birddog.log import get_logger
 _logger = get_logger()
 
 #
@@ -205,10 +206,6 @@ class Page:
     def description(self):
         return regex.sub(r"^\p{N}+\p{P}?\p{Zs}*", "", get_text(self._page.get('description')))
 
-    #@property
-    #def header(self):
-    #    return self._page['header']
-
     @property
     def default_url(self):
         # FIXME: is this needed?!
@@ -330,22 +327,6 @@ class Page:
                 return self._runtime.lookup_by_title(child_title)
             return Page(child_title, runtime=self._runtime)
 
-        # last ditch: search children lists
-        """
-        for child_id in self.child_ids:
-            child = self.lookup(child_id)
-            if child:
-                row = child._find_child_row(entry_id)
-                if row:
-                    url = row[0].get("link", "")
-                    child_title = get_title(url)
-                    if child_title:
-                        _logger.info(f"spawning grandchild of {self.title}: {child_title}")
-                        if self._runtime:
-                            return self._runtime.lookup_by_title(child_title)
-                        return Page(child_title, runtime=self._runtime)
-        """
-
         # can't find it - go ahead and adopt
         self.adopt(entry_id, child_title)
         if self._runtime:
@@ -394,6 +375,26 @@ class Page:
 
     def latest_changes(self, limit=100, offset=0):
         return do_search(self.title.split('/')[0], limit=limit, offset=offset)
+
+    def compare(self, ref_date):
+        page = self.detached_copy()
+        reference = page.detached_copy()
+        reference.revert_to(ref_date)
+        check_page_changes(page, reference)
+        return page
+
+    def set_child_link_status(self, child_title, link_status):
+        if parent_title(child_title) != self.title:
+            raise ValueError(f"set_child_link_status: invalid child title: {child_title}, parent={self.title}")
+        parts = child_title.rsplit("/", 1)
+        if len(parts) < 2:
+            raise ValueError(f"set_child_link_status: child title missing a '/': {child_title}")
+        child = self._find_child_row(parts[1])
+        if not child:
+            raise ValueError(f"set_child_link_status: cannot locate child by id: {parts[1]}")
+        _logger.info(f"updating child link status: parent={self.title}, child_id={parts[1]}, status={link_status}")
+        child[0]["exists"] = link_status
+        self._cache_save()
 
 class Archive(Page):
     """Represents a top level archive page."""

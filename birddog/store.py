@@ -22,7 +22,7 @@ from decimal import Decimal
 
 from birddog.env import detect_environment
 from birddog.utility import json_size
-from birddog.logging import get_logger, LogService
+from birddog.log import get_logger, LogService
 _logger = get_logger()
 
 # string queue (abstract version) ---------------------------------------

@@ -11,7 +11,7 @@ from birddog.wiki import (
     canonicalize_title,
     )
 from birddog.utility import json_size
-from birddog.logging import get_logger, LogService
+from birddog.log import get_logger, LogService
 _logger = get_logger()
 
 
@@ -488,7 +488,9 @@ class PageTracker:
             _logger.info(f"PageTracker.refresh found {len(newer_updates)} page updates")
             self._table.put(newer_updates)
             for title, item in newer_updates.items():
+                #_logger.info(f"{title}, {item}")
                 self._page_dict[title] = item
+        return newer_updates
 
     def initialize_batch_of_unknowns(self, batch_size=50, api_delay=.1):
         new_titles = [title for title, item in self._page_dict.items() if not item.get("timestamp")]
