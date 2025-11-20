@@ -328,12 +328,15 @@ class PageUpdateManager(HeartbeatManager):
                 # This page may have just been created. 
                 # If so, the parent's link status to this page needs to be
                 # changed to indicate that the this page now exists.
-                parent = parent_title(title)
-                if parent:
-                    parent = self._runtime.lookup_by_title(parent)
-                    if parent.lastmod and parent.lastmod < update["timestamp"]:
-                        # child has been updated - update child link status
-                        parent.set_child_link_status(title, True)
+                try:
+                    parent = parent_title(title)
+                    if parent:
+                        parent = self._runtime.lookup_by_title(parent)
+                        if parent.lastmod and parent.lastmod < update["timestamp"]:
+                            # child has been updated - update child link status
+                            parent.set_child_link_status(title, True)
+                except ValueError as err:
+                    _logger.error(f"Exception in page update manager heartbeat: {err}")
         _logger.info("PageUpdateManager: finished update check...")
 
     def get_updates(self, archive, subarchive, cutoff_date=None):

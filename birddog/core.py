@@ -352,11 +352,12 @@ class Page:
                 #_logger.info(f"load_child_document_links: {self.name}: {child}")
                 if is_linked(child[0]) and len(child) > 1 and not is_linked(child[1]):
                     items.append(i)
-                    titles.append(f"{self.title}/{child[0]['text']['uk']}")
+                    titles.append(child[0]['link'].replace("/wiki/", ""))
             if items:
                 need_save = False
                 _logger.info(f'load_child_document_links: fetching {len(titles)} links')
                 doc_links = batch_fetch_document_links(titles)
+                #_logger.info(doc_links)
                 for i, title in zip(items, titles):
                     links = doc_links.get(title)
                     if links:

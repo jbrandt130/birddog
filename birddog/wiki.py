@@ -485,6 +485,64 @@ def _subtract_links(links, delta):
             for delta_link in link_list:
                 _safe_remove(links[key], delta_link)
 
+# Detect bare File:... or c:File:... patterns in template params
+_doc_file_pattern = re.compile(r'((?:c:)?File:[^<>\[\]\n]+)', re.IGNORECASE)
+
+def _extract_doc_links_from_template(template):
+    """
+    Scan all parameters of a template for things that look like document links.
+
+    Returns a dict in the same "shape" as _extract_links:
+        {
+            "commons_links": [...],
+            "external_links": [...],
+        }
+    but only including keys that actually have values.
+    """
+    doc_links = {
+        "commons_links": [],
+        "external_links": [],
+    }
+
+    for param in template.params:
+        value = param.value
+        value_text = str(value).strip()
+        if not value_text:
+            continue
+
+        # 1) Use the normal link extractor on the parameter value
+        param_links = _extract_links(value)
+
+        # Commons-style links (e.g. c:File:..., or already-URL-mapped)
+        for link in param_links.get("commons_links", []):
+            if _included_link(link):
+                mapped = _map_commons_url(link)
+                if mapped not in doc_links["commons_links"]:
+                    doc_links["commons_links"].append(mapped)
+
+        # External links (e.g. https://commons.wikimedia.org/..., pdfs, etc.)
+        for link in param_links.get("external_links", []):
+            if _included_link(link) and link not in doc_links["external_links"]:
+                doc_links["external_links"].append(link)
+
+        # 2) Catch bare File:... text with no [[...]] or [http...] wrapper
+        for m in _doc_file_pattern.finditer(value_text):
+            file_title = m.group(1).strip()
+
+            if file_title.lower().startswith("c:"):
+                mapped = _map_commons_url(file_title)
+                if mapped not in doc_links["commons_links"]:
+                    doc_links["commons_links"].append(mapped)
+            else:
+                # Assume bare File:... refers to a Commons file by default
+                file_title_norm = file_title.replace(" ", "_")
+                url = f"https://commons.wikimedia.org/wiki/{file_title_norm}"
+                if url not in doc_links["commons_links"]:
+                    doc_links["commons_links"].append(url)
+
+    # Strip empty keys so _subtract_links works cleanly
+    return {k: v for k, v in doc_links.items() if v}
+
 def _extract_links(wikitext):
     # parse if necessary
     if not isinstance(wikitext, mwparserfromhell.wikicode.Wikicode):
@@ -574,7 +632,6 @@ _table_cell_token_re = re.compile(r'''
 
 def _tokenize_wikitext_table_cell(text):
     text = text.strip()
-    #print("cell:", text)
     colspan = 0
     result_text = ""
     after_pipe = True
@@ -582,7 +639,6 @@ def _tokenize_wikitext_table_cell(text):
     for match in _table_cell_token_re.finditer(text):
         token_type = match.lastgroup
         value = match.group(token_type)
-        #print(token_type, repr(value))  # Use repr to show spaces
 
         if token_type in ["quoted_directive", "single_quoted_directive", "unquoted_directive"]:
             after_pipe = False # everything before pipe is a directive
@@ -611,9 +667,7 @@ def _tokenize_wikitext_table_line(text):
 
     # tokenize the table text line
     text = text.strip()
-    #print(f'table line: "{text}"')
     cells = [m.group(0) for m in _table_line_token_re.finditer(text)]
-    #print("table cells:", cells)
     def _format_cell(cell_text):
         cell_text, colspan = _tokenize_wikitext_table_cell(cell_text)
         return { "text": cell_text, "colspan": colspan }
@@ -747,12 +801,10 @@ def _extract_table(table_code, page_title, page_links, all_page_links):
             links = cell_wikicode.filter_wikilinks()
             link = None
             if links:
-                #print(links)
                 link_target = str(links[0].title).strip()
                 _safe_remove(page_links["internal_links"], link_target)
                 if not link_target.startswith("#"):
                     link = _expand_link_target(link_target, page_title)
-                    #print("link target expanded:", link_target, link)
                     all_page_links.add(link)
             else:
                 # External links as fallback
@@ -781,22 +833,27 @@ def _check_table_link_existence(tables, all_page_links):
                     # ARCHIVE_BASE is implicit for child links that are within the media wiki
                     cell["link"] = cell["link"].replace(ARCHIVE_BASE, "")
 
-def mw_read_page(page_title, oldid=None):
-    # extract title from url if necessary
-    page_title = get_title(page_title)
-    #_logger.info(f"mw_read_page: {page_title}")
+def _normalize_child_link_positions(tables):
+    for table in tables:
+        for child in table.get("children", []):
+            if len(child) > 1 and not child[0].get("link"):
+                for pos in range(1, len(child)):
+                    link = child[pos].get("link")
+                    if link and link.startswith("/wiki/"):
+                        child[0]["link"] = link
+                        child[0]["exists"] = child[pos].get("exists", False)
+                        del child[pos]["link"]
+                        del child[pos]["exists"]
+                        break
 
-    # get the wikitext and parse
-    try:
-        wikitext, revid, title = _read_wiki_text(page_title, oldid)
-    except RuntimeError as e:
-        # unable to read page - test for existence
-        if page_exists(page_title):
-            # page exists - raise the exception
-            raise e
-        # nonexistent page - return placeholder
-        return _nonexistent_page(page_title)
+def _parse_wiki_text(wikitext, page_title, title, revid=None):
+    """
+    Core parser that turns wikitext into a `page` dict.
 
+    - `page_title`: canonical title used for resolving relative links (e.g. 'Архів:...').
+    - `title`: display title (usually without namespace, or whatever you want to show).
+    - `revid`: optional, stored in the page dict if provided.
+    """
     wikicode = mwparserfromhell.parse(wikitext)
 
     # get and organize all the links on the page
@@ -807,20 +864,43 @@ def mw_read_page(page_title, oldid=None):
     dates = None
     notes = {}
     template_name = None
+
     for template in wikicode.filter_templates():
         if template.name.startswith("Архіви") or template.name.startswith("заголовок"):
             template_name = template.name.strip(' \n')
+
             if template.has("назва"):
                 desc = template.get("назва").value.strip_code().strip(" ./\n")
+
             if template.has("секція") and not desc:
                 desc = template.get("секція").value.strip_code().strip()
+
             if template.has("рік"):
                 dates = template.get("рік").value.strip_code().strip()
+
+            # 1) Explicit примітки field, as before
             if template.has("примітки"):
-                notes = _extract_links(template.get("примітки"))
-                # take the links found in the header section out of the master list
-                # since they are now accounted for
-                _subtract_links(page_links, notes)
+                prim_notes = _extract_links(template.get("примітки"))
+                # Merge into notes
+                for key, vals in prim_notes.items():
+                    if not vals:
+                        continue
+                    notes.setdefault(key, [])
+                    for v in vals:
+                        if v not in notes[key]:
+                            notes[key].append(v)
+                _subtract_links(page_links, prim_notes)
+
+            # 2) Generalized document links from all parameters
+            doc_notes = _extract_doc_links_from_template(template)
+            if doc_notes:
+                for key, vals in doc_notes.items():
+                    notes.setdefault(key, [])
+                    for v in vals:
+                        if v not in notes[key]:
+                            notes[key].append(v)
+                _subtract_links(page_links, doc_notes)
+
             break
 
     page = {
@@ -830,15 +910,17 @@ def mw_read_page(page_title, oldid=None):
         "description": form_text_item(desc),
         "dates": form_text_item(dates),
         "notes": notes,
-        "other_links": page_links
+        "other_links": page_links,
+        # We'll fill "tables", "link", "doc_link" later
     }
 
     # Table extraction
     wiki_tables = [t for t in wikicode.filter_tags() if _is_table(t)]
     all_page_links = set()
     tables = [
-        _extract_table(table.contents, page_title, page_links, all_page_links) for table in wiki_tables
-        ]
+        _extract_table(table.contents, page_title, page_links, all_page_links)
+        for table in wiki_tables
+    ]
     for i, table in enumerate(tables):
         table["name"] = f"Table {i+1}"
 
@@ -868,14 +950,42 @@ def mw_read_page(page_title, oldid=None):
         if children:
             tables.append({
                 "name": "Linked Pages",
-                "header": [ form_text_item("Linked Pages") ],
-                "children": children
-                })
+                "header": [form_text_item("Linked Pages")],
+                "children": children,
+            })
 
     # determine if linked items in tables are to existing pages
     _check_table_link_existence(tables, all_page_links)
 
+    _normalize_child_link_positions(tables)
+
     page["tables"] = tables
+
+    # Fill basic link and doc_link (but not lastmod — that's not wikitext parsing)
+    page["link"] = f"{ARCHIVE_BASE}/wiki/{page_title}"
+    doc_url = mw_page_doc_url(page)
+    page["doc_link"] = doc_url if doc_url is not None else ""
+
+    return page
+
+def mw_read_page(page_title, oldid=None):
+    # extract title from url if necessary
+    page_title = get_title(page_title)
+    # _logger.info(f"mw_read_page: {page_title}")
+
+    # get the wikitext and parse
+    try:
+        wikitext, revid, title = _read_wiki_text(page_title, oldid)
+    except RuntimeError as e:
+        # unable to read page - test for existence
+        if page_exists(page_title):
+            # page exists - raise the exception
+            raise e
+        # nonexistent page - return placeholder
+        return _nonexistent_page(page_title)
+
+    # shared parsing logic
+    page = _parse_wiki_text(wikitext, page_title=page_title, title=title, revid=revid)
 
     # Last modified date via API `revisions` (for this oldid)
     params_rev = {
@@ -883,16 +993,13 @@ def mw_read_page(page_title, oldid=None):
         'prop': 'revisions',
         'revids': revid,
         'rvprop': 'timestamp',
-        'format': 'json'
+        'format': 'json',
     }
     rev_data = fetch_url(API_URL, params=params_rev, json=True)
 
     pages = rev_data['query']['pages']
     page_id = next(iter(pages))
     page["lastmod"] = from_utc_format(pages[page_id]['revisions'][0]['timestamp'])
-    page["link"] = f"{ARCHIVE_BASE}/wiki/{page_title}"
-    doc_url = mw_page_doc_url(page)
-    page["doc_link"] = doc_url if doc_url is not None else ""
 
     return page
 
@@ -953,7 +1060,6 @@ def _check_table_changes(table, ref_table):
     ref_children = dict((c[0]['text']['uk'], c) for c in ref_table['children'])
     #_logger.info(f"_check_table_changes: {table['name']} vs {ref_table['name']}")
     for child in table['children']:
-        #print("checking child:", child)
         index = child[0]['text']['uk']
         if index in ref_children:
             ref_child = ref_children[index]
@@ -1281,45 +1387,13 @@ def _wiki_content_url(titles):
             f'titles={batch_titles}'
            )
 
-def _extract_file_links(wikitext):
-    wikicode = mwparserfromhell.parse(wikitext)
-    file_links = []
-
-    # 1. [[File:...]] wikilinks
-    for link in wikicode.filter_wikilinks():
-        title = str(link.title)
-        if title.lower().startswith("file:"):
-            file_links.append(title)
-
-    # 2. Template param values
-    for template in wikicode.filter_templates():
-        for param in template.params:
-            value_str = str(param.value)
-
-            # (a) Extract wikilinks inside param value
-            parsed_value = mwparserfromhell.parse(value_str)
-            for link in parsed_value.filter_wikilinks():
-                title = str(link.title)
-                if title.lower().startswith("file:"):
-                    file_links.append(title)
-
-            # (b) Extract raw "File:..." patterns not wrapped in [[ ]]
-            # Acceptable file name chars: letters, digits, spaces, punctuation
-            raw_file_match = re.findall(r'\bFile:[^\|\}\n\r]+', value_str)
-            file_links.extend(raw_file_match)
-
-            # (c) Extract full file URLs (just in case)
-            file_url_matches = re.findall(r'https?://uk\.wikisource\.org/wiki/File:([^\s|}]+)', value_str)
-            for match in file_url_matches:
-                file_links.append(f'File:{match.replace("_", " ")}')  # decode _
-
-    return file_links
-
 def _normalize_mediawiki_title(title):
     title = title.replace(' ', '_')         # Normalize space to underscore
     return title
 
 def _file_link_to_url(link):
+    if link.startswith("http://") or link.startswith("https://"):
+        return link
     if link.lower().startswith("file:"):
         filename = _normalize_mediawiki_title(link[5:])
         return f"/wiki/File:{filename}"
@@ -1337,23 +1411,67 @@ def _chunked(iterable, size):
             break
         yield chunk
 
+def _collect_doc_links_from_page(page):
+    """
+    Given a parsed `page` dict (as returned by _parse_wiki_text),
+    collect all plausible document links.
+
+    Returns a list of URLs or titles depending on what _parse_wiki_text produced.
+    """
+    links = []
+
+    # 1) Primary doc_link if present
+    doc_link = page.get("doc_link")
+    if doc_link:
+        links.append(doc_link)
+
+    # 2) Any commons_links from notes
+    notes = page.get("notes") or {}
+    links.extend(notes.get("commons_links", []))
+
+    # 3) External links that are included
+    other_links = page.get("other_links") or {}
+    for link in other_links.get("external_links", []):
+        if _included_link(link):
+            links.append(link)
+
+    # Deduplicate
+    return _deduplicate_links(links)
+
 def batch_fetch_document_links(titles, map_to_url=True, chunk_size=20):
     if not isinstance(titles, (list, tuple)):
         titles = [titles]
     titles = [canonicalize_title(title) for title in titles]
     result = {}
+
+    #_logger.info(f"batch_fetch_document_links: {titles}")
     for chunk in _chunked(titles, chunk_size):
         data = fetch_url(_wiki_content_url(chunk), json=True)
-        if not 'query' in data:
+        if 'query' not in data:
             _logger.error(f'batch_fetch_document_links returned:\n    {data}')
+            continue
+
         for page in data['query']['pages'].values():
-            title = page['title'] # .split(':', 1)[-1]  # strip 'Архів:' prefix
+            title = page['title']
             try:
                 wikitext = page['revisions'][0]['slots']['main']['*']
-                links = _extract_file_links(wikitext)
+
+                # Reuse shared parser.
+                # We don't have/need revid here, so pass None.
+                parsed = _parse_wiki_text(
+                    wikitext=wikitext,
+                    page_title=title,   # good enough for relative links
+                    title=title,
+                    revid=None,
+                )
+
+                links = _collect_doc_links_from_page(parsed)
                 if map_to_url:
+                    # Make _file_link_to_url a no-op for already-URLs:
                     links = [_file_link_to_url(link) for link in links]
+
                 result[title] = _deduplicate_links(links)
+
             except (KeyError, IndexError):
                 result[title] = []
 

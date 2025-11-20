@@ -42,9 +42,15 @@ def _format_date(date_str):
     dt = datetime.strptime(date_str, "%Y,%m,%d,%H:%M")
     return dt.strftime("%d %b %Y")
 
+def _expand_url(link):
+    if link is None:
+        return None
+    if link.startswith("http://") or link.startswith("https://"):
+        return link
+    return ARCHIVE_BASE + link
+
 def _child_url(child):
-    link = child[0]["link"]
-    return ARCHIVE_BASE + link if link is not None else None
+    return _expand_url(child[0].get("link"))
 
 def _child_sheetname(page, child):
     if page.kind == 'archive':
@@ -56,8 +62,7 @@ def _child_sheetname(page, child):
 def _child_doc_url(child):
     if len(child) < 2:
         return None
-    link = child[1]["link"]
-    return ARCHIVE_BASE + link if link is not None else None
+    return _expand_url(child[1].get("link"))
 
 _EXPR_PATTERN = re.compile(r'{[^}]+}')
 
@@ -180,6 +185,8 @@ def _update_link_status(entry, prev_link_status):
     return prev_link_status
 
 def _process_table_column(table, column_header_map, edit_cell, sheet, cell, parse, match):
+    if not table:
+        return
     row = cell.row
     col = cell.column
     index = parse['index']
@@ -280,12 +287,18 @@ def export_page(page, dest_file=None, template=None, table_name=None, column_map
     # determine selected table for export
     if not table_name:
         table_name = page.tables[0]["name"] if page.tables else ""
-    table = page.lookup_table(table_name)
-    # construct column header map if needed
-    column_header_map = column_map if column_map else classify_table_columns(table)
+    try:
+        table = page.lookup_table(table_name)
+    except ValueError as err:
+        _logger.info(f"Cannot find named table '{table_name}'. Ignoring...")
+        table = None
+
+    if table:
+        # construct column header map if needed
+        column_header_map = column_map if column_map else classify_table_columns(table)
 
     # move rows below the table downward to make room for table rows
-    num_children = len(table["children"])
+    num_children = len(table["children"]) if table else 0
     first_child_row = _locate_first_child_row(sheet)
     last_child_row = first_child_row + max(num_children, 1) - 1
     _logger.info(f"export_page: first_child_row={first_child_row}, last_child_row={last_child_row}")
