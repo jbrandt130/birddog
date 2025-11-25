@@ -305,7 +305,11 @@ def update_master_archive_list():
             }, indent=4))
 
 def all_archives():
-    return [[arc, sub['subarchive']['en']] for arc, archive in ARCHIVES.items() for sub in archive.values()]
+    #_logger.info(ARCHIVES)
+    return [
+        [arc, sub['subarchive']['en'], sub['title']['uk']] 
+        for arc, archive in ARCHIVES.items() 
+        for sub in archive.values()]
 
 def _select_subarchive(archive, subarchive):
     for key, value in archive.items():

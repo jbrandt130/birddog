@@ -196,6 +196,15 @@ function get_next_unresolved_item(page_name) {
     return null;
 }
 
+function archive_title(archive, subarchive) {
+    for (const entry in archives) {
+        if (entry[0] == archive && entry[1] == subarchive) {
+            return entry[2];
+        }
+    }
+    return null;
+}
+
 // ---------------------------------------------------------------------------
 // Browse panel scroll position
 
@@ -236,81 +245,6 @@ function restore_scroll_position() {
 // BIRDDOG SERVICE CALLS
 
 // page loader
-async function load_page(
-        archive_id,
-        subarchive_id=null,
-        fond_id=null,
-        opus_id=null,
-        case_id=null,
-        compare=null) {
-    try {
-        save_scroll_position();
-
-        // Default to an empty string if any parameter is null or undefined
-        url = `/page/${encodeURIComponent(archive_id)}`;
-        if (subarchive_id) {
-            url += `/${encodeURIComponent(subarchive_id)}`;
-            if (fond_id) {
-                url += `/${encodeURIComponent(fond_id)}`;
-                if (opus_id) {
-                    url += `/${encodeURIComponent(opus_id)}`;
-                    if (case_id) {
-                        url += `/${encodeURIComponent(case_id)}`;
-                    }
-                }
-            }
-        }
-        if (compare != null)
-            url += `?compare=${compare}`
-        console.log(`Fetching data from: ${url}`);
-
-        // Show the spinner
-        show('browse-spinner');
-        hide('browse-page-content');
-
-        // Make the GET request
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json'
-            }
-        });
-
-        if (!response.ok) {
-            hide('browse-spinner');
-            show('browse-page-content');
-            if (response.status === 404) {
-                alert('Your session may have expired. Please log in again.');
-                location.reload();
-                return;
-            }
-            throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-
-        // Parse the JSON response
-        const data = await response.json();
-        console.log('Data loaded:', data);
-
-        current_page = data;
-
-        // Process and display the data
-        render_page_data(data);
-
-        // Populate the history dropdown
-        render_history(data)
-
-        // after delay to get the page populated, update scroll
-        setTimeout(restore_scroll_position, 100);
-
-        // Hide the spinner after loading
-        hide('browse-spinner');
-        show('browse-page-content');
-    } catch (error) {
-        console.error('Error loading page:', error.message);
-        alert(`Failed to load data: ${error.message}`);
-    }
-}
-
 async function load_page_by_title(page_title, compare=null) {
     try {
         save_scroll_position();
@@ -981,11 +915,8 @@ async function populate_archive_select() {
             return;
         }
         const selected_archive = archives[archive_index];
-        console.log(`Selected Archive: ${selected_archive[0]}-${selected_archive[1]}`);
-        load_page(
-            archive_id = selected_archive[0],
-            subarchive_id = selected_archive[1]
-        );
+        console.log(`Selected Archive: ${selected_archive[0]}-${selected_archive[1]} (title=${selected_archive[2]})`);
+        load_page_by_title(selected_archive[2])
         archive_select_modal.hide();
     };
 }
@@ -1033,7 +964,7 @@ function render_watchlist() {
 
     sorted_watchlist.forEach(item => {
         const row = `
-            <tr data-archive="${item.archive}" data-subarchive="${item.subarchive}">
+            <tr data-archive="${item.archive}" data-subarchive="${item.subarchive}" data-title="${item.title}">
                 <td>${item.archive}</td>
                 <td>${item.subarchive}</td>
                 <td>${format_date(item.last_checked_date)}</td>
@@ -1515,18 +1446,6 @@ function toggle_page_desc_icon(btn) {
 // ---------------------------------------------------------------------------
 // APP INITIALIZATION
 
-function setup_back_button_interceptor() {
-    console.log('setup_back_button_interceptor');
-    window.addEventListener("popstate", (ev) => {
-        //ev.preventDefault();
-        console.log('Pop state');
-    });
-    window.addEventListener("beforeunload", (ev) => {
-        //ev.preventDefault();
-        console.log('Before unload');
-    });
-}
-
 async function on_loaded() {
     // Login form submit button
     const login = document.getElementById('loginForm');
@@ -1620,10 +1539,11 @@ async function on_loaded() {
             if (row && !event.target.closest('button')) {
                 const archive = row.dataset.archive;
                 const subarchive = row.dataset.subarchive;
+                const title = row.dataset.title;
                 if (archive && subarchive) {
-                    console.log(`browse: ${archive}-${subarchive}`)
+                    console.log(`browse: ${archive}-${subarchive} (${title})`)
                     // load the selected page
-                    load_page(archive, subarchive, '', '');
+                    load_page_by_title(title);
                     // Switch to the browse tab
                     show_tab('nav-browse-tab');
                 }
@@ -1841,108 +1761,11 @@ async function on_loaded() {
           })();
         });
 
-        /*
-        document.getElementById("submitExport").addEventListener("click", () => {
-            const selected_template = document.getElementById("templateSelect").value;
-            let selected_table = document.getElementById("tableSelect").value;
-            if (!Object.keys(window._export_column_headers).includes(selected_table)) {
-                if (window._export_num_tables > 0) {
-                    selected_table = Object.keys(window._export_column_headers)[0];
-                }
-                else {
-                    selected_table = "";
-                }
-            }
-            console.log(`export: template=${selected_template}, table=${selected_table}`)
-
-            // map selected labels to indices
-            console.log(window._export_column_headers)
-            const column_map = {};
-            if (window._export_num_tables > 0) {
-                window._export_column_classes.forEach(col => {
-                    const tagify = window._export_tagify_map[col];
-                    if (tagify) {
-                      column_map[col] = tagify.value.map(tag => {
-                        const idx = window._export_column_headers[selected_table].indexOf(tag.value);
-                        if (idx === -1) {
-                          console.warn(`Header not found: "${tag.value}"`);
-                        }
-                        return idx;
-                      }).filter(i => i !== -1);  // ignore unfound labels
-                    }
-                });
-            }
-
-            // prepare POST payload
-            const payload = {
-                title: window._export_page_title,
-                template: selected_template,
-                table: selected_table,
-                column_map: column_map,
-                compare: window._export_compare
-            };
-
-            // Show the spinner
-            show('browse-spinner');
-            hide('browse-page-content');
-
-            // hide the export modal
-            const modal = bootstrap.Modal.getInstance(document.getElementById('exportModal'));
-            if (modal) modal.hide();
-
-            var filename = "download.xlsx";
-
-            fetch("/download", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload)
-              })
-              .then(response => {
-                if (!response.ok) {
-                    if (response.status === 404) {
-                        alert('Your session may have expired. Please log in again.');
-                        location.reload();
-                        return;
-                    }
-                    throw new Error("Export failed");
-                }
-                // Extract filename from Content-Disposition header (if available)
-                const contentDisposition = response.headers.get('Content-Disposition');
-                filename = contentDisposition
-                    ? contentDisposition.split('filename=')[1]?.replace(/['"]/g, '')
-                    : 'download.xlsx';
-                return response.blob();
-              })
-              .then(blob => {
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                window.URL.revokeObjectURL(url);
-                // Hide the spinner after loading
-                hide('browse-spinner');
-                show('browse-page-content');
-              })
-              .catch(error => {
-                console.error("Export error:", error);
-                alert("Export failed: " + error.message);
-                // Hide the spinner after loading
-                hide('browse-spinner');
-                show('browse-page-content');
-              });
-            });
-        */
-
         // constrain range for watchlist cutoff date
         const today = new Date().toISOString().split('T')[0];
         const input = document.getElementById('watchlistCutoffDate');
         input.max = today;  // only allow up to today
         input.min = "2000-01-01";  // hard-coded example start date
-
-        //setTimeout(setup_back_button_interceptor, 1000);
 
         // Populate the interface
         console.log("loading watchlist")
@@ -1960,7 +1783,7 @@ async function on_loaded() {
             load_page_by_title(start_title);
         }
         else {
-            load_page("DAZHO");
+            load_page_by_title("Архів:ДАЖО/Д");
         }
     }
 }

@@ -41,7 +41,8 @@ from birddog.cache import (
 from birddog.wiki import (
     all_archives, 
     page_address,
-    lineage
+    lineage,
+    ARCHIVE_BY_ADDRESS,
     )
 from birddog.ai import list_column_classes, classify_table_columns
 from birddog.utility import get_text, system_resource_report
@@ -467,12 +468,7 @@ def archive_list():
     return jsonify(ARCHIVE_MASTER_LIST)
 
 @app.route('/page', methods=['GET'])
-@app.route('/page/<archive>', methods=['GET'])
-@app.route('/page/<archive>/<subarchive>', methods=['GET'])
-@app.route('/page/<archive>/<subarchive>/<fond>', methods=['GET'])
-@app.route('/page/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
-@app.route('/page/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
-def page_data(archive=None, subarchive=None, fond=None, opus=None, case=None):
+def page_data():
     user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
@@ -488,8 +484,7 @@ def page_data(archive=None, subarchive=None, fond=None, opus=None, case=None):
             _logger.info(f'/page mapping title to address: {address}')
             (archive, subarchive, fond, opus, case) = address
         else:
-            _logger.info(f"/page request: {archive}, {subarchive}, {fond}, {opus}, {case}")
-            page = runtime.lookup_by_address(archive, subarchive, fond, opus, case)
+            return "Missing required paramenter: 'title'", 400 
         if page:
             ref_date = request.args.get('compare')
             if ref_date:
@@ -685,15 +680,22 @@ def export_dialog():
 def _watchlist_key(archive, subarchive):
     return f'{archive}-{subarchive}'
 
+def _safe_split_pair(key, sep="-"):
+    parts = key.split(sep, 1)
+    return parts if len(parts) == 2 else (key, "")
+
 def _format_watchlist(watchlist):
     return [
         {
-            'archive': k.split('-')[0],
-            'subarchive': k.split('-')[1],
-            'last_checked_date': v['last_checked_date'],
-            'cutoff_date': v['cutoff_date']
+            "archive": archive,
+            "subarchive": subarchive,
+            "last_checked_date": v.get("last_checked_date"),
+            "cutoff_date": v.get("cutoff_date"),
+            "title": ARCHIVE_BY_ADDRESS.get((archive, subarchive)),
         }
-        for k, v in watchlist.items() ]
+        for key, v in watchlist.items()
+        for archive, subarchive in (_safe_split_pair(key),)
+    ]
 
 # Get user's watchlist
 @app.route('/watchlist', methods=['GET'])
