@@ -290,7 +290,7 @@ def _get_current_user():
 # ---- FRONT END PAGES --------------------------------------------------------
 
 # Home Route (Shows the landing page)
-@app.route('/')
+@app.route('/', methods=['GET'])
 def home():
     user_session = None
     start_title = None
@@ -336,7 +336,7 @@ def login():
     return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
 
 # Logout Route
-@app.route('/logout')
+@app.route('/logout', methods=['GET'])
 def logout():
     users.logout()
     return redirect(url_for('home'))
@@ -609,7 +609,7 @@ def _make_unique(string_list):
         seen.add(s)
     return result
 
-@app.route("/export")
+@app.route("/export", methods=['GET'])
 def export_dialog():
     # assemble and return payload for export dialog
     user, error_response, status = _get_current_user()
@@ -801,7 +801,7 @@ def _active_translations(email):
     } for task in runtime.active_translations]
 
 @app.route('/translate', methods=['GET'])
-def translate(archive=None, subarchive=None, fond=None, opus=None, case=None):
+def translate():
     user, error_response, status = _get_current_user()
     if error_response:
         return error_response, status
@@ -820,7 +820,7 @@ def translate(archive=None, subarchive=None, fond=None, opus=None, case=None):
 
 # ---- LOG ACCESS ---------------------------------------------------------------
 
-@app.route('/log')
+@app.route('/log', methods=['GET'])
 def get_log():
     user, error_response, status = _get_current_user()
     if error_response:
@@ -828,7 +828,7 @@ def get_log():
     limit = request.args.get('limit', type=int)
     return jsonify(get_log_buffer().get_logs(limit)), 200
 
-@app.route("/logs")
+@app.route("/logs", methods=['GET'])
 def logs_view():
     user, error_response, status = _get_current_user()
     if error_response:
@@ -837,7 +837,7 @@ def logs_view():
 
 # ---- SERVICE LOG ACCESS ---------------------------------------------------------------
 
-@app.route("/service_usage")
+@app.route("/service_usage", methods=['GET'])
 def service_usage_dashboard():
     #user, error_response, status = _get_current_user()
     #if error_response:
@@ -872,7 +872,7 @@ def service_usage_dashboard():
         runtime_state=runtime.state,
     )
 
-@app.route("/good_dog")
+@app.route("/good_dog", methods=['GET'])
 def unpause():
     #user, error_response, status = _get_current_user()
     #if error_response:
@@ -881,7 +881,7 @@ def unpause():
         runtime.unpause()
     return jsonify({'success': True, 'runstate': runtime.state}), 200
 
-@app.route("/bad_dog")
+@app.route("/bad_dog", methods=['GET'])
 def pause():
     #user, error_response, status = _get_current_user()
     #if error_response:
@@ -909,7 +909,7 @@ def log_request(response):
     _event_logger.log_request(user_id, method, path, status_code, duration)
     return response
 
-@app.route("/metrics")
+@app.route("/metrics", methods=['GET'])
 def metrics_dashboard():
     user, error_response, status = _get_current_user()
     if error_response:
