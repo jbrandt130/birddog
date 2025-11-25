@@ -64,22 +64,33 @@ Reset a password if the provided token is recognized.
 Return the list of available top-level archives.
 
 **Errors**
-- `404` : Not found
+- `404` : User session is invalid / not logged in
 - `503` : Service unavailable
  
-#### `GET /page/<archive>`
-#### `GET /page/<archive>/<subarchive>`
-#### `GET /page/<archive>/<subarchive>/<fond>`
-#### `GET /page/<archive>/<subarchive>/<fond>/<opus>`
-#### `GET /page/<archive>/<subarchive>/<fond>/<opus>/<case>`
-Return the specified page data structure.
+#### `GET /page`
+
+Return the page data structure for the archive page with the given title.
 
 **Query Parameters:**
 - `title` : Page title
 - `compare` (optional): Modification date string used to compare the current version against a previous one. Format: `YYYY,MM,DD,hh:mm`
 
 **Errors**
-- `404` : Not found
+- `400` : Missing required parameter: "title"
+- `404` : Page not found, or user session is invalid / not logged in
+- `503` : Service unavailable
+
+---
+
+#### `GET /export`
+Download a JSON export of the document hierarchy.
+
+**Query Parameters:**
+- `title` : Page title
+
+**Errors**
+- `400` : Missing required parameter "title"
+- `404` : Page not found, or user session is invalid / not logged in
 - `503` : Service unavailable
 
 ---
@@ -97,19 +108,8 @@ Download an `.xlsx` export of the document hierarchy.
 - `column_map` : 
 
 **Errors**
-- `404` : Page not found
+- `404` : Page not found, or user session is invalid / not logged in
 - `500` : Internal server error
-- `503` : Service unavailable
-
-#### `GET /export`
-Download a JSON export of the document hierarchy.
-
-**Query Parameters:**
-- `title` : Page title
-
-**Errors**
-- `400` : Missing required parameter "title"
-- `404` : Page not found
 - `503` : Service unavailable
 
 ---
