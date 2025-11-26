@@ -126,19 +126,20 @@ class GoogleCloudTranslator(Translator):
     """
     _V2_ENDPOINT = "https://translation.googleapis.com/language/translate/v2"
 
-    def __init__(self, source="uk", target="en", *, provider_name="gcloud", timeout=10):
+    def __init__(self, source="uk", target="en", *, provider_name="gcloud", timeout=10, use_client=False):
         self._provider = provider_name
         self._source = source
         self._target = target
         self._timeout = timeout
 
         self._api_key = os.getenv("GOOGLE_TRANSLATE_API_KEY")
-        self._use_rest = bool(self._api_key)
+        self._use_rest = bool(self._api_key) and not use_client
         if self._use_rest:
             _logger.info(f"GoogleCloudTranslator using REST API")
 
         if not self._use_rest:
             # falls back to your existing client (needs service-account/ADC)
+            _logger.info(f"GoogleCloudTranslator using translate_v2 python client")
             self._client = google_translate.Client()
 
         # local quota guard

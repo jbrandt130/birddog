@@ -484,7 +484,7 @@ def page_data():
             _logger.info(f'/page mapping title to address: {address}')
             (archive, subarchive, fond, opus, case) = address
         else:
-            return "Missing required paramenter: 'title'", 400 
+            return "Missing required parameter: 'title'", 400 
         if page:
             ref_date = request.args.get('compare')
             if ref_date:
