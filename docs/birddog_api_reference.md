@@ -81,6 +81,9 @@ Return the page data structure for the archive page with the given title.
 - `503` : Service unavailable
 
 ---
+### 📄 Download
+
+Two service endpoints provide for Birddog's spreadsheet export capability. The /export endpoint returns data necessary to formulate a /download request for a given page. The expected usage is to first call /export for a given page title, which is used to populate a dialog so that the user can select among the available spreadsheet templates, select which table on the page is to be exported, and specify the mapping of page table columns to exported spreadsheet columns. The /download endpoint is then called using a POST that includes the selected export configuration. This will initiate a background spreadsheet generation process. Subsequent calls to /download (using a GET) will report either that spreadsheet is still in the process of being generated, or that it is complete, in which case the spreadsheet is included as an attachment in the response.
 
 #### `GET /export`
 Download a JSON export of the document hierarchy.
@@ -88,17 +91,39 @@ Download a JSON export of the document hierarchy.
 **Query Parameters:**
 - `title` : Page title
 
+**Returns**
+- `title` : Page title
+- `default_template` : Default template for the given page (can be overridden)
+- `default_table` : Default table name for the given page (can be overridden)
+- `templates` : List of available templates
+- `column_classes` :
+- `column_headers` :
+- `column_header_map` :
+
 **Errors**
+- `202` : Spreadsheet generation is in process. The task_id is returned which is needed to subsequently poll for completion.
 - `400` : Missing required parameter "title"
 - `404` : Page not found, or user session is invalid / not logged in
+- `500` : An unexpected exception occurred
 - `503` : Service unavailable
 
----
-
-### 📄 Download
-
 #### `POST /download`
-Download an `.xlsx` export of the document hierarchy.
+Initiate spreadsheet generation for the selected title using the specified download configuration.
+
+**Query Parameters:**
+- `compare` (optional): Modification date string used to generate a diff or highlight changes. Format: `YYYY,MM,DD,hh:mm`
+- `title` : Page title
+- `template` : Selected template
+- `table` : 
+- `column_map` : 
+
+**Errors**
+- `404` : Page not found, or user session is invalid / not logged in
+- `500` : Internal server error
+- `503` : Service unavailable
+
+#### `GET /download`
+Poll for completion of a previously initiated download process.
 
 **Query Parameters:**
 - `compare` (optional): Modification date string used to generate a diff or highlight changes. Format: `YYYY,MM,DD,hh:mm`
@@ -113,7 +138,6 @@ Download an `.xlsx` export of the document hierarchy.
 - `503` : Service unavailable
 
 ---
-
 ### 👁️ Watchlist
 
 #### `GET /watchlist`
