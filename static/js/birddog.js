@@ -196,10 +196,11 @@ function get_next_unresolved_item(page_name) {
     return null;
 }
 
-function archive_title(archive, subarchive) {
-    for (const entry in archives) {
+function find_archive(archive, subarchive) {
+    for (const i in archives) {
+        const entry = archives[i];
         if (entry[0] == archive && entry[1] == subarchive) {
-            return entry[2];
+            return entry;
         }
     }
     return null;
@@ -1008,6 +1009,13 @@ async function check_watchlist(archive, subarchive, quiet=false, render=true) {
         const response = await fetch(`/watchlist/${archive}/${subarchive}/check?tree`);
 
         if (response.status === 404) {
+            if (!find_archive(archive, subarchive)) {
+                // the specified archive doesn't exists
+                alert(`The archive ${archive}-${subarchive} is unrecognized. Please remove it from your watchlist.`);
+                show('unresolved-updates-container');
+                hide('unresolved-updates-loading-spinner');
+                return;
+            }
             alert('Your session may have expired. Please log in again.');
             location.reload();
             return;
