@@ -31,9 +31,9 @@ from birddog.wiki import (
 from birddog.tracker import PageTracker
 from birddog.translate import TranslationManager
 from birddog.excel import ExportManager
-from birddog.store import get_string_queue_store
+from birddog.store import get_string_queue_store, get_key_value_store
 from birddog.env import detect_environment
-from birddog.utility import HeartbeatManager
+from birddog.utility import HeartbeatManager, FetchUrlFailError
 
 from birddog.log import get_logger, ServiceLogger, EventLogger
 _logger = get_logger()
@@ -307,8 +307,7 @@ class ArchiveWatcher:
 # Page Update Manager
 
 class PageUpdateManager(HeartbeatManager):
-    _PAGE_UPDATE_MANAGER_PATH       = "page_update_manager.json"
-    _PENDING_TITLES_QUEUE           = "pending_titles"
+    _PENDING_TITLE_UPDATES          = "pending_title_updates"
     _HEARTBEAT_INTERVAL             = 60 * 5 # seconds
     _API_DELAY                      = 1 # seconds
     _TITLE_BATCH_SIZE               = max(int(_HEARTBEAT_INTERVAL / _API_DELAY + .5), 1)
@@ -317,6 +316,7 @@ class PageUpdateManager(HeartbeatManager):
         _logger.info(f"PageUpdateManager.init(): detect_environment=={detect_environment()}")
         self._runtime = runtime
         self._tracker = PageTracker()
+        self._kv_store = get_key_value_store()
         super().__init__(interval=PageUpdateManager._HEARTBEAT_INTERVAL)
 
     def heartbeat(self):
@@ -324,19 +324,37 @@ class PageUpdateManager(HeartbeatManager):
         newer_updates = self._tracker.refresh()
         if newer_updates:
             _logger.info(f"PageUpdateManager: found {len(newer_updates)} updates")
-            for title, update in newer_updates.items():
-                # This page may have just been created. 
-                # If so, the parent's link status to this page needs to be
-                # changed to indicate that the this page now exists.
-                try:
-                    parent = parent_title(title)
-                    if parent:
-                        parent = self._runtime.lookup_by_title(parent)
-                        if parent.lastmod and parent.lastmod < update["timestamp"]:
-                            # child has been updated - update child link status
-                            parent.set_child_link_status(title, True)
-                except ValueError as err:
-                    _logger.error(f"Exception in page update manager heartbeat: {err}")
+            # place titles into KV store so that they can be processed - accounts
+            # for an exception during the update processing below, which probably means
+            # there was a "too many requests" exception. In this case, back off and try
+            # again on the next heartbeat
+            for title in newer_updates.keys():
+                self._kv_store.insert(self._PENDING_TITLE_UPDATES, title, "")
+
+        pending_updates = self._kv_store.get_all(self._PENDING_TITLE_UPDATES)
+        error_count = 0
+        for title, _ in pending_updates:
+            # This page may have just been created. 
+            # If so, the parent's link status to this page needs to be
+            # changed to indicate that the this page now exists.
+            try:
+                parent = parent_title(title)
+                if parent:
+                    parent = self._runtime.lookup_by_title(parent)
+                    if parent.lastmod and parent.lastmod < update["timestamp"]:
+                        # child has been updated - update child link status
+                        parent.set_child_link_status(title, True)
+                # finished with this title
+                self._kv_store.remove(self._PENDING_TITLE_UPDATES, title)
+            except (ValueError,  FetchUrlFailError) as err:
+                _logger.error(f"Exception in page update manager heartbeat: {err}")
+                error_count += 1
+                if error_count > 10:
+                    # give up for now - try next heartbeat
+                    break
+                # back off - and try the next item
+                time.sleep(10)
+
         _logger.info("PageUpdateManager: finished update check...")
 
     def get_updates(self, archive, subarchive, cutoff_date=None):

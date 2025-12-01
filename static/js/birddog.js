@@ -206,6 +206,18 @@ function find_archive(archive, subarchive) {
     return null;
 }
 
+// Helper to safely escape values for HTML attributes
+function escape_attr(value) {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 // ---------------------------------------------------------------------------
 // Browse panel scroll position
 
@@ -965,7 +977,7 @@ function render_watchlist() {
 
     sorted_watchlist.forEach(item => {
         const row = `
-            <tr data-archive="${item.archive}" data-subarchive="${item.subarchive}" data-title="${item.title}">
+            <tr data-archive="${item.archive}" data-subarchive="${item.subarchive}" data-title="${escape_attr(item.title)}">
                 <td>${item.archive}</td>
                 <td>${item.subarchive}</td>
                 <td>${format_date(item.last_checked_date)}</td>
@@ -1264,55 +1276,69 @@ function render_node(name, node) {
     const node_id = 'id_' + Math.random().toString(36).substring(2, 10);
     node._id = node_id;
     node_map[node_id] = node;
+
     const has_children = Object.keys(node).some(key => !key.startsWith('_'));
     const meta = node._meta;
     const full_path = node._full_path || name;
     path_to_node[full_path] = node;
-    const modified = meta? meta.modified : '';
-    const last_resolved = meta? meta.last_resolved : '';
-    const page_title = meta? meta.title : '';
-    //console.log("render_node:", full_path, page_title);
 
-    var update_text = ''
+    const modified = meta ? meta.modified : '';
+    const last_resolved = meta ? meta.last_resolved : '';
+    const page_title = meta ? meta.title : '';
+
+    let update_text = '';
     if (meta && meta.modified) {
         update_text = `Latest Update: ${format_date(meta.modified, false)}`;
-        if (meta.user)
+        if (meta.user) {
             update_text += ` (user: ${meta.user})`;
+        }
     }
-    const resolved_text = meta && meta.last_resolved ? `Last Resolved: ${format_date(meta.last_resolved, false)}` : '';
+    const resolved_text = meta && meta.last_resolved
+        ? `Last Resolved: ${format_date(meta.last_resolved, false)}`
+        : '';
 
-    const button_html =
-    `<button class="btn btn-sm btn-primary" title="View Changes" onclick="view_changes(
-        '${page_title}', '${modified}', '${last_resolved}')">
+    const button_html = `
+        <button
+            class="btn btn-sm btn-primary view-changes-btn"
+            title="View Changes"
+            data-title="${escape_attr(page_title)}"
+            data-modified="${escape_attr(modified)}"
+            data-last-resolved="${escape_attr(last_resolved)}"
+        >
           <i class="bi bi-eye"></i>
         </button>
-        <button class="btn btn-sm btn-primary" title="Mark Resolved" onclick="mark_resolved('${node_id}')">
+        <button
+            class="btn btn-sm btn-primary mark-resolved-btn"
+            title="Mark Resolved"
+            data-node-id="${escape_attr(node_id)}"
+        >
           <i class="bi bi-check-square"></i>
-    </button>`;
+        </button>
+    `;
 
     const display_name = name.replace("-_", "");
     const name_html = has_children
-    ? `<a data-bs-toggle="collapse" href="#${node_id}" role="button" aria-expanded="false" aria-controls="${node_id}">
-            <i class="bi ${closed_icon} arrow" data-arrow="closed"></i>
-            <span class="tree-label ms-1" data-path="${full_path}">${display_name}</span>
-    </a>`
-    : `<span class="tree-label" data-path="${full_path}">${display_name}</span>`;
+        ? `<a data-bs-toggle="collapse" href="#${node_id}" role="button" aria-expanded="false" aria-controls="${node_id}">
+                <i class="bi ${closed_icon} arrow" data-arrow="closed"></i>
+                <span class="tree-label ms-1" data-path="${full_path}">${display_name}</span>
+           </a>`
+        : `<span class="tree-label" data-path="${full_path}">${display_name}</span>`;
 
     const meta_html = meta
-    ? `<div class="text-muted small">
-             <div>${update_text}</div>
-             <div>${resolved_text}</div>
-    </div>`
-    : '';
+        ? `<div class="text-muted small">
+               <div>${update_text}</div>
+               <div>${resolved_text}</div>
+           </div>`
+        : '';
 
     const row_layout = `
-    <div class="d-flex align-items-center justify-content-between">
-      <div class="d-flex flex-column flex-grow-1">
-        ${name_html}
-        ${meta_html}
-      </div>
-      <div class="ms-3">${button_html}</div>
-    </div>
+        <div class="d-flex align-items-center justify-content-between">
+          <div class="d-flex flex-column flex-grow-1">
+            ${name_html}
+            ${meta_html}
+          </div>
+          <div class="ms-3">${button_html}</div>
+        </div>
     `;
 
     if (!has_children) {
@@ -1325,16 +1351,17 @@ function render_node(name, node) {
         .join('');
 
     return `
-    <li class="list-group-item">
-      ${row_layout}
-      <div class="collapse ms-3 mt-1" id="${node_id}">
-        <ul class="list-group">
-          ${children_html}
-        </ul>
-      </div>
-    </li>
+        <li class="list-group-item">
+          ${row_layout}
+          <div class="collapse ms-3 mt-1" id="${node_id}">
+            <ul class="list-group">
+              ${children_html}
+            </ul>
+          </div>
+        </li>
     `;
 }
+
 
 function render_tree(tree) {
     const top_level = Object.entries(tree)
@@ -1555,6 +1582,25 @@ async function on_loaded() {
                     // Switch to the browse tab
                     show_tab('nav-browse-tab');
                 }
+            }
+        });
+
+        // ------------------ UNRESPOLVED UPDATES TREE COONTROL HANDLER ------------------
+        const tree_container = document.getElementById('tree-container');
+        tree_container.addEventListener("click", (e) => {
+            const view_btn = e.target.closest(".view-changes-btn");
+            if (view_btn) {
+                view_changes(
+                    view_btn.dataset.title,
+                    view_btn.dataset.modified,
+                    view_btn.dataset.lastResolved
+                );
+                return;
+            }
+
+            const mark_btn = e.target.closest(".mark-resolved-btn");
+            if (mark_btn) {
+                mark_resolved(mark_btn.dataset.nodeId);
             }
         });
 

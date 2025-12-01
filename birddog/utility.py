@@ -88,36 +88,67 @@ def _record_fetch_event():
                 time.sleep(5)
             _last_log_time = now
 
+class TooManyRequestsError(Exception):
+    pass
+
+class FetchUrlFailError(RuntimeError):
+    """Raised when fetch_url fails after exhausting all retries."""
+    pass
+
 def fetch_url(url, params=None, json=False, content=False, method="GET"):
     with _fetch_semaphore:
         attempt = 0
+        last_exception = None
+
         while attempt < MAX_RETRIES:
             try:
                 if method == "POST":
-                    response = requests.post(url, data=params, timeout=REQUEST_TIMEOUT, headers=_url_headers)
+                    response = requests.post(
+                        url,
+                        data=params,
+                        timeout=REQUEST_TIMEOUT,
+                        headers=_url_headers,
+                    )
                 else:
-                    response = requests.get(url, params=params, timeout=REQUEST_TIMEOUT, headers=_url_headers)
+                    response = requests.get(
+                        url,
+                        params=params,
+                        timeout=REQUEST_TIMEOUT,
+                        headers=_url_headers,
+                    )
 
                 if response.status_code == 429:
                     raise TooManyRequestsError("429 Too Many Requests")
                 if not response.ok:
                     if response.status_code == 404:
                         raise RuntimeError("Failed to fetch page (404)")
-                    raise requests.RequestException(f"Unexpected status: {response.status_code}")
-                
+                    raise requests.RequestException(
+                        f"Unexpected status: {response.status_code}"
+                    )
+
                 _record_fetch_event()
-                return response.json() if json else response.content if content else response.text
+                if json:
+                    return response.json()
+                if content:
+                    return response.content
+                return response.text
+
             except (requests.RequestException, TooManyRequestsError) as e:
+                last_exception = e
                 wait = min(MAX_BACKOFF, BASE_BACKOFF * (2 ** attempt))  # exponential backoff
                 wait += random.uniform(0, 1)  # add jitter
-                _logger.info(f"[{attempt+1}/{MAX_RETRIES}] Error: {e}. Retrying in {wait:.2f} seconds...")
+                _logger.info(
+                    f"[{attempt+1}/{MAX_RETRIES}] Error: {e}. "
+                    f"Retrying in {wait:.2f} seconds..."
+                )
                 time.sleep(wait)
                 attempt += 1
 
-        raise RuntimeError("Failed to fetch page after several retries")
+        # Unique exception after all retries are exhausted
+        raise FetchUrlFailError(
+            f"Failed to fetch page after {MAX_RETRIES} retries"
+        ) from last_exception
 
-class TooManyRequestsError(Exception):
-    pass
 
 # SYSTEM RESOURCES --------------------------------------------------------
 
