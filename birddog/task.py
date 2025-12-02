@@ -90,7 +90,12 @@ class TaskManager(HeartbeatManager):
         #_logger.info(f"_mark_subtask_completed: {task_id}: done marking subtask complete")
 
         # update task progress
-        task = self.lookup_task(task_id)
+        try:
+            task = self.lookup_task(task_id)
+        except KeyError as err:
+            _logger.error(f"TaskManager._mark_subtask_completed: unable to find task {task_id}. Assuming its already complete due to race condition.")
+            return
+
         task["completed"] = self._key_value_store.count(self._completed_id(task_id))
         self._store_task(task)
 
@@ -104,7 +109,6 @@ class TaskManager(HeartbeatManager):
                 self.complete_task(task, completed_subtasks)
                 self._key_value_store.remove(self._active_id, task_id)
                 _logger.info(f"TaskManager completed task {task_id}")
-
 
     def _store_task(self, task_desc):
         self._key_value_store.insert(
@@ -144,9 +148,11 @@ class TaskManager(HeartbeatManager):
             self._requeue_subtask(subtask)
 
         # 2: spawn worker if in_process subtask count is less than threshold and there are pending subtasks
-        if self._any_pending() and self._key_value_store.count(self._in_process_id) < _IN_PROCESS_SUBTASK_LIMIT:
-            _logger.info(f"TaskManager spawning additional worker")
-            self._spawn_worker()
+        if self._any_pending():
+            worker_count = self._key_value_store.count(self._in_process_id)
+            if worker_count < _IN_PROCESS_SUBTASK_LIMIT:
+                _logger.info(f"TaskManager spawning additional worker (current worker count: {worker_count})")
+                self._spawn_worker()
 
     # ========
     # subclass methods

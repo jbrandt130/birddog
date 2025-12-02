@@ -46,7 +46,7 @@ if os.getenv("BIRDDOG_TRANSLATION_DEBUG", None) in ("true", "True", "1"):
 if _ENABLE_TRANSLATION and not _USE_DUMMY_TRANSLATE and _USE_GOOGLE_CLOUD_TRANSLATE:
     _logger.info("Translation is enabled. Using GCP translator")
 
-_MAX_TRANSLATE_REQUESTS_PER_HOUR = 1000  # example, adjust as needed
+_MAX_TRANSLATE_REQUESTS_PER_MINUTE = 1000  # example, adjust as needed
 
 _translator = None
 
@@ -148,11 +148,13 @@ class GoogleCloudTranslator(Translator):
 
     # ----------- quota guard (unchanged behavior) -----------------------------
     def _check_quota_local(self):
-        now, cutoff = time.time(), time.time() - 3600
+        sample_window = 5 # minutes
+        now = time.time()
+        cutoff = now - sample_window * 60 # seconds
         with self._lock:
             while self._timestamps and self._timestamps[0] < cutoff:
                 self._timestamps.popleft()
-            if len(self._timestamps) >= _MAX_TRANSLATE_REQUESTS_PER_HOUR:
+            if len(self._timestamps) >= _MAX_TRANSLATE_REQUESTS_PER_MINUTE * sample_window:
                 raise QuotaExceededError(provider=self._provider, retry_after_seconds=60)
             self._timestamps.append(now)
 
