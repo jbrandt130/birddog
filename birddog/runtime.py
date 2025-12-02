@@ -328,17 +328,19 @@ class PageUpdateManager(HeartbeatManager):
             # for an exception during the update processing below, which probably means
             # there was a "too many requests" exception. In this case, back off and try
             # again on the next heartbeat
-            for title in newer_updates.keys():
-                self._kv_store.insert(self._PENDING_TITLE_UPDATES, title, "")
+            for title, update in newer_updates.items():
+                _logger.info(f"PageUpdateManager: inserting {title}, {update}, {type(update)}")
+                self._kv_store.insert(self._PENDING_TITLE_UPDATES, title, json.dumps(update))
 
         pending_updates = self._kv_store.get_all(self._PENDING_TITLE_UPDATES)
         error_count = 0
-        for title, _ in pending_updates:
+        for title, update in pending_updates:
             # This page may have just been created. 
             # If so, the parent's link status to this page needs to be
             # changed to indicate that the this page now exists.
             try:
                 parent = parent_title(title)
+                update = json.loads(update)
                 if parent:
                     parent = self._runtime.lookup_by_title(parent)
                     if parent.lastmod and parent.lastmod < update["timestamp"]:
