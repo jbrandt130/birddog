@@ -329,7 +329,7 @@ class PageUpdateManager(HeartbeatManager):
             # there was a "too many requests" exception. In this case, back off and try
             # again on the next heartbeat
             for title, update in newer_updates.items():
-                _logger.info(f"PageUpdateManager: inserting {title}, {update}, {type(update)}")
+                _logger.info(f"PageUpdateManager: inserting {title}, {update}")
                 self._kv_store.insert(self._PENDING_TITLE_UPDATES, title, json.dumps(update))
 
         pending_updates = self._kv_store.get_all(self._PENDING_TITLE_UPDATES)
@@ -339,11 +339,15 @@ class PageUpdateManager(HeartbeatManager):
             # If so, the parent's link status to this page needs to be
             # changed to indicate that the this page now exists.
             try:
-                parent = parent_title(title)
-                update = json.loads(update)
-                if parent:
-                    parent = self._runtime.lookup_by_title(parent)
-                    if parent.lastmod and parent.lastmod < update["timestamp"]:
+                try:
+                    parent_page_title = parent_title(title)
+                except ValueError as err:
+                    _logger.error(f"PageUpdateManager: unable to find parent of {title}. Skipping.")
+                    parent_page_title = None
+                if parent_page_title:
+                    parent = self._runtime.lookup_by_title(parent_page_title)
+                    update = json.loads(update)
+                    if parent and parent.lastmod and parent.lastmod < update["timestamp"]:
                         # child has been updated - update child link status
                         parent.set_child_link_status(title, True)
                 # finished with this title
