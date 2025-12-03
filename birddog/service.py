@@ -6,6 +6,7 @@ import os
 import threading
 import re
 import time
+from functools import wraps
 import hashlib
 from io import BytesIO
 from copy import copy, deepcopy
@@ -196,8 +197,9 @@ class User:
                 return [{'name': k, **v} for k, v in watcher.unresolved.items()]
 
     def set_preference(self, key, value):
-        self.preferences[key] = value
-        self.save()
+        with self._lock:
+            self.preferences[key] = value
+            self.save()
 
     def get_preference(self, key, default_value=None):
         return self.preferences.get(key, default_value)
@@ -226,47 +228,59 @@ class User:
         )
 
 class Users:
-    def __init__(self, user_session, max_users=10):
-        self._path = 'users'
-        self._session = user_session
-        self._cache = LRUCache(maxsize=max_users)
+    """
+    User manager backed by S3 (via load_cached_object/save_cached_object).
+
+    - No Flask session dependency.
+    - No in-memory user cache (every lookup hits S3).
+    - Per-email locks only for write/create races.
+    """
+
+    def __init__(self, path='users'):
+        self._path = path
         self._locks = defaultdict(threading.Lock)
 
-    def _session_user(self, name, email):
-        return {'name': name, 'email': email}
+    def _user_path(self, email: str) -> str:
+        return f"{self._path}/{email}.json"
 
-    def lookup(self, email):
-        with self._locks[email]:
-            if email in self._cache:
-                return self._cache[email]
-            try:
-                data = load_cached_object(f'{self._path}/{email}.json')
-                user = User.from_dict(email, data)
-                self._cache[email] = user
-                return user
-            except (CacheMissError, KeyError):
+    def lookup(self, email: str):
+        """
+        Return a User instance for the given email, or None if not found.
+        """
+        try:
+            data = load_cached_object(self._user_path(email))
+        except (CacheMissError, KeyError):
+            return None
+        return User.from_dict(email, data)
+
+    def create(self, email: str, name: str, password: str):
+        """
+        Create a new user if it does not already exist.
+
+        Returns:
+            User instance on success, or None if the user already exists.
+        """
+        lock = self._locks[email]
+        with lock:
+            existing = self.lookup(email)
+            if existing is not None:
                 return None
 
-    def create(self, email, name, password):
-        if self.lookup(email):
-            return False
-        _logger.info(f"Storing new user: {name}, {_hide(email)}")
-        user = User(name, email, password)
-        with self._locks[email]:
+            user = User(name, email, password)
             user.save()
-            self._cache[email] = user
-        self._session['user'] = self._session_user(name, email)
-        return True
+            return user
 
-    def login(self, email, password):
+    def login(self, email: str, password: str):
+        """
+        Validate credentials.
+
+        Returns:
+            User instance if email/password are valid, otherwise None.
+        """
         user = self.lookup(email)
         if user and user.check_password(password):
-            self._session['user'] = self._session_user(user.name, email)
-            return True
-        return False
-
-    def logout(self):
-        self._session.pop('user', None)
+            return user
+        return None
 
 
 def _get_current_user():
@@ -275,6 +289,9 @@ def _get_current_user():
         return None, jsonify({'error': 'Not found'}), 404
 
     email = user_session.get('email')
+    if not email:
+        return None, jsonify({'error': 'Not found'}), 404
+
     user = users.lookup(email)
     if not user:
         return None, jsonify({'error': 'Not found'}), 404
@@ -286,6 +303,16 @@ def _get_current_user():
         }), 503
 
     return user, None, None
+
+# decorator for endpoints requiring login
+def login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        user, error_response, status = _get_current_user()
+        if error_response:         # covers 404 or 503 cases
+            return error_response, status
+        return f(user, *args, **kwargs)
+    return wrapper
 
 # ---- FRONT END PAGES --------------------------------------------------------
 
@@ -299,6 +326,8 @@ def home():
         start_title = None
         if user_session:
             user, error_response, status = _get_current_user()
+            if error_response:
+                return error_response, status
             if user:
                 start_title = user.get_preference("last_page")
     return render_template(
@@ -310,57 +339,71 @@ def home():
 
 # ---- SESSION MANAGEMENT -----------------------------------------------------
 
+from flask import request, jsonify, session, redirect, url_for
+
 # Signup Route
 @app.route('/signup', methods=['POST'])
 def signup():
-    data = request.json
+    data = request.get_json() or {}
     name = data.get('name')
     email = data.get('email')
     password = data.get('password')
 
-    if not users.create(email, name, password):
+    if not all([name, email, password]):
+        return jsonify({'success': False, 'message': 'Name, email, and password are required'}), 400
+
+    user = users.create(email, name, password)
+    if not user:
         return jsonify({'success': False, 'message': 'Email already exists'}), 400
+
     _logger.info(f"Creating new user: {name} {_hide(email)}")
-    return jsonify({'success': True})
+    # Log them in immediately
+    session['user'] = {'name': user.name, 'email': user.email}
+
+    return jsonify({'success': True}), 200
+
 
 # Login Route
 @app.route('/login', methods=['POST'])
 def login():
-    data = request.json
+    data = request.get_json() or {}
     email = data.get('email')
     password = data.get('password')
 
-    if users.login(email, password):
-        return jsonify({'success': True})
+    if not all([email, password]):
+        return jsonify({'success': False, 'message': 'Email and password are required'}), 400
+
+    user = users.login(email, password)
+    if user:
+        session['user'] = {'name': user.name, 'email': user.email}
+        _logger.info(f"Login successful: {_hide(email)}")
+        return jsonify({'success': True}), 200
+
     _logger.info(f"Login failed: {_hide(email)}")
     return jsonify({'success': False, 'message': 'Invalid email or password'}), 401
+
 
 # Logout Route
 @app.route('/logout', methods=['GET'])
 def logout():
-    users.logout()
+    session.pop('user', None)
     return redirect(url_for('home'))
+
 
 # Change Password Route
 @app.route('/change_password', methods=['POST'])
-def change_password():
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
-    if not user:
-        return jsonify(success=False, message='Not logged in'), 401
-
-    email = user['email']
-    data = request.get_json()
+@login_required
+def change_password(user):
+    data = request.get_json() or {}
     current_pw = data.get('current')
     new_pw = data.get('new')
 
-    user = users.lookup(email)
-    if not user:
-        return jsonify(success=False, message='User not found'), 404
+    if not all([current_pw, new_pw]):
+        return jsonify(success=False, message='Current and new passwords are required'), 400
 
     if user.change_password(current_pw, new_pw):
         return jsonify(success=True, message='Password changed successfully'), 200
+
     return jsonify(success=False, message='Current password is incorrect'), 403
 
 @app.route('/reset_password', methods=['POST'])
@@ -461,18 +504,13 @@ def _compress_history(history, max_entries=50):
 
 # List all archives
 @app.route("/archives", methods=['GET'])
-def archive_list():
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
+@login_required
+def archive_list(user):
     return jsonify(ARCHIVE_MASTER_LIST)
 
 @app.route('/page', methods=['GET'])
-def page_data():
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
-
+@login_required
+def page_data(user):
     try:
         page = None
         page_title = request.args.get('title')
@@ -528,11 +566,8 @@ def ascii_filename(name):
 # ---- EXPORT -------------------------------------------------
 
 @app.route('/download', methods=['POST'])
-def download_file_start():
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
-
+@login_required
+def download_file_start(user):
     data = request.json
     _logger.info(f"download: data={data}")
     try:
@@ -570,10 +605,8 @@ def download_file_start():
         return jsonify({'error': 'Internal server error'}), 500
 
 @app.route('/download', methods=['GET'])
-def download_file_check():
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
+@login_required
+def download_file_check(user):
     task_id = request.args.get('task_id')
     page_title = request.args.get("title")
     page = runtime.lookup_by_title(page_title)
@@ -610,12 +643,9 @@ def _make_unique(string_list):
     return result
 
 @app.route("/export", methods=['GET'])
-def export_dialog():
+@login_required
+def export_dialog(user):
     # assemble and return payload for export dialog
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
-
     try:
         page_title = request.args.get('title')
         if not page_title:
@@ -699,22 +729,16 @@ def _format_watchlist(watchlist):
 
 # Get user's watchlist
 @app.route('/watchlist', methods=['GET'])
-def get_watchlist():
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
-
+@login_required
+def get_watchlist(user):
     result = _format_watchlist(user.watchlist)
     _logger.info(f'watchlist for {_hide(user.email)}: {result}')
     return jsonify(result)
 
 # Add to user's watchlist
 @app.route('/watchlist', methods=['POST'])
-def add_to_watchlist():
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
-
+@login_required
+def add_to_watchlist(user):
     data = request.json
     user.add_to_watchlist(
         archive=data['archive'],
@@ -726,11 +750,8 @@ def add_to_watchlist():
 
 # Remove from user's watchlist
 @app.route('/watchlist/<archive>/<subarchive>', methods=['DELETE'])
-def remove_from_watchlist(archive, subarchive):
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
-
+@login_required
+def remove_from_watchlist(user, archive, subarchive):
     _logger.info(f'Removing watcher[{_hide(user.email)}]: {archive}-{subarchive}')
     success = user.remove_from_watchlist(archive, subarchive)
 
@@ -740,11 +761,8 @@ def remove_from_watchlist(archive, subarchive):
 
 # Check for updates on a specific watchlist item
 @app.route('/watchlist/<archive>/<subarchive>/check', methods=['GET'])
-def check_watchlist_item(archive, subarchive):
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
-
+@login_required
+def check_watchlist_item(user, archive, subarchive):
     try:
         tree = request.args.get('tree') is not None
         result = user.check_archive(archive, subarchive, tree=tree)
@@ -764,11 +782,8 @@ def check_watchlist_item(archive, subarchive):
 @app.route('/resolve/<archive>/<subarchive>/<fond>', methods=['GET'])
 @app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
 @app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
-def resolve_update(archive=None, subarchive=None, fond=None, opus=None, case=None):
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
-
+@login_required
+def resolve_update(user, archive=None, subarchive=None, fond=None, opus=None, case=None):
     page_title = request.args.get('title')
     tree = request.args.get('tree') is not None
     deep = request.args.get('deep') is not None
@@ -801,11 +816,8 @@ def _active_translations(email):
     } for task in runtime.active_translations]
 
 @app.route('/translate', methods=['GET'])
-def translate():
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
-
+@login_required
+def translate(user):
     page = None
     page_title = request.args.get('title')
     if page_title:
@@ -821,28 +833,20 @@ def translate():
 # ---- LOG ACCESS ---------------------------------------------------------------
 
 @app.route('/log', methods=['GET'])
-def get_log():
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
+@login_required
+def get_log(user):
     limit = request.args.get('limit', type=int)
     return jsonify(get_log_buffer().get_logs(limit)), 200
 
 @app.route("/logs", methods=['GET'])
-def logs_view():
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
+@login_required
+def logs_view(user):
     return render_template("logs.html")
 
 # ---- SERVICE LOG ACCESS ---------------------------------------------------------------
 
 @app.route("/service_usage", methods=['GET'])
 def service_usage_dashboard():
-    #user, error_response, status = _get_current_user()
-    #if error_response:
-    #    return error_response, status
-
     range_opt = request.args.get("range", "1h")
     by_resource_opt = request.args.get("by_resource", None)
     now = datetime.now(UTC)
@@ -874,18 +878,12 @@ def service_usage_dashboard():
 
 @app.route("/good_dog", methods=['GET'])
 def unpause():
-    #user, error_response, status = _get_current_user()
-    #if error_response:
-    #    return error_response, status
     if runtime.state != "running":
         runtime.unpause()
     return jsonify({'success': True, 'runstate': runtime.state}), 200
 
 @app.route("/bad_dog", methods=['GET'])
 def pause():
-    #user, error_response, status = _get_current_user()
-    #if error_response:
-    #    return error_response, status
     if runtime.state != "paused":
         runtime.pause()
     return jsonify({'success': True, 'runstate': runtime.state}), 200
@@ -910,11 +908,8 @@ def log_request(response):
     return response
 
 @app.route("/metrics", methods=['GET'])
-def metrics_dashboard():
-    user, error_response, status = _get_current_user()
-    if error_response:
-        return error_response, status
-
+@login_required
+def metrics_dashboard(user):
     range_opt = request.args.get("range", "24h")
     now = datetime.now(UTC)
 
@@ -938,7 +933,7 @@ def metrics_dashboard():
 # ---- MAIN -------------------------------------------------------------------
 
 # initialize globals
-users = Users(session)
+users = Users()
 
 def create_app():
     # Build/configure the Flask app here, but DO NOT start runtime here.

@@ -321,11 +321,16 @@ class PageUpdateManager(HeartbeatManager):
 
     def heartbeat(self):
         _logger.info("PageUpdateManager: checking for page updates...")
-        newer_updates = self._tracker.refresh()
+        try:
+            newer_updates = self._tracker.refresh()
+        except FetchUrlFailError as err:
+            _logger.error(f'PageUpdateManager: unable to refresh page tracker (skipping for now): {err}')
+            newer_updates = None
+
         if newer_updates:
             _logger.info(f"PageUpdateManager: found {len(newer_updates)} updates")
             # place titles into KV store so that they can be processed - accounts
-            # for an exception during the update processing below, which probably means
+            # for a possible exception during the update processing below, which probably means
             # there was a "too many requests" exception. In this case, back off and try
             # again on the next heartbeat
             for title, update in newer_updates.items():
