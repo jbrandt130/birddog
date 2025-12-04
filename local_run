@@ -2,37 +2,11 @@
 # (c) 2025 Jonathan Brandt
 # Licensed under the MIT License. See LICENSE file in the project root.
 
-DEBUG_MODE=false
-PORT=2002
-EXTRA_ARGS=()
+export BIRDDOG_USE_LOCAL_CACHE=True
+#export BIRDDOG_TRANSLATION_DEBUG=True
+PORT=2003
 
-# Parse command-line arguments
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    --debug)
-      DEBUG_MODE=true
-      shift
-      ;;
-    *)
-      EXTRA_ARGS+=("$1")
-      shift
-      ;;
-  esac
-done
-
-if $DEBUG_MODE; then
-  echo "!!! STARTING BIRDDOG IN DEBUG MODE !!!"
-  export BIRDDOG_USE_LOCAL_CACHE=True
-  export BIRDDOG_TRANSLATION_DEBUG=True
-  EXTRA_ARGS+=("--debug")
-  PORT=2003
-fi
-
-# set GCP credentials
-export GOOGLE_APPLICATION_CREDENTIALS="./google-cloud-translate-key.json"
-
+echo "!!! STARTING BIRDDOG IN DEBUG MODE !!!"
 echo "Starting Flask service on port $PORT..."
-echo "Environment BIRDDOG_USE_LOCAL_CACHE=${BIRDDOG_USE_LOCAL_CACHE:-false}"
 (sleep 5; open "http://127.0.0.1:$PORT") &
-python3 -m birddog.service --port "$PORT" "${EXTRA_ARGS[@]}"
-
+python3 -m birddog.service --port "$PORT" --debug
