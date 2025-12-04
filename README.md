@@ -33,8 +33,7 @@ This guide helps you get started **locally** using the `local_run` script. No AW
 
 - Python 3.12
 - `git`
-- Google Cloud Translation API credentials (JSON)
-- OpenAI API key (for GPT-powered classification)
+- Google Cloud Translate API key
 - [Optional] Jupyter for notebooks
 
 ---
@@ -132,7 +131,7 @@ pip install notebook ipykernel
 
 ---
 
-### 📓 6. (Optional) AWS setup
+### ▶️ 6. (Optional) AWS setup
 
 Coming soon...
 
