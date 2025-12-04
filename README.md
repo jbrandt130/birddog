@@ -53,36 +53,49 @@ pip install -r requirements.txt
 
 ### 🔐 2. Set Environment Variables
 
-Create a `.env` file in the project root (or export them manually):
+Set the following environment variables to configure Birddog.
 
-```ini
-# .env
-OPENAI_API_KEY=your-openai-key
-GOOGLE_APPLICATION_CREDENTIALS=/full/path/to/google-cloud-translate-key.json
+```
+# Required for Flask session management
+BIRDDOG_SECRET_KEY=pick_something_unique
 
-# Required for app functionality
-BIRDDOG_SECRET_KEY=...
+# Required to use Google for translation
+GOOGLE_TRANSLATE_API_KEY=your_api_key
 BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE=True
-
-# Required for user password recovery mechanism only
-BIRDDOG_SMTP_SERVER=...
-BIRDDOG_SMTP_PORT=...
-BIRDDOG_SMTP_USERNAME=...
-BIRDDOG_SMTP_PASSWORD=...
 ```
 
-> 💡 You can also set these directly in your shell for quick testing:
-> `export OPENAI_API_KEY=...`
+#### Translation Settings
+
+To run Birddog without invoking Google Cloud translation services (useful for debugging), 
+adjust the environment as follows:
+```
+BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE=False
+BIRDDOG_TRANSLATION_DEBUG=True
+```
+
+#### OPTIONAL: Password Recovery Settings
+
+Birddog sends the user an encrypted token as part of the password recovery workflow. In
+order to send email, Birddog requires an SMTP server with valid credentials. These are set
+using the following environment variables:
+```
+BIRDDOG_SMTP_SERVER=smtp_server_address
+BIRDDOG_SMTP_PORT=smtp_port_number
+BIRDDOG_SMTP_USERNAME=valid_username
+BIRDDOG_SMTP_PASSWORD=valid_password
+```
 
 ---
 
 ### ▶️ 3. Run the local dev server
 
 ```bash
-./local_run --debug
+./local_run
 ```
 
-This launches the Flask development server with hot reload and debug logging.
+This launches the Flask development server with hot reload and debug logging. A few seconds after the app starts, the 
+Birddog client will be opened in the default browser. The app uses the local directory `.cache` to store
+persistent data for the app. This includes a page cache, user profile data, and databases.
 
 ---
 
@@ -113,7 +126,7 @@ python3.12 -m venv venv-jupyter
 source venv-jupyter/bin/activate
 pip install -r requirements.txt
 pip install notebook ipykernel
-./lab --debug (optional)
+./lab
 ```
 
 ---
