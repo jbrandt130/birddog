@@ -14,11 +14,12 @@ Birddog is a web-based tool for navigating and translating Ukrainian archival do
 ```bash
 birddog/
 ├── birddog/              # Core application code
-├── template/             # Jinja2 HTML templates (Bootstrap-based)
-├── static/               # Static Flask app assets
-├── resources/            # auxilliary data, including archive list and spreadsheet templates
+├── templates/            # Jinja2 HTML templates (Bootstrap-based)
+├── static/               # Static Birddog client assets
+├── resources/            # Application data including archive list and spreadsheet templates
 ├── test/                 # Unit tests
 ├── docs/                 # Project documentation
+├── sh/                   # Shell scripts
 ├── notebooks/            # Jupyter notebooks
 └── README.md             # You're here
 ```
@@ -90,7 +91,7 @@ BIRDDOG_SMTP_PASSWORD=valid_password
 ### ▶️ 3. Run the local dev server
 
 ```bash
-./local_run
+./sh/local_run
 ```
 
 This launches the Flask development server with hot reload and debug logging. A few seconds after the app starts, the 
@@ -112,7 +113,7 @@ This runs all tests in the `tests/` directory from the project root — no disco
 To check test coverage:
 
 ```bash
-./coverage_report
+./sh/coverage_report
 ```
 
 ---
@@ -126,7 +127,7 @@ python3.12 -m venv venv-jupyter
 source venv-jupyter/bin/activate
 pip install -r requirements.txt
 pip install notebook ipykernel
-./lab
+./sh/lab
 ```
 
 ---
