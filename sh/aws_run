@@ -102,6 +102,12 @@ case "$1" in
   status)
     eb status
     ;;
+  logs)
+    eb logs --all
+    WEBLOG=`find -H .elasticbeanstalk/logs/latest -type f -name 'web.stdout.log' -print`
+    echo copying weblog "$WEBLOG" to ./var
+    cp "$WEBLOG" ./var
+    ;;
   *)
     echo "Usage: $0 {init|deploy|redeploy|open|status|terminate}"
     exit 1
