@@ -258,18 +258,102 @@ def is_english(text):
         return False
     return True
 
+# Ukrainian letters (upper + lower, including Ґ, Є, І, Ї)
+UA_LETTER = r"[А-ЩЬЮЯҐЄІЇа-щьюяґєії]"
+# Optional hyphen: ASCII hyphen-minus + common Unicode hyphens
+HYPHEN = r"[-\u00AD\u2010\u2011]?"
+# Digits (one or more)
+DIGITS = r"\d+"
+
+def check_ukrainian_hyphen_numbers(s):
+    """
+    The pattern consists of a Ukrainian character, then optionally a hyphen
+    as the second character, and numeric digits afterwards. If the string matches the pattern,
+    it returns True; otherwise, it returns False.
+    """
+
+    # Matches Ukrainian char (Unicode Cyrillic range covers Ukrainian) + hyphen + digits
+    pattern_prefix = re.compile(rf"^{UA_LETTER}{HYPHEN}{DIGITS}$")
+    return bool(re.match(pattern_prefix, s))
+
+def check_numbers_hyphen_ukrainian(s):
+    """
+    The pattern consists of numeric digits, then optionally a hyphen
+    as the second character, and a Ukrainian character afterwards. If the string matches the pattern,
+    it returns True; otherwise, it returns False.
+    """
+
+    # Matches Ukrainian char (Unicode Cyrillic range covers Ukrainian) + hyphen + digits
+    pattern_suffix = re.compile(rf"^{DIGITS}{HYPHEN}{UA_LETTER}$")
+    return bool(re.match(pattern_suffix, s))
+
+UKR_TO_LAT = {
+    # Common Cyrillic + Ukrainian specifics
+    'А': 'A', 'а': 'a', 'Б': 'B', 'б': 'b', 'В': 'V', 'в': 'v', 'Г': 'H', 'г': 'h',  # Г is /h/ in Ukrainian
+    'Ґ': 'G', 'ґ': 'g', 'Д': 'D', 'д': 'd', 'Е': 'E', 'е': 'e', 'Є': 'Ye', 'є': 'ye',
+    'Ж': 'Zh', 'ж': 'zh', 'З': 'Z', 'з': 'z', 'И': 'Y', 'и': 'y', 'І': 'I', 'і': 'i',
+    'Ї': 'Yi', 'ї': 'yi', 'Й': 'Y', 'й': 'y', 'К': 'K', 'к': 'k', 'Л': 'L', 'л': 'l',
+    'М': 'M', 'м': 'm', 'Н': 'N', 'н': 'n', 'О': 'O', 'о': 'o', 'П': 'P', 'п': 'p',
+    'Р': 'R', 'р': 'r', 'С': 'S', 'с': 's', 'Т': 'T', 'т': 't', 'У': 'U', 'у': 'u',
+    'Ф': 'F', 'ф': 'f', 'Х': 'Kh', 'х': 'kh', 'Ц': 'Ts', 'ц': 'ts', 'Ч': 'Ch', 'ч': 'ch',
+    'Ш': 'Sh', 'ш': 'sh', 'Щ': 'Shch', 'щ': 'shch', 'Ь': '', 'ь': '', 'Ю': 'Yu', 'ю': 'yu',
+    'Я': 'Ya', 'я': 'ya',
+}
+
+def translit_ukrainian_char(c: str) -> str:
+    """Return Latin transliteration of a single Ukrainian character."""
+    print(f'Replacing {c} with {UKR_TO_LAT[c]}')
+    return UKR_TO_LAT.get(c, '')
+
+
+def replace_first_with_translit(s: str) -> str:
+    """
+    Replaces the first character of a string with its Latin transliteration.
+
+    Args:
+        s: Input string
+
+    Returns:
+        Modified string with the first character transliterated
+    """
+    if not s:
+        return s  # Return empty string unchanged
+
+    first_translit = translit_ukrainian_char(s[0])
+    return first_translit + s[1:]
+
+def replace_last_with_translit(s: str) -> str:
+    """
+    Replaces the first character of a string with its Latin transliteration.
+
+    Args:
+        s: Input string
+
+    Returns:
+        Modified string with the last character transliterated
+    """
+    if not s:
+        return s  # Return empty string unchanged
+
+    last_translit = translit_ukrainian_char(s[-1])
+    return s[:-1] + last_translit
+
 def form_text_item(source_text):
     """Form a multilingual text item from a fragment of text.
     A text item is a dict containing keys "uk" and "en", representing the
     Ukrainian and English versions of the text, respectively.
     If the input text is numeric or is English, then both language versions
-    will be the same. If the translate argument is True (default False),
-    then the Ukrainian text will be automatically translated to English.
+    will be the same. If the first character is a Ukrainian one followed by hyphen and numerals,
+    the Ukrainian character is replaced by the Latin transliteration in the English version.
     Otherwise, the English version of the text will be left empty.
     """
     result = { 'uk': source_text }
     if not source_text or is_numeric(source_text) or is_english(source_text):
         result['en'] = source_text
+    elif check_ukrainian_hyphen_numbers(source_text):
+        result['en'] = replace_first_with_translit(source_text)
+    elif check_numbers_hyphen_ukrainian(source_text):
+        result['en'] = replace_last_with_translit(source_text)
     return result
 
 def equal_text(item1, item2):
