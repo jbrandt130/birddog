@@ -51,6 +51,9 @@ def get_page_title_from_link(cell):
             if result.startswith(ns_prefix):
                 result = result[len(ns_prefix):]
             return result
+    if "redlink" in url:
+        url = urlparse(url).path 
+        #_logger.info(f"redlink title: {url}")
     return get_title(unquote(url), include_namespace=False)
 
 def get_cell_link(cell):
