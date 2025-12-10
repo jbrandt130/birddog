@@ -287,6 +287,22 @@ def check_numbers_hyphen_ukrainian(s):
     pattern_suffix = re.compile(rf"^{DIGITS}{HYPHEN}{UA_LETTER}$")
     return bool(re.match(pattern_suffix, s))
 
+def find_digits_around_ukrainian(s: str) -> tuple[int, int]:
+    """
+    Checks if string matches: one or more digits, followed by 1-2 Ukrainian letters,
+    followed by one or more digits. Returns (position of first Ukrainian char, count)
+    or (-1, 0) if no match.
+    """
+    pattern = re.compile(rf"^(\d+)({UA_LETTER}{{1,2}})(\d+)$")
+
+    match = pattern.match(s)
+    if match:
+        first_digits = match.group(1)
+        ukr_start = len(first_digits)  # 0-based position of first UA char
+        ukr_count = len(match.group(2))
+        return ukr_start, ukr_count
+    return -1, 0
+
 UKR_TO_LAT = {
     # Common Cyrillic + Ukrainian specifics
     'А': 'A', 'а': 'a', 'Б': 'B', 'б': 'b', 'В': 'V', 'в': 'v', 'Г': 'H', 'г': 'h',  # Г is /h/ in Ukrainian
@@ -306,37 +322,27 @@ def translit_ukrainian_char(c: str) -> str:
     return UKR_TO_LAT.get(c, '')
 
 
-def replace_first_with_translit(s: str) -> str:
+def replace_with_translit(s: str, ukr_start: int, ukr_count: int) -> str:
     """
-    Replaces the first character of a string with its Latin transliteration.
+    Replaces characters in a string with their Latin transliteration.
 
     Args:
         s: Input string
+        ukr_start: Position of first Ukrainian letter
+        ukr_count: Number of Ukrainian letters
 
     Returns:
-        Modified string with the first character transliterated
+        Modified string with Ukrainian characters transliterated
     """
     if not s:
         return s  # Return empty string unchanged
 
-    first_translit = translit_ukrainian_char(s[0])
-    return first_translit + s[1:]
-
-def replace_last_with_translit(s: str) -> str:
-    """
-    Replaces the first character of a string with its Latin transliteration.
-
-    Args:
-        s: Input string
-
-    Returns:
-        Modified string with the last character transliterated
-    """
-    if not s:
-        return s  # Return empty string unchanged
-
-    last_translit = translit_ukrainian_char(s[-1])
-    return s[:-1] + last_translit
+    result = s[: ukr_start]
+    curr_posit = ukr_start
+    for ind in range(ukr_count):
+        result += translit_ukrainian_char(s[curr_posit])
+        curr_posit += 1
+    return result + s[curr_posit:]
 
 def form_text_item(source_text):
     """Form a multilingual text item from a fragment of text.
@@ -351,9 +357,11 @@ def form_text_item(source_text):
     if not source_text or is_numeric(source_text) or is_english(source_text):
         result['en'] = source_text
     elif check_ukrainian_hyphen_numbers(source_text):
-        result['en'] = replace_first_with_translit(source_text)
+        result['en'] = replace_with_translit(source_text, 0, 1)
     elif check_numbers_hyphen_ukrainian(source_text):
-        result['en'] = replace_last_with_translit(source_text)
+        result['en'] = replace_with_translit(source_text, len(source_text) - 1, 1)
+    elif (res := find_digits_around_ukrainian(source_text))[0] >= 0:
+        result['en'] = replace_with_translit(source_text, res[0], res[1])
     return result
 
 def equal_text(item1, item2):
