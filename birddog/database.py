@@ -29,6 +29,10 @@ class InvalidRecordId(DatabaseError):
     """
 
 
+class SchemaError(DatabaseError):
+    """Invalid Schema configuration"""
+
+
 class InvalidFieldName(DatabaseError):
     """Field name does not exist in the table schema."""
 
