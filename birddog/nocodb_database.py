@@ -42,6 +42,9 @@ def _list_tables_url():
 def _table_info_url(table_id):
     return f"{_NOCODB_V2_API_ROOT}/meta/tables/{table_id}" 
 
+def _links_url(table_id, link_field_id, record_id):
+    return f"{_NOCODB_V2_API_ROOT}/tables/{table_id}/links/{link_field_id}/records/{record_id}"
+
 # ----------------------------------------------------------------------
 # Data validation
 
@@ -102,6 +105,8 @@ class NocoDBDatabase:
                 resp = self._session.post(url, json=json)
             elif method == "PATCH":
                 resp = self._session.patch(url, json=json)
+            elif method == "DELETE":
+                resp = self._session.delete(url, json=json)
             else:
                 raise ValueError(f"_fetch: unrecognized method: {method}")
             resp.raise_for_status()
@@ -295,9 +300,9 @@ class NocoDBDatabase:
                     record_id = item["Id"]
                     key_value = item[key_field_name]
                     result[key_value] = record_id
-                    id_cache[key_value] = record_id
+                    #id_cache[key_value] = record_id
 
-            self._record_id_cache[table_name] = id_cache
+            #self._record_id_cache[table_name] = id_cache
 
         if singleton:
             return list(result.values())[0] if result else None
@@ -402,14 +407,10 @@ class NocoDBDatabase:
         url = _records_url(table_id)
         for i in range(0, len(known_records), _NOCODB_BATCH_SIZE):
             batch = known_records[i:i + _NOCODB_BATCH_SIZE]
-            #print(batch)
             data = self._fetch(url, json=batch, method="PATCH")
-            #print(data)
         for i in range(0, len(unknown_records), _NOCODB_BATCH_SIZE):
             batch = unknown_records[i:i + _NOCODB_BATCH_SIZE]
-            #print(batch)
             data = self._fetch(url, json=batch, method="POST")
-            #print(data)
             for j, item in enumerate(data):
                 unknown_records[i+j]["Id"] = item["Id"]
 
@@ -417,3 +418,64 @@ class NocoDBDatabase:
         if singleton:
             return result[0]
         return result
+
+    def delete(self, table_name, record_id):
+        table_id = self._table_id(table_name)        
+        url = _records_url(table_id)
+        if not isinstance(record_id, (list, tuple)):
+            record_id = [record_id]
+            singleton = True
+        else:
+            singleton = False
+        result = dict()
+        count = 0
+        for i in range(0, len(record_id), _NOCODB_BATCH_SIZE):
+            batch = [{"Id": i} for i in record_id[i:i + _NOCODB_BATCH_SIZE]]
+            data = self._fetch(url, json=batch, method="DELETE")
+            count += len(data)
+        return count
+
+    def _edit_link(self, table_name, link_field, source_record, target_records, method):
+        table_id = self._table_id(table_name)   
+        link_field_id = self._field_id(table_name, link_field)
+        url = _links_url(table_id, link_field_id, source_record)
+        if isinstance(target_records, (list, tuple)):
+            payload = [{"Id": value} for value in target_records]
+        else:
+            payload = [{"Id": target_records}]
+        self._fetch(url, json=payload, method=method)
+
+    def create_link(self, table_name, link_field, source_record, target_records):
+        self._edit_link(
+            table_name, link_field, source_record, target_records,
+            "POST")
+
+    def delete_link(self, table_name, link_field, source_record, target_records):
+        self._edit_link(
+            table_name, link_field, source_record, target_records,
+            "DELETE")
+
+    def get_links(self, table_name, link_field, source_record):
+        table_id = self._table_id(table_name)   
+        link_field_id = self._field_id(table_name, link_field)
+        url = _links_url(table_id, link_field_id, source_record)
+        result = []
+        params = { "offset": 0}
+        while True:
+            response = self._fetch(url, params=params, method="GET")
+            page_info = response.get("pageInfo")
+            if page_info:
+                # paged results
+                resp = [item["Id"] for item in response.get("list", [])]
+                result.extend(resp)
+                if page_info["isLastPage"]:
+                    return result
+                # iterate to get the next page
+                params["offset"] += len(resp)
+            else:
+                # not paged: singular Id returned
+                link_id = response.get("Id")
+                if link_id:
+                    result.append(link_id)
+                return result
+        return response
