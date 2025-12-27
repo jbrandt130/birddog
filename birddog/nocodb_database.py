@@ -153,6 +153,7 @@ class NocoDBDatabase:
     def __init__(self, api_token=None):
         if not api_token:
             api_token = os.environ["NOCODB_API_TOKEN"]
+        self._api_token = api_token
         self._session = requests.Session()
         self._session.headers.update(
             {
@@ -738,3 +739,91 @@ class NocoDBDatabase:
                     result.append(link_id)
                 return result
         return response
+
+    def _upload_files(self, file_paths):
+        """
+        Upload one or more files via /api/v2/storage/upload.
+
+        Args:
+            file_paths: str or iterable of str
+
+        Returns:
+            Flat list of NocoDB file objects suitable for attachment fields.
+        """
+        if isinstance(file_paths, (str, os.PathLike)):
+            file_paths = [file_paths]
+
+        if not isinstance(file_paths, (list, tuple)) or not file_paths:
+            raise ValueError("file_paths must be a path or non-empty list/tuple of paths")
+
+        upload_url = f"{_NOCODB_V2_API_ROOT}/storage/upload"
+        headers = {"xc-token": self._api_token}
+
+        uploaded = []
+
+        for file_path in file_paths:
+            if not os.path.isfile(file_path):
+                raise FileNotFoundError(file_path)
+
+            basename = os.path.basename(file_path)
+            name_root, ext = os.path.splitext(basename)
+            safe_root = "".join(ch if ch.isascii() else "_" for ch in name_root)
+            safe_name = (safe_root or "upload") + ext
+
+            mime = mimetypes.guess_type(basename)[0] or "application/octet-stream"
+
+            with open(file_path, "rb") as f:
+                files = {"file": (safe_name, f, mime)}
+                resp = requests.post(
+                    upload_url,
+                    headers=headers,
+                    files=files,
+                    timeout=30,
+                )
+
+            if resp.status_code != 200:
+                raise RuntimeError(f"Upload failed {resp.status_code}: {resp.text}")
+
+            data = resp.json()
+            if not isinstance(data, list) or not data:
+                raise RuntimeError(f"Unexpected upload response for {file_path}: {data!r}")
+
+            uploaded.extend(data)
+
+        return uploaded
+
+    def set_attachment(self, table_name, record_id, attachment_field, file_paths):
+        """
+        Replace the contents of an attachment field with one or more files.
+
+        Semantics:
+          - Uploads all provided files
+          - Replaces the attachment field entirely
+          - Does NOT preserve existing attachments
+        """
+        table_id = self._table_id(table_name)
+        uploaded = self._upload_files(file_paths)
+
+        url = _records_url(table_id)
+        payload = [{
+            "Id": record_id,
+            attachment_field: uploaded,  # must be a list
+        }]
+        self._fetch(url, json=payload, method="PATCH")
+
+    def clear_attachment(self, table_name, record_id, attachment_field):
+        """
+        Clear (remove) all files from an attachment field.
+
+        Semantics:
+          - Replaces the attachment field with an empty list
+          - Does NOT delete files from NocoDB storage
+        """
+        table_id = self._table_id(table_name)
+
+        url = _records_url(table_id)
+        payload = [{
+            "Id": record_id,
+            attachment_field: [],
+        }]
+        self._fetch(url, json=payload, method="PATCH")
