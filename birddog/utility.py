@@ -318,7 +318,7 @@ UKR_TO_LAT = {
 
 def translit_ukrainian_char(c: str) -> str:
     """Return Latin transliteration of a single Ukrainian character."""
-    print(f'Replacing {c} with {UKR_TO_LAT[c]}')
+    #print(f'Replacing {c} with {UKR_TO_LAT[c]}')
     return UKR_TO_LAT.get(c, '')
 
 

@@ -945,7 +945,7 @@ async function load_watchlist(check_all=false, initial_load=false) {
         return;
     }
     const data = await response.json();
-    console.log('watchlist:', data)
+    console.log('watchlist loaded:', data)
     watchlist = data;
 
     // Check if the watchlist is empty on initial load
