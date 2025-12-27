@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import mimetypes
 import os
 import re
@@ -14,14 +13,11 @@ from copy import copy
 from birddog.database import (
     Database,
     FailedIO,
-    FileNotFound,
     SchemaError,
     InvalidFieldName,
     InvalidFieldValue,
     InvalidRecordId,
-    InvalidSourceId,
     InvalidTableName,
-    InvalidTargetId,
     MissingKey,
     )
 
@@ -92,7 +88,7 @@ def _normalize_multiselect(key, value):
     if value is None:
         return []
     if isinstance(value, (list, tuple)):
-        return value
+        return [v for v in value]
     if isinstance(value, str):
         value = value.strip()
         if not value:
@@ -149,7 +145,7 @@ def _encode_record(table_schema, record):
 
 # ----------------------------------------------------------------------
 
-class NocoDBDatabase:
+class NocoDBDatabase(Database):
     def __init__(self, api_token=None):
         if not api_token:
             api_token = os.environ["NOCODB_API_TOKEN"]
@@ -283,17 +279,6 @@ class NocoDBDatabase:
                 raise TypeError(f"key_set must be string or set of strings")
             singleton = False
         return key_set, singleton
-
-    def validate_records(self, table_name, records):
-        self._validate_table_name(table_name)
-        if not isinstance(records, (list, tuple)):
-            raise TypeError("records must be a sequence of dicts")
-        if not all([isinstance(record, dict) for record in records]):
-            raise TypeError("records must be a sequence of dicts")
-        table_schema = self._schema[table_name]
-        field_info = self._get_field_map(table_name)
-        for record in records:
-            _validate_record(table_schema, record, other_allowed_fields=set(field_info.keys()))
                 
     def normalize_records(self, table_name, records):
         self._validate_table_name(table_name)
@@ -369,13 +354,6 @@ class NocoDBDatabase:
 
         self.normalize_records(table_name, records)
         return records, next_cursor
-
-    def scan_all(self, table_name):
-        records, cursor = self.scan(table_name)
-        while cursor:
-            more, cursor = self.scan(table_name, cursor=cursor)
-            records.extend(more)
-        return records
 
     def lookup(self, table_name, key_set):
         """
@@ -625,7 +603,7 @@ class NocoDBDatabase:
             payload = [{"Id": target_records}]
         self._fetch(url, json=payload, method=method)
 
-    def create_link(self, table_name, link_field, source_record, target_records):
+    def create_links(self, table_name, link_field, source_record, target_records):
         """
         Create relation link(s) from a source record to one or more target records.
 
@@ -656,7 +634,7 @@ class NocoDBDatabase:
             table_name, link_field, source_record, target_records,
             "POST")
 
-    def delete_link(self, table_name, link_field, source_record, target_records):
+    def delete_links(self, table_name, link_field, source_record, target_records):
         """
         Remove relation link(s) from a source record to one or more target records.
 
@@ -792,7 +770,7 @@ class NocoDBDatabase:
 
         return uploaded
 
-    def set_attachment(self, table_name, record_id, attachment_field, file_paths):
+    def set_attachments(self, table_name, record_id, attachment_field, file_paths):
         """
         Replace the contents of an attachment field with one or more files.
 
@@ -811,7 +789,7 @@ class NocoDBDatabase:
         }]
         self._fetch(url, json=payload, method="PATCH")
 
-    def clear_attachment(self, table_name, record_id, attachment_field):
+    def clear_attachments(self, table_name, record_id, attachment_field):
         """
         Clear (remove) all files from an attachment field.
 
@@ -827,3 +805,4 @@ class NocoDBDatabase:
             attachment_field: [],
         }]
         self._fetch(url, json=payload, method="PATCH")
+

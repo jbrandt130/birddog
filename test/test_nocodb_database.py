@@ -5,14 +5,11 @@ import unittest
 from birddog.database import (
     Database,
     FailedIO,
-    FileNotFound,
     SchemaError,
     InvalidFieldName,
     InvalidFieldValue,
     InvalidRecordId,
-    InvalidSourceId,
     InvalidTableName,
-    InvalidTargetId,
     MissingKey,
 )
 
@@ -28,7 +25,7 @@ class TestNocoDBDatabase(unittest.TestCase):
       - lookup (Pages.title, Documents.link)
       - read (single and batch by Id)
       - write (create + update; single + batch)
-      - create_link / delete_link / get_links (Pages.parent, Pages.children, Documents.owning_page)
+      - create_links / delete_links / get_links (Pages.parent, Pages.children, Documents.owning_page)
 
     Cleanup:
       - Deletes any records created during the test (tracked by returned Ids).
@@ -159,7 +156,7 @@ class TestNocoDBDatabase(unittest.TestCase):
         child_id = self.db.write("Pages", {"title": child_title})
         self.created_page_ids.extend([parent_id, child_id])
 
-        self.db.create_link("Pages", "parent", child_id, parent_id)
+        self.db.create_links("Pages", "parent", child_id, parent_id)
         parent_links = self.db.get_links("Pages", "parent", child_id)
         self.assertIsInstance(parent_links, list)
         self.assertIn(parent_id, parent_links)
@@ -174,9 +171,9 @@ class TestNocoDBDatabase(unittest.TestCase):
         self.created_page_ids.extend([child2_id, child3_id])
 
         # link single
-        self.db.create_link("Pages", "children", parent_id, child2_id)
+        self.db.create_links("Pages", "children", parent_id, child2_id)
         # link batch
-        self.db.create_link("Pages", "children", parent_id, [child3_id])
+        self.db.create_links("Pages", "children", parent_id, [child3_id])
 
         children_links = self.db.get_links("Pages", "children", parent_id)
         self.assertIn(child2_id, children_links)
@@ -184,7 +181,7 @@ class TestNocoDBDatabase(unittest.TestCase):
 
         # unlink one child and verify removal (idempotence/behavior is backend-defined;
         # we just require that it no longer appears if backend applies the delete)
-        self.db.delete_link("Pages", "children", parent_id, child3_id)
+        self.db.delete_links("Pages", "children", parent_id, child3_id)
         children_links2 = self.db.get_links("Pages", "children", parent_id)
         self.assertIn(child2_id, children_links2)
         self.assertNotIn(child3_id, children_links2)
@@ -197,12 +194,12 @@ class TestNocoDBDatabase(unittest.TestCase):
         first_doc_id = self.db.lookup("Documents", first_doc_link)
         self.assertTrue(first_doc_id)
 
-        self.db.create_link("Documents", "owning_page", first_doc_id, parent_id)
+        self.db.create_links("Documents", "owning_page", first_doc_id, parent_id)
         owning_links = self.db.get_links("Documents", "owning_page", first_doc_id)
         self.assertIn(parent_id, owning_links)
 
         # Remove and verify it disappears (if backend enforces)
-        self.db.delete_link("Documents", "owning_page", first_doc_id, parent_id)
+        self.db.delete_links("Documents", "owning_page", first_doc_id, parent_id)
         owning_links2 = self.db.get_links("Documents", "owning_page", first_doc_id)
         self.assertNotIn(parent_id, owning_links2)
 
