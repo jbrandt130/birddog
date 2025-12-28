@@ -45,6 +45,7 @@ from birddog.wiki import (
     lineage,
     ARCHIVE_BY_ADDRESS,
     )
+from birddog.user import User
 from birddog.ai import list_column_classes, classify_table_columns
 from birddog.utility import get_text, system_resource_report
 from birddog.log import (
@@ -90,143 +91,6 @@ def _hide(email: str, salt: str = app.secret_key) -> str:
     hasher.update((salt + email.lower().strip()).encode("utf-8"))
     return hasher.hexdigest()[:8]
 
-def _watcher_cache_path(email, archive, subarchive):
-    return f'watchers/{email}/{archive}-{subarchive}.json'
-
-class User:
-    def __init__(self, name, email, password, watchlist=None, preferences=None, is_hashed=False):
-        self.name = name
-        self.email = email
-        self.password_hash = password if is_hashed else generate_password_hash(password)
-        self.watchlist = watchlist or {}
-        self.preferences = preferences or {}
-        self._lock = threading.RLock()
-
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
-
-    def change_password(self, current_password, new_password):
-        with self._lock:
-            if not self.check_password(current_password):
-                return False
-            self.password_hash = generate_password_hash(new_password)
-            self.save()
-            return True
-
-    def set_password(self, new_password):
-        with self._lock:
-            self.password_hash = generate_password_hash(new_password)
-            self.save()
-
-    def add_to_watchlist(self, archive, subarchive, cutoff_date):
-        key = _watchlist_key(archive, subarchive)
-        with self._lock:
-            self.watchlist[key] = {
-                'last_checked_date': '',
-                'cutoff_date': cutoff_date
-            }
-            self.save()
-
-    def remove_from_watchlist(self, archive, subarchive):
-        key = _watchlist_key(archive, subarchive)
-        with self._lock:
-            if key not in self.watchlist:
-                return False
-            del self.watchlist[key]
-            self.save()
-
-        # Remove associated watcher file (outside lock)
-        watcher_path = _watcher_cache_path(self.email, archive, subarchive)
-        try:
-            remove_cached_object(watcher_path)
-        except CacheMissError:
-            pass  # it's already gone
-        return True
-
-    def check_archive(self, archive, subarchive, tree=False):
-        key = _watchlist_key(archive, subarchive)
-        with self._lock:
-            if key not in self.watchlist:
-                raise KeyError(f"Watchlist item not found: {key}")
-
-            path = _watcher_cache_path(self.email, archive, subarchive)
-            try:
-                watcher_data = load_cached_object(path)
-                watcher = ArchiveWatcher.load(watcher_data, runtime=runtime)
-            except CacheMissError:
-                watcher = ArchiveWatcher(
-                    archive, subarchive,
-                    self.watchlist[key]['cutoff_date'],
-                    runtime=runtime)
-
-            watcher.check()
-            save_cached_object(watcher.save(), path)
-
-            self.watchlist[key]['last_checked_date'] = datetime.now().strftime('%Y,%m,%d,%H:%M')
-            self.save()
-
-            # Return just the result, not the watcher itself
-            if tree:
-                return watcher.unresolved_tree
-            return [{'name': k, **v} for k, v in watcher.unresolved.items()]
-
-    def resolve_item(self, archive, subarchive, fond=None, opus=None, case=None, tree=False, deep=False):
-        key = _watchlist_key(archive, subarchive)
-
-        with self._lock:
-            if key not in self.watchlist:
-                raise KeyError('Watchlist item not found')
-
-            path = _watcher_cache_path(self.email, archive, subarchive)
-            try:
-                watcher_data = load_cached_object(path)
-            except CacheMissError:
-                raise FileNotFoundError('No watcher found')
-
-            watcher = ArchiveWatcher.load(watcher_data, runtime=runtime)
-
-            resolve_key = ArchiveWatcher.key(archive, subarchive, fond, opus, case)
-            _logger.info(f'Resolving {resolve_key}, deep={deep}, tree={tree}')
-            watcher.resolve(resolve_key, deep=deep)
-
-            save_cached_object(watcher.save(), path)
-
-            if tree:
-                return watcher.unresolved_tree
-            else:
-                return [{'name': k, **v} for k, v in watcher.unresolved.items()]
-
-    def set_preference(self, key, value):
-        with self._lock:
-            self.preferences[key] = value
-            self.save()
-
-    def get_preference(self, key, default_value=None):
-        return self.preferences.get(key, default_value)
-
-    def save(self):
-        with self._lock:
-            save_cached_object(self.to_dict(), f'users/{self.email}.json')
-
-    def to_dict(self):
-        return {
-            'name': self.name,
-            'password': self.password_hash,
-            'watchlist': self.watchlist,
-            'preferences': self.preferences
-        }
-
-    @classmethod
-    def from_dict(cls, email, d):
-        return cls(
-            name=d['name'],
-            email=email,
-            password=d['password'],
-            watchlist=d.get('watchlist', {}),
-            preferences=d.get('preferences', {}),
-            is_hashed=True
-        )
-
 class Users:
     """
     User manager backed by S3 (via load_cached_object/save_cached_object).
@@ -251,7 +115,7 @@ class Users:
             data = load_cached_object(self._user_path(email))
         except (CacheMissError, KeyError):
             return None
-        return User.from_dict(email, data)
+        return User.from_dict(email, data, runtime=runtime)
 
     def create(self, email: str, name: str, password: str):
         """
@@ -707,9 +571,6 @@ def export_dialog(user):
 
 # ---- WATCHLIST MANAGEMENT -------------------------------------------------
 
-def _watchlist_key(archive, subarchive):
-    return f'{archive}-{subarchive}'
-
 def _safe_split_pair(key, sep="-"):
     parts = key.split(sep, 1)
     return parts if len(parts) == 2 else (key, "")
@@ -731,7 +592,7 @@ def _format_watchlist(watchlist):
 @app.route('/watchlist', methods=['GET'])
 @login_required
 def get_watchlist(user):
-    result = _format_watchlist(user.watchlist)
+    result = _format_watchlist(user.get_watchlist())
     _logger.info(f'watchlist for {_hide(user.email)}: {result}')
     return jsonify(result)
 
@@ -746,7 +607,7 @@ def add_to_watchlist(user):
         cutoff_date=data['cutoff_date']
     )
 
-    return jsonify(_format_watchlist(user.watchlist)), 201
+    return jsonify(_format_watchlist(user.get_watchlist())), 201
 
 # Remove from user's watchlist
 @app.route('/watchlist/<archive>/<subarchive>', methods=['DELETE'])
@@ -770,7 +631,7 @@ def check_watchlist_item(user, archive, subarchive):
         return jsonify({
             'success': True,
             'unresolved': result,
-            'watchlist': _format_watchlist(user.watchlist)
+            'watchlist': _format_watchlist(user.get_watchlist())
         }), 200
 
     except KeyError:

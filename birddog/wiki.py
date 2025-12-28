@@ -33,15 +33,6 @@ from birddog.translate import translate_structure
 from birddog.log import get_logger
 _logger = get_logger()
 
-# -------------------------------------------------------------------------------
-def _t(label):
-    class T:
-        def __enter__(self):
-            self.t0 = time.time()
-        def __exit__(self, *a):
-            _logger.info("TIMER: %s took %.3fs", label, time.time() - self.t0)
-    return T()
-
 # INITIALIZATION --------------------------------------------------------------
 
 # global constants
