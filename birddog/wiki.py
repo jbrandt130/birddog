@@ -429,7 +429,7 @@ def _expand_link_target(link_target, page_title):
 
     # check for absolute target reference
     if not link_target.startswith(('.', '/')):
-        return f"{ARCHIVE_BASE}/wiki/{link_target.replace(" ", "_")}"
+        return f"{ARCHIVE_BASE}/wiki/{link_target.replace(' ', '_')}"
 
     # collapse multiple slashes to single slashes
     link_target = re.sub(r'//+', '/', link_target)

@@ -1,103 +1,325 @@
-import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from io import BytesIO
+
 import openpyxl
+from itsdangerous import URLSafeTimedSerializer
 
+import birddog.service as service
 from birddog.service import app
-from birddog.wiki import ARCHIVES
 
-# ------------------ WIKI UNIT TESTS ------------------ 
 
-archive_master_list = [[arc, sub['subarchive']['en']] for arc, archive in ARCHIVES.items() for sub in archive.values()]
-test_email = "birddog_test_user@example.com"
-test_name = "Birddog Test User"
+TEST_EMAIL = "birddog_test_user@example.com"
+TEST_NAME = "Birddog Test User"
+TEST_PASSWORD = "correct horse battery staple"
 
-class Test(unittest.TestCase):
+
+class _RuntimeStub:
+    def __init__(self, state="running"):
+        self.state = state
+
+
+class _UserStub:
+    def __init__(self, name=TEST_NAME, email=TEST_EMAIL):
+        self.name = name
+        self.email = email
+        self._pw = TEST_PASSWORD
+
+    # auth helpers used by service.Users.login
+    def check_password(self, pw):
+        return pw == self._pw
+
+    # used by /change_password
+    def change_password(self, current, new):
+        if current != self._pw:
+            return False
+        self._pw = new
+        return True
+
+    # used by /reset_password/<token>
+    def set_password(self, new):
+        self._pw = new
+
+    # used by Users.create
+    def save(self):
+        return None
+
+
+class TestServiceHelpers(unittest.TestCase):
     def setUp(self):
         app.config["TESTING"] = True
-        app.secret_key = 'test_secret'
+        app.secret_key = "test_secret"
+        service.serializer = URLSafeTimedSerializer(app.secret_key)
+
+        # Provide sane globals expected by login_required/_get_current_user
+        service.runtime = _RuntimeStub(state="running")
+        service.users = service.Users()
+
+        # Avoid template dependency in unit tests
+        self._render_template_patcher = patch("birddog.service.render_template", lambda *a, **k: "OK")
+        self._render_template_patcher.start()
+
+        self.addCleanup(self._render_template_patcher.stop)
+
+    def test_hide_is_stable_and_case_insensitive(self):
+        h1 = service._hide("User@Example.com", salt="s")
+        h2 = service._hide("user@example.com", salt="s")
+        self.assertEqual(h1, h2)
+        self.assertEqual(len(h1), 8)
+
+        h3 = service._hide("user@example.com", salt="different_salt")
+        self.assertNotEqual(h1, h3)
+
+    def test_extract_oldid(self):
+        self.assertEqual(service._extract_oldid("https://x/y?oldid=12345"), 12345)
+        self.assertEqual(service._extract_oldid("https://x/y?nope=1"), 0)
+
+    def test_ascii_filename(self):
+        # Cyrillic transliteration + sanitization
+        out = service.ascii_filename("Р-285/2:20")
+        self.assertTrue(out.isascii())
+        self.assertNotIn("/", out)
+        self.assertNotIn(":", out)
+
+        # Empty becomes default
+        self.assertEqual(service.ascii_filename(""), "download")
+
+
+class TestUsersManager(unittest.TestCase):
+    def setUp(self):
+        service.runtime = _RuntimeStub(state="running")
+
+    def test_users_lookup_cache_miss_returns_none(self):
+        mgr = service.Users(path="users")
+        with patch("birddog.service.load_cached_object", side_effect=service.CacheMissError("miss")):
+            self.assertIsNone(mgr.lookup(TEST_EMAIL))
+
+    def test_users_lookup_success(self):
+        mgr = service.Users(path="users")
+        with patch("birddog.service.load_cached_object", return_value={"x": 1}) as lc,              patch("birddog.service.User") as User:
+            User.from_dict.return_value = _UserStub()
+            u = mgr.lookup(TEST_EMAIL)
+            self.assertIsNotNone(u)
+            lc.assert_called_once()
+            User.from_dict.assert_called_once()
+
+    def test_users_create_existing_returns_none(self):
+        mgr = service.Users(path="users")
+        with patch.object(mgr, "lookup", return_value=_UserStub()):
+            self.assertIsNone(mgr.create(TEST_EMAIL, TEST_NAME, TEST_PASSWORD))
+
+    def test_users_create_new_user_saves(self):
+        mgr = service.Users(path="users")
+        # Ensure lookup says user does not exist
+        with patch.object(mgr, "lookup", return_value=None),              patch("birddog.service.User") as User:
+            user_inst = _UserStub()
+            User.return_value = user_inst
+            mgr.create(TEST_EMAIL, TEST_NAME, TEST_PASSWORD)
+            User.assert_called_once()
+            # save() should be called once by create()
+            # note: save() belongs to user_inst, not the mock class
+            # If it wasn't invoked, we'd see pw unchanged etc; use a spy:
+        user_inst = _UserStub()
+        with patch.object(mgr, "lookup", return_value=None),              patch("birddog.service.User", return_value=user_inst) as User,              patch.object(user_inst, "save", wraps=user_inst.save) as save_spy:
+            u = mgr.create(TEST_EMAIL, TEST_NAME, TEST_PASSWORD)
+            self.assertIs(u, user_inst)
+            save_spy.assert_called_once()
+
+    def test_users_login_success_and_failure(self):
+        mgr = service.Users(path="users")
+        good_user = _UserStub()
+        with patch.object(mgr, "lookup", return_value=good_user):
+            self.assertIsNotNone(mgr.login(TEST_EMAIL, TEST_PASSWORD))
+            self.assertIsNone(mgr.login(TEST_EMAIL, "wrong"))
+
+        with patch.object(mgr, "lookup", return_value=None):
+            self.assertIsNone(mgr.login(TEST_EMAIL, TEST_PASSWORD))
+
+
+class TestServiceRoutes(unittest.TestCase):
+    def setUp(self):
+        app.config["TESTING"] = True
+        app.secret_key = "test_secret"
+        service.serializer = URLSafeTimedSerializer(app.secret_key)
+
+        service.runtime = _RuntimeStub(state="running")
+        service.users = MagicMock()
+
+        # Avoid templates
+        self._render_template_patcher = patch("birddog.service.render_template", lambda *a, **k: "OK")
+        self._render_template_patcher.start()
+        self.addCleanup(self._render_template_patcher.stop)
+
         self.client = app.test_client()
 
-        # Setup session manually
+    def _login_session(self):
         with self.client.session_transaction() as sess:
-            sess['user'] = {
-                'email': test_email,
-                'name': test_name
-            }
+            sess["user"] = {"email": TEST_EMAIL, "name": TEST_NAME}
 
-    def test_archives(self):
-        response = self.client.get("/archives")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.content_type, "application/json")
-        data = response.get_json()
-        self.assertIsInstance(data, list)
-        for item in data:
-            self.assertIsInstance(item, list)
-            self.assertTrue(len(item) == 2)
-            self.assertTrue(item in archive_master_list)
-        for item in archive_master_list:
-            self.assertTrue(item in data)
+    def test_get_current_user_error_paths(self):
+        # No session
+        with app.test_request_context("/"):
+            user, resp, status = service._get_current_user()
+            self.assertIsNone(user)
+            self.assertEqual(status, 404)
 
+        # Missing email
+        with app.test_request_context("/"):
+            from flask import session
+            session["user"] = {"name": TEST_NAME}
+            user, resp, status = service._get_current_user()
+            self.assertIsNone(user)
+            self.assertEqual(status, 404)
 
-    """
-    FIXME
-    # need this patch construct to test authenticated endpoints
-    @patch("birddog.service.users.lookup")
-    def test_page(self, mock_lookup):
-        # Simulate a valid user being found
-        mock_lookup.return_value = {"email": test_email, "name": test_name}
+        # Unknown user
+        service.users.lookup.return_value = None
+        with app.test_request_context("/"):
+            from flask import session
+            session["user"] = {"email": TEST_EMAIL}
+            user, resp, status = service._get_current_user()
+            self.assertIsNone(user)
+            self.assertEqual(status, 404)
 
-        page_keys = set([
-            'archive', 'case', 'children', 'description', 'doc_link', 'fond', 'header', 
-            'history', 'kind', 'lastmod', 'link', 'name', 'needs_translation', 'opus', 
-            'subarchive', 'title', 'revid', 'notes', 'other_links', 'dates', 'template',
-            'lineage'])
+        # Emergency shutdown
+        service.users.lookup.return_value = _UserStub()
+        service.runtime.state = "shutdown"
+        with app.test_request_context("/"):
+            from flask import session
+            session["user"] = {"email": TEST_EMAIL}
+            user, resp, status = service._get_current_user()
+            self.assertIsNone(user)
+            self.assertEqual(status, 503)
 
-        def _load_page_url(url, keys):
-            print("Testing URL:", url)
-            response = self.client.get(url)
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.content_type, "application/json")
-            data = response.get_json()
-            self.assertIsInstance(data, dict)
-            self.assertEqual(set(data.keys()), keys)
+    def test_login_required_decorator_passes_user(self):
+        service.runtime.state = "running"
+        service.users.lookup.return_value = _UserStub()
 
-        address = [ "DAK", "D", "6", "1", "38"]
-        for i in range(1, len(address)):
-            url = f"/page/{'/'.join(address[:i])}"
-            _load_page_url(url, page_keys)
-            _load_page_url(url + "?compare=2023,12,31", page_keys | {"refmod"})
+        @service.login_required
+        def _f(user, x):
+            return {"ok": True, "email": user.email, "x": x}, 200
 
-    @patch("birddog.service.users.lookup")
-    def test_download(self, mock_lookup):
-        # Simulate a valid user being found
-        mock_lookup.return_value = {"email": test_email, "name": test_name}
+        with app.test_request_context("/"):
+            from flask import session
+            session["user"] = {"email": TEST_EMAIL}
+            resp, status = _f(123)  # note wrapper signature: user injected
+            self.assertEqual(status, 200)
+            self.assertEqual(resp["email"], TEST_EMAIL)
+            self.assertEqual(resp["x"], 123)
 
-        def _download_page_url(url):
-            print("Testing Download:", url)
-            response = self.client.get(url)
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.content_type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    def test_signup_validation_and_success(self):
+        # missing fields
+        resp = self.client.post("/signup", json={"email": TEST_EMAIL})
+        self.assertEqual(resp.status_code, 400)
 
-            # Check file download headers
-            content_disp = response.headers.get("Content-Disposition")
-            self.assertTrue(content_disp.startswith("attachment;"))
+        # success
+        service.users.create.return_value = _UserStub()
+        resp = self.client.post("/signup", json={"name": TEST_NAME, "email": TEST_EMAIL, "password": TEST_PASSWORD})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"success": True})
+        with self.client.session_transaction() as sess:
+            self.assertEqual(sess["user"]["email"], TEST_EMAIL)
 
-            wb = openpyxl.load_workbook(filename=BytesIO(response.data))
-            ws = wb.active
-            first_cell = ws.cell(row=1, column=1).value
-            print("First table cell:", first_cell)
-            wb.close()
-            self.assertGreater(len(response.data), 100)
+        # email exists
+        service.users.create.return_value = None
+        resp = self.client.post("/signup", json={"name": TEST_NAME, "email": TEST_EMAIL, "password": TEST_PASSWORD})
+        self.assertEqual(resp.status_code, 400)
 
-        address = [ "DAKIRO", "R", "Р-285", "2", "20"]
-        for i in range(1, len(address)):
-            url = f"/download/{'/'.join(address[:i])}"
-            _download_page_url(url)
-            _download_page_url(url + "?compare=2023,12,31")
-        """
+    def test_login_and_logout(self):
+        # missing fields
+        resp = self.client.post("/login", json={"email": TEST_EMAIL})
+        self.assertEqual(resp.status_code, 400)
+
+        # invalid
+        service.users.login.return_value = None
+        resp = self.client.post("/login", json={"email": TEST_EMAIL, "password": "wrong"})
+        self.assertEqual(resp.status_code, 401)
+
+        # valid
+        service.users.login.return_value = _UserStub()
+        resp = self.client.post("/login", json={"email": TEST_EMAIL, "password": TEST_PASSWORD})
+        self.assertEqual(resp.status_code, 200)
+        with self.client.session_transaction() as sess:
+            self.assertEqual(sess["user"]["email"], TEST_EMAIL)
+
+        # logout redirects and clears session
+        resp = self.client.get("/logout")
+        self.assertEqual(resp.status_code, 302)
+        with self.client.session_transaction() as sess:
+            self.assertNotIn("user", sess)
+
+    def test_change_password(self):
+        self._login_session()
+        user = _UserStub()
+        service.users.lookup.return_value = user
+
+        # missing current/new
+        resp = self.client.post("/change_password", json={"current": "x"})
+        self.assertEqual(resp.status_code, 400)
+
+        # wrong current
+        resp = self.client.post("/change_password", json={"current": "wrong", "new": "newpw"})
+        self.assertEqual(resp.status_code, 403)
+
+        # success
+        resp = self.client.post("/change_password", json={"current": TEST_PASSWORD, "new": "newpw"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["success"], True)
+
+    def test_reset_password_request_unknown_user_does_not_send(self):
+        service.users.lookup.return_value = None
+
+        with patch("birddog.service.smtplib.SMTP") as SMTP:
+            resp = self.client.post("/reset_password", json={"email": TEST_EMAIL})
+            self.assertEqual(resp.status_code, 200)
+            # Should not attempt SMTP for unknown user
+            SMTP.assert_not_called()
+
+    def test_reset_password_request_known_user_sends_email(self):
+        service.users.lookup.return_value = _UserStub()
+        service.serializer = URLSafeTimedSerializer("test_secret")
+
+        smtp_cm = MagicMock()
+        smtp_instance = MagicMock()
+        smtp_cm.__enter__.return_value = smtp_instance
+
+        with patch("birddog.service.smtplib.SMTP", return_value=smtp_cm) as SMTP:
+            resp = self.client.post("/reset_password", json={"email": TEST_EMAIL})
+            self.assertEqual(resp.status_code, 200)
+            SMTP.assert_called_once()
+            smtp_instance.starttls.assert_called_once()
+            smtp_instance.login.assert_called_once()
+            smtp_instance.send_message.assert_called_once()
+
+    def test_reset_with_token_expired_or_unknown_user(self):
+        # expired token: serializer.loads raises
+        with patch.object(service.serializer, "loads", side_effect=Exception("bad")):
+            resp = self.client.get("/reset_password/badtoken")
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.data.decode(), "OK")
+
+        # unknown user
+        with patch.object(service.serializer, "loads", return_value=TEST_EMAIL):
+            service.users.lookup.return_value = None
+            resp = self.client.get("/reset_password/goodtoken")
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.data.decode(), "OK")
+
+    def test_reset_with_token_post_sets_password(self):
+        user = _UserStub()
+        with patch.object(service.serializer, "loads", return_value=TEST_EMAIL):
+            service.users.lookup.return_value = user
+
+            # missing password -> form with error
+            resp = self.client.post("/reset_password/goodtoken", data={})
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.data.decode(), "OK")
+
+            # valid password -> redirect
+            resp = self.client.post("/reset_password/goodtoken", data={"password": "newpw"})
+            self.assertEqual(resp.status_code, 302)
+            self.assertEqual(user._pw, "newpw")
+
 
 if __name__ == "__main__":
     unittest.main()

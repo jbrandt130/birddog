@@ -108,6 +108,33 @@ class TestNocoDBDatabase(unittest.TestCase):
         self.assertEqual(lookup_id, page_id)
 
         # -----------------------
+        # 2b) lookup with sequences: Pages.title (order, duplicates, empty, missing)
+        # -----------------------
+        # Create a few pages whose titles we can use as lookup keys
+        seq_title_a = self._mk_page_title("seq_a")
+        seq_title_b = self._mk_page_title("seq_b")
+        seq_title_c = self._mk_page_title("seq_c")
+
+        seq_id_a = self.db.write("Pages", {"title": seq_title_a})
+        seq_id_b = self.db.write("Pages", {"title": seq_title_b})
+        seq_id_c = self.db.write("Pages", {"title": seq_title_c})
+        self.created_page_ids.extend([seq_id_a, seq_id_b, seq_id_c])
+
+        # (a) Empty sequence -> empty list
+        self.assertEqual(self.db.lookup("Pages", []), [])
+
+        # (b) Order preserved + duplicates preserved
+        seq_keys = [seq_title_b, seq_title_a, seq_title_b, seq_title_c]
+        seq_expected = [seq_id_b, seq_id_a, seq_id_b, seq_id_c]
+        self.assertEqual(self.db.lookup("Pages", seq_keys), seq_expected)
+
+        # (c) Missing key yields None in corresponding position
+        missing_key = self._mk_page_title("seq_missing_does_not_exist")
+        seq_keys2 = [seq_title_a, missing_key, seq_title_c, missing_key]
+        seq_expected2 = [seq_id_a, None, seq_id_c, None]
+        self.assertEqual(self.db.lookup("Pages", seq_keys2), seq_expected2)
+
+        # -----------------------
         # 3) batch write + batch read: Pages
         # -----------------------
         batch_pages = [{"title": self._mk_page_title(f"page_{i}")} for i in range(10)]
@@ -145,6 +172,27 @@ class TestNocoDBDatabase(unittest.TestCase):
             link = self._mk_doc_link(i)
             did = self.db.lookup("Documents", link)
             self.assertTrue(did)
+
+        # -----------------------
+        # 4b) lookup with sequences: Documents.link (order, duplicates, empty, missing)
+        # -----------------------
+        self.assertEqual(self.db.lookup("Documents", []), [])
+
+        link0 = self._mk_doc_link(0)
+        link1 = self._mk_doc_link(1)
+        link2 = self._mk_doc_link(2)
+        missing_link = f"http://test.doc/{self._run_suffix}/does_not_exist"
+
+        # Ensure the existing ones are resolvable (integration timing / consistency)
+        id0 = self.db.lookup("Documents", link0)
+        id1 = self.db.lookup("Documents", link1)
+        id2 = self.db.lookup("Documents", link2)
+        self.assertTrue(id0 and id1 and id2)
+
+        seq_links = [link1, link0, link1, missing_link, link2]
+        seq_ids = self.db.lookup("Documents", seq_links)
+
+        self.assertEqual(seq_ids, [id1, id0, id1, None, id2])
 
         # -----------------------
         # 5) Links: Pages.parent (child -> parent)

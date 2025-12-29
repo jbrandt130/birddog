@@ -233,8 +233,11 @@ class NocoDBDatabase(Database):
             raise InvalidFieldName(f"{table_name}.{field_name}")
 
     def _key_field_name(self, table_name):
-        return self._schema[table_name]["key"]
-    
+        try:
+            return self._schema[table_name]["key"]
+        except KeyError:
+            raise SchemaError(f"Table {table_name} has no key field")
+
     def _key_field_id(self, table_name):
         return self._field_id(table_name, self._key_field_name(table_name))
 
@@ -360,32 +363,57 @@ class NocoDBDatabase(Database):
         Look up record_id(s) by the table’s key field.
 
         Args:
-            table:
+            table_name:
                 Table name.
 
             key_set:
-                A single key value (str) or a set of key values.
+                One of:
+                - A single key value (str)
+                - A set of key values (set[str])
+                - A sequence of key values (list[str] or tuple[str])
 
         Returns:
-            - If key_set is a string: record_id (str) if found, else None.
-            - If key_set is a set: dict of key:record_id values for all matching
-              keys in the table.
+            - If key_set is a string:
+                record_id (str) if found, else None.
+
+            - If key_set is a set:
+                dict mapping key -> record_id for all matching keys
+                present in the table. Missing keys are omitted.
+
+            - If key_set is a sequence (list or tuple):
+                list of record_id values aligned to the input order.
+                For each input key:
+                  - record_id if found
+                  - None if the key is not found
+                An empty input sequence returns an empty list.
 
         Required semantics:
-            - Not-found is NOT an error; missing keys are omitted in the returned dict.
+            - Not-found is NOT an error.
+            - Missing keys are omitted in dict results and yield None
+              in sequence results.
 
         Errors:
             - InvalidTableName
             - FailedIO
-            - ValueError: key_set is not a string or set of strings
+            - TypeError: key_set as a sequence contains non-string elements
+            - ValueError: key_set is not a valid key or collection of keys
         """
+
+        if isinstance(key_set, (list, tuple)):
+            if not all([isinstance(v, str) for v in key_set]):
+                raise TypeError("key_set as sequence must a sequence of all strings")
+            key_sequence = key_set
+            key_set = set(key_set)
+        else:
+            key_sequence = None
+
         table_id = self._table_id(table_name)
         key_field_name = self._key_field_name(table_name)
         key_field_id = self._field_id(table_name, key_field_name)
         id_field_id = self._field_id(table_name, "Id")
         key_set, singleton = self._validate_key_set(table_name, key_set)
         result = dict()
-        missing = [key for key in key_set]
+        missing = list(key_set)
         if missing:
             url = _records_url(table_id)
 
@@ -411,6 +439,8 @@ class NocoDBDatabase(Database):
 
         if singleton:
             return list(result.values())[0] if result else None
+        if key_sequence is not None:
+            return [result.get(key) for key in key_sequence]
         return result
 
     def read(self, table_name, record_id):

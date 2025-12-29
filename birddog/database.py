@@ -149,24 +149,40 @@ class Database:
         Look up record_id(s) by the table’s key field.
 
         Args:
-            table:
+            table_name:
                 Table name.
 
             key_set:
-                A single key value (str) or a set of key values.
+                One of:
+                - A single key value (str)
+                - A set of key values (set[str])
+                - A sequence of key values (list[str] or tuple[str])
 
         Returns:
-            - If key_set is a string: record_id (str) if found, else None.
-            - If key_set is a set: dict of key:record_id values for all matching
-              keys in the table.
+            - If key_set is a string:
+                record_id (str) if found, else None.
+
+            - If key_set is a set:
+                dict mapping key -> record_id for all matching keys
+                present in the table. Missing keys are omitted.
+
+            - If key_set is a sequence (list or tuple):
+                list of record_id values aligned to the input order.
+                For each input key:
+                  - record_id if found
+                  - None if the key is not found
+                An empty input sequence returns an empty list.
 
         Required semantics:
-            - Not-found is NOT an error; missing keys are omitted in the returned dict.
+            - Not-found is NOT an error.
+            - Missing keys are omitted in dict results and yield None
+              in sequence results.
 
         Errors:
             - InvalidTableName
             - FailedIO
-            - ValueError: key_set is not a string or set of strings
+            - TypeError: key_set as a sequence contains non-string elements
+            - ValueError: key_set is not a valid key or collection of keys
         """
         raise NotImplementedError
 
