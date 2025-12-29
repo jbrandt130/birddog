@@ -336,53 +336,61 @@ function sanitize_id(column_name) {
   return 'export_' + column_name.toLowerCase().replace(/\s+/g, '_');
 }
 
+function _labelize(s) {
+  // Display-only: keep original in `value`
+  return String(s).replaceAll(",", "\,");
+}
+
 function render_export_column_assignments(table_name, column_classes, column_headers, column_header_map) {
-    const column_container = document.getElementById("export-columns-container");
-    column_container.innerHTML = "";
-    const tagify_map = {};
+  const column_container = document.getElementById("export-columns-container");
+  column_container.innerHTML = "";
+  const tagify_map = {};
 
-    column_classes.forEach(column_class => {
-      const column_id = sanitize_id(column_class);
-      const div = document.createElement("div");
-      div.className = "mb-3";
-      div.innerHTML = `
-        <label class="form-label">Export Column: ${column_class}</label>
-        <input class="form-control tag-input" id="${column_id}" placeholder="Select source columns...">
-      `;
-      column_container.appendChild(div);
+  column_classes.forEach(column_class => {
+    const column_id = sanitize_id(column_class);
+    const div = document.createElement("div");
+    div.className = "mb-3";
+    div.innerHTML = `
+      <label class="form-label">Export Column: ${column_class}</label>
+      <input class="form-control tag-input" id="${column_id}" placeholder="Select source columns...">
+    `;
+    column_container.appendChild(div);
+  });
+
+  const headers = column_headers[table_name] || [];
+  const whitelist = headers.map(h => ({ value: h, label: _labelize(h) }));
+
+  column_classes.forEach(column_class => {
+    const input_id = sanitize_id(column_class);
+    const input = document.getElementById(input_id);
+    if (!input) return;
+
+    const tagify = new Tagify(input, {
+      whitelist,
+      tagTextProp: "label", // show label on the tag
+      dropdown: {
+        enabled: 0,
+        fuzzySearch: true,
+        position: "auto",
+        searchKeys: ["value", "label"]
+      },
+      enforceWhitelist: true,
+      duplicates: true
     });
 
-    // Initialize Tagify for each input
-    column_classes.forEach(column_class => {
-      const input_id = sanitize_id(column_class);
-      const input = document.getElementById(input_id);
-      if (input) {
-        const tagify = new Tagify(input, {
-          whitelist: column_headers[table_name],
-          dropdown: {
-            enabled: 0,
-            fuzzySearch: true,
-            position: 'auto'
-          },
-          enforceWhitelist: true,
-          duplicates: true
-        });
-        tagify_map[column_class] = tagify;
+    tagify_map[column_class] = tagify;
 
-        // Prepopulate from column_header_map
-        const header_indices = column_header_map[table_name][column_class];
-        if (header_indices !== undefined) {
-          tagify.removeAllTags();
-          header_indices.forEach(header_index => {
-            const header = column_headers[table_name][header_index];
-            if (header) {
-              tagify.addTags([header]);
-            }
-          });
-        }
-      }
-    });
-    return tagify_map;
+    const header_indices = column_header_map?.[table_name]?.[column_class];
+    if (header_indices !== undefined) {
+      tagify.removeAllTags();
+      header_indices.forEach(i => {
+        const h = headers[i];
+        if (h) tagify.addTags([{ value: h, label: _labelize(h) }]);
+      });
+    }
+  });
+
+  return tagify_map;
 }
 
 async function open_export_modal() {
