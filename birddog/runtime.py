@@ -354,7 +354,10 @@ class PageUpdateManager(HeartbeatManager):
                     update = json.loads(update)
                     if parent and parent.lastmod and parent.lastmod < update["timestamp"]:
                         # child has been updated - update child link status
-                        parent.set_child_link_status(title, True)
+                        try:
+                            parent.set_child_link_status(title, True)
+                        except ValueError:
+                            _logger.error(f"Unable to update child link status for child {title}. Skipping...")
                 # finished with this title
                 self._kv_store.remove(self._PENDING_TITLE_UPDATES, title)
             except (ValueError,  FetchUrlFailError) as err:

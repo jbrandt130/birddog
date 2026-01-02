@@ -19,9 +19,8 @@ case_id = '1'
 class Test(unittest.TestCase):
     def test_Archive(self):
         page = Archive('DAZHO')
-        print('default_url', page.default_url)
         self.assertTrue(
-            unquote(page.default_url) == unquote(ARCHIVE_BASE + '/wiki/Архів:ДАЖО/Д'))
+            unquote(page.url) == unquote(ARCHIVE_BASE + '/wiki/Архів:ДАЖО/Д'))
         print('id', page.id)
         self.assertTrue(page.id == 'DAZHO')
         print('kind', page.kind)
@@ -37,13 +36,11 @@ class Test(unittest.TestCase):
         print('title', page.title)
         self.assertTrue(page.title == 'Архів:ДАЖО/Д')
         print('url', page.url)
-        self.assertTrue(page.url == page.default_url)
         
     def test_Fond(self):
         page = Archive('DAZHO').lookup(fond_id)
-        print('default_url', page.default_url)
         self.assertTrue(
-            page.default_url == f'{ARCHIVE_BASE}/wiki/Архів:ДАЖО/1')
+            page.url == f'{ARCHIVE_BASE}/wiki/Архів:ДАЖО/1')
         print('id', page.id)
         self.assertTrue(page.id == fond_id)
         print('kind', page.kind)
@@ -57,12 +54,10 @@ class Test(unittest.TestCase):
         print('title', page.title)
         self.assertTrue(page.title == f'Архів:ДАЖО/{fond_id}')
         print('url', page.url)
-        self.assertTrue(page.url == page.default_url)
        
     def test_Opus(self):
         page = Archive('DAZHO').lookup(fond_id).lookup(opus_id)
-        print('default_url', page.default_url)
-        self.assertTrue(page.default_url == f'{page.parent.default_url}/{opus_id}')
+        self.assertTrue(page.url == f'{page.parent.url}/{opus_id}')
         print('id', page.id)
         self.assertTrue(page.id == opus_id)
         print('kind', page.kind)
@@ -77,13 +72,11 @@ class Test(unittest.TestCase):
         #print(f'{page.parent.title}/{opus_id}')
         self.assertTrue(page.title == f'{page.parent.title}/{opus_id}')
         print('url', page.url)
-        self.assertTrue(page.url == page.default_url)
 
     def test_Case(self):
         page = Archive('DAZHO').lookup(fond_id).lookup(opus_id).lookup(case_id)
-        print('default_url', page.default_url)
         self.assertTrue(
-            page.default_url == f'{page.parent.default_url}/{case_id}')
+            page.url == f'{page.parent.url}/{case_id}')
         print('id', page.id)
         self.assertTrue(page.id == case_id)
         print('kind', page.kind)
@@ -97,7 +90,6 @@ class Test(unittest.TestCase):
         print('title', page.title)
         self.assertTrue(page.title == f'{page.parent.title}/{case_id}')
         print('url', page.url)
-        self.assertTrue(page.url == page.default_url)
 
     def test_PageLRU(self):
         lru = PageLRU()

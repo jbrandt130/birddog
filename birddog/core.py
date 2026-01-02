@@ -66,7 +66,7 @@ def _entry_hit(entry, entry_id):
 _history_lru = HistoryLRU()
 
 class Page:
-    """Abstract base clase for all page types on the archive."""
+    """Base clase for all page types on the archive."""
     def __init__(self, title, runtime=None):
         self._runtime = runtime
         self._title = canonicalize_title(title)
@@ -74,8 +74,7 @@ class Page:
         self._detached = False
         if not self._cache_load():
             # not in the cache - get it
-            if self.default_url is not None:
-                #self._page = read_page(self.default_url)
+            if self.url is not None:
                 _logger.info(f'Loading page: {self.name} using title "{self.title}"')
                 self._page = mw_read_page(self.title)
 
@@ -177,7 +176,6 @@ class Page:
 
     @property
     def page(self):
-        """Page data"""
         return self._page
 
     @property
@@ -207,17 +205,8 @@ class Page:
         return regex.sub(r"^\p{N}+\p{P}?\p{Zs}*", "", get_text(self._page.get('description')))
 
     @property
-    def default_url(self):
-        # FIXME: is this needed?!
-        return f"{ARCHIVE_BASE}/wiki/{self.title}"
-
-    @property
     def url(self):
-        return self.default_url
-
-    @property
-    def unquoted_url(self):
-        return unquote(self.url)
+        return f"{ARCHIVE_BASE}/wiki/{self.title}"
 
     @property
     def id(self):

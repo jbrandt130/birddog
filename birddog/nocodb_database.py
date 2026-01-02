@@ -10,7 +10,7 @@ import time
 import requests
 from copy import copy
 
-from birddog.database import (
+from birddog.abstract_database import (
     Database,
     FailedIO,
     SchemaError,

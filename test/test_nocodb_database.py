@@ -2,7 +2,7 @@ import os
 import time
 import unittest
 
-from birddog.database import (
+from birddog.abstract_database import (
     Database,
     FailedIO,
     SchemaError,
@@ -13,10 +13,10 @@ from birddog.database import (
     MissingKey,
 )
 
-from birddog.nocodb_database import NocoDBDatabase
+from birddog.database import Database
 
 
-class TestNocoDBDatabase(unittest.TestCase):
+class TestDatabase(unittest.TestCase):
     """
     Integration-style unit test for the NocoDBDatabase backend.
 
@@ -39,7 +39,7 @@ class TestNocoDBDatabase(unittest.TestCase):
             raise unittest.SkipTest("NOCODB_API_TOKEN is not set in environment.")
 
     def setUp(self):
-        self.db = NocoDBDatabase()
+        self.db = Database()
         self.created_page_ids = []
         self.created_doc_ids = []
         self._run_suffix = f"test_unittest_{int(time.time())}"
@@ -68,7 +68,7 @@ class TestNocoDBDatabase(unittest.TestCase):
         # Ensure "test" is present and uniqueness is guaranteed.
         return f"http://test.doc/{self._run_suffix}/{i}"
 
-    def test_nocodb_database_pages_documents(self):
+    def test_database_pages_documents(self):
         # -----------------------
         # 1) scan: Pages + Documents
         # -----------------------
