@@ -56,23 +56,26 @@ def _replace_links(db, table_name, link_field, source_record, target_records):
 
 def _form_page_record(page):
     page_data = page.page
-    
-    result = { "title": _page_title(page) }
-    result["description_uk"] = page_data["description"]["uk"]
-    desc = page_data["description"].get("en")
-    if desc:
-        result["description"] = desc
-    result["availability"] = "linked"
-    result["level"] = page.kind
-    result["reference_date"] = _format_date(page_data["lastmod"])
-    result["label"] = page.display_name if page.kind == "archive" else page.id
-    dates = page_data.get("dates")
-    if dates:
-        result["years"] = dates["uk"]
-    result["source_type"] = "wiki"
-    
-    return result
-    
+    try:
+        result = { "title": _page_title(page) }
+        result["description_uk"] = page_data["description"]["uk"]
+        desc = page_data["description"].get("en")
+        if desc:
+            result["description"] = desc
+        result["availability"] = "linked"
+        result["level"] = page.kind
+        result["reference_date"] = _format_date(page_data["lastmod"])
+        result["label"] = page.display_name if page.kind == "archive" else page.id
+        dates = page_data.get("dates")
+        if dates:
+            result["years"] = dates["uk"]
+        result["source_type"] = "wiki"
+        
+        return result
+    except Exception as e:
+        _logger.error(f"error in _form_page_record: {page.title}")
+        raise e
+
 def _child_titles(page):
     result = []
     prefix = f"/wiki/{WIKI_NAMESPACE}:"
@@ -86,7 +89,9 @@ def _child_titles(page):
                         "availability": _availability(cell),
                     })
                     break
-    return result
+    # remove duplicate records
+    result_dict = { rec.get("title"): rec for rec in result }
+    return list(result_dict.values())
 
 def _detect_changes(db, table_name, records, key="title"):
     if isinstance(records, dict):
@@ -107,8 +112,6 @@ def _detect_changes(db, table_name, records, key="title"):
             current_rec = current_record_dict[rec_id]
             for k, v in record.items():
                 if not k in current_rec or current_rec[k] != v:
-                    #if k in current_rec:
-                    #    print(f"data mismatch: {current_rec[k]} != {v}")
                     update.append(record)
                     break
         else:
@@ -140,8 +143,6 @@ def _link_children(db, page):
     if new_children:
         # some child titles were not found: create records for them and 
         # update the child id list to include the new titles
-        for child in new_children:
-            child["birddog_alert"] = True
         new_child_ids = db.write("Pages", new_children)
         for child_id, child_rec in zip(new_child_ids, new_children):
             child_rec["Id"] = child_id
@@ -168,7 +169,7 @@ def _link_documents(db, page, urls):
         raise ValueError(f"_link_documents: unable to locate all referenced documents")
 
     if _replace_links(db, "Pages", "doc_links", page_id, doc_ids):
-        _logger.info(f"Child links for {_page_title(page)} updated ({len(doc_ids)} doc(s))")
+        _logger.info(f"Doc links for {_page_title(page)} updated ({len(doc_ids)} doc(s))")
         return True
     # otherwise, no change in links
     return False
@@ -402,7 +403,14 @@ class Updater:
         pages = [self._runtime.lookup_by_title(title) for title in page_titles]
         if not all([isinstance(page, Page) for page in pages]):
             raise ValueError("Updater._get_pages: not all pages were found")
-        return pages
+
+        result = []
+        for page in pages:
+            if not page.lastmod:
+                _logger.info(f"Updater: ignoring nonexistent page: {_page_title(page)}")
+            else:
+                result.append(page)
+        return result
 
     def update_page_records(self, page_titles, update_child_links=True):
         pages = self._get_pages(page_titles)

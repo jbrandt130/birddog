@@ -9,6 +9,7 @@ static/downloads
 var
 venv*
 *key.json
+nocodb
 
 # Elastic Beanstalk Files
 .elasticbeanstalk/*

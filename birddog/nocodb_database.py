@@ -21,11 +21,26 @@ from birddog.abstract_database import (
     MissingKey,
     )
 
-#_NOCODB_V3_API_ROOT     = "https://app.nocodb.com/api/v3"
-_NOCODB_V2_API_ROOT     = "https://app.nocodb.com/api/v2"
-_NOCODB_API_DELAY       = .25
-_NOCODB_BATCH_SIZE      = 20
-_NOCODB_BASE_ID         = "pljzqjmv8a5nvku"
+from birddog.log import get_logger
+_logger = get_logger()
+
+_NOCODB_RUN_LOCAL       = os.environ.get("NOCODB_LOCAL")
+if _NOCODB_RUN_LOCAL:
+    _NOCODB_BASE_ID     = "p79fvr9cjqgpv5n"
+    _NOCODB_API_TOKEN   = os.environ["NOCODB_API_TOKEN_LOCAL"]
+    _NOCODB_V2_API_ROOT = "http://localhost:8080/api/v2"
+    _NOCODB_API_DELAY   = .01
+    _NOCODB_BATCH_SIZE  = 10
+    _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
+    _logger.info(f"Using local nocodb api: {_NOCODB_V2_API_ROOT}")
+else:
+    _NOCODB_BASE_ID     = "pljzqjmv8a5nvku"
+    _NOCODB_API_TOKEN   = os.environ["NOCODB_API_TOKEN"]
+    _NOCODB_V2_API_ROOT = "https://app.nocodb.com/api/v2"
+    _NOCODB_API_DELAY   = .25
+    _NOCODB_BATCH_SIZE  = 20
+    _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
+    _logger.info(f"Using hosted nocodb api: {_NOCODB_V2_API_ROOT}")
 
 # ----------------------------------------------------------------------
 # NocoDB API endpoints
@@ -82,6 +97,24 @@ def _validate_record(table_schema, record, other_allowed_fields=None):
             raise InvalidFieldValue(f"{key}: {value}")
     return True
 
+def _coerce_bool(value):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, int):
+        if value in (0, 1):
+            return bool(value)
+        raise ValueError(f"Invalid int for bool: {value}")
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("true", "t", "yes", "y", "1"):
+            return True
+        if v in ("false", "f", "no", "n", "0"):
+            return False
+        raise ValueError(f"Invalid str for bool: {value!r}")
+    raise TypeError(f"Unsupported type for bool coercion: {type(value).__name__}")
+
 _MULTI_SPLIT_RE = re.compile(r"[,/]+")
 
 def _normalize_multiselect(key, value):
@@ -97,8 +130,12 @@ def _normalize_multiselect(key, value):
         return value
     raise InvalidFieldValue(f"{key}: {value}")
 
+def _normalize_bool(key, value):
+    return _coerce_bool(value)
+
 _field_normalizer = {
     "multi_select": _normalize_multiselect,
+    "bool": _normalize_bool,
 }
 
 def _normalize_record(table_schema, record):
@@ -147,8 +184,9 @@ def _encode_record(table_schema, record):
 
 class NocoDBDatabase(Database):
     def __init__(self, api_token=None):
+        self._verbose = False
         if not api_token:
-            api_token = os.environ["NOCODB_API_TOKEN"]
+            api_token = _NOCODB_API_TOKEN
         self._api_token = api_token
         self._session = requests.Session()
         self._session.headers.update(
@@ -181,6 +219,9 @@ class NocoDBDatabase(Database):
                 resp = self._session.delete(url, json=json)
             else:
                 raise ValueError(f"_fetch: unrecognized method: {method}")
+            if self._verbose or resp.status_code in (400, 404):
+                _logger.info(f"_fetch response: {resp.text}")
+
             resp.raise_for_status()
             return resp.json()
         except requests.exceptions.RequestException as err:
@@ -253,7 +294,7 @@ class NocoDBDatabase(Database):
                 "description": record["description"]
             }
             table_spec["fields"] = field_spec
-            if record["key_field"]:
+            if _coerce_bool(record.get("key_field", False)):
                 table_spec["key"] = record["field_name"]
             schema[record["table_name"]] = table_spec
         if "Schema Values" not in self._table_id_map:
@@ -299,7 +340,7 @@ class NocoDBDatabase(Database):
         table_schema = self._schema[table_name]
         return [_encode_record(table_schema, record) for record in records]
 
-    def scan(self, table_name, limit=100, cursor=None):
+    def scan(self, table_name, limit=100, cursor=None, raw=False):
         """
         Page through records of a table without requiring the table key.
 
@@ -355,7 +396,8 @@ class NocoDBDatabase(Database):
         else:
             next_cursor = str(offset + len(records))
 
-        self.normalize_records(table_name, records)
+        if not raw:
+            self.normalize_records(table_name, records)
         return records, next_cursor
 
     def lookup(self, table_name, key_set):
@@ -421,7 +463,7 @@ class NocoDBDatabase(Database):
                 batch = missing[i:i + _NOCODB_BATCH_SIZE]
 
                 clauses = [
-                    f"({key_field_id},eq,{_escape_key_value(key)})"
+                    f"({key_field_id},eq,{key})"
                     for key in batch
                 ]
 
@@ -628,10 +670,15 @@ class NocoDBDatabase(Database):
         link_field_id = self._field_id(table_name, link_field)
         url = _links_url(table_id, link_field_id, source_record)
         if isinstance(target_records, (list, tuple)):
-            payload = [{"Id": value} for value in target_records]
+            # ensure no duplicate target ids
+            target_records = list(set(target_records))
+            for i in range(0, len(target_records), _NOCODB_EDIT_LINK_BATCH_SIZE):
+                batch = target_records[i:i + _NOCODB_EDIT_LINK_BATCH_SIZE]
+                payload = [{"Id": value} for value in batch]
+                self._fetch(url, json=payload, method=method)
         else:
             payload = [{"Id": target_records}]
-        self._fetch(url, json=payload, method=method)
+            self._fetch(url, json=payload, method=method)
 
     def create_links(self, table_name, link_field, source_record, target_records):
         """
