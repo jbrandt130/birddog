@@ -209,6 +209,10 @@ class Page:
         return f"{ARCHIVE_BASE}/wiki/{self.title}"
 
     @property
+    def unquoted_url(self):
+        return unquote(self.url)
+
+    @property
     def id(self):
         if is_archive(self.title):
             return self.archive_name
