@@ -6,11 +6,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from urllib.parse import urlparse, unquote
 
-#from birddog.database import Database
-#from birddog.runtime import Runtime
+from birddog.database import Database
 from birddog.wiki import (
     WIKI_NAMESPACE,
-    _expand_link_target,
+    expand_link_target,
     )
 from birddog.core import Page
 from birddog.utility import fetch_url, new_id
@@ -159,7 +158,7 @@ def _extract_page_links(page, strict=True):
                 item = item.split("|")[0]
                 if not item.startswith("http"):
                     # seems to be a link target, expand it
-                    item = _expand_link_target(item, page.title)
+                    item = expand_link_target(item, page.title)
                 result.add(item)
     doc_link = page_data.get("doc_link")
     if doc_link:
@@ -344,10 +343,10 @@ def _fetch_mediawiki_file_metadata(titles, source, thumbnail_width = 300):
 # ----------------------------------------------------------------------
 # Documents table record updates
 
-class Updater:
-    def __init__(self, db, runtime):
-        self._db = db
+class DatabaseUpdater:
+    def __init__(self, runtime, db=None):
         self._runtime = runtime
+        self._db = db if db else Database()
 
     def _get_pages(self, page_titles):
         if isinstance(page_titles, str):

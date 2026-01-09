@@ -423,7 +423,7 @@ def _is_relative_link_target(link_target):
 def _is_familysearch_url(link):
     return link.startswith("https://www.familysearch.org")
 
-def _expand_link_target(link_target, page_title):
+def expand_link_target(link_target, page_title):
     # remove leading and trailing spaces
     link_target = link_target.strip()
 
@@ -767,7 +767,7 @@ def mw_page_doc_url(page):
     links = page["other_links"].get("internal_links", [])
     links = [link for link in links if _included_link(link)]
     if links:
-        return _expand_link_target(links[0], page["title"]["uk"])
+        return expand_link_target(links[0], page["title"]["uk"])
     links = page["notes"].get("commons_links", [])
     links = [link for link in links if _included_link(link)]
     if links:
@@ -799,7 +799,7 @@ def _extract_table(table_code, page_title, page_links, all_page_links):
                 link_target = str(links[0].title).strip()
                 _safe_remove(page_links["internal_links"], link_target)
                 if not link_target.startswith("#"):
-                    link = _expand_link_target(link_target, page_title)
+                    link = expand_link_target(link_target, page_title)
                     all_page_links.add(link)
             else:
                 # External links as fallback
@@ -926,7 +926,7 @@ def _parse_wiki_text(wikitext, page_title, title, revid=None):
         if sub_pages:
             # synthesize a table from list of links to subpages
             for link_target in sub_pages:
-                link = _expand_link_target(link_target, page_title)
+                link = expand_link_target(link_target, page_title)
                 all_page_links.add(link)
                 _safe_remove(page_links["internal_links"], link_target)
                 text = form_text_item(link_target.strip("./ "))

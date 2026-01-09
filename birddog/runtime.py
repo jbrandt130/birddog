@@ -39,8 +39,7 @@ from birddog.utility import HeartbeatManager, FetchUrlFailError
 
 _ENABLE_DB_SYNC = os.environ.get("BIRDDOG_ENABLE_DB_SYNC", False)
 if _ENABLE_DB_SYNC:
-    from birddog.database import Database
-    from birddog.database_sync import Updater
+    from birddog.database_updater import DatabaseUpdater
 
 from birddog.log import get_logger, ServiceLogger, EventLogger
 _logger = get_logger()
@@ -324,7 +323,7 @@ class PageUpdateManager(HeartbeatManager):
         self._runtime = runtime
         self._tracker = PageTracker()
         self._kv_store = get_key_value_store()
-        self._updater = Updater(Database(), runtime) if _ENABLE_DB_SYNC else None
+        self._updater = DatabaseUpdater(runtime) if _ENABLE_DB_SYNC else None
         super().__init__(interval=PageUpdateManager._HEARTBEAT_INTERVAL)
 
     def heartbeat(self):

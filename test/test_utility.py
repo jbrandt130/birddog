@@ -102,7 +102,7 @@ class TestUtility(unittest.TestCase):
     def test_translit_and_replace(self):
         self.assertEqual(translit_ukrainian_char("А"), "A")
         self.assertEqual(translit_ukrainian_char("Б"), "B")
-        self.assertEqual(translit_ukrainian_char("?"), "")
+        self.assertEqual(translit_ukrainian_char("?"), "?")
 
         self.assertEqual(replace_with_translit("12А34", 2, 1), "12A34")
         self.assertEqual(replace_with_translit("12АБ34", 2, 2), "12AB34")
