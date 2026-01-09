@@ -599,12 +599,9 @@ class TranslationManager(TaskManager):
         for subtask in subtasks:
             for item in subtask['payload']:
                 translation_map[item[0]] = item[1]
-        page = self._runtime.lookup_by_title(task_desc['name'])
-        page.apply_translation(translation_map)
+        self._runtime.complete_translation(task_desc['name'], translation_map)
 
     def translate(self, page):
-        if not _ENABLE_TRANSLATION:
-            raise TranslationDisabledError("Translation is disabled in this configuration")
         task_name = page.title
         try:
             self.lookup_by_name(task_name)
@@ -613,6 +610,11 @@ class TranslationManager(TaskManager):
         except KeyError:
             pass
         items = get_translation_items(page._page)
+        self.start_translate_task(task_name, items)
+
+    def start_translate_task(self, task_name, items):
+        if not _ENABLE_TRANSLATION:
+            raise TranslationDisabledError("Translation is disabled in this configuration")
         total = len(items)
         if total > 0:
             batches = []

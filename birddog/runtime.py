@@ -5,6 +5,7 @@
 Ukraine records archive monitor and scraper.
 """
 
+import os
 import time
 import queue
 import json
@@ -21,6 +22,7 @@ from birddog.core import (
 from birddog.wiki import (
     ARCHIVE_BY_TITLE,
     ARCHIVE_BY_ADDRESS,
+    WIKI_NAMESPACE,
     canonicalize_title,
     archive_root,
     get_all_pages,
@@ -34,6 +36,11 @@ from birddog.excel import ExportManager
 from birddog.store import get_string_queue_store, get_key_value_store
 from birddog.env import detect_environment
 from birddog.utility import HeartbeatManager, FetchUrlFailError
+
+_ENABLE_DB_SYNC = os.environ.get("BIRDDOG_ENABLE_DB_SYNC", False)
+if _ENABLE_DB_SYNC:
+    from birddog.database import Database
+    from birddog.database_sync import Updater
 
 from birddog.log import get_logger, ServiceLogger, EventLogger
 _logger = get_logger()
@@ -317,6 +324,7 @@ class PageUpdateManager(HeartbeatManager):
         self._runtime = runtime
         self._tracker = PageTracker()
         self._kv_store = get_key_value_store()
+        self._updater = Updater(Database(), runtime) if _ENABLE_DB_SYNC else None
         super().__init__(interval=PageUpdateManager._HEARTBEAT_INTERVAL)
 
     def heartbeat(self):
@@ -337,7 +345,21 @@ class PageUpdateManager(HeartbeatManager):
                 _logger.info(f"PageUpdateManager: inserting {title}, {update}")
                 self._kv_store.insert(self._PENDING_TITLE_UPDATES, title, json.dumps(update))
 
+        # extract pending updates as list of (title, update) pairs from kv store
         pending_updates = self._kv_store.get_all(self._PENDING_TITLE_UPDATES)
+
+        # update database if updater is active
+        if self._updater and pending_updates:
+            update_titles = [item[0] for item in pending_updates]
+            try:
+                # update database records
+                self._updater.update_page_records(update_titles)
+                self._updater.update_linked_documents(update_titles)
+                # initiate translations in database if needed
+                self._updater.start_translation()
+            except Exception as e:
+                _logger.error(f"Exception during database update: {e}. Skipping...")
+
         error_count = 0
         for title, update in pending_updates:
             # This page may have just been created. 
@@ -370,6 +392,9 @@ class PageUpdateManager(HeartbeatManager):
                 time.sleep(10)
 
         _logger.info("PageUpdateManager: finished update check...")
+
+    def complete_translation(self, task_name, translation_map):
+        self._updater.complete_translation(task_name, translation_map)
 
     def get_updates(self, archive, subarchive, cutoff_date=None):
         prefix = archive_root(archive, subarchive)
@@ -492,9 +517,36 @@ class Runtime:
     def lookup_by_title(self, title):
         return self._page_lru.lookup_by_title(title, runtime=self)
 
-    def start_translation(self, page):
+    def start_translation(self, page=None, task_name=None, items=None):
         if self.translation_enabled:
-            self._translation_manager.translate(page)
+            if page:
+                # find and translate everything on the given page (page data is updated on completion)
+                if task_name or items:
+                    raise ValueError("Runtime.start_translation: invalid arguments: task_name, items")
+                if not isinstance(page, Page):
+                    raise TypeError("Runtime.start_translation: page must be instance of Page")
+                self._translation_manager.translate(page)
+            else:
+                # translation all items in given list. on completion call back based on task name
+                if not task_name or not items:
+                    raise ValueError("Runtime.start_translation: one of page, or both of (task_name, items) required")
+                if not isinstance(task_name, str):
+                    raise TypeError("Runtime.start_translation: task_name must be str")
+                if not isinstance(items, (list, tuple)) or not all([isinstance(item, str) for item in items]):
+                    raise TypeError("Runtime.start_translation: items must be sequence of str")
+                self._translation_manager.start_translate_task(task_name, items)
+
+    def complete_translation(self, task_name, translation_map):
+        # DO NOT CALL DIRECTLY: called by translation manager
+        if task_name.startswith(WIKI_NAMESPACE):
+            # page translation initiated through start_translation()
+            page = self.lookup_by_title(task_name)
+            page.apply_translation(translation_map)
+        elif task_name.startswith("DB_"):
+            # database translation initiated through database Updater (through update_manager)
+            self._update_manager.complete_translation(task_name, translation_map)
+        else:
+            raise ValueError(f"Unrecognized translation task completion: {task_name}")
 
     @property
     def active_translations(self):

@@ -24,7 +24,7 @@ from birddog.abstract_database import (
 from birddog.log import get_logger
 _logger = get_logger()
 
-_NOCODB_RUN_LOCAL       = os.environ.get("NOCODB_LOCAL")
+_NOCODB_RUN_LOCAL       = os.environ.get("BIRDDOG_USE_LOCAL_NOCODB")
 if _NOCODB_RUN_LOCAL:
     _NOCODB_BASE_ID     = "p79fvr9cjqgpv5n"
     _NOCODB_API_TOKEN   = os.environ["NOCODB_API_TOKEN_LOCAL"]
@@ -273,14 +273,14 @@ class NocoDBDatabase(Database):
         except KeyError:
             raise InvalidFieldName(f"{table_name}.{field_name}")
 
-    def _key_field_name(self, table_name):
+    def key_field_name(self, table_name):
         try:
             return self._schema[table_name]["key"]
         except KeyError:
             raise SchemaError(f"Table {table_name} has no key field")
 
     def _key_field_id(self, table_name):
-        return self._field_id(table_name, self._key_field_name(table_name))
+        return self._field_id(table_name, self.key_field_name(table_name))
 
     def _load_schema(self):
         schema = dict() 
@@ -312,6 +312,22 @@ class NocoDBDatabase(Database):
             field_spec["values"] = values
         return schema
 
+    def _encode_where_spec(self, table_name, where_spec):
+        field_name, operator, value = where_spec
+        field_id = self._field_id(table_name, field_name)
+        operator = operator.lower()
+        _VALID_OPS = ("eq", "neq", "is", "isnot", "lt", "le", "gt", "ge")
+        if operator not in _VALID_OPS:
+            raise ValueError(f"unrecognized where operator: {operator}")
+        if operator in ("is", "isnot"):
+            if value is None:
+                value = "null"
+            elif value:
+                value = "true"
+            else:
+                value = "false"
+        return f"({field_id},{operator},{value})"
+
     def _validate_key_set(self, table_name, key_set):
         if isinstance(key_set, str):
             key_set = { key_set }
@@ -340,7 +356,7 @@ class NocoDBDatabase(Database):
         table_schema = self._schema[table_name]
         return [_encode_record(table_schema, record) for record in records]
 
-    def scan(self, table_name, limit=100, cursor=None, raw=False):
+    def scan(self, table_name, limit=100, cursor=None, where=None, raw=False):
         """
         Page through records of a table without requiring the table key.
 
@@ -385,6 +401,8 @@ class NocoDBDatabase(Database):
 
         url = _records_url(table_id)
         params = {"offset": offset, "limit": limit}
+        if where:
+            params["where"] = self._encode_where_spec(table_name, where)
 
         data = self._fetch(url, params=params)
         records = data.get("list", []) or []
@@ -450,7 +468,7 @@ class NocoDBDatabase(Database):
             key_sequence = None
 
         table_id = self._table_id(table_name)
-        key_field_name = self._key_field_name(table_name)
+        key_field_name = self.key_field_name(table_name)
         key_field_id = self._field_id(table_name, key_field_name)
         id_field_id = self._field_id(table_name, "Id")
         key_set, singleton = self._validate_key_set(table_name, key_set)
@@ -590,7 +608,7 @@ class NocoDBDatabase(Database):
             - FailedIO
         """
         table_id = self._table_id(table_name)
-        key_field_name = self._key_field_name(table_name)
+        key_field_name = self.key_field_name(table_name)
         if isinstance(records, dict):
             records = [ records ]
             singleton = True

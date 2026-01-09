@@ -5,10 +5,9 @@ from datetime import datetime, UTC
 import json
 from threading import Thread
 
-import ulid
 
 from birddog.store import get_string_queue_store, get_key_value_store
-from birddog.utility import HeartbeatManager
+from birddog.utility import HeartbeatManager, new_id
 
 from birddog.log import get_logger
 _logger = get_logger()
@@ -16,9 +15,6 @@ _logger = get_logger()
 _TASK_MANAGER_HEARTBEAT_INTERVAL    = 5.0 # seconds
 _STALE_SUBTASK_THRESHOLD_MS         = 10000
 _IN_PROCESS_SUBTASK_LIMIT           = 3
-
-def _new_id():
-    return str(ulid.ulid())
 
 def _now_ms():
     return int(datetime.now(UTC).timestamp() * 1000)
@@ -191,7 +187,7 @@ class TaskManager(HeartbeatManager):
         if not subtasks:
             raise ValueError("Empty task")
 
-        task_id = _new_id()
+        task_id = new_id()
         task_desc = {
             "task_id": task_id,
             "name": task_name,

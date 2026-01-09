@@ -13,10 +13,33 @@ from birddog.wiki import (
     _expand_link_target,
     )
 from birddog.core import Page
-from birddog.utility import fetch_url
+from birddog.utility import fetch_url, new_id
 
 from birddog.log import get_logger
 _logger = get_logger()
+
+# ----------------------------------------------------------------------
+# Utility functions
+
+# clear all birddog alerts from given table
+def clear_alerts(db, table_name, alert = "birddog_alert"):
+    key_field = db.key_field_name(table_name)
+    where = (alert, "is", True)
+    update = []
+    cursor = None
+    while True:
+        batch, cursor = db.scan(table_name, cursor=cursor, where=where)
+        for record in batch:
+            if record.get(alert):
+                record[alert] = False
+                update.append({
+                    key_field: record[key_field],
+                    alert: False,
+                })
+        if not cursor:
+            break
+    if update:
+        db.write(table_name, update)
 
 # ----------------------------------------------------------------------
 # Helpers
@@ -51,6 +74,40 @@ def _replace_links(db, table_name, link_field, source_record, target_records):
     db.create_links(table_name, link_field, source_record, target_records)
     return True
 
+def _detect_changes(db, table_name, records):
+    if isinstance(records, dict):
+        records = [ records ]
+        singleton = True
+    else:
+        singleton = False
+    key = db.key_field_name(table_name)
+    id_map = db.lookup(table_name, {record[key] for record in records})
+    current_records = db.read(table_name, list(id_map.values()))
+    current_record_dict = {
+        rec["Id"]: rec 
+        for rec in db.read(table_name, list(id_map.values()))
+        }
+    update = []
+    update_fields = []
+    for record in records:
+        rec_id = id_map.get(record[key])
+        if rec_id:
+            changed_fields = set()
+            current_rec = current_record_dict[rec_id]
+            for k, v in record.items():
+                if not k in current_rec or current_rec[k] != v:
+                    changed_fields.add(k)
+            if changed_fields:
+                update.append(record)
+                update_fields.append(changed_fields)
+        else:
+            update.append(record)
+    for record in update:
+        record["birddog_alert"] = True
+    if singleton:
+        return update[0] if update else None
+    return update, update_fields
+
 # ----------------------------------------------------------------------
 # Pages table record updates
 
@@ -59,9 +116,6 @@ def _form_page_record(page):
     try:
         result = { "title": _page_title(page) }
         result["description_uk"] = page_data["description"]["uk"]
-        desc = page_data["description"].get("en")
-        if desc:
-            result["description"] = desc
         result["availability"] = "linked"
         result["level"] = page.kind
         result["reference_date"] = _format_date(page_data["lastmod"])
@@ -76,7 +130,7 @@ def _form_page_record(page):
         _logger.error(f"error in _form_page_record: {page.title}")
         raise e
 
-def _child_titles(page):
+def _get_child_titles(page):
     result = []
     prefix = f"/wiki/{WIKI_NAMESPACE}:"
     for child in page.children:
@@ -92,104 +146,6 @@ def _child_titles(page):
     # remove duplicate records
     result_dict = { rec.get("title"): rec for rec in result }
     return list(result_dict.values())
-
-def _detect_changes(db, table_name, records, key="title"):
-    if isinstance(records, dict):
-        records = [ records ]
-        singleton = True
-    else:
-        singleton = False
-    id_map = db.lookup(table_name, {record[key] for record in records})
-    current_records = db.read(table_name, list(id_map.values()))
-    current_record_dict = {
-        rec["Id"]: rec 
-        for rec in db.read(table_name, list(id_map.values()))
-        }
-    update = []
-    for record in records:
-        rec_id = id_map.get(record[key])
-        if rec_id:
-            current_rec = current_record_dict[rec_id]
-            for k, v in record.items():
-                if not k in current_rec or current_rec[k] != v:
-                    update.append(record)
-                    break
-        else:
-            update.append(record)
-    for record in update:
-        record["birddog_alert"] = True
-    if singleton:
-        return update[0] if update else None
-    return update
-
-def _link_children(db, page):
-    parent_title = _page_title(page)
-    child_records = _child_titles(page)
-
-    # locate the parent record
-    parent_id = db.lookup("Pages", parent_title)
-    if not parent_id:
-        raise ValueError(f"cannot find record for parent (title={parent_title})")
-
-    # ensure all child records exist
-    child_ids = db.lookup("Pages", [child["title"] for child in child_records])
-    new_children = []
-    for child_id, child_rec in zip(child_ids, child_records):
-        if child_id is None:
-            new_children.append(child_rec)
-        else:
-            child_rec["Id"] = child_id
-
-    if new_children:
-        # some child titles were not found: create records for them and 
-        # update the child id list to include the new titles
-        new_child_ids = db.write("Pages", new_children)
-        for child_id, child_rec in zip(new_child_ids, new_children):
-            child_rec["Id"] = child_id
-        child_ids = [child_rec["Id"] for child_rec in child_records]
-
-    # patch the child links (replacing existing), returns True if there was a change
-    if _replace_links(db, "Pages", "children", parent_id, child_ids):
-        _logger.info(f"Child links for {parent_title} updated ({len(child_ids)} children)")
-        return True
-    # otherwise, no change in links
-    return False
-
-def _link_documents(db, page, urls):
-    # locate the parent record
-    page_id = db.lookup("Pages", _page_title(page))
-    if not page_id:
-        raise ValueError(f"_link_documents: cannot find record for parent (title={_page_title(page)})")
-
-    doc_ids = db.lookup("Documents", urls)
-    if not all(doc_ids):
-        missing_urls = [url for url, did in zip(urls, doc_ids) if not did]
-        for url in missing_urls:
-            _logger.info(f"doc url missing: {url}")
-        raise ValueError(f"_link_documents: unable to locate all referenced documents")
-
-    if _replace_links(db, "Pages", "doc_links", page_id, doc_ids):
-        _logger.info(f"Doc links for {_page_title(page)} updated ({len(doc_ids)} doc(s))")
-        return True
-    # otherwise, no change in links
-    return False
-
-def _update_pages(db, pages):
-    if not isinstance(pages, (list, tuple)):
-        if not isinstance(pages, Page):
-            raise ValueError("must be list/tuple of Page objects or singleton Page object")
-        singleton = True
-        pages = [ pages ]
-    else:
-        singleton = False
-    page_records = [_form_page_record(page) for page in pages]
-    update = _detect_changes(db, "Pages", page_records)
-    if update:
-        result = db.write("Pages", update)
-        if singleton:
-            return result[0]
-        return result
-    return None
 
 def _extract_page_links(page, strict=True):
     result = set()
@@ -412,24 +368,103 @@ class Updater:
                 result.append(page)
         return result
 
+    # -------------------------------------------------------------------------
+    # PAGE TABLE UPDATES
+
+    def _link_children(self, page):
+        parent_title = _page_title(page)
+        child_records = _get_child_titles(page)
+
+        # locate the parent record
+        parent_id = self._db.lookup("Pages", parent_title)
+        if not parent_id:
+            raise ValueError(f"cannot find record for parent (title={parent_title})")
+
+        # ensure all child records exist
+        child_ids = self._db.lookup("Pages", [child["title"] for child in child_records])
+        new_children = []
+        for child_id, child_rec in zip(child_ids, child_records):
+            if child_id is None:
+                new_children.append(child_rec)
+            else:
+                child_rec["Id"] = child_id
+
+        if new_children:
+            # some child titles were not found: create records for them and 
+            # update the child id list to include the new titles
+            new_child_ids = self._db.write("Pages", new_children)
+            for child_id, child_rec in zip(new_child_ids, new_children):
+                child_rec["Id"] = child_id
+            child_ids = [child_rec["Id"] for child_rec in child_records]
+
+        # patch the child links (replacing existing), returns True if there was a change
+        if _replace_links(self._db, "Pages", "children", parent_id, child_ids):
+            _logger.info(f"Child links for {parent_title} updated ({len(child_ids)} children)")
+            return True
+        # otherwise, no change in links
+        return False
+
+    def _update_pages(self, pages):
+        if not isinstance(pages, (list, tuple)):
+            if not isinstance(pages, Page):
+                raise ValueError("must be list/tuple of Page objects or singleton Page object")
+            singleton = True
+            pages = [ pages ]
+        else:
+            singleton = False
+        page_records = [_form_page_record(page) for page in pages]
+        update, update_fields = _detect_changes(self._db, "Pages", page_records)
+        if update:
+            # clear translated fields if description changed
+            for i, changed_fields in enumerate(update_fields):
+                if "description_uk" in changed_fields:
+                    update[i]["description"] = ""
+            result = self._db.write("Pages", update)
+            if singleton:
+                return result[0]
+            return result
+        return None
+
     def update_page_records(self, page_titles, update_child_links=True):
         pages = self._get_pages(page_titles)
         if not all([isinstance(page, Page) for page in pages]):
             raise ValueError("Updater.update_page_records: not all pages were found")
-        updated_page_ids = _update_pages(self._db, pages)
+        updated_page_ids = self._update_pages(pages)
 
         if update_child_links:
             child_links_changed = False
             for page in pages:
                 if page.children:
                     _logger.info(f"checking child links for {_page_title(page)} ({len(page.children)} children)")
-                    child_links_changed = _link_children(self._db, page) or child_links_changed
+                    child_links_changed = self._link_children(page) or child_links_changed
 
         if updated_page_ids or child_links_changed:
             _logger.info("Updater.update_page_records: database updated")
             return True
 
         _logger.info("Updater.update_page_records: no changes")
+        return False
+
+    # -------------------------------------------------------------------------
+    # DOCUMENT TABLE UPDATES
+
+    def _link_documents(self, page, urls):
+        # locate the parent record
+        page_id = self._db.lookup("Pages", _page_title(page))
+        if not page_id:
+            raise ValueError(f"_link_documents: cannot find record for parent (title={_page_title(page)})")
+
+        doc_ids = self._db.lookup("Documents", urls)
+        if not all(doc_ids):
+            missing_urls = [url for url, did in zip(urls, doc_ids) if not did]
+            for url in missing_urls:
+                _logger.info(f"doc url missing: {url}")
+            raise ValueError(f"_link_documents: unable to locate all referenced documents")
+
+        if _replace_links(self._db, "Pages", "doc_links", page_id, doc_ids):
+            _logger.info(f"Doc links for {_page_title(page)} updated ({len(doc_ids)} doc(s))")
+            return True
+        # otherwise, no change in links
         return False
 
     def update_linked_documents(self, page_titles, update_links=True):
@@ -459,7 +494,7 @@ class Updater:
             del doc_records[url]
 
         # detect any record changes and update those
-        update = _detect_changes(self._db, "Documents", doc_records.values(), key="link")
+        update, update_fields = _detect_changes(self._db, "Documents", doc_records.values())
         doc_ids = self._db.write("Documents", update) if update else []
 
         doc_links_changed = False
@@ -471,7 +506,7 @@ class Updater:
                 # ignore links that are missing or not allowed
                 urls = [url for url in urls if url in doc_records.keys()]
                 if urls:
-                    doc_links_changed = _link_documents(self._db, page, urls) or doc_links_changed
+                    doc_links_changed = self._link_documents(page, urls) or doc_links_changed
 
         if update or doc_links_changed:
             _logger.info("Updater.update_linked_documents: database updated")
@@ -479,4 +514,50 @@ class Updater:
 
         _logger.info("Updater.update_linked_documents: no changes")
         return False
+
+    # -------------------------------------------------------------------------
+    # TRANSLATION SUPPORT
+
+    # collect all untranslated descriptions from Pages table
+    def _collect_translations(self):
+        table_name = "Pages"
+        description_uk = "description_uk"
+        description = "description"
+        where = (description_uk, "isnot", None)
+        key_field = self._db.key_field_name(table_name)
+        translations = []
+        cursor = None
+        while True:
+            batch, cursor = self._db.scan(table_name, cursor=cursor, where=where)
+            for record in batch:
+                ukrainian_description = record.get(description_uk)
+                if ukrainian_description and not record.get(description):
+                    translations.append({
+                        key_field: record[key_field],
+                        description_uk: ukrainian_description,
+                    })
+            if not cursor:
+                break
+        return translations
+
+    def start_translation(self):
+        translations = self._collect_translations()
+        if translations:
+            task_name = f"DB_{new_id()}"
+            translation_items = [t["description_uk"] for t in translations]
+            _logger.info(f"Updater: starting translation task (length={len(translation_items)})")
+            self._runtime.start_translation(task_name=task_name, items=translation_items)
+
+    def complete_translation(self, task_name, translation_map):
+        translations = self._collect_translations()
+        if translations:
+            update = []
+            for record in translations:
+                translation = translation_map.get(record["description_uk"])
+                if translation:
+                    record["description"] = translation
+                    update.append(record)
+            if update:
+                _logger.info(f"Updater: updating translations (length={len(update)})")
+                self._db.write("Pages", update)
 

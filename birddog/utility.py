@@ -14,6 +14,8 @@ import requests
 import random
 import traceback
 import sys
+import ulid
+
 from threading import Lock, Semaphore, Event, Thread
 from datetime import datetime, timezone
 from collections import deque
@@ -48,6 +50,9 @@ def link_status(item):
 
 def json_size(obj) -> int:
     return len(json.dumps(obj, ensure_ascii=False, default=float).encode("utf-8"))
+
+def new_id():
+    return str(ulid.ulid())
 
 #
 # page loading
