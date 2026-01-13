@@ -81,13 +81,13 @@ class Database:
           unknown; callers MUST assume some records may have been mutated.
     """
 
-    def scan_all(self, table_name):
+    def scan_all(self, table_name, where=None):
         """
         Convenience method to scan all records in a table using scan()
         """
-        records, cursor = self.scan(table_name)
+        records, cursor = self.scan(table_name, where=where)
         while cursor:
-            more, cursor = self.scan(table_name, cursor=cursor)
+            more, cursor = self.scan(table_name, cursor=cursor, where=where)
             records.extend(more)
         return records
 
@@ -105,7 +105,7 @@ class Database:
     #     clear_attachments() - clear file attachments from a record
     # ---------------------------------------------------------------------------
     
-    def scan(self, table_name, limit=100, cursor=None):
+    def scan(self, table_name, limit=100, cursor=None, where=None):
         """
         Page through records of a table without requiring the table key.
 
@@ -121,6 +121,11 @@ class Database:
                 Opaque paging token returned by a previous call to scan(), or None
                 to request the first page. In this implementation the cursor is a
                 stringified integer offset.
+
+            where:
+                Optional condition filter for returned records.
+                Filter is a triple: (field_name, condition, value), where condition
+                is one of ("eq", "neq", "is", "isnot", "lt", "le", "gt", "ge")
 
         Returns:
             (records, next_cursor)

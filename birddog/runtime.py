@@ -93,10 +93,10 @@ class PageLRU:
         title = canonicalize_title(title)
         try:
             page = self._lru[title]
-            _logger.info(f"{f'PageLRU.lookup({title}): hit'}")
+            #_logger.info(f"{f'PageLRU.lookup({title}): hit'}")
             return page
         except KeyError:
-            _logger.info(f"{f'PageLRU.lookup({title}): miss'}")
+            #_logger.info(f"{f'PageLRU.lookup({title}): miss'}")
             # FIXME: Archive should not be a subclass
             if title in ARCHIVE_BY_TITLE:
                 page = Archive(*ARCHIVE_BY_TITLE[title], runtime=runtime)
@@ -352,8 +352,7 @@ class PageUpdateManager(HeartbeatManager):
             update_titles = [item[0] for item in pending_updates]
             try:
                 # update database records
-                self._updater.update_page_records(update_titles)
-                self._updater.update_linked_documents(update_titles)
+                self._updater.update_records(update_titles)
                 # initiate translations in database if needed
                 self._updater.start_translation()
             except Exception as e:

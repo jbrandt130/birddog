@@ -25,7 +25,7 @@ class TestDatabase(unittest.TestCase):
       - lookup (Pages.title, Documents.link)
       - read (single and batch by Id)
       - write (create + update; single + batch)
-      - create_links / delete_links / get_links (Pages.parent, Pages.children, Documents.owning_page)
+      - create_links / delete_links / get_links (Pages.parent, Pages.children, Documents.owning_pages)
 
     Cleanup:
       - Deletes any records created during the test (tracked by returned Ids).
@@ -235,20 +235,20 @@ class TestDatabase(unittest.TestCase):
         self.assertNotIn(child3_id, children_links2)
 
         # -----------------------
-        # 7) Links: Documents.owning_page (doc -> page)
+        # 7) Links: Documents.owning_pages (doc -> page)
         # -----------------------
         # Link first document to parent page.
         first_doc_link = self._mk_doc_link(0)
         first_doc_id = self.db.lookup("Documents", first_doc_link)
         self.assertTrue(first_doc_id)
 
-        self.db.create_links("Documents", "owning_page", first_doc_id, parent_id)
-        owning_links = self.db.get_links("Documents", "owning_page", first_doc_id)
+        self.db.create_links("Documents", "owning_pages", first_doc_id, parent_id)
+        owning_links = self.db.get_links("Documents", "owning_pages", first_doc_id)
         self.assertIn(parent_id, owning_links)
 
         # Remove and verify it disappears (if backend enforces)
-        self.db.delete_links("Documents", "owning_page", first_doc_id, parent_id)
-        owning_links2 = self.db.get_links("Documents", "owning_page", first_doc_id)
+        self.db.delete_links("Documents", "owning_pages", first_doc_id, parent_id)
+        owning_links2 = self.db.get_links("Documents", "owning_pages", first_doc_id)
         self.assertNotIn(parent_id, owning_links2)
 
 

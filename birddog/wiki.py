@@ -180,14 +180,17 @@ def page_title_from_address(address):
 # -------------------------------------------------------------------------------
 # namespace id lookup (utility)
 
-def lookup_namespace_id(name):
+def _api_url(base=ARCHIVE_BASE):
+    return f"{base}/w/api.php"
+
+def lookup_namespace_id(name, base=ARCHIVE_BASE):
     params = {
         "action": "query",
         "format": "json",
         "meta": "siteinfo",
         "siprop": "namespaces|namespacealiases"
     }
-    data = fetch_url(API_URL, params=params, json=True)
+    data = fetch_url(_api_url(base), params=params, json=True)
     data = data["query"]
     #_logger.info(data)
     target = name.lower()
@@ -1149,7 +1152,7 @@ def check_page_updates(archive, cutoff_date):
 # -------------------------------------------------------------------------------
 # Get most recent page modification dates within given namespace
 
-def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500, sleep_time=0.1):
+def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500, sleep_time=0.1, base=ARCHIVE_BASE):
     """
     Collects the latest modification timestamp for each page in a given namespace,
     going back to the specified cutoff date.
@@ -1185,7 +1188,7 @@ def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500,
     while True:
         if cont:
             params.update(cont)
-        data = fetch_url(API_URL, params=params, json=True)
+        data = fetch_url(_api_url(base), params=params, json=True)
         for rc in data.get("query", {}).get("recentchanges", []):
             title = rc["title"]
             timestamp = rc["timestamp"]

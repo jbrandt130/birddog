@@ -356,6 +356,24 @@ class NocoDBDatabase(Database):
         table_schema = self._schema[table_name]
         return [_encode_record(table_schema, record) for record in records]
 
+
+    def get_all_ids(self, table_name):
+        table_id = self._table_id(table_name)
+        offset = 0
+        limit = 1000
+        url = _records_url(table_id)
+        params = {"offset": offset, "limit": limit, "fields": "Id"}
+        ids = []
+        while True:
+            data = self._fetch(url, params=params)
+            records = data.get("list", []) or []
+            ids.extend([rec["Id"] for rec in records])
+            page_info = data.get("pageInfo") or {}
+            if bool(page_info.get("isLastPage")) or not records:
+                break
+            params["offset"] += len(records)
+        return ids
+
     def scan(self, table_name, limit=100, cursor=None, where=None, raw=False):
         """
         Page through records of a table without requiring the table key.

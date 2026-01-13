@@ -3,25 +3,29 @@
 
 from __future__ import annotations
 
+from time import sleep
 from datetime import datetime, timezone
 from urllib.parse import urlparse, unquote
+from pathlib import PurePosixPath
 
 from birddog.database import Database
 from birddog.wiki import (
     WIKI_NAMESPACE,
+    API_URL,
     expand_link_target,
+    canonicalize_title,
     )
 from birddog.core import Page
-from birddog.utility import fetch_url, new_id
+from birddog.utility import fetch_url, new_id, json_size
 
 from birddog.log import get_logger
 _logger = get_logger()
 
 # ----------------------------------------------------------------------
-# Utility functions
+# UTILITY FUNCTIONS
 
 # clear all birddog alerts from given table
-def clear_alerts(db, table_name, alert = "birddog_alert"):
+def _clear_alerts(db, table_name, alert = "birddog_alert"):
     key_field = db.key_field_name(table_name)
     where = (alert, "is", True)
     update = []
@@ -30,7 +34,6 @@ def clear_alerts(db, table_name, alert = "birddog_alert"):
         batch, cursor = db.scan(table_name, cursor=cursor, where=where)
         for record in batch:
             if record.get(alert):
-                record[alert] = False
                 update.append({
                     key_field: record[key_field],
                     alert: False,
@@ -40,9 +43,6 @@ def clear_alerts(db, table_name, alert = "birddog_alert"):
     if update:
         db.write(table_name, update)
 
-# ----------------------------------------------------------------------
-# Helpers
-
 def _format_date(date):
     d = date.split(",")
     return f"{d[0]}-{d[1]}-{d[2]} {d[3]}:00+00:00"
@@ -50,28 +50,33 @@ def _format_date(date):
 def _normalize_date_string(s):
     return str(datetime.fromisoformat(s.replace("Z", "+00:00")))
 
+def _normalize_title(title):
+    return title.replace("Архів:", "").replace(' ', '_')
+
 def _page_title(page):
-    return page.page["title"]["uk"]
+    return _normalize_title(page.page["title"]["uk"])
 
-def _availability(cell):
-    return "linked" if cell.get("exists", False) else "redlinked"
-
-_DOC_LINK_BLOCKLIST = [
-    "FSMosaicTreeLogo",
-    "familysearch.org",
-]
-
-def _allowed_doc_link(link):
-    return all([item not in link for item in _DOC_LINK_BLOCKLIST])
-
-def _replace_links(db, table_name, link_field, source_record, target_records):
+def _edit_links(db, table_name, link_field, source_record, target_records, replace=True):
+    if not isinstance(target_records, (list, tuple)):
+        target_records = [ target_records ]
+    target_set = set(target_records)
+    target_records = list(target_set)
+    #_logger.info(f"_edit_links: {link_field}, {source_record}, {target_records}, replace={replace}")
     existing_targets = db.get_links(table_name, link_field, source_record)
-    if set(existing_targets) == set(target_records):
+    existing_set = set(existing_targets)
+    if existing_set == target_set or not replace and target_set.issubset(existing_set):
         # no change
         return False
-    db.delete_links(table_name, link_field, source_record, existing_targets)
+    if replace:
+        db.delete_links(table_name, link_field, source_record, existing_targets)
     db.create_links(table_name, link_field, source_record, target_records)
     return True
+
+def _replace_links(db, table_name, link_field, source_record, target_records):
+    return _edit_links(db, table_name, link_field, source_record, target_records, replace=True)
+
+def _create_links(db, table_name, link_field, source_record, target_records):
+    return _edit_links(db, table_name, link_field, source_record, target_records, replace=False)
 
 def _detect_changes(db, table_name, records):
     if isinstance(records, dict):
@@ -101,75 +106,146 @@ def _detect_changes(db, table_name, records):
                 update_fields.append(changed_fields)
         else:
             update.append(record)
-    for record in update:
-        record["birddog_alert"] = True
+    #for record in update:
+    #    record["birddog_alert"] = True
     if singleton:
         return update[0] if update else None
     return update, update_fields
 
 # ----------------------------------------------------------------------
-# Pages table record updates
+# PAGE RECORD UPDATES
+
+def _get_links(title):
+    params = {
+        "action": "parse",
+        "prop": "links|iwlinks|externallinks",
+        "format": "json",
+        "page": canonicalize_title(title),
+    }
+    return fetch_url(API_URL, params=params, json=True)
+
+_DOCUMENT_SUFFIXES = {
+    "pdf", "djvu", "djv",
+    "tif", "tiff", "jp2",
+    "zip", "cbz", "cbr",
+}
+
+_IMAGE_SUFFIXES = {
+    "jpg", "jpeg", "png", "gif", "bmp", "webp"
+}
+
+def _sniff_suffix(url_or_title: str) -> str | None:
+    """
+    Returns one of:
+      - "document"
+      - "image"
+      - None (unknown / webpage)
+    """
+    # Remove query / fragment
+    parsed = urlparse(url_or_title)
+    path = parsed.path or url_or_title
+
+    suffix = PurePosixPath(path).suffix.lower().lstrip(".")
+    if not suffix:
+        return None
+
+    if suffix in _DOCUMENT_SUFFIXES:
+        return "document"
+
+    if suffix in _IMAGE_SUFFIXES:
+        return "image"
+
+    return None
+
+def _is_category_link(title):
+    return title.startswith("Категорія:")
+
+_DOC_LINK_BLOCKLIST = [
+    "FSMosaicTreeLogo",
+    "familysearch.org",
+]
+
+def _allowed_doc_link(link):
+    return all([item not in link for item in _DOC_LINK_BLOCKLIST])
+
+def _extract_title_links(title):
+    title = canonicalize_title(title)
+    raw = _get_links(title).get("parse", {})    
+    internal_links = []
+    category_links = []
+    children = []
+    parent = None
+    for link in raw.get("links", []):
+        other_title = link.get("*")
+        if other_title:
+            canonical_title = canonicalize_title(other_title)
+            item = {
+                "title": canonical_title,
+                "exists": "exists" in link
+            }
+            if canonical_title.startswith(title):
+                children.append(item)
+            elif title.rsplit("/", 1)[0] == canonical_title:
+                parent = item
+            elif _is_category_link(other_title):
+                category_links.append(item)
+            else:
+                item["doc_type"] = _sniff_suffix(canonical_title)
+                internal_links.append(item)
+
+    interwiki_links = []
+    commons_links = []
+    for link in raw.get("iwlinks", []):
+        other_title = link.get("*")
+        url = link.get("url")
+        if other_title:
+            item = {
+                "title": other_title,
+                "url": unquote(url),
+                "doc_type": _sniff_suffix(url),
+            }
+            if url.startswith("https://commons.wikimedia.org"):
+                commons_links.append(item)
+            else:
+                interwiki_links.append(item)
+
+    return {
+        "title": title,
+        "pageid": raw.get("pageid"),
+        "parent": parent,
+        "children": children,
+        "category_links": category_links,
+        "internal_links": internal_links,
+        "commons_links": commons_links,
+        "interwiki_links": interwiki_links,
+        "external_links": raw.get("externallinks", []),
+    }
+
+def _form_simple_page_record(title):
+    return {
+        "title": title,
+        "source_type": "wiki",
+        "availability": "linked",
+    }
 
 def _form_page_record(page):
     page_data = page.page
     try:
-        result = { "title": _page_title(page) }
+        result = _form_simple_page_record(_page_title(page))
         result["description_uk"] = page_data["description"]["uk"]
-        result["availability"] = "linked"
         result["level"] = page.kind
         result["reference_date"] = _format_date(page_data["lastmod"])
         result["label"] = page.display_name if page.kind == "archive" else page.id
         dates = page_data.get("dates")
         if dates:
-            result["years"] = dates["uk"]
-        result["source_type"] = "wiki"
-        
+            result["years"] = dates["uk"]        
         return result
     except Exception as e:
         _logger.error(f"error in _form_page_record: {page.title}")
         raise e
 
-def _get_child_titles(page):
-    result = []
-    prefix = f"/wiki/{WIKI_NAMESPACE}:"
-    for child in page.children:
-        if child:
-            for cell in child:
-                link = cell.get("link")
-                if link and link.startswith(prefix):
-                    result.append({
-                        "title": link.replace(prefix, ""),
-                        "availability": _availability(cell),
-                    })
-                    break
-    # remove duplicate records
-    result_dict = { rec.get("title"): rec for rec in result }
-    return list(result_dict.values())
-
-def _extract_page_links(page, strict=True):
-    result = set()
-    page_data = page.page
-    for key in ["notes", "other_links"]:
-        for k, v in page_data.get(key, {}).items():
-            if k == "category_links":
-                continue
-            for item in v:
-                # remove trailing label
-                item = item.split("|")[0]
-                if not item.startswith("http"):
-                    # seems to be a link target, expand it
-                    item = expand_link_target(item, page.title)
-                result.add(item)
-    doc_link = page_data.get("doc_link")
-    if doc_link:
-        result.add(doc_link)
-    result = list(result)
-    if strict:
-        result = [link for link in result if _allowed_doc_link(link)]
-    return result
-
 # ----------------------------------------------------------------------
-# Documents table record updates
+# DOCUMENT RECORD UPDATES
 
 def _form_document_record(url):
     """
@@ -220,7 +296,7 @@ def _form_document_record(url):
         "link": url,
     }
 
-def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnail_width = 300):
+def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumbnail_width=300):
     # Resolve API endpoint
     if source == "commons":
         api = "https://commons.wikimedia.org/w/api.php"
@@ -229,6 +305,10 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnail_width = 300):
     else:
         raise ValueError(f"Unsupported source: {source}")
 
+    #_logger.info(f"_fetch_mediawiki_file_metadata_chunk (source={source})")
+    #for t in titles:
+    #    _logger.info(f'    "{t}",')
+    
     # Normalize input to list (preserve caller strings for keys)
     if isinstance(titles, str):
         requested_titles: List[str] = [titles.strip()]
@@ -244,10 +324,15 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnail_width = 300):
         "prop": "imageinfo",
         "titles": "|".join(requested_titles),
         "iiprop": "timestamp|size|mime|mediatype|url|sha1",
-        "iiurlwidth": thumbnail_width,
-        "iilimit": 1,
     }
+    if thumbnails:
+        params["iiurlwidth"] = thumbnail_width
+        params["iilimit"] = 1
     data = fetch_url(api, params=params, json=True)
+
+    error = data.get("error")
+    if error:
+        _logger.error(f"_fetch_mediawiki_file_metadata_chunk error: {error}")
     query = data.get("query", {})
 
     # 1) Build mapping: input title -> normalized title (API "to")
@@ -257,12 +342,14 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnail_width = 300):
         frm = item.get("from")
         to = item.get("to")
         if frm and to:
+            #_logger.info(f"title map: {frm}->{to}")
             normalized_map[frm] = to
 
     # 2) Build reverse index: api_title -> page object
     pages = query.get("pages", {})
     pages_by_title = {}
     for _pageid, page in pages.items():
+        #_logger.info(f"page info: {page}")
         t = page.get("title")
         if t:
             pages_by_title[t] = page
@@ -275,6 +362,7 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnail_width = 300):
 
         # page may be missing even if present in pages dict
         if not page or page.get("missing") or not page.get("imageinfo"):
+            _logger.info(f"skipping missing title: {req_title}, {api_lookup_title}, {page}")
             results[req_title] = None
             continue
 
@@ -300,7 +388,7 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnail_width = 300):
 
     return results
 
-def _fetch_mediawiki_file_metadata(titles, source, thumbnail_width = 300):
+def _fetch_mediawiki_file_metadata(titles, source, thumbnails=False, thumbnail_width=300):
     """
     Batch-fetch MediaWiki file metadata for one or more File: titles.
 
@@ -331,22 +419,64 @@ def _fetch_mediawiki_file_metadata(titles, source, thumbnail_width = 300):
         titles = [ titles ]
     if not all([isinstance(title, str) for title in titles]):
         raise ValueError("fetch_mediawiki_file_metadata_batch: titles must be str or list of str")
-    CHUNK_SIZE = 25
-    result = {}
-    for i in range(0, len(titles), CHUNK_SIZE):
-        chunk = titles[i:(i + CHUNK_SIZE)]
-        chunk_result = _fetch_mediawiki_file_metadata_chunk(chunk, source, thumbnail_width)
+
+    #_logger.info(f"_fetch_mediawiki_file_metadata: processing {len(titles)} titles")
+
+    def _do_chunk(pos, cursor):
+        chunk = titles[pos:cursor]
+        chunk_result = _fetch_mediawiki_file_metadata_chunk(
+            chunk, source, thumbnails=thumbnails, thumbnail_width=thumbnail_width)
         for k, v in chunk_result.items():
-            result[k] = v
+            if not v:
+                _logger.info(f"_fetch_mediawiki_file_metadata_chunk: .... empty metadata: {k}, {v}")
+        result.update(chunk_result)
+
+    CHUNK_LIMIT = 1000
+    result = {}
+
+    n = len(titles)
+    pos = 0
+    cursor = 0
+    chunk_length = 0
+
+    while cursor < n:
+        next_len = len(titles[cursor]) + 1  # +1 for separator
+
+        # If adding the next title would exceed the limit, flush current chunk first.
+        # (But ensure forward progress if chunk is empty.)
+        if chunk_length > 0 and (chunk_length + next_len) >= CHUNK_LIMIT:
+            _do_chunk(pos, cursor)
+            pos = cursor
+            chunk_length = 0
+            continue
+
+        # Add the next title
+        chunk_length += next_len
+        cursor += 1
+
+    # Flush the final chunk
+    if pos < n:
+        _do_chunk(pos, cursor)
+
+    for title in titles:
+        if not result.get(title):
+            _logger.info(f"_fetch_mediawiki_file_metadata: missing title: {title}")
     return result
 
 # ----------------------------------------------------------------------
-# Documents table record updates
+# DATABASE UPDATER
 
 class DatabaseUpdater:
     def __init__(self, runtime, db=None):
         self._runtime = runtime
         self._db = db if db else Database()
+
+    # -------------------------------------------------------------------------
+    # UTILITY
+
+    def clear_alerts(self):
+        _clear_alerts(self._db, "Pages")
+        _clear_alerts(self._db, "Documents")
 
     def _get_pages(self, page_titles):
         if isinstance(page_titles, str):
@@ -355,164 +485,188 @@ class DatabaseUpdater:
         if not all(isinstance(title, str) for title in page_titles):
             raise ValueError("Updater._get_pages: page_titles must be str or list of str")
 
-        pages = [self._runtime.lookup_by_title(title) for title in page_titles]
-        if not all([isinstance(page, Page) for page in pages]):
-            raise ValueError("Updater._get_pages: not all pages were found")
-
-        result = []
-        for page in pages:
+        pages = []
+        for title in page_titles:
+            try:
+                page = self._runtime.lookup_by_title(title)
+            except (KeyError, ValueError) as err:
+                _logger.error(f"Updater: Unable to lookup page {title} ({err}) skipping...")
+                continue
             if not page.lastmod:
                 _logger.info(f"Updater: ignoring nonexistent page: {_page_title(page)}")
             else:
-                result.append(page)
-        return result
+                pages.append(page)
+
+        return pages
 
     # -------------------------------------------------------------------------
-    # PAGE TABLE UPDATES
+    # PAGE AND DOCUMENT TABLE UPDATES
 
-    def _link_children(self, page):
-        parent_title = _page_title(page)
-        child_records = _get_child_titles(page)
-
-        # locate the parent record
-        parent_id = self._db.lookup("Pages", parent_title)
-        if not parent_id:
-            raise ValueError(f"cannot find record for parent (title={parent_title})")
-
-        # ensure all child records exist
-        child_ids = self._db.lookup("Pages", [child["title"] for child in child_records])
-        new_children = []
-        for child_id, child_rec in zip(child_ids, child_records):
-            if child_id is None:
-                new_children.append(child_rec)
-            else:
-                child_rec["Id"] = child_id
-
-        if new_children:
-            # some child titles were not found: create records for them and 
-            # update the child id list to include the new titles
-            new_child_ids = self._db.write("Pages", new_children)
-            for child_id, child_rec in zip(new_child_ids, new_children):
-                child_rec["Id"] = child_id
-            child_ids = [child_rec["Id"] for child_rec in child_records]
-
-        # patch the child links (replacing existing), returns True if there was a change
-        if _replace_links(self._db, "Pages", "children", parent_id, child_ids):
-            _logger.info(f"Child links for {parent_title} updated ({len(child_ids)} children)")
-            return True
-        # otherwise, no change in links
-        return False
-
-    def _update_pages(self, pages):
+    def _update_pages(self, pages, set_alert=True):
         if not isinstance(pages, (list, tuple)):
             if not isinstance(pages, Page):
                 raise ValueError("must be list/tuple of Page objects or singleton Page object")
-            singleton = True
             pages = [ pages ]
-        else:
-            singleton = False
-        page_records = [_form_page_record(page) for page in pages]
+        return self._update_page_records(
+            [_form_page_record(page) for page in pages], set_alert)
+
+    def _update_page_records(self, page_records, set_alert=True):
         update, update_fields = _detect_changes(self._db, "Pages", page_records)
         if update:
-            # clear translated fields if description changed
             for i, changed_fields in enumerate(update_fields):
+                # clear translated fields if description changed
                 if "description_uk" in changed_fields:
                     update[i]["description"] = ""
-            result = self._db.write("Pages", update)
-            if singleton:
-                return result[0]
-            return result
+            if set_alert:
+                for rec in update:
+                    rec["birddog_alert"] = True
+            return self._db.write("Pages", update)
         return None
 
-    def update_page_records(self, page_titles, update_child_links=True):
-        pages = self._get_pages(page_titles)
-        if not all([isinstance(page, Page) for page in pages]):
-            raise ValueError("Updater.update_page_records: not all pages were found")
-        updated_page_ids = self._update_pages(pages)
-
-        if update_child_links:
-            child_links_changed = False
-            for page in pages:
-                if page.children:
-                    _logger.info(f"checking child links for {_page_title(page)} ({len(page.children)} children)")
-                    child_links_changed = self._link_children(page) or child_links_changed
-
-        if updated_page_ids or child_links_changed:
-            _logger.info("Updater.update_page_records: database updated")
-            return True
-
-        _logger.info("Updater.update_page_records: no changes")
-        return False
-
-    # -------------------------------------------------------------------------
-    # DOCUMENT TABLE UPDATES
-
-    def _link_documents(self, page, urls):
-        # locate the parent record
-        page_id = self._db.lookup("Pages", _page_title(page))
-        if not page_id:
-            raise ValueError(f"_link_documents: cannot find record for parent (title={_page_title(page)})")
-
+    def _link_documents_with_page_id(self, page_id, urls):
         doc_ids = self._db.lookup("Documents", urls)
         if not all(doc_ids):
             missing_urls = [url for url, did in zip(urls, doc_ids) if not did]
             for url in missing_urls:
-                _logger.info(f"doc url missing: {url}")
-            raise ValueError(f"_link_documents: unable to locate all referenced documents")
-
+                _logger.info(f"doc url missing: {url}. ignoring...")
+            doc_ids = [d for d in doc_ids if d]
         if _replace_links(self._db, "Pages", "doc_links", page_id, doc_ids):
-            _logger.info(f"Doc links for {_page_title(page)} updated ({len(doc_ids)} doc(s))")
             return True
         # otherwise, no change in links
         return False
 
-    def update_linked_documents(self, page_titles, update_links=True):
+    def update_records(self, page_titles):
         pages = self._get_pages(page_titles)
-        page_doc_urls = { _page_title(page): _extract_page_links(page) for page in pages }
-        doc_urls = set([url for docs in page_doc_urls.values() for url in docs])
-        doc_records = { url: _form_document_record(url) for url in doc_urls}
+        if not all([isinstance(page, Page) for page in pages]):
+            raise ValueError("Updater.update_page_records: not all pages were found")
+        updated_pages = bool(self._update_pages(pages))
 
-        # collect meta data for known sources
-        _KNOWN_SOURCES = ("commons", "wikisource")
-        missing = []
-        for source in _KNOWN_SOURCES:
-            subset = [record for record in doc_records.values() if record["source"] == source]
-            subset_titles = [rec["title"] for rec in subset]
-            metadata_records = _fetch_mediawiki_file_metadata(subset_titles, source)
-            #_logger.info(f"metadata_records: {metadata_records}")
-            for record in subset:
-                metadata_record = metadata_records.get(record["title"])
-                if metadata_record:
-                    for k, v in metadata_record.items():
-                        record[k] = v
-                else:
-                    missing.append(record["link"])
+        linked_page_updates = []
+        child_link_updates = {}
+        parent_link_updates = {}
+        title_set = set()
+        doc_urls = set()
+        doc_link_updates = {}
+        
+        def _add_child_link(parent, child):
+            updates = child_link_updates.get(parent, set())
+            updates.add(child)
+            child_link_updates[parent] = updates
+        
+        def _add_parent_link(child, parent):
+            if parent_link_updates.get(child):
+                _logger.error(f"second parent for child {child}: {parent}, {parent_link_updates.get(child)}")
+            parent_link_updates[child] = parent
 
-        # remove urls from known sources that have no metadata (not a true document)
-        for url in missing:
-            del doc_records[url]
+        def _add_doc_link(title, doc_url):
+            #_logger.info(f"found linked doc: {title} url={doc_url}")
+            updates = doc_link_updates.get(title, set())
+            updates.add(doc_url)
+            doc_link_updates[title] = updates
+            doc_urls.add(doc_url)
 
-        # detect any record changes and update those
-        update, update_fields = _detect_changes(self._db, "Documents", doc_records.values())
-        doc_ids = self._db.write("Documents", update) if update else []
+        for page in pages:
+            page_links = _extract_title_links(page.title)
+            title = _normalize_title(page_links["title"])
+            title_set.add(title)
+            parent = page_links.get("parent") or {}
+            if parent.get("exists"):
+                parent_title = _normalize_title(parent["title"])
+                title_set.add(parent_title)
+                linked_page_updates.append(_form_simple_page_record(parent_title))
+                _add_parent_link(title, parent_title)
+            child_links = page_links.get("children") or []
+            for child in child_links:
+                if child.get("exists"):
+                    child_title = _normalize_title(child["title"])
+                    title_set.add(child_title)
+                    linked_page_updates.append(_form_simple_page_record(child_title))
+                    _add_child_link(title, child_title)
+            for link in page_links.get("internal_links", []):
+                if link.get("doc_type"):
+                    doc_title = _normalize_title(link.get("title"))
+                    url = f"https://uk.wikisource.org/wiki/{doc_title}"
+                    _add_doc_link(title, url)
+                #else:
+                #    _logger.info(f"ignoring non-doc wiki link: {title} wiki target={link.get('title')}")
+            for source in ("commons_links", "interwiki_links"):
+                for link in page_links.get(source, []):
+                    if link.get("doc_type"):
+                        url = link.get("url")
+                        url = url.replace(" ", "_").replace("file:", "File:")
+                        _add_doc_link(title, url)
+                    #else:
+                    #    _logger.info(f"ignoring non-doc link: {title} url={link.get('url')}")
+            for url in page_links.get("external_links", []):
+                if _allowed_doc_link(url):
+                    _add_doc_link(title, url)
 
+        linked_records_changed = bool(self._update_page_records(linked_page_updates, set_alert=False))
+        record_ids = self._db.lookup("Pages", title_set)
+
+        links_changed = False
+        link_children = True
+        if link_children:
+            for parent_title, child_titles in child_link_updates.items():
+                parent_id = record_ids[parent_title]
+                child_ids = [record_ids[t] for t in child_titles]
+                if _replace_links(self._db, "Pages", "children", parent_id, child_ids):
+                    _logger.info(f"Child links for {parent_title} updated ({len(child_ids)} children)")
+                    links_changed = True
+            for child_title, parent_title in parent_link_updates.items():
+                child_id = record_ids[child_title]
+                parent_id = record_ids[parent_title]
+                if _create_links(self._db, "Pages", "children", parent_id, child_id):
+                    _logger.info(f"Parent link for {child_title} updated ({parent_title})")
+                    links_changed = True
+
+        doc_records_changed = False
         doc_links_changed = False
-        if update_links:
+        if doc_urls:
+            doc_records = { url: _form_document_record(url) for url in doc_urls}
+
+            # collect meta data for known sources
+            _KNOWN_SOURCES = ("commons", "wikisource")
+            missing = []
+            for source in _KNOWN_SOURCES:
+                subset = [record for record in doc_records.values() if record["source"] == source]
+                subset_titles = [rec["title"] for rec in subset]
+                if subset_titles:
+                    metadata_records = _fetch_mediawiki_file_metadata(subset_titles, source)
+                    #_logger.info(f"metadata_records: {metadata_records}")
+                    for record in subset:
+                        metadata_record = metadata_records.get(record["title"])
+                        if metadata_record:
+                            record.update(metadata_record)
+                        else:
+                            _logger.info(f"ignoring missing doc url {record["title"]}")
+                            missing.append(record["link"])
+
+            # remove urls from known sources that have no metadata (not a true document)
+            for url in missing:
+                if url in doc_records:
+                    del doc_records[url]
+
+            # detect any record changes and update those
+            update, update_fields = _detect_changes(self._db, "Documents", doc_records.values())
+            for record in update:
+                record["birddog_alert"] = True
+            doc_ids = self._db.write("Documents", update) if update else []
+            doc_records_changed = bool(doc_ids)
+
             # update page doc links
-            for page in pages:
-                # get doc links for this page
-                urls = page_doc_urls.get(_page_title(page), [])
-                # ignore links that are missing or not allowed
-                urls = [url for url in urls if url in doc_records.keys()]
-                if urls:
-                    doc_links_changed = self._link_documents(page, urls) or doc_links_changed
+            for page_title, doc_urls in doc_link_updates.items():
+                page_id = record_ids[page_title]
+                if self._link_documents_with_page_id(page_id, list(doc_urls)):
+                    _logger.info(f"Doc links for {page_title} updated ({len(doc_urls)} docs)")
+                    doc_links_changed = True
 
-        if update or doc_links_changed:
-            _logger.info("Updater.update_linked_documents: database updated")
-            return True
-
-        _logger.info("Updater.update_linked_documents: no changes")
-        return False
+        return any([
+            updated_pages, 
+            linked_records_changed, 
+            links_changed, 
+            doc_records_changed, 
+            doc_links_changed])
 
     # -------------------------------------------------------------------------
     # TRANSLATION SUPPORT
