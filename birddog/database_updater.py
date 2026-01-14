@@ -7,16 +7,21 @@ from time import sleep
 from datetime import datetime, timezone
 from urllib.parse import urlparse, unquote
 from pathlib import PurePosixPath
+import mwparserfromhell
 
 from birddog.database import Database
 from birddog.wiki import (
-    WIKI_NAMESPACE,
     API_URL,
-    expand_link_target,
     canonicalize_title,
+    classify_page,
+    page_name,
     )
-from birddog.core import Page
-from birddog.utility import fetch_url, new_id, json_size
+from birddog.utility import (
+    fetch_url, 
+    new_id, 
+    json_size, 
+    transliterate,
+    )
 
 from birddog.log import get_logger
 _logger = get_logger()
@@ -118,7 +123,7 @@ def _detect_changes(db, table_name, records):
 def _get_links(title):
     params = {
         "action": "parse",
-        "prop": "links|iwlinks|externallinks",
+        "prop": "links|iwlinks|externallinks|wikitext|revid",
         "format": "json",
         "page": canonicalize_title(title),
     }
@@ -228,21 +233,137 @@ def _form_simple_page_record(title):
         "availability": "linked",
     }
 
-def _form_page_record(page):
-    page_data = page.page
+def _kind(title, record):
+    result = classify_page(title)
+    if result == "case" and record.get("children"):
+        return "opus"
+    return result
+
+def _label(title):
     try:
-        result = _form_simple_page_record(_page_title(page))
-        result["description_uk"] = page_data["description"]["uk"]
-        result["level"] = page.kind
-        result["reference_date"] = _format_date(page_data["lastmod"])
-        result["label"] = page.display_name if page.kind == "archive" else page.id
-        dates = page_data.get("dates")
-        if dates:
-            result["years"] = dates["uk"]        
-        return result
-    except Exception as e:
-        _logger.error(f"error in _form_page_record: {page.title}")
-        raise e
+        return transliterate(page_name(title))
+    except ValueError as err:
+        return None
+        
+def _get_latest_mod_date(revid):
+    # Last modified date via API `revisions` (for this oldid)
+    params = {
+        'action': 'query',
+        'prop': 'revisions',
+        'revids': revid,
+        'rvprop': 'timestamp',
+        'format': 'json',
+    }
+    raw = fetch_url(API_URL, params=params, json=True)
+    query = raw.get("query")
+    if not query:
+        return None
+    pages = query.get("pages")
+    if not pages:
+        return None
+    for result in pages.values():
+        revisions = result.get("revisions", [])
+        if revisions:
+            date_string = revisions[0].get("timestamp", None)
+            if date_string:
+                date_string = _normalize_date_string(date_string)
+            return date_string
+        return None
+    
+def _parse_wiki_templates(parse):
+    wikitext = parse.get("wikitext", {}).get("*", "")
+    wikicode = mwparserfromhell.parse(wikitext)
+    desc = ""
+    dates = ""
+    for template in wikicode.filter_templates():
+        if template.name.startswith("Архіви") or template.name.startswith("заголовок"):
+            if template.has("назва"):
+                desc = template.get("назва").value.strip_code().strip(" ./\n")
+            if template.has("секція") and not desc:
+                desc = template.get("секція").value.strip_code().strip()
+            if template.has("рік"):
+                dates = template.get("рік").value.strip_code().strip()
+            break
+    return {
+        "description_uk": desc.strip(),
+        "years": dates.strip(),
+    }
+
+def _extract_links_from_wiki_parse(title, parse):
+    internal_links = []
+    category_links = []
+    children = []
+    parent = None
+    for link in parse.get("links", []):
+        other_title = link.get("*")
+        if other_title:
+            canonical_title = canonicalize_title(other_title)
+            item = {
+                "title": canonical_title,
+                "exists": "exists" in link
+            }
+            if canonical_title.startswith(title):
+                children.append(item)
+            elif title.rsplit("/", 1)[0] == canonical_title:
+                parent = item
+            elif _is_category_link(other_title):
+                category_links.append(item)
+            else:
+                item["doc_type"] = _sniff_suffix(canonical_title)
+                internal_links.append(item)
+
+    interwiki_links = []
+    commons_links = []
+    for link in parse.get("iwlinks", []):
+        other_title = link.get("*")
+        url = link.get("url")
+        if other_title:
+            item = {
+                "title": other_title,
+                "url": unquote(url),
+                "doc_type": _sniff_suffix(url),
+            }
+            if url.startswith("https://commons.wikimedia.org"):
+                commons_links.append(item)
+            else:
+                interwiki_links.append(item)
+
+    return {
+        "title": title,
+        "pageid": parse.get("pageid"),
+        "parent": parent,
+        "children": children,
+        "category_links": category_links,
+        "internal_links": internal_links,
+        "commons_links": commons_links,
+        "interwiki_links": interwiki_links,
+        "external_links": parse.get("externallinks", []),
+    }
+
+def _form_page_info_from_title(title):
+    title = canonicalize_title(title)
+    raw = _get_links(title)
+    parse = raw.get("parse", {})
+    info = {
+        "title": _normalize_title(title),
+        "record": _parse_wiki_templates(parse),
+        "links": _extract_links_from_wiki_parse(title, parse),
+    }
+    record = info["record"]
+    record["title"] = _normalize_title(title)
+    error = raw.get("error")
+    if error:
+        if error.get("code") == "missingtitle":
+            info["missing"] = True
+        info["error"] = error
+    else:
+        record["level"] = _kind(title, record)
+        record["label"] = _label(title)
+        revid = parse.get("revid", "")
+        record["reference_date"] = _get_latest_mod_date(revid)
+        record["availability"] = "linked"
+        record["source_type"] = "wiki"
+    return info
 
 # ----------------------------------------------------------------------
 # DOCUMENT RECORD UPDATES
@@ -478,37 +599,21 @@ class DatabaseUpdater:
         _clear_alerts(self._db, "Pages")
         _clear_alerts(self._db, "Documents")
 
-    def _get_pages(self, page_titles):
-        if isinstance(page_titles, str):
-            page_titles = [ page_titles ]
-
-        if not all(isinstance(title, str) for title in page_titles):
-            raise ValueError("Updater._get_pages: page_titles must be str or list of str")
-
-        pages = []
-        for title in page_titles:
-            try:
-                page = self._runtime.lookup_by_title(title)
-            except (KeyError, ValueError) as err:
-                _logger.error(f"Updater: Unable to lookup page {title} ({err}) skipping...")
-                continue
-            if not page.lastmod:
-                _logger.info(f"Updater: ignoring nonexistent page: {_page_title(page)}")
-            else:
-                pages.append(page)
-
-        return pages
-
     # -------------------------------------------------------------------------
     # PAGE AND DOCUMENT TABLE UPDATES
 
-    def _update_pages(self, pages, set_alert=True):
-        if not isinstance(pages, (list, tuple)):
-            if not isinstance(pages, Page):
-                raise ValueError("must be list/tuple of Page objects or singleton Page object")
-            pages = [ pages ]
-        return self._update_page_records(
-            [_form_page_record(page) for page in pages], set_alert)
+    def _get_page_info(self, page_titles):
+        result = []
+        _logger.info(f"Updater: accessing wiki page info for {len(page_titles)} pages")
+        for title in page_titles:
+            info = _form_page_info_from_title(title)
+            if info.get("missing"):
+                _logger.error(f"Wiki page missing: {title}")
+            elif info.get("error"):
+                _logger.error(f"Error loading Wiki page {title}: {record.get("error")}")
+            else:
+                result.append(info)
+        return result
 
     def _update_page_records(self, page_records, set_alert=True):
         update, update_fields = _detect_changes(self._db, "Pages", page_records)
@@ -536,10 +641,14 @@ class DatabaseUpdater:
         return False
 
     def update_records(self, page_titles):
-        pages = self._get_pages(page_titles)
-        if not all([isinstance(page, Page) for page in pages]):
-            raise ValueError("Updater.update_page_records: not all pages were found")
-        updated_pages = bool(self._update_pages(pages))
+        if isinstance(page_titles, str):
+            page_titles = [ page_titles ]
+        if not all([isinstance(title, str) for title in page_titles]):
+            raise ValueError("Updater.update_records: page_titles must be str or sequence of str")
+
+        page_info = self._get_page_info(page_titles)
+        updated_pages = bool(self._update_page_records(
+            [info["record"] for info in page_info]))
 
         linked_page_updates = []
         child_link_updates = {}
@@ -565,9 +674,10 @@ class DatabaseUpdater:
             doc_link_updates[title] = updates
             doc_urls.add(doc_url)
 
-        for page in pages:
-            page_links = _extract_title_links(page.title)
-            title = _normalize_title(page_links["title"])
+        _logger.info(f"Updater: analyzing page links")
+        for info in page_info:
+            page_links = info.get("links", {})
+            title = info["title"]
             title_set.add(title)
             parent = page_links.get("parent") or {}
             if parent.get("exists"):
@@ -607,6 +717,7 @@ class DatabaseUpdater:
         links_changed = False
         link_children = True
         if link_children:
+            _logger.info(f"Updater: linking child pages")
             for parent_title, child_titles in child_link_updates.items():
                 parent_id = record_ids[parent_title]
                 child_ids = [record_ids[t] for t in child_titles]
@@ -623,6 +734,7 @@ class DatabaseUpdater:
         doc_records_changed = False
         doc_links_changed = False
         if doc_urls:
+            _logger.info(f"Updater: accessing linked document metadata")
             doc_records = { url: _form_document_record(url) for url in doc_urls}
 
             # collect meta data for known sources
@@ -655,6 +767,7 @@ class DatabaseUpdater:
             doc_records_changed = bool(doc_ids)
 
             # update page doc links
+            _logger.info(f"Updater: updating document links")
             for page_title, doc_urls in doc_link_updates.items():
                 page_id = record_ids[page_title]
                 if self._link_documents_with_page_id(page_id, list(doc_urls)):

@@ -326,6 +326,10 @@ def translit_ukrainian_char(c: str) -> str:
     #print(f'Replacing {c} with {UKR_TO_LAT[c]}')
     return UKR_TO_LAT.get(c, c)
 
+def transliterate(s, f=translit_ukrainian_char):
+    if not s:
+        return ''
+    return ''.join(f(c) for c in str(s))
 
 def replace_with_translit(s: str, ukr_start: int, ukr_count: int) -> str:
     """

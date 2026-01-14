@@ -18,7 +18,7 @@ from openpyxl.worksheet.formula import ArrayFormula
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import get_column_letter
 
-from birddog.utility import get_text, is_linked, link_status, translit_ukrainian_char
+from birddog.utility import get_text, is_linked, link_status, transliterate
 from birddog.wiki import ARCHIVE_BASE
 from birddog.ai import classify_table_columns
 from birddog.task import TaskManager
@@ -63,11 +63,6 @@ def _child_doc_url(child):
     if len(child) < 2:
         return None
     return _expand_url(child[1].get("link"))
-
-def _transliterate(s, f=translit_ukrainian_char):
-    if not s:
-        return ''
-    return ''.join(f(c) for c in str(s))
 
 _EXPR_PATTERN = re.compile(r'{[^}]+}')
 
@@ -372,7 +367,7 @@ def export_page(page, dest_file=None, template=None, table_name=None, column_map
                 if parse['modifier'] == 'date':
                     cell.value = _format_date(cell.value)
                 if parse['modifier'] == 'transliterated':
-                    cell.value = _transliterate(cell.value)
+                    cell.value = transliterate(cell.value)
 
     # all done, save and return
     if dest_file:
