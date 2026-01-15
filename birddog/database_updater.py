@@ -22,6 +22,7 @@ from birddog.utility import (
     json_size, 
     transliterate,
     )
+from birddog.task import TaskManager
 
 from birddog.log import get_logger
 _logger = get_logger()
@@ -172,59 +173,6 @@ _DOC_LINK_BLOCKLIST = [
 
 def _allowed_doc_link(link):
     return all([item not in link for item in _DOC_LINK_BLOCKLIST])
-
-def _extract_title_links(title):
-    title = canonicalize_title(title)
-    raw = _get_links(title).get("parse", {})    
-    internal_links = []
-    category_links = []
-    children = []
-    parent = None
-    for link in raw.get("links", []):
-        other_title = link.get("*")
-        if other_title:
-            canonical_title = canonicalize_title(other_title)
-            item = {
-                "title": canonical_title,
-                "exists": "exists" in link
-            }
-            if canonical_title.startswith(title):
-                children.append(item)
-            elif title.rsplit("/", 1)[0] == canonical_title:
-                parent = item
-            elif _is_category_link(other_title):
-                category_links.append(item)
-            else:
-                item["doc_type"] = _sniff_suffix(canonical_title)
-                internal_links.append(item)
-
-    interwiki_links = []
-    commons_links = []
-    for link in raw.get("iwlinks", []):
-        other_title = link.get("*")
-        url = link.get("url")
-        if other_title:
-            item = {
-                "title": other_title,
-                "url": unquote(url),
-                "doc_type": _sniff_suffix(url),
-            }
-            if url.startswith("https://commons.wikimedia.org"):
-                commons_links.append(item)
-            else:
-                interwiki_links.append(item)
-
-    return {
-        "title": title,
-        "pageid": raw.get("pageid"),
-        "parent": parent,
-        "children": children,
-        "category_links": category_links,
-        "internal_links": internal_links,
-        "commons_links": commons_links,
-        "interwiki_links": interwiki_links,
-        "external_links": raw.get("externallinks", []),
-    }
 
 def _form_simple_page_record(title):
     return {
@@ -809,7 +757,7 @@ class DatabaseUpdater:
     def start_translation(self):
         translations = self._collect_translations()
         if translations:
-            task_name = f"DB_{new_id()}"
+            task_name = f"DBT_{new_id()}"
             translation_items = [t["description_uk"] for t in translations]
             _logger.info(f"Updater: starting translation task (length={len(translation_items)})")
             self._runtime.start_translation(task_name=task_name, items=translation_items)
@@ -826,4 +774,49 @@ class DatabaseUpdater:
             if update:
                 _logger.info(f"Updater: updating translations (length={len(update)})")
                 self._db.write("Pages", update)
+
+class DatabaseUpdateManager(TaskManager):
+    _BATCH_SIZE = 100
+
+    def __init__(self, runtime, updater=None):
+        self._updater = updater if updater else DatabaseUpdater(runtime)
+        super().__init__("DatabaseUpdateManager")
+
+    def execute_subtask(self, subtask):
+        title_batch = subtask["payload"]
+        try:
+            subtask["payload"] = {"updated": self._updater.update_records(title_batch)}
+        except Exception as err:
+            _logger.error(f"DatabaseUpdateManager: exception during subtask execution: {err}")
+            subtask["payload"] = {"error": err}
+
+    def complete_task(self, task_desc, subtasks):
+        try:
+            if any([subtask["payload"].get("updated") for subtask in subtasks]):
+                _logger.info("Update task completed. Some records changed. Starting translations")
+                # kick off translation on any new records
+                self._updater.start_translation()
+        except Exception as err:
+            _logger.error(f"DatabaseUpdateManager: exception during task completion: {err}")
+
+    def complete_translation(self, task_name, translation_map):
+        self._updater.complete_translation(task_name, translation_map)
+
+    def start_update(self, page_titles):
+        if isinstance(page_titles, str):
+            page_titles = [ page_titles ]
+        if not isinstance(page_titles, (list, tuple)) or not all([isinstance(title, str) for title in page_titles]):
+            raise ValueError("DatabaseUpdateManager.start_update_task: page_titles must be str or sequence of str")
+        total = len(page_titles)
+        if total > 0:
+            task_name = f"DBU_{new_id()}"
+            batches = []
+            for i in range(0, total, self._BATCH_SIZE):
+                batches.append(page_titles[i:i+self._BATCH_SIZE])
+            self.create(task_name, batches)
+
+
+
+
+
 

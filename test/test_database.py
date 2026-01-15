@@ -3,7 +3,6 @@ import time
 import unittest
 
 from birddog.abstract_database import (
-    Database,
     FailedIO,
     SchemaError,
     InvalidFieldName,
@@ -31,12 +30,6 @@ class TestDatabase(unittest.TestCase):
       - Deletes any records created during the test (tracked by returned Ids).
       - All created records contain "test" in title (and Documents.link).
     """
-
-    @classmethod
-    def setUpClass(cls):
-        # Skip if the token is not configured; this is an integration test.
-        if not os.environ.get("NOCODB_API_TOKEN"):
-            raise unittest.SkipTest("NOCODB_API_TOKEN is not set in environment.")
 
     def setUp(self):
         self.db = Database()

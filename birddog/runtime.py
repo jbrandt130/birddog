@@ -39,7 +39,7 @@ from birddog.utility import HeartbeatManager, FetchUrlFailError
 
 _ENABLE_DB_SYNC = os.environ.get("BIRDDOG_ENABLE_DB_SYNC", False)
 if _ENABLE_DB_SYNC:
-    from birddog.database_updater import DatabaseUpdater
+    from birddog.database_updater import DatabaseUpdateManager
 
 from birddog.log import get_logger, ServiceLogger, EventLogger
 _logger = get_logger()
@@ -323,7 +323,6 @@ class PageUpdateManager(HeartbeatManager):
         self._runtime = runtime
         self._tracker = PageTracker()
         self._kv_store = get_key_value_store()
-        self._updater = DatabaseUpdater(runtime) if _ENABLE_DB_SYNC else None
         super().__init__(interval=PageUpdateManager._HEARTBEAT_INTERVAL)
 
     def heartbeat(self):
@@ -348,15 +347,9 @@ class PageUpdateManager(HeartbeatManager):
         pending_updates = self._kv_store.get_all(self._PENDING_TITLE_UPDATES)
 
         # update database if updater is active
-        if self._updater and pending_updates:
+        if pending_updates:
             update_titles = [item[0] for item in pending_updates]
-            try:
-                # update database records
-                self._updater.update_records(update_titles)
-                # initiate translations in database if needed
-                self._updater.start_translation()
-            except Exception as e:
-                _logger.error(f"Exception during database update: {e}. Skipping...")
+            self._runtime.update_to_database(update_titles)
 
         error_count = 0
         for title, update in pending_updates:
@@ -391,9 +384,6 @@ class PageUpdateManager(HeartbeatManager):
 
         _logger.info("PageUpdateManager: finished update check...")
 
-    def complete_translation(self, task_name, translation_map):
-        self._updater.complete_translation(task_name, translation_map)
-
     def get_updates(self, archive, subarchive, cutoff_date=None):
         prefix = archive_root(archive, subarchive)
         _logger.info(f"PageUpdateManager.get_updates: prefix={prefix}, cutoff_date={cutoff_date}")
@@ -408,14 +398,6 @@ class PageUpdateManager(HeartbeatManager):
             except ValueError:
                 _logger.error(f"PageUpdateManager.get_updates: cannot find title {title}. Skipping...")
         return result
-
-    def update_to_database(self, title):
-        if not self._updater:
-            raise RuntimeError("Cannot update database: unavaialble")
-
-        # FIXME - make this a background task
-        self._updater.update_records(title)
-        self._updater.start_translation()
 
 # ----------------------------------------------------------------------------
 # Resource usage monitor
@@ -471,6 +453,8 @@ class Runtime:
         self._update_manager = PageUpdateManager(self)
         self._translation_manager = TranslationManager(self)
         self._export_manager = ExportManager(self)
+        self._database_update_manager = DatabaseUpdateManager(self) if _ENABLE_DB_SYNC else None
+
         self._killswitch = KillSwitch(self)
         self._trim_logs()
         self._state = "ready"
@@ -501,6 +485,8 @@ class Runtime:
         if self._state == "ready":
             _logger.info(f"Runtime starting...")
             self._update_manager.start()
+            if self._database_update_manager:
+                self._database_update_manager.start()
             if self.translation_enabled:
                 self._translation_manager.start()
             self._killswitch.start()
@@ -511,6 +497,8 @@ class Runtime:
             # pause all threads
             _logger.info("Runtime pausing")
             self._update_manager.hold()
+            if self._database_update_manager:
+                self._database_update_manager.hold()
             self._translation_manager.hold()
             self._state = "paused"
 
@@ -519,6 +507,8 @@ class Runtime:
             # unpause all threads
             _logger.info("Runtime unpausing")
             self._update_manager.release()
+            if self._database_update_manager:
+                self._database_update_manager.release()
             self._translation_manager.release()
             self._state = "running"
 
@@ -556,9 +546,11 @@ class Runtime:
             # page translation initiated through start_translation()
             page = self.lookup_by_title(task_name)
             page.apply_translation(translation_map)
-        elif task_name.startswith("DB_"):
-            # database translation initiated through database Updater (through update_manager)
-            self._update_manager.complete_translation(task_name, translation_map)
+        elif task_name.startswith("DBT_"):
+            if not self.database_update_enabled:
+                _logger.error("Runtime: unable to complete translation task: database unavailable")
+            else:
+                self._database_update_manager.complete_translation(task_name, translation_map)
         else:
             raise ValueError(f"Unrecognized translation task completion: {task_name}")
 
@@ -576,8 +568,8 @@ class Runtime:
 
     @property
     def database_update_enabled(self):
-        return _ENABLE_DB_SYNC
+        return bool(self._database_update_manager)
 
-    def update_to_database(self, title):
+    def update_to_database(self, titles):
         if self.database_update_enabled:
-            self._update_manager.update_to_database(title)
+            self._database_update_manager.start_update(titles)
