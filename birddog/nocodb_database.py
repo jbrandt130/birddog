@@ -20,8 +20,9 @@ from birddog.abstract_database import (
     InvalidTableName,
     MissingKey,
     )
+from birddog.utility import json_size
 
-from birddog.log import get_logger
+from birddog.log import get_logger, LogService
 _logger = get_logger()
 
 _NOCODB_RUN_LOCAL       = os.environ.get("BIRDDOG_USE_LOCAL_NOCODB")
@@ -422,19 +423,22 @@ class NocoDBDatabase(Database):
         if where:
             params["where"] = self._encode_where_spec(table_name, where)
 
-        data = self._fetch(url, params=params)
-        records = data.get("list", []) or []
-        page_info = data.get("pageInfo") or {}
-        is_last = bool(page_info.get("isLastPage")) or not records
+        with LogService("NocoDB", "scan") as log:
+            data = self._fetch(url, params=params)
+            records = data.get("list", []) or []
+            page_info = data.get("pageInfo") or {}
+            is_last = bool(page_info.get("isLastPage")) or not records
 
-        if is_last:
-            next_cursor = None
-        else:
-            next_cursor = str(offset + len(records))
+            if is_last:
+                next_cursor = None
+            else:
+                next_cursor = str(offset + len(records))
 
-        if not raw:
-            self.normalize_records(table_name, records)
-        return records, next_cursor
+            if not raw:
+                self.normalize_records(table_name, records)
+
+            log.size = json_size(records)
+            return records, next_cursor
 
     def lookup(self, table_name, key_set):
         """
@@ -492,28 +496,30 @@ class NocoDBDatabase(Database):
         key_set, singleton = self._validate_key_set(table_name, key_set)
         result = dict()
         missing = list(key_set)
+
         if missing:
-            url = _records_url(table_id)
+            with LogService("NocoDB", "lookup", size=json_size(list(key_set))):
+                url = _records_url(table_id)
 
-            for i in range(0, len(missing), _NOCODB_BATCH_SIZE):
-                batch = missing[i:i + _NOCODB_BATCH_SIZE]
+                for i in range(0, len(missing), _NOCODB_BATCH_SIZE):
+                    batch = missing[i:i + _NOCODB_BATCH_SIZE]
 
-                clauses = [
-                    f"({key_field_id},eq,{key})"
-                    for key in batch
-                ]
+                    clauses = [
+                        f"({key_field_id},eq,{key})"
+                        for key in batch
+                    ]
 
-                params = {
-                    "fields": f"{id_field_id},{key_field_id}",
-                    "where": "~or".join(clauses),
-                }
+                    params = {
+                        "fields": f"{id_field_id},{key_field_id}",
+                        "where": "~or".join(clauses),
+                    }
 
-                data = self._fetch(url, params=params)
+                    data = self._fetch(url, params=params)
 
-                for item in data.get("list", []):
-                    record_id = item["Id"]
-                    key_value = item[key_field_name]
-                    result[key_value] = record_id
+                    for item in data.get("list", []):
+                        record_id = item["Id"]
+                        key_value = item[key_field_name]
+                        result[key_value] = record_id
 
         if singleton:
             return list(result.values())[0] if result else None
@@ -556,25 +562,27 @@ class NocoDBDatabase(Database):
         else:
             singleton = False
             
-        result = dict()
-        for i in range(0, len(record_id), _NOCODB_BATCH_SIZE):
-            batch = record_id[i:i + _NOCODB_BATCH_SIZE]
+        with LogService("NocoDB", "read") as log:
+            result = dict()
+            for i in range(0, len(record_id), _NOCODB_BATCH_SIZE):
+                batch = record_id[i:i + _NOCODB_BATCH_SIZE]
 
-            clauses = [
-                f"({id_field_id},eq,{i})"
-                for i in batch
-            ]
+                clauses = [
+                    f"({id_field_id},eq,{i})"
+                    for i in batch
+                ]
 
-            params = {
-                "where": "~or".join(clauses),
-            }
+                params = {
+                    "where": "~or".join(clauses),
+                }
 
-            data = self._fetch(url, params=params)
+                data = self._fetch(url, params=params)
 
-            for item in data.get("list", []):
-                result[item["Id"]] = item
-        result = [result.get(i, {}) for i in record_id]
-        self.normalize_records(table_name, result)
+                for item in data.get("list", []):
+                    result[item["Id"]] = item
+            result = [result.get(i, {}) for i in record_id]
+            self.normalize_records(table_name, result)
+            log.size = json_size(result)
 
         if singleton:
             return result[0]
@@ -650,17 +658,18 @@ class NocoDBDatabase(Database):
         unknown_keys = key_set - set(known_key_map.keys())
         unknown_records = [record_dict[key] for key in unknown_keys]
 
-        url = _records_url(table_id)
-        for i in range(0, len(known_records), _NOCODB_BATCH_SIZE):
-            batch = known_records[i:i + _NOCODB_BATCH_SIZE]
-            data = self._fetch(url, json=batch, method="PATCH")
-        for i in range(0, len(unknown_records), _NOCODB_BATCH_SIZE):
-            batch = unknown_records[i:i + _NOCODB_BATCH_SIZE]
-            data = self._fetch(url, json=batch, method="POST")
-            for j, item in enumerate(data):
-                unknown_records[i+j]["Id"] = item["Id"]
+        with LogService("NocoDB", "write", size=json_size(known_records) + json_size(unknown_records)):
+            url = _records_url(table_id)
+            for i in range(0, len(known_records), _NOCODB_BATCH_SIZE):
+                batch = known_records[i:i + _NOCODB_BATCH_SIZE]
+                data = self._fetch(url, json=batch, method="PATCH")
+            for i in range(0, len(unknown_records), _NOCODB_BATCH_SIZE):
+                batch = unknown_records[i:i + _NOCODB_BATCH_SIZE]
+                data = self._fetch(url, json=batch, method="POST")
+                for j, item in enumerate(data):
+                    unknown_records[i+j]["Id"] = item["Id"]
 
-        result = [record_dict[record[key_field_name]]["Id"] for record in records]
+            result = [record_dict[record[key_field_name]]["Id"] for record in records]
         if singleton:
             return result[0]
         return result
@@ -695,26 +704,28 @@ class NocoDBDatabase(Database):
             record_id = [record_id]
         result = dict()
         count = 0
-        for i in range(0, len(record_id), _NOCODB_BATCH_SIZE):
-            batch = [{"Id": i} for i in record_id[i:i + _NOCODB_BATCH_SIZE]]
-            data = self._fetch(url, json=batch, method="DELETE")
-            count += len(data)
+        with LogService("NocoDB", "delete", size=json_size(record_id)):
+            for i in range(0, len(record_id), _NOCODB_BATCH_SIZE):
+                batch = [{"Id": i} for i in record_id[i:i + _NOCODB_BATCH_SIZE]]
+                data = self._fetch(url, json=batch, method="DELETE")
+                count += len(data)
         return count
 
     def _edit_link(self, table_name, link_field, source_record, target_records, method):
         table_id = self._table_id(table_name)   
         link_field_id = self._field_id(table_name, link_field)
         url = _links_url(table_id, link_field_id, source_record)
-        if isinstance(target_records, (list, tuple)):
-            # ensure no duplicate target ids
-            target_records = list(set(target_records))
-            for i in range(0, len(target_records), _NOCODB_EDIT_LINK_BATCH_SIZE):
-                batch = target_records[i:i + _NOCODB_EDIT_LINK_BATCH_SIZE]
-                payload = [{"Id": value} for value in batch]
+        with LogService("NocoDB", "edit_links", size=json_size(target_records)):
+            if isinstance(target_records, (list, tuple)):
+                # ensure no duplicate target ids
+                target_records = list(set(target_records))
+                for i in range(0, len(target_records), _NOCODB_EDIT_LINK_BATCH_SIZE):
+                    batch = target_records[i:i + _NOCODB_EDIT_LINK_BATCH_SIZE]
+                    payload = [{"Id": value} for value in batch]
+                    self._fetch(url, json=payload, method=method)
+            else:
+                payload = [{"Id": target_records}]
                 self._fetch(url, json=payload, method=method)
-        else:
-            payload = [{"Id": target_records}]
-            self._fetch(url, json=payload, method=method)
 
     def create_links(self, table_name, link_field, source_record, target_records):
         """
@@ -812,24 +823,27 @@ class NocoDBDatabase(Database):
         url = _links_url(table_id, link_field_id, source_record)
         result = []
         params = { "offset": 0}
-        while True:
-            response = self._fetch(url, params=params, method="GET")
-            page_info = response.get("pageInfo")
-            if page_info:
-                # paged results
-                resp = [item["Id"] for item in response.get("list", [])]
-                result.extend(resp)
-                if page_info["isLastPage"]:
+        with LogService("NocoDB", "get_links") as log:
+            log.size = 0
+            while True:
+                response = self._fetch(url, params=params, method="GET")
+                log.size += json_size(response)
+                page_info = response.get("pageInfo")
+                if page_info:
+                    # paged results
+                    resp = [item["Id"] for item in response.get("list", [])]
+                    result.extend(resp)
+                    if page_info["isLastPage"]:
+                        return result
+                    # iterate to get the next page
+                    params["offset"] += len(resp)
+                else:
+                    # not paged: singular Id returned
+                    link_id = response.get("Id")
+                    if link_id:
+                        result.append(link_id)
                     return result
-                # iterate to get the next page
-                params["offset"] += len(resp)
-            else:
-                # not paged: singular Id returned
-                link_id = response.get("Id")
-                if link_id:
-                    result.append(link_id)
-                return result
-        return response
+            return response
 
     def _upload_files(self, file_paths):
         """

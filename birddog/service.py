@@ -198,7 +198,8 @@ def home():
         'index.html', 
         user=user_session, 
         start_title=start_title,
-        runtime_state=runtime.state, 
+        runtime_state=runtime.state,
+        database_available=runtime.database_update_enabled,
         debug=app.debug)
 
 # ---- SESSION MANAGEMENT -----------------------------------------------------
@@ -669,7 +670,7 @@ def resolve_update(user, archive=None, subarchive=None, fond=None, opus=None, ca
 
 # ---- TRANSLATION MANAGEMENT -------------------------------------------------
 
-def _active_translations(email):
+def _active_translations():
     return [{
         'title': task["name"],
         'progress': task["completed"],
@@ -689,7 +690,27 @@ def translate(user):
     return jsonify({
         'enabled': runtime.translation_enabled,
         'available': runtime.translation_available,
-        'translations': _active_translations(user.email)}), 200
+        'translations': _active_translations()}), 200
+
+# ---- DATABASE SYNC  -------------------------------------------------
+
+def _active_updates():
+    return [{
+        'title': task["name"],
+        'progress': task["completed"],
+        'total': task["length"],
+    } for task in runtime.active_database_updates]
+
+@app.route('/database_update', methods=['GET'])
+@login_required
+def database_update(user):
+    page_title = request.args.get('title')
+    if page_title:
+        # start new update
+        runtime.update_to_database(page_title)
+    return jsonify({
+        'enabled': runtime.database_update_enabled,
+        'updates': _active_updates()}), 200
 
 # ---- LOG ACCESS ---------------------------------------------------------------
 

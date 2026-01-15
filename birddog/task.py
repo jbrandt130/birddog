@@ -13,7 +13,7 @@ from birddog.log import get_logger
 _logger = get_logger()
 
 _TASK_MANAGER_HEARTBEAT_INTERVAL    = 5.0 # seconds
-_STALE_SUBTASK_THRESHOLD_MS         = 10000
+_DEFAULT_STALE_SUBTASK_THRESHOLD_MS = 10000
 _IN_PROCESS_SUBTASK_LIMIT           = 3
 
 def _now_ms():
@@ -27,6 +27,7 @@ class TaskManager(HeartbeatManager):
         self._pending_id = f"{manager_name}:pending"
         self._in_process_id = f"{manager_name}:in_process"
         self._completed_prefix = f"{manager_name}:completed"
+        self._stale_subtask_threshold_ms = _DEFAULT_STALE_SUBTASK_THRESHOLD_MS
         super().__init__(interval=_TASK_MANAGER_HEARTBEAT_INTERVAL)
         if auto_start:
             self.start()
@@ -139,7 +140,7 @@ class TaskManager(HeartbeatManager):
         in_process_subtasks = [json.loads(item[1]) for item in self._key_value_store.get_all(self._in_process_id)]
         now = _now_ms()
         stale_subtasks = [item for item in in_process_subtasks 
-                          if now - item["start"] >= _STALE_SUBTASK_THRESHOLD_MS]
+                          if now - item["start"] >= self._stale_subtask_threshold_ms]
         for subtask in stale_subtasks:
             self._requeue_subtask(subtask)
 

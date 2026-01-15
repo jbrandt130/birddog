@@ -781,6 +781,8 @@ class DatabaseUpdateManager(TaskManager):
     def __init__(self, runtime, updater=None):
         self._updater = updater if updater else DatabaseUpdater(runtime)
         super().__init__("DatabaseUpdateManager")
+        # adjust subtask timeout to allow for approx 1 sec per item in batch
+        self._stale_subtask_threshold_ms = self._BATCH_SIZE * 1000
 
     def execute_subtask(self, subtask):
         title_batch = subtask["payload"]

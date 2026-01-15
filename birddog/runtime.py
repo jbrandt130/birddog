@@ -573,3 +573,7 @@ class Runtime:
     def update_to_database(self, titles):
         if self.database_update_enabled:
             self._database_update_manager.start_update(titles)
+
+    @property
+    def active_database_updates(self):
+        return self._database_update_manager.active_tasks()
