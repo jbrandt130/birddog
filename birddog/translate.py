@@ -16,7 +16,7 @@ from typing import Optional, Sequence, Union, Protocol
 import requests
 from requests.exceptions import Timeout, ReadTimeout, ConnectTimeout, ConnectionError as RequestsConnectionError
 
-from deep_translator import GoogleTranslator, DeeplTranslator
+#from deep_translator import GoogleTranslator, DeeplTranslator
 from google.cloud import translate_v2 as google_translate
 from google.api_core.exceptions import GoogleAPICallError
 from google.api_core.exceptions import (

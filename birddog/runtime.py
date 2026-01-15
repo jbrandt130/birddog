@@ -409,6 +409,14 @@ class PageUpdateManager(HeartbeatManager):
                 _logger.error(f"PageUpdateManager.get_updates: cannot find title {title}. Skipping...")
         return result
 
+    def update_to_database(self, title):
+        if not self._updater:
+            raise RuntimeError("Cannot update database: unavaialble")
+
+        # FIXME - make this a background task
+        self._updater.update_records(title)
+        self._updater.start_translation()
+
 # ----------------------------------------------------------------------------
 # Resource usage monitor
 
@@ -480,6 +488,14 @@ class Runtime:
     @property
     def update_manager(self):
         return self._update_manager
+
+    @property
+    def export_manager(self):
+        return self._export_manager
+
+    @property
+    def state(self):
+        return self._state
 
     def start(self):
         if self._state == "ready":
@@ -559,9 +575,9 @@ class Runtime:
         return self._translation_manager.enabled
 
     @property
-    def export_manager(self):
-        return self._export_manager
+    def database_update_enabled(self):
+        return _ENABLE_DB_SYNC
 
-    @property
-    def state(self):
-        return self._state
+    def update_to_database(self, title):
+        if self.database_update_enabled:
+            self._update_manager.update_to_database(title)

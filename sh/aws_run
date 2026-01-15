@@ -4,7 +4,7 @@ set -e  # Exit on error
 APP_NAME="birddog"
 ENV_NAME="birddog-env"
 REGION="us-east-2"
-PLATFORM="Python 3.13"
+PLATFORM="Python 3.12"
 INSTANCE_TYPE="t3.small"
 PROFILE="birddog-admin"
 
@@ -55,8 +55,8 @@ function deploy() {
     BIRDDOG_SMTP_PASSWORD="$BIRDDOG_SMTP_PASSWORD" \
     BIRDDOG_SMTP_PORT="$BIRDDOG_SMTP_PORT" \
     BIRDDOG_SMTP_SERVER="$BIRDDOG_SMTP_SERVER" \
-    BIRDDOG_SMTP_USERNAME="$BIRDDOG_SMTP_USERNAME"
-
+    BIRDDOG_SMTP_USERNAME="$BIRDDOG_SMTP_USERNAME" \
+    EC2_KEYNAME=birddog-eb
   eb printenv
 
   echo "📦 Deploying application..."
