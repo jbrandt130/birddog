@@ -1,0 +1,11 @@
+{
+  "AWSEBDockerrunVersion": "1",
+  "Image": {
+    "Name": "nocodb/nocodb:latest",
+    "Update": "true"
+  },
+  "Ports": [
+    { "ContainerPort": 8080 }
+  ]
+}
+

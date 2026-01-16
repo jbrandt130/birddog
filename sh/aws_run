@@ -1,51 +1,82 @@
 #!/bin/bash
 set -e  # Exit on error
 
+# --------------------------------------------------------------------
+# Birddog (existing)
+# --------------------------------------------------------------------
 APP_NAME="birddog"
 ENV_NAME="birddog-env"
 REGION="us-east-2"
-PLATFORM="Python 3.12"
+PLATFORM="Python 3.13"
 INSTANCE_TYPE="t3.small"
 PROFILE="birddog-admin"
 
+# --------------------------------------------------------------------
+# NocoDB (new)
+# --------------------------------------------------------------------
+NOCODB_APP_NAME="nocodb"
+NOCODB_ENV_NAME="nocodb-env"
+NOCODB_PLATFORM="Docker running on 64bit Amazon Linux 2023"
+NOCODB_INSTANCE_TYPE="t3.small"
+NOCODB_DIR="deploy/nocodb-eb"
+
+# Expect these to be set in your shell or a secrets manager workflow:
+#   NOCODB_NC_DB="pg://user:pass@your-rds-endpoint:5432/nocodb"
+# Optional:
+#   NOCODB_DISABLE_TELE="true"
+#   NOCODB_EXTRA_ENV="NC_ALLOW_LOCAL_HOOKS=true"  (example)
+#
+# NOTE: I intentionally keep NocoDB secrets out of this file, same as you do now.
+
 # Warn if a different profile was set outside
 if [ -n "$AWS_PROFILE" ] && [ "$AWS_PROFILE" != "$PROFILE" ]; then
-  echo "⚠️  Warning: AWS_PROFILE in shell is '$AWS_PROFILE'; overriding with '$PROFILE'."
+  echo "Warning: AWS_PROFILE in shell is '$AWS_PROFILE'; overriding with '$PROFILE'."
 fi
 
 # Clean any raw keys so they can't override profiles
 unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 
-# ✅ Make the profile visible to all child processes (EB CLI, botocore)
+# Make the profile visible to all child processes (EB CLI, botocore)
 export AWS_PROFILE="$PROFILE"
 export AWS_SDK_LOAD_CONFIG=1
 export AWS_DEFAULT_REGION="$REGION"
 
 # Optional: fail fast if creds not resolvable
 if ! aws sts get-caller-identity >/dev/null 2>&1; then
-  echo "❌ AWS profile '$AWS_PROFILE' not usable. Run:  aws configure --profile $AWS_PROFILE"
+  echo "AWS profile '$AWS_PROFILE' not usable. Run: aws configure --profile $AWS_PROFILE"
   exit 1
 fi
 
-# --- functions ---
+# --- helper: get EB CNAME for an environment (works without a custom domain) ---
+function _eb_cname() {
+  local env_name="$1"
+  aws elasticbeanstalk describe-environments \
+    --region "$REGION" \
+    --application-name "$2" \
+    --environment-names "$env_name" \
+    --query 'Environments[0].CNAME' \
+    --output text
+}
+
+# --- Birddog functions (existing, unchanged except for echo style) ---
 function init() {
-  echo "🔧 Running EB init setup with profile '$PROFILE'..."
+  echo "Running EB init setup for Birddog with profile '$PROFILE'..."
   eb init "$APP_NAME" --platform "$PLATFORM" --region "$REGION"
-  echo "✅ Setup complete."
+  echo "Setup complete."
 }
 
 function deploy() {
   if eb list | grep -Fxq "$ENV_NAME"; then
-    echo "🚀 Environment '$ENV_NAME' already exists. Skipping creation."
+    echo "Environment '$ENV_NAME' already exists. Skipping creation."
   else
-    echo "🚀 Creating Elastic Beanstalk environment: $ENV_NAME..."
+    echo "Creating Elastic Beanstalk environment: $ENV_NAME..."
     eb create "$ENV_NAME" --single --instance_type "$INSTANCE_TYPE" \
       --service-role aws-elasticbeanstalk-service-role \
       --instance_profile birddog-ec2-role --envvars BIRDDOG_AWS_ENVIRONMENT=1
-    echo "✅ Environment created."
+    echo "Environment created."
   fi
 
-  echo "🔐 Setting environment variables (no AWS creds)..."
+  echo "Setting environment variables..."
   eb setenv \
     AWS_DEFAULT_REGION="$REGION" \
     GOOGLE_TRANSLATE_API_KEY="$GOOGLE_TRANSLATE_API_KEY" \
@@ -55,61 +86,150 @@ function deploy() {
     BIRDDOG_SMTP_PASSWORD="$BIRDDOG_SMTP_PASSWORD" \
     BIRDDOG_SMTP_PORT="$BIRDDOG_SMTP_PORT" \
     BIRDDOG_SMTP_SERVER="$BIRDDOG_SMTP_SERVER" \
-    BIRDDOG_SMTP_USERNAME="$BIRDDOG_SMTP_USERNAME" \
-    EC2_KEYNAME=birddog-eb
+    BIRDDOG_SMTP_USERNAME="$BIRDDOG_SMTP_USERNAME"
+
   eb printenv
 
-  echo "📦 Deploying application..."
+  echo "Deploying Birddog..."
   eb deploy
-
-  echo "📊 Checking environment status..."
   eb status
-
-  echo "✅ Deployment complete."
+  echo "Birddog deployment complete."
 }
 
 function redeploy() {
-  echo "📦 Redeploying application..."
+  echo "Redeploying Birddog..."
   eb deploy
-  echo "📊 Checking environment status..."
   eb status
-  echo "✅ Redeploy complete."
+  echo "Birddog redeploy complete."
 }
 
 function terminate() {
-  echo "🔥 Terminating environment: $ENV_NAME"
+  echo "Terminating Birddog environment: $ENV_NAME"
   eb terminate "$ENV_NAME" --force
-  echo "✅ Environment terminated."
+  echo "Birddog environment terminated."
+}
+
+# --- NocoDB functions (new) ---
+function nocodb_init() {
+  if [ ! -d "$NOCODB_DIR" ]; then
+    echo "Missing directory: $NOCODB_DIR"
+    echo "Create it and add Dockerrun.aws.json (see instructions)."
+    exit 1
+  fi
+
+  pushd "$NOCODB_DIR" >/dev/null
+
+  echo "Running EB init setup for NocoDB..."
+  eb init "$NOCODB_APP_NAME" --platform "$NOCODB_PLATFORM" --region "$REGION"
+  echo "NocoDB init complete."
+
+  popd >/dev/null
+}
+
+function nocodb_deploy() {
+  if [ -z "$NOCODB_NC_DB" ]; then
+    echo "Missing required env var: NOCODB_NC_DB"
+    echo "Example: export NOCODB_NC_DB='pg://user:pass@your-rds-endpoint:5432/nocodb'"
+    exit 1
+  fi
+
+  pushd "$NOCODB_DIR" >/dev/null
+
+  if eb list | grep -Fxq "$NOCODB_ENV_NAME"; then
+    echo "Environment '$NOCODB_ENV_NAME' already exists. Skipping creation."
+  else
+    echo "Creating Elastic Beanstalk environment: $NOCODB_ENV_NAME..."
+    eb create "$NOCODB_ENV_NAME" --single --instance_type "$NOCODB_INSTANCE_TYPE" \
+      --service-role aws-elasticbeanstalk-service-role \
+      --instance_profile birddog-ec2-role
+    echo "NocoDB environment created."
+  fi
+
+  # Discover the EB-provided hostname and set NC_PUBLIC_URL accordingly
+  local cname
+  cname="$(_eb_cname "$NOCODB_ENV_NAME" "$NOCODB_APP_NAME")"
+  if [ -z "$cname" ] || [ "$cname" = "None" ]; then
+    echo "Unable to resolve CNAME for environment '$NOCODB_ENV_NAME'."
+    exit 1
+  fi
+
+  local public_url="https://${cname}"
+
+  echo "Setting NocoDB environment variables..."
+  # NocoDB env vars: see NocoDB docs. :contentReference[oaicite:4]{index=4}
+  # NC_PUBLIC_URL often matters for correct URL generation behind proxies. :contentReference[oaicite:5]{index=5}
+  if [ -n "$NOCODB_DISABLE_TELE" ]; then
+    eb setenv \
+      NC_DB="$NOCODB_NC_DB" \
+      NC_PUBLIC_URL="$public_url" \
+      NC_DISABLE_TELE="$NOCODB_DISABLE_TELE"
+  else
+    eb setenv \
+      NC_DB="$NOCODB_NC_DB" \
+      NC_PUBLIC_URL="$public_url"
+  fi
+
+  eb printenv
+
+  echo "Deploying NocoDB..."
+  eb deploy
+  eb status
+
+  echo "NocoDB is available at: $public_url"
+
+  popd >/dev/null
+}
+
+function nocodb_redeploy() {
+  pushd "$NOCODB_DIR" >/dev/null
+  eb deploy
+  eb status
+  popd >/dev/null
+}
+
+function nocodb_terminate() {
+  pushd "$NOCODB_DIR" >/dev/null
+  echo "Terminating NocoDB environment: $NOCODB_ENV_NAME"
+  eb terminate "$NOCODB_ENV_NAME" --force
+  popd >/dev/null
+}
+
+function nocodb_open() {
+  pushd "$NOCODB_DIR" >/dev/null
+  eb open
+  popd >/dev/null
+}
+
+function nocodb_status() {
+  pushd "$NOCODB_DIR" >/dev/null
+  eb status
+  popd >/dev/null
 }
 
 # --- command dispatcher ---
 case "$1" in
-  init)
-    init
-    ;;
-  deploy)
-    deploy
-    ;;
-  redeploy)
-    redeploy
-    ;;
-  terminate)
-    terminate
-    ;;
-  open)
-    eb open
-    ;;
-  status)
-    eb status
-    ;;
+  init) init ;;
+  deploy) deploy ;;
+  redeploy) redeploy ;;
+  terminate) terminate ;;
+  open) eb open ;;
+  status) eb status ;;
   logs)
     eb logs --all
-    WEBLOG=`find -H .elasticbeanstalk/logs/latest -type f -name 'web.stdout.log' -print`
-    echo copying weblog "$WEBLOG" to ./var
+    WEBLOG=$(find -H .elasticbeanstalk/logs/latest -type f -name 'web.stdout.log' -print)
+    echo "copying weblog $WEBLOG to ./var"
     cp "$WEBLOG" ./var
     ;;
+
+  nocodb-init) nocodb_init ;;
+  nocodb-deploy) nocodb_deploy ;;
+  nocodb-redeploy) nocodb_redeploy ;;
+  nocodb-terminate) nocodb_terminate ;;
+  nocodb-open) nocodb_open ;;
+  nocodb-status) nocodb_status ;;
+
   *)
-    echo "Usage: $0 {init|deploy|redeploy|open|status|terminate}"
+    echo "Usage: $0 {init|deploy|redeploy|open|status|terminate|logs|nocodb-init|nocodb-deploy|nocodb-redeploy|nocodb-open|nocodb-status|nocodb-terminate}"
     exit 1
     ;;
 esac
