@@ -385,6 +385,11 @@
                 <button id="next-unresolved-btn" class="btn btn-primary" onclick="next_unresolved()" title="Next Unresolved">
                   <i class="bi bi-arrow-right-square"></i>
                 </button>
+                {% if database_available %}
+                <button id="database-sync" class="btn btn-primary" onclick="update_database()" title="Database Upload">
+                  <i class="bi bi-database-fill-up"></i>
+                </button>
+                {% endif %}
               </div>
 
               <!-- Progress Bar -->

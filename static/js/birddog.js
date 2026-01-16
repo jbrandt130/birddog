@@ -332,6 +332,25 @@ async function translate_page() {
     update_translation_progress(data);
 }
 
+async function update_database() {
+    const page_title = current_page.title;
+    console.log('database update:', page_title);
+    
+    if (confirm(`Update database record for ${page_title}?`)) {
+        const response = await fetch(`/database_update?title=${page_title}`);
+        if (!response.ok) {
+            if (response.status === 404) {
+                alert('Your session may have expired. Please log in again.');
+                location.reload();
+                return;
+            }
+            throw new Error(`Failed during database update request: ${response.statusText}`);
+        }
+        const data = await response.json();
+        console.log('update_database:', data);
+    }
+}
+
 function sanitize_id(column_name) {
   return 'export_' + column_name.toLowerCase().replace(/\s+/g, '_');
 }
