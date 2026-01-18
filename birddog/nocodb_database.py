@@ -22,30 +22,44 @@ from birddog.abstract_database import (
     )
 from birddog.utility import json_size
 
-from birddog.log import get_logger, LogService
+from birddog.log import get_logger, LogService, detect_environment
 _logger = get_logger()
 
 _NOCODB_RUN_LOCAL       = os.environ.get("BIRDDOG_USE_LOCAL_NOCODB")
+_NOCODB_RUN_HOSTED      = False
+
 if _NOCODB_RUN_LOCAL:
+    # use locally running nocodb
     _NOCODB_BASE_ID     = "p79fvr9cjqgpv5n"
     _NOCODB_API_TOKEN   = os.environ["NOCODB_API_TOKEN_LOCAL"]
-    _NOCODB_V2_API_ROOT = "http://localhost:8080/api/v2"
+    _NOCODB_HOST        = "http://localhost:8080"
     _NOCODB_API_DELAY   = .01
     _NOCODB_BATCH_SIZE  = 10
     _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
-    _logger.info(f"Using local nocodb api: {_NOCODB_V2_API_ROOT}")
-else:
+    _logger.info(f"Using local nocodb api: {_NOCODB_HOST}")
+elif _NOCODB_RUN_HOSTED:
+    # use hosted nocodb on nocodb.com
     _NOCODB_BASE_ID     = "pljzqjmv8a5nvku"
     _NOCODB_API_TOKEN   = os.environ["NOCODB_API_TOKEN"]
-    _NOCODB_V2_API_ROOT = "https://app.nocodb.com/api/v2"
+    _NOCODB_HOST        = "https://app.nocodb.com"
     _NOCODB_API_DELAY   = .25
     _NOCODB_BATCH_SIZE  = 20
     _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
-    _logger.info(f"Using hosted nocodb api: {_NOCODB_V2_API_ROOT}")
+    _logger.info(f"Using hosted nocodb api: {_NOCODB_HOST}")
+else:
+    # use self-managed nocodb on aws
+    _NOCODB_BASE_ID     = os.environ["BIRDDOG_AWS_BASE_ID"]
+    _NOCODB_API_TOKEN   = os.environ["BIRDDOG_AWS_NOCODB_API_TOKEN"]
+    _NOCODB_HOST        = os.environ["BIRDDOG_AWS_NOCODB_HOST"]
+    _NOCODB_API_DELAY   = .01
+    _NOCODB_BATCH_SIZE  = 10
+    _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
+    _logger.info(f"Using aws nocodb api: {_NOCODB_HOST}")
 
 # ----------------------------------------------------------------------
 # NocoDB API endpoints
 
+"""
 def _records_url(table_id):
     return f"{_NOCODB_V2_API_ROOT}/tables/{table_id}/records"
 
@@ -57,6 +71,7 @@ def _table_info_url(table_id):
 
 def _links_url(table_id, link_field_id, record_id):
     return f"{_NOCODB_V2_API_ROOT}/tables/{table_id}/links/{link_field_id}/records/{record_id}"
+"""
 
 # ----------------------------------------------------------------------
 # Data validation, normalization, and encoding
@@ -159,11 +174,6 @@ _field_encoder = {
 
 def _encode_record(table_schema, record):
     # prepare record for write. only include fields that are explicitly in the schema
-    key_field = table_schema.get("key")
-    if not key_field:
-        raise SchemaError("Table schema missing 'key'")
-    if key_field not in record or record[key_field] in (None, ""):
-        raise MissingKey(key_field)
     encoded = {}
     for key, value in record.items():
         field_spec = table_schema["fields"].get(key)
@@ -182,13 +192,72 @@ def _encode_record(table_schema, record):
     return encoded
 
 # ----------------------------------------------------------------------
+# DATABASE TABLE BOOTSTRAPPING UTILITIES
+
+# utility to create new table in db2 matching schema of existing table in db1
+# (db1 and db2 can be the same or different)
+# note that relational links are not created in the new table
+
+def clone_table_schema(db1, table_name1, db2, table_name2):
+    table_id1 = db1._table_id(table_name1)
+    if db2._valid_table_name(table_name2):
+        raise ValueError(f"cannot clone to existing table: {table_name2}")
+    info = db1._fetch(db1._table_info_url(table_id1))
+    columns = []
+    for i, c in enumerate(info["columns"]):
+        if not c["system"] and c["uidt"] not in ("Links", "ForeignKey", "Formula",):
+            spec = {
+                "title": c["title"],
+                "description": c["description"],
+                "uidt": c["uidt"],
+            }
+            if spec["uidt"] in ("SingleSelect", "MultiSelect"):
+                spec["colOptions"] = {
+                    "options": [
+                        { "title": option["title"], "color": option["color"] }
+                        for option in c["colOptions"]["options"]
+                    ]
+                }
+            columns.append(spec)        
+    create_spec = {
+        "title": table_name2,
+        "description": info["description"],
+        "columns": columns,
+    }
+    db2._fetch(db2._list_tables_url(), json=create_spec, method="POST")
+    return create_spec
+
+# copy records from one table to another. does not update links or attachments
+# intended for table bootstrapping only
+
+def copy_records(db1, table1, db2, table2):
+    while True:
+        records, cursor = db1.scan(table1)
+        records = db1.encode_records(table1, records)
+        db2.write(table2, records, raw=True)
+        if not cursor:
+            break
+
+# patch a field name, notably the system fields created by nocodb in defining
+# relational links (such as parent/child) may need to be renamed this way if
+# UI doesn't allow it
+
+def rename_field(db, field_id, new_name):
+    url = f"{db._host}/api/v2/meta/columns/{field_id}"
+    payload = { "title": new_name }
+    db._fetch(url, json=payload, method="PATCH")
+
+# ----------------------------------------------------------------------
 
 class NocoDBDatabase(Database):
-    def __init__(self, api_token=None):
+    def __init__(self, host=_NOCODB_HOST, base_id=_NOCODB_BASE_ID, api_token=None):
         self._verbose = False
         if not api_token:
             api_token = _NOCODB_API_TOKEN
+        self._host = host
+        self._base_id = base_id
         self._api_token = api_token
+
         self._session = requests.Session()
         self._session.headers.update(
             {
@@ -205,9 +274,27 @@ class NocoDBDatabase(Database):
         self._schema = None
         # load the actual schema - requires that the tables 
         # "Schema" and "Schema Values" exist
-        self._schema = self._load_schema()
+        try:
+            self._schema = self._load_schema()
+        except SchemaError as err:
+            _logger.warning("No schema found for database. Running schema-less.")
+            self._schema = None
+
+    def _records_url(self, table_id):
+        return f"{self._host}/api/v2/tables/{table_id}/records"
+
+    def _list_tables_url(self):
+        return f"{self._host}/api/v2/meta/bases/{self._base_id}/tables"
+
+    def _table_info_url(self, table_id):
+        return f"{self._host}/api/v2/meta/tables/{table_id}" 
+
+    def _links_url(self, table_id, link_field_id, record_id):
+        return f"{self._host}/api/v2/tables/{table_id}/links/{link_field_id}/records/{record_id}"
 
     def _fetch(self, url, params=None, json=None, method="GET"):
+        if self._verbose:
+            _logger.info(f"{method}: {url}, {params}")
         time.sleep(_NOCODB_API_DELAY)
         try:
             if method == "GET":
@@ -230,7 +317,7 @@ class NocoDBDatabase(Database):
             raise FailedIO(err) from err
 
     def _get_table_id_map(self):
-        table_info = self._fetch(_list_tables_url())
+        table_info = self._fetch(self._list_tables_url())
         return { 
             item.get("title"): item.get("id")
             for item in table_info.get("list")
@@ -239,7 +326,7 @@ class NocoDBDatabase(Database):
 
     def _get_table_info(self, table_name):
         self._validate_table_name(table_name)
-        return self._fetch(_table_info_url(self._table_id_map.get(table_name)))
+        return self._fetch(self._table_info_url(self._table_id_map.get(table_name)))
 
     def _get_field_map(self, table_name):
         result = self._field_id_map.get(table_name)
@@ -276,7 +363,9 @@ class NocoDBDatabase(Database):
 
     def key_field_name(self, table_name):
         try:
-            return self._schema[table_name]["key"]
+            if not self._schema:
+                raise SchemaError("key_field_name: no schema")
+            return self._schema.get(table_name, {})["key"]
         except KeyError:
             raise SchemaError(f"Table {table_name} has no key field")
 
@@ -362,7 +451,7 @@ class NocoDBDatabase(Database):
         table_id = self._table_id(table_name)
         offset = 0
         limit = 1000
-        url = _records_url(table_id)
+        url = self._records_url(table_id)
         params = {"offset": offset, "limit": limit, "fields": "Id"}
         ids = []
         while True:
@@ -418,7 +507,7 @@ class NocoDBDatabase(Database):
         except (TypeError, ValueError):
             raise InvalidRecordId(f"Invalid cursor value: {cursor}")
 
-        url = _records_url(table_id)
+        url = self._records_url(table_id)
         params = {"offset": offset, "limit": limit}
         if where:
             params["where"] = self._encode_where_spec(table_name, where)
@@ -499,7 +588,7 @@ class NocoDBDatabase(Database):
 
         if missing:
             with LogService("NocoDB", "lookup", size=json_size(list(key_set))):
-                url = _records_url(table_id)
+                url = self._records_url(table_id)
 
                 for i in range(0, len(missing), _NOCODB_BATCH_SIZE):
                     batch = missing[i:i + _NOCODB_BATCH_SIZE]
@@ -555,7 +644,7 @@ class NocoDBDatabase(Database):
         table_id = self._table_id(table_name)
         id_field_id = self._field_id(table_name, "Id")
 
-        url = _records_url(table_id)
+        url = self._records_url(table_id)
         if not isinstance(record_id, (list, tuple)):
             record_id = [record_id]
             singleton = True
@@ -588,7 +677,7 @@ class NocoDBDatabase(Database):
             return result[0]
         return result
 
-    def write(self, table_name, records):
+    def write(self, table_name, records, raw=False):
         """
         Create or update record(s) in a table using the table's key field.
 
@@ -634,7 +723,11 @@ class NocoDBDatabase(Database):
             - FailedIO
         """
         table_id = self._table_id(table_name)
-        key_field_name = self.key_field_name(table_name)
+        try:
+            key_field_name = self.key_field_name(table_name)
+        except SchemaError:
+            # allow for no key field for write - just append records
+            key_field_name = None
         if isinstance(records, dict):
             records = [ records ]
             singleton = True
@@ -645,21 +738,26 @@ class NocoDBDatabase(Database):
         else:
             singleton = False
         
-        records = self.encode_records(table_name, records)
-
-        record_dict = {record[key_field_name]: copy(record) for record in records}
-        key_set = set(record_dict.keys())
-        known_key_map = self.lookup(table_name, key_set)
-        known_records = []
-        for key, record_id in known_key_map.items():
-            record = record_dict[key]
-            record["Id"] = record_id
-            known_records.append(record)
-        unknown_keys = key_set - set(known_key_map.keys())
-        unknown_records = [record_dict[key] for key in unknown_keys]
+        if not raw:
+            records = self.encode_records(table_name, records)
+        if key_field_name:
+            record_dict = {record[key_field_name]: copy(record) for record in records}
+            key_set = set(record_dict.keys())
+            known_key_map = self.lookup(table_name, key_set)
+            known_records = []
+            for key, record_id in known_key_map.items():
+                record = record_dict[key]
+                record["Id"] = record_id
+                known_records.append(record)
+            unknown_keys = key_set - set(known_key_map.keys())
+            unknown_records = [record_dict[key] for key in unknown_keys]
+        else:
+            # no check for existing records, just append
+            known_records = []
+            unknown_records = records
 
         with LogService("NocoDB", "write", size=json_size(known_records) + json_size(unknown_records)):
-            url = _records_url(table_id)
+            url = self._records_url(table_id)
             for i in range(0, len(known_records), _NOCODB_BATCH_SIZE):
                 batch = known_records[i:i + _NOCODB_BATCH_SIZE]
                 data = self._fetch(url, json=batch, method="PATCH")
@@ -669,7 +767,10 @@ class NocoDBDatabase(Database):
                 for j, item in enumerate(data):
                     unknown_records[i+j]["Id"] = item["Id"]
 
-            result = [record_dict[record[key_field_name]]["Id"] for record in records]
+            if key_field_name:
+                result = [record_dict[record[key_field_name]]["Id"] for record in records]
+            else:
+                result = [rec["Id"] for rec in records]
         if singleton:
             return result[0]
         return result
@@ -699,7 +800,7 @@ class NocoDBDatabase(Database):
             - FailedIO
         """
         table_id = self._table_id(table_name)        
-        url = _records_url(table_id)
+        url = self._records_url(table_id)
         if not isinstance(record_id, (list, tuple)):
             record_id = [record_id]
         result = dict()
@@ -714,7 +815,7 @@ class NocoDBDatabase(Database):
     def _edit_link(self, table_name, link_field, source_record, target_records, method):
         table_id = self._table_id(table_name)   
         link_field_id = self._field_id(table_name, link_field)
-        url = _links_url(table_id, link_field_id, source_record)
+        url = self._links_url(table_id, link_field_id, source_record)
         with LogService("NocoDB", "edit_links", size=json_size(target_records)):
             if isinstance(target_records, (list, tuple)):
                 # ensure no duplicate target ids
@@ -820,7 +921,7 @@ class NocoDBDatabase(Database):
         """
         table_id = self._table_id(table_name)   
         link_field_id = self._field_id(table_name, link_field)
-        url = _links_url(table_id, link_field_id, source_record)
+        url = self._links_url(table_id, link_field_id, source_record)
         result = []
         params = { "offset": 0}
         with LogService("NocoDB", "get_links") as log:
@@ -861,7 +962,7 @@ class NocoDBDatabase(Database):
         if not isinstance(file_paths, (list, tuple)) or not file_paths:
             raise ValueError("file_paths must be a path or non-empty list/tuple of paths")
 
-        upload_url = f"{_NOCODB_V2_API_ROOT}/storage/upload"
+        upload_url = f"{self._host}/api/v2/storage/upload"
         headers = {"xc-token": self._api_token}
 
         uploaded = []
@@ -909,7 +1010,7 @@ class NocoDBDatabase(Database):
         table_id = self._table_id(table_name)
         uploaded = self._upload_files(file_paths)
 
-        url = _records_url(table_id)
+        url = self._records_url(table_id)
         payload = [{
             "Id": record_id,
             attachment_field: uploaded,  # must be a list
@@ -926,7 +1027,7 @@ class NocoDBDatabase(Database):
         """
         table_id = self._table_id(table_name)
 
-        url = _records_url(table_id)
+        url = self._records_url(table_id)
         payload = [{
             "Id": record_id,
             attachment_field: [],
