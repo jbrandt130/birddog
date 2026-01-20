@@ -16,7 +16,6 @@ from typing import Optional, Sequence, Union, Protocol
 import requests
 from requests.exceptions import Timeout, ReadTimeout, ConnectTimeout, ConnectionError as RequestsConnectionError
 
-#from deep_translator import GoogleTranslator, DeeplTranslator
 from google.cloud import translate_v2 as google_translate
 from google.api_core.exceptions import GoogleAPICallError
 from google.api_core.exceptions import (
@@ -407,14 +406,14 @@ if _ENABLE_TRANSLATION:
         _logger.info('Using test dummy translator')
         _translator = DummyTranslator(source="uk", target="en")
     elif _USE_GOOGLE_CLOUD_TRANSLATE:
-        #_logger.info(f'Using Google Cloud translation API (credentials file:{os.getenv("GOOGLE_APPLICATION_CREDENTIALS")})')
         _logger.info('Using Google Cloud translation API')
-        #_translator = GoogleCloudTranslator(source="uk", target="en")
         _translator = GoogleCloudTranslator(source="uk", target="en")
     elif _DEEPL_API_KEY:
         _logger.info('Using DeepL translation API')
+        from deep_translator import DeeplTranslator
         _translator = DeeplTranslator(api_key=_DEEPL_API_KEY, source="uk", target="en", use_free_api=True)
     else:
+        from deep_translator import GoogleTranslator
         _logger.info('Using free Google translation API')
         _translator = GoogleTranslator(source='uk', target='en')
 

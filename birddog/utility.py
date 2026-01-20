@@ -100,60 +100,105 @@ class FetchUrlFailError(RuntimeError):
     """Raised when fetch_url fails after exhausting all retries."""
     pass
 
-def fetch_url(url, params=None, json=False, content=False, method="GET"):
+_TRANSIENT_HTTP = {408, 429, 500, 502, 503, 504}
+
+def fetch_url(
+    url,
+    params=None,
+    send_json=None,
+    return_json=False,
+    content=False,
+    method="GET",
+    session=None,
+    timeout=REQUEST_TIMEOUT,
+    headers=None,
+):
+    """
+    Centralized HTTP fetch utility with bounded concurrency, timeouts, and retry/backoff.
+
+    - Uses `session` if provided for connection pooling; otherwise uses top-level requests.
+    - Retries only transient conditions: timeouts, connection errors, 408/429/5xx.
+    - Supports GET/POST/PATCH/DELETE with JSON payload.
+    """
+    client = session or requests
+    hdrs = headers or _url_headers
+
     with _fetch_semaphore:
         attempt = 0
         last_exception = None
 
         while attempt < MAX_RETRIES:
             try:
-                if method == "POST":
-                    response = requests.post(
-                        url,
-                        data=params,
-                        timeout=REQUEST_TIMEOUT,
-                        headers=_url_headers,
-                    )
+                # Choose request function
+                req = getattr(client, method.lower(), None)
+                if req is None:
+                    raise ValueError(f"fetch_url: unsupported method {method}")
+
+                # Build kwargs
+                kwargs = {"timeout": timeout, "headers": hdrs}
+                if method.upper() == "GET":
+                    kwargs["params"] = params
                 else:
-                    response = requests.get(
-                        url,
-                        params=params,
-                        timeout=REQUEST_TIMEOUT,
-                        headers=_url_headers,
+                    # For API calls, params can still be querystring; keep it if present
+                    if params is not None:
+                        kwargs["params"] = params
+                    if send_json is not None:
+                        kwargs["json"] = send_json
+
+                response = req(url, **kwargs)
+                #_logger.info(response.text)
+
+                # Retry transient HTTP statuses
+                if response.status_code in _TRANSIENT_HTTP:
+                    raise requests.exceptions.HTTPError(
+                        f"Transient HTTP {response.status_code}",
+                        response=response,
                     )
 
-                if response.status_code == 429:
-                    raise TooManyRequestsError("429 Too Many Requests")
+                # Non-transient failures: do not retry by default
                 if not response.ok:
+                    # Preserve response text for debugging
                     if response.status_code == 404:
-                        raise RuntimeError("Failed to fetch page (404)")
-                    raise requests.RequestException(
-                        f"Unexpected status: {response.status_code}"
+                        raise RuntimeError(f"Failed to fetch (404): {url} :: {response.text}")
+                    raise requests.exceptions.HTTPError(
+                        f"HTTP {response.status_code}: {response.text}",
+                        response=response,
                     )
 
                 _record_fetch_event()
-                if json:
+
+                if return_json:
                     return response.json()
                 if content:
                     return response.content
                 return response.text
 
-            except (requests.RequestException, TooManyRequestsError) as e:
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
                 last_exception = e
-                wait = min(MAX_BACKOFF, BASE_BACKOFF * (2 ** attempt))  # exponential backoff
-                wait += random.uniform(0, 1)  # add jitter
-                _logger.info(
-                    f"[{attempt+1}/{MAX_RETRIES}] Error: {e}. "
-                    f"Retrying in {wait:.2f} seconds..."
-                )
-                time.sleep(wait)
-                attempt += 1
 
-        # Unique exception after all retries are exhausted
+            except requests.exceptions.HTTPError as e:
+                status = getattr(e.response, "status_code", None)
+                # Retry only transient HTTP statuses (already filtered above)
+                if status not in _TRANSIENT_HTTP:
+                    raise
+                last_exception = e
+
+            except requests.RequestException as e:
+                # Other requests exceptions: usually not transient; raise
+                raise FetchUrlFailError(str(e)) from e
+
+            # Backoff and retry
+            wait = min(MAX_BACKOFF, BASE_BACKOFF * (2 ** attempt))
+            wait += random.uniform(0, 1)
+            _logger.info(
+                f"[{attempt+1}/{MAX_RETRIES}] Error: {last_exception}. Retrying in {wait:.2f}s..."
+            )
+            time.sleep(wait)
+            attempt += 1
+
         raise FetchUrlFailError(
-            f"Failed to fetch page after {MAX_RETRIES} retries"
+            f"Failed to fetch after {MAX_RETRIES} retries: {url}"
         ) from last_exception
-
 
 # SYSTEM RESOURCES --------------------------------------------------------
 

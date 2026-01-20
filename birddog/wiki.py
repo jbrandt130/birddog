@@ -190,7 +190,7 @@ def lookup_namespace_id(name, base=ARCHIVE_BASE):
         "meta": "siteinfo",
         "siprop": "namespaces|namespacealiases"
     }
-    data = fetch_url(_api_url(base), params=params, json=True)
+    data = fetch_url(_api_url(base), params=params, return_json=True)
     data = data["query"]
     #_logger.info(data)
     target = name.lower()
@@ -223,7 +223,7 @@ def get_all_pages(namespace=WIKI_NAMESPACE_ID, prefix=None, limit=500):
     while True:
         if cont:
             params.update(cont)
-        data = fetch_url(API_URL, params=params, json=True)
+        data = fetch_url(API_URL, params=params, return_json=True)
         titles.extend([p["title"] for p in data["query"]["allpages"]])
         if "continue" in data:
             cont = data["continue"]
@@ -338,7 +338,7 @@ def batch_page_exists(titles, batch_size=50):
         }
 
         try:
-            response = fetch_url(API_URL, params=params, json=True, method="POST")
+            response = fetch_url(API_URL, params=params, return_json=True, method="POST")
             pages = response.get("query", {}).get("pages", {})
             for page in pages.values():
                 title = canonicalize_title(page.get("title"))
@@ -398,7 +398,7 @@ def _check_page_existence_chunked(page_links, chunk_size=50):
             'titles': title_batch,
             'format': 'json'
         }
-        data = fetch_url(API_URL, params=params, json=True, method="POST")
+        data = fetch_url(API_URL, params=params, return_json=True, method="POST")
         for page_data in data['query']['pages'].values():
             title = page_data['title'].replace(" ", "_").lower()
             # If invalid or missing, mark as False
@@ -574,7 +574,7 @@ def _read_wiki_text(page_title, oldid=None):
     else:
         raise ValueError("Must provide either page_title or oldid")
 
-    data = fetch_url(API_URL, params=params, json=True)
+    data = fetch_url(API_URL, params=params, return_json=True)
 
     if 'error' in data:
         raise RuntimeError(f"API error: {data['error']}")
@@ -993,7 +993,7 @@ def mw_read_page(page_title, oldid=None):
         'rvprop': 'timestamp',
         'format': 'json',
     }
-    rev_data = fetch_url(API_URL, params=params_rev, json=True)
+    rev_data = fetch_url(API_URL, params=params_rev, return_json=True)
 
     pages = rev_data['query']['pages']
     page_id = next(iter(pages))
@@ -1188,7 +1188,7 @@ def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500,
     while True:
         if cont:
             params.update(cont)
-        data = fetch_url(_api_url(base), params=params, json=True)
+        data = fetch_url(_api_url(base), params=params, return_json=True)
         for rc in data.get("query", {}).get("recentchanges", []):
             title = rc["title"]
             timestamp = rc["timestamp"]
@@ -1231,7 +1231,7 @@ def get_last_mod(titles, api_delay=0):
             "titles": title,
         }
 
-        response = fetch_url(API_URL, params=params, json=True)
+        response = fetch_url(API_URL, params=params, return_json=True)
         query = response.get("query")
         if query:
             title_mapping = {}
@@ -1270,7 +1270,7 @@ def page_revision_url(page_title, revid):
             f'title={canonicalize_title(page_title)}&oldid={revid}')
 
 def get_page_history(page_title, limit=10):
-    result = fetch_url(history_url(page_title, limit=limit), json=True)
+    result = fetch_url(history_url(page_title, limit=limit), return_json=True)
     query = result.get('query')
     #_logger.info(f'get_page_history({page_title}, limit={limit}): result={query}')
 
@@ -1444,7 +1444,7 @@ def batch_fetch_document_links(titles, map_to_url=True, chunk_size=20):
 
     #_logger.info(f"batch_fetch_document_links: {titles}")
     for chunk in _chunked(titles, chunk_size):
-        data = fetch_url(_wiki_content_url(chunk), json=True)
+        data = fetch_url(_wiki_content_url(chunk), return_json=True)
         if 'query' not in data:
             _logger.error(f'batch_fetch_document_links returned:\n    {data}')
             continue
@@ -1504,7 +1504,7 @@ def _query_imageinfo(api_url: str, title: str, width: int, page: int) -> dict:
         "origin": "*",
         "iiurlparam": f"page={int(page) if page and page > 0 else 1}",
     }
-    return fetch_url(api_url, params=params, json=True)
+    return fetch_url(api_url, params=params, return_json=True)
 
 def _first_imageinfo(api_json: dict):
     pages = api_json.get("query", {}).get("pages", {})

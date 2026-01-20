@@ -129,11 +129,11 @@ function nocodb_init() {
 function nocodb_deploy() {
   if [ -z "$NOCODB_NC_DB" ]; then
     echo "Missing required env var: NOCODB_NC_DB"
-    echo "Example: export NOCODB_NC_DB='pg://user:pass@your-rds-endpoint:5432/nocodb'"
     exit 1
   fi
 
   pushd "$NOCODB_DIR" >/dev/null
+  echo "Deploying $NOCODB_ENV_NAME. Using local dir:" `pwd`
 
   if eb list | grep -Fxq "$NOCODB_ENV_NAME"; then
     echo "Environment '$NOCODB_ENV_NAME' already exists. Skipping creation."
@@ -153,16 +153,32 @@ function nocodb_deploy() {
     exit 1
   fi
 
-  local public_url="https://${cname}"
+  local public_url="http://${cname}"
 
   echo "Setting NocoDB environment variables..."
   # NocoDB env vars: see NocoDB docs. :contentReference[oaicite:4]{index=4}
   # NC_PUBLIC_URL often matters for correct URL generation behind proxies. :contentReference[oaicite:5]{index=5}
   if [ -n "$NOCODB_DISABLE_TELE" ]; then
+    echo "NOTE: NC_DB must be of the form: pg://<host>:5432?u=<user>&p=<password>&db=nocodb&ssl=true"
+    echo  NC_DB="$NOCODB_NC_DB"
+    echo  NODE_TLS_REJECT_UNAUTHORIZED=0
+    echo  NC_PUBLIC_URL="$public_url"
+    echo  NC_DISABLE_TELE="$NOCODB_DISABLE_TELE"
+    echo  NC_SMTP_HOST="$BIRDDOG_SMTP_SERVER"
+    echo  NC_SMTP_PORT="$BIRDDOG_SMTP_PORT"
+    echo  NC_SMTP_USERNAME="$BIRDDOG_SMTP_USERNAME"
+    echo  NC_SMTP_PASSWORD="$BIRDDOG_SMTP_PASSWORD"
+    echo  NC_SMTP_FROM="$BIRDDOG_SMTP_USERNAME"
     eb setenv \
       NC_DB="$NOCODB_NC_DB" \
+      NODE_TLS_REJECT_UNAUTHORIZED=0 \
       NC_PUBLIC_URL="$public_url" \
-      NC_DISABLE_TELE="$NOCODB_DISABLE_TELE"
+      NC_DISABLE_TELE="$NOCODB_DISABLE_TELE" \
+      NC_SMTP_HOST="$BIRDDOG_SMTP_SERVER" \
+      NC_SMTP_PORT="$BIRDDOG_SMTP_PORT" \
+      NC_SMTP_USERNAME="$BIRDDOG_SMTP_USERNAME" \
+      NC_SMTP_PASSWORD="$BIRDDOG_SMTP_PASSWORD" \
+      NC_SMTP_FROM="$BIRDDOG_SMTP_USERNAME"
   else
     eb setenv \
       NC_DB="$NOCODB_NC_DB" \
@@ -174,6 +190,61 @@ function nocodb_deploy() {
   echo "Deploying NocoDB..."
   eb deploy
   eb status
+
+  echo "NocoDB is available at: $public_url"
+
+  popd >/dev/null
+}
+
+function nocodb_setenv() {
+  if [ -z "$NOCODB_NC_DB" ]; then
+    echo "Missing required env var: NOCODB_NC_DB"
+    exit 1
+  fi
+
+  pushd "$NOCODB_DIR" >/dev/null
+
+  # Discover the EB-provided hostname and set NC_PUBLIC_URL accordingly
+  local cname
+  cname="$(_eb_cname "$NOCODB_ENV_NAME" "$NOCODB_APP_NAME")"
+  if [ -z "$cname" ] || [ "$cname" = "None" ]; then
+    echo "Unable to resolve CNAME for environment '$NOCODB_ENV_NAME'."
+    exit 1
+  fi
+
+  local public_url="http://${cname}"
+  echo "Public url: $public_url"
+  echo "Setting NocoDB environment variables..."
+  # NocoDB env vars: see NocoDB docs. :contentReference[oaicite:4]{index=4}
+  # NC_PUBLIC_URL often matters for correct URL generation behind proxies. :contentReference[oaicite:5]{index=5}
+  if [ -n "$NOCODB_DISABLE_TELE" ]; then
+    echo "NOTE: NC_DB must be of the form: pg://<host>:5432?u=<user>&p=<password>&db=nocodb&ssl=true"
+    echo  NC_DB="$NOCODB_NC_DB"
+    echo  NODE_TLS_REJECT_UNAUTHORIZED=0
+    echo  NC_PUBLIC_URL="$public_url"
+    echo  NC_DISABLE_TELE="$NOCODB_DISABLE_TELE"
+    echo  NC_SMTP_HOST="$BIRDDOG_SMTP_SERVER"
+    echo  NC_SMTP_PORT="$BIRDDOG_SMTP_PORT"
+    echo  NC_SMTP_USERNAME="$BIRDDOG_SMTP_USERNAME"
+    echo  NC_SMTP_PASSWORD="$BIRDDOG_SMTP_PASSWORD"
+    echo  NC_SMTP_FROM="$BIRDDOG_SMTP_USERNAME"
+    eb setenv \
+      NC_DB="$NOCODB_NC_DB" \
+      NODE_TLS_REJECT_UNAUTHORIZED=0 \
+      NC_PUBLIC_URL="$public_url" \
+      NC_DISABLE_TELE="$NOCODB_DISABLE_TELE" \
+      NC_SMTP_HOST="$BIRDDOG_SMTP_SERVER" \
+      NC_SMTP_PORT="$BIRDDOG_SMTP_PORT" \
+      NC_SMTP_USERNAME="$BIRDDOG_SMTP_USERNAME" \
+      NC_SMTP_PASSWORD="$BIRDDOG_SMTP_PASSWORD" \
+      NC_SMTP_FROM="$BIRDDOG_SMTP_USERNAME"
+  else
+    eb setenv \
+      NC_DB="$NOCODB_NC_DB" \
+      NC_PUBLIC_URL="$public_url"
+  fi
+
+  #eb printenv
 
   echo "NocoDB is available at: $public_url"
 
@@ -227,9 +298,10 @@ case "$1" in
   nocodb-terminate) nocodb_terminate ;;
   nocodb-open) nocodb_open ;;
   nocodb-status) nocodb_status ;;
+  nocodb-setenv) nocodb_setenv ;;
 
   *)
-    echo "Usage: $0 {init|deploy|redeploy|open|status|terminate|logs|nocodb-init|nocodb-deploy|nocodb-redeploy|nocodb-open|nocodb-status|nocodb-terminate}"
+    echo "Usage: $0 {init|deploy|redeploy|open|status|terminate|logs|nocodb-init|nocodb-deploy|nocodb-redeploy|nocodb-setenv|nocodb-open|nocodb-status|nocodb-terminate}"
     exit 1
     ;;
 esac

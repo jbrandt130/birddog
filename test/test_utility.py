@@ -1,8 +1,9 @@
 import time
+import requests
 import unittest
 from copy import copy
 from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 from birddog import utility as util
 from birddog.utility import (
@@ -173,42 +174,218 @@ class TestUtility(unittest.TestCase):
         resp.json.return_value = {"ok": True}
         resp.content = b"bin"
 
-        with patch.object(util.requests, "get", return_value=resp) as mget,              patch.object(util, "_record_fetch_event") as mrec:
+        with patch.object(util.requests, "get", return_value=resp) as mget, \
+             patch.object(util, "_record_fetch_event") as mrec:
             self.assertEqual(fetch_url("http://example.com"), "ok")
-            self.assertEqual(fetch_url("http://example.com", json=True), {"ok": True})
+            self.assertEqual(fetch_url("http://example.com", return_json=True), {"ok": True})
             self.assertEqual(fetch_url("http://example.com", content=True), b"bin")
             mget.assert_called()
             self.assertTrue(mrec.called)
 
-        # Basic POST success path
-        with patch.object(util.requests, "post", return_value=resp) as mpost,              patch.object(util, "_record_fetch_event"):
+        # Basic POST success path (now uses send_json, not data=params)
+        with patch.object(util.requests, "post", return_value=resp) as mpost, \
+             patch.object(util, "_record_fetch_event"):
             self.assertEqual(fetch_url("http://example.com", method="POST"), "ok")
             mpost.assert_called()
 
+
     def test_fetch_url_retries_and_failures(self):
         # Force deterministic backoff: no jitter, no real sleep
-        with patch.object(util.random, "uniform", return_value=0.0),              patch.object(util.time, "sleep", return_value=None):
+        with patch.object(util.random, "uniform", return_value=0.0), \
+             patch.object(util.time, "sleep", return_value=None):
 
-            # Retry twice then succeed
+            # Retry twice then succeed: transient exceptions (Timeout/ConnectionError)
             resp_ok = MagicMock(status_code=200, ok=True, text="ok")
-            side = [util.requests.RequestException("boom"),
-                    util.requests.RequestException("boom2"),
-                    resp_ok]
+            side = [
+                util.requests.exceptions.Timeout("boom"),
+                util.requests.exceptions.ConnectionError("boom2"),
+                resp_ok,
+            ]
 
-            with patch.object(util.requests, "get", side_effect=side),                  patch.object(util, "_record_fetch_event"):
+            with patch.object(util.requests, "get", side_effect=side), \
+                 patch.object(util, "_record_fetch_event"):
                 self.assertEqual(fetch_url("http://example.com"), "ok")
 
             # 404 is raised as RuntimeError (not retried)
-            resp_404 = MagicMock(status_code=404, ok=False)
+            resp_404 = MagicMock(status_code=404, ok=False, text="nope")
             with patch.object(util.requests, "get", return_value=resp_404):
                 with self.assertRaises(RuntimeError):
                     fetch_url("http://example.com/notfound")
 
-            # 429 triggers retries and eventually FetchUrlFailError
-            resp_429 = MagicMock(status_code=429, ok=False)
-            with patch.object(util.requests, "get", return_value=resp_429),                  patch.object(util, "MAX_RETRIES", 2):
+            # 429 triggers transient HTTPError retry and eventually FetchUrlFailError
+            resp_429 = MagicMock(status_code=429, ok=False, text="ratelimited")
+
+            # The updated fetch_url raises requests.exceptions.HTTPError(response=resp)
+            with patch.object(util.requests, "get", return_value=resp_429), \
+                 patch.object(util, "MAX_RETRIES", 2), \
+                 patch.object(util, "_record_fetch_event"):
                 with self.assertRaises(util.FetchUrlFailError):
                     fetch_url("http://example.com/ratelimited")
+
+    # ---- Request construction and session behavior ----
+
+    def test_fetch_url_get_passes_params_timeout_headers(self):
+        resp = MagicMock(status_code=200, ok=True, text="ok")
+        hdrs = {"X-Test": "1"}
+        timeout = (1.0, 2.0)
+
+        with patch.object(util.requests, "get", return_value=resp) as mget, \
+             patch.object(util, "_record_fetch_event"):
+            out = util.fetch_url(
+                "http://example.com",
+                params={"a": "b"},
+                headers=hdrs,
+                timeout=timeout,
+            )
+            self.assertEqual(out, "ok")
+            mget.assert_called_once()
+            _, kwargs = mget.call_args
+            self.assertEqual(kwargs["params"], {"a": "b"})
+            self.assertEqual(kwargs["headers"], hdrs)
+            self.assertEqual(kwargs["timeout"], timeout)
+
+
+    def test_fetch_url_post_sends_json_payload_and_params(self):
+        resp = MagicMock(status_code=200, ok=True, text="ok")
+        with patch.object(util.requests, "post", return_value=resp) as mpost, \
+             patch.object(util, "_record_fetch_event"):
+            out = util.fetch_url(
+                "http://example.com",
+                method="POST",
+                params={"q": "1"},
+                send_json={"x": 2},
+            )
+            self.assertEqual(out, "ok")
+            _, kwargs = mpost.call_args
+            self.assertEqual(kwargs["params"], {"q": "1"})
+            self.assertEqual(kwargs["json"], {"x": 2})
+
+
+    def test_fetch_url_uses_session_when_provided(self):
+        resp = MagicMock(status_code=200, ok=True, text="ok")
+        sess = MagicMock()
+        sess.get.return_value = resp
+
+        with patch.object(util.requests, "get") as mreq_get, \
+             patch.object(util, "_record_fetch_event"):
+            out = util.fetch_url("http://example.com", session=sess)
+            self.assertEqual(out, "ok")
+            sess.get.assert_called_once()
+            mreq_get.assert_not_called()
+
+
+    def test_fetch_url_unsupported_method_raises(self):
+        with self.assertRaises(ValueError):
+            util.fetch_url("http://example.com", method="BOGUS")
+
+
+    # ---- Retry classification ----
+
+    def test_fetch_url_retries_on_transient_http_503_then_succeeds(self):
+        # 503 should be retried (via HTTPError with response attached)
+        resp_503 = MagicMock(status_code=503, ok=False, text="busy")
+        resp_ok = MagicMock(status_code=200, ok=True, text="ok")
+
+        with patch.object(util.random, "uniform", return_value=0.0), \
+             patch.object(util.time, "sleep", return_value=None) as msleep, \
+             patch.object(util.requests, "get", side_effect=[resp_503, resp_ok]), \
+             patch.object(util, "_record_fetch_event") as mrec:
+            out = util.fetch_url("http://example.com")
+            self.assertEqual(out, "ok")
+            self.assertEqual(msleep.call_count, 1)  # one backoff sleep
+            mrec.assert_called_once()
+
+
+    def test_fetch_url_does_not_retry_on_400_http_error(self):
+        # Non-transient 400 should raise HTTPError and not sleep
+        resp_400 = MagicMock(status_code=400, ok=False, text="bad request")
+
+        with patch.object(util.random, "uniform", return_value=0.0), \
+             patch.object(util.time, "sleep", return_value=None) as msleep, \
+             patch.object(util.requests, "get", return_value=resp_400):
+            with self.assertRaises(requests.exceptions.HTTPError):
+                util.fetch_url("http://example.com")
+            msleep.assert_not_called()
+
+
+    def test_fetch_url_does_not_retry_on_generic_request_exception(self):
+        # Generic RequestException (not Timeout/ConnectionError) should not loop
+        with patch.object(util.random, "uniform", return_value=0.0), \
+             patch.object(util.time, "sleep", return_value=None) as msleep, \
+             patch.object(util.requests, "get", side_effect=requests.RequestException("boom")):
+            with self.assertRaises(util.FetchUrlFailError):
+                util.fetch_url("http://example.com")
+            msleep.assert_not_called()
+
+
+    # ---- Backoff math (deterministic) ----
+
+    def test_fetch_url_backoff_is_exponential_and_capped(self):
+        # Control constants for deterministic expected waits:
+        # waits: min(MAX_BACKOFF, BASE_BACKOFF*2^attempt) + jitter(0)
+        with patch.object(util, "MAX_RETRIES", 4), \
+             patch.object(util, "BASE_BACKOFF", 1.0), \
+             patch.object(util, "MAX_BACKOFF", 2.0), \
+             patch.object(util.random, "uniform", return_value=0.0), \
+             patch.object(util.time, "sleep", return_value=None) as msleep:
+
+            resp_ok = MagicMock(status_code=200, ok=True, text="ok")
+            side = [
+                requests.exceptions.Timeout("t1"),
+                requests.exceptions.Timeout("t2"),
+                requests.exceptions.Timeout("t3"),
+                resp_ok,
+            ]
+
+            with patch.object(util.requests, "get", side_effect=side), \
+                 patch.object(util, "_record_fetch_event"):
+                out = util.fetch_url("http://example.com")
+                self.assertEqual(out, "ok")
+
+            # Backoff sleeps happen after the first 3 failures (MAX_RETRIES-1)
+            # attempt=0 -> 1.0, attempt=1 -> 2.0, attempt=2 -> capped at 2.0
+            expected = [call(1.0), call(2.0), call(2.0)]
+            self.assertEqual(msleep.call_args_list, expected)
+
+
+    # ---- Return/parse behavior ----
+
+    def test_fetch_url_return_json_parse_error_bubbles(self):
+        resp = MagicMock(status_code=200, ok=True, text="ok")
+        resp.json.side_effect = ValueError("bad json")
+
+        with patch.object(util.requests, "get", return_value=resp), \
+             patch.object(util, "_record_fetch_event"):
+            with self.assertRaises(ValueError):
+                util.fetch_url("http://example.com", return_json=True)
+
+
+    # ---- Side effects / semaphore ----
+
+    def test_fetch_url_records_event_only_on_success(self):
+        with patch.object(util.random, "uniform", return_value=0.0), \
+             patch.object(util.time, "sleep", return_value=None), \
+             patch.object(util.requests, "get", side_effect=requests.exceptions.Timeout("t")), \
+             patch.object(util, "MAX_RETRIES", 2), \
+             patch.object(util, "_record_fetch_event") as mrec:
+            with self.assertRaises(util.FetchUrlFailError):
+                util.fetch_url("http://example.com")
+            mrec.assert_not_called()
+
+
+    def test_fetch_url_enters_semaphore_context(self):
+        sem = MagicMock()
+        sem.__enter__.return_value = None
+        sem.__exit__.return_value = None
+
+        resp = MagicMock(status_code=200, ok=True, text="ok")
+        with patch.object(util, "_fetch_semaphore", sem), \
+             patch.object(util.requests, "get", return_value=resp), \
+             patch.object(util, "_record_fetch_event"):
+            out = util.fetch_url("http://example.com")
+            self.assertEqual(out, "ok")
+            sem.__enter__.assert_called_once()
+            sem.__exit__.assert_called_once()
 
     def test_heartbeat_manager(self):
         # Subclass to count heartbeats

@@ -128,7 +128,7 @@ def _get_links(title):
         "format": "json",
         "page": canonicalize_title(title),
     }
-    return fetch_url(API_URL, params=params, json=True)
+    return fetch_url(API_URL, params=params, return_json=True)
 
 _DOCUMENT_SUFFIXES = {
     "pdf", "djvu", "djv",
@@ -202,7 +202,7 @@ def _get_latest_mod_date(revid):
         'rvprop': 'timestamp',
         'format': 'json',
     }
-    raw = fetch_url(API_URL, params=params, json=True)
+    raw = fetch_url(API_URL, params=params, return_json=True)
     query = raw.get("query")
     if not query:
         return None
@@ -327,14 +327,19 @@ def _form_document_record(url):
 
     If source == "other", title will be None and link is the original URL.
     """
+    _logger.info(f"_form_document_record: {url}")
     parsed = urlparse(url)
     host = parsed.netloc.lower()
     path = parsed.path
 
     # Must be a /wiki/ URL to extract a title
     if not path.startswith("/wiki/"):
+        if _sniff_suffix(url):
+            title = path.rsplit("/", 1)[-1]
+        else:
+            title = url
         return {
-            "title": None,
+            "title": title,
             "source": "other",
             "link": url,
         }
@@ -360,7 +365,7 @@ def _form_document_record(url):
 
     # Anything else
     return {
-        "title": None,
+        "title": title,
         "source": "other",
         "link": url,
     }
@@ -373,10 +378,6 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumb
         api = "https://uk.wikisource.org/w/api.php"
     else:
         raise ValueError(f"Unsupported source: {source}")
-
-    #_logger.info(f"_fetch_mediawiki_file_metadata_chunk (source={source})")
-    #for t in titles:
-    #    _logger.info(f'    "{t}",')
     
     # Normalize input to list (preserve caller strings for keys)
     if isinstance(titles, str):
@@ -397,7 +398,7 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumb
     if thumbnails:
         params["iiurlwidth"] = thumbnail_width
         params["iilimit"] = 1
-    data = fetch_url(api, params=params, json=True)
+    data = fetch_url(api, params=params, return_json=True)
 
     error = data.get("error")
     if error:
@@ -790,7 +791,7 @@ class DatabaseUpdateManager(TaskManager):
             subtask["payload"] = {"updated": self._updater.update_records(title_batch)}
         except Exception as err:
             _logger.error(f"DatabaseUpdateManager: exception during subtask execution: {err}")
-            subtask["payload"] = {"error": err}
+            subtask["payload"] = {"error": str(err)}
 
     def complete_task(self, task_desc, subtasks):
         try:

@@ -20,7 +20,7 @@ from birddog.abstract_database import (
     InvalidTableName,
     MissingKey,
     )
-from birddog.utility import json_size
+from birddog.utility import json_size, fetch_url
 
 from birddog.log import get_logger, LogService, detect_environment
 _logger = get_logger()
@@ -291,29 +291,52 @@ class NocoDBDatabase(Database):
 
     def _links_url(self, table_id, link_field_id, record_id):
         return f"{self._host}/api/v2/tables/{table_id}/links/{link_field_id}/records/{record_id}"
-
+    
     def _fetch(self, url, params=None, json=None, method="GET"):
+        """
+        Centralized NocoDB fetch wrapper.
+
+        Delegates HTTP mechanics (timeouts, retries, semaphore, session pooling) to fetch_url(),
+        while preserving legacy behavior:
+          - Log response text on 400 and 404
+          - Raise FailedIO(...) on any communications / HTTP failure
+        """
         if self._verbose:
             _logger.info(f"{method}: {url}, {params}")
         time.sleep(_NOCODB_API_DELAY)
-        try:
-            if method == "GET":
-                resp = self._session.get(url, params=params)
-            elif method == "POST":
-                resp = self._session.post(url, json=json)
-            elif method == "PATCH":
-                resp = self._session.patch(url, json=json)
-            elif method == "DELETE":
-                resp = self._session.delete(url, json=json)
-            else:
-                raise ValueError(f"_fetch: unrecognized method: {method}")
-            if self._verbose or resp.status_code in (400, 404):
-                _logger.info(f"_fetch response: {resp.text}")
 
-            resp.raise_for_status()
-            return resp.json()
+        try:
+            # Use the shared utility (session => connection pooling/keep-alive)
+            return fetch_url(
+                url,
+                params=params,
+                send_json=json,
+                return_json=True,
+                method=method,
+                session=self._session,
+                headers=getattr(self._session, "headers", None),
+            )
+
+        except requests.exceptions.HTTPError as err:
+            # fetch_url raises HTTPError for non-OK responses (except 404, if you kept that as RuntimeError)
+            resp = getattr(err, "response", None)
+            if resp is not None and resp.status_code in (400, 404):
+                _logger.info(f"_fetch response ({resp.status_code}): {resp.text}")
+            raise FailedIO(err) from err
+
+        except RuntimeError as err:
+            # If fetch_url maps 404 -> RuntimeError, log the message (ensure it includes body; see note below).
+            msg = str(err)
+            if "404" in msg:
+                _logger.info(f"_fetch response (404): {msg}")
+            raise FailedIO(err) from err
+
         except requests.exceptions.RequestException as err:
-            # Covers connection errors, timeouts, HTTP errors, etc.
+            # Covers timeouts, connection errors, etc., that fetch_url may surface directly in some paths.
+            raise FailedIO(err) from err
+
+        except Exception as err:
+            # Defensive: keep the database layer error surface consistent
             raise FailedIO(err) from err
 
     def _get_table_id_map(self):
