@@ -268,7 +268,7 @@ def _extract_links_from_wiki_parse(title, parse):
         if other_title:
             item = {
                 "title": other_title,
-                "url": unquote(url),
+                "url": url,
                 "doc_type": _sniff_suffix(url),
             }
             if url.startswith("https://commons.wikimedia.org"):
@@ -327,7 +327,6 @@ def _form_document_record(url):
 
     If source == "other", title will be None and link is the original URL.
     """
-    _logger.info(f"_form_document_record: {url}")
     parsed = urlparse(url)
     host = parsed.netloc.lower()
     path = parsed.path
@@ -345,14 +344,15 @@ def _form_document_record(url):
         }
 
     # Extract and decode title
-    title = unquote(path[len("/wiki/"):])
+    quoted_title = path[len("/wiki/"):]
+    title = unquote(quoted_title)
 
     # Wikimedia Commons
     if host == "commons.wikimedia.org":
         return {
             "title": title,
             "source": "commons",
-            "link": f"https://commons.wikimedia.org/wiki/{title}",
+            "link": f"https://commons.wikimedia.org/wiki/{quoted_title}",
         }
 
     # Wikisource (any language subdomain)
@@ -360,7 +360,7 @@ def _form_document_record(url):
         return {
             "title": title,
             "source": "wikisource",
-            "link": f"https://{host}/wiki/{title}",
+            "link": f"https://{host}/wiki/{quoted_title}",
         }
 
     # Anything else
@@ -432,7 +432,7 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumb
 
         # page may be missing even if present in pages dict
         if not page or page.get("missing") or not page.get("imageinfo"):
-            _logger.info(f"skipping missing title: {req_title}, {api_lookup_title}, {page}")
+            _logger.info(f"missing title: {req_title}, {api_lookup_title}, {page}")
             results[req_title] = None
             continue
 
@@ -448,10 +448,10 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumb
             "height": ii.get("height"),
             "page_count": ii.get("pagecount"),
             "sha1_hash": ii.get("sha1"),
-            "description_url": unquote(ii.get("descriptionurl")),
+            "description_url": ii.get("descriptionurl"),
         }
         if "thumburl" in ii:
-            record["thumb_url"] = unquote(ii.get("thumburl"))
+            record["thumb_url"] = ii.get("thumburl")
             record["thumb_width"] = ii.get("thumbwidth")
             record["thumb_height"] = ii.get("thumbheight")
         results[req_title] = record
@@ -699,14 +699,11 @@ class DatabaseUpdater:
                         metadata_record = metadata_records.get(record["title"])
                         if metadata_record:
                             record.update(metadata_record)
+                            record["availability"] = "linked"
                         else:
-                            _logger.info(f"ignoring missing doc url {record["title"]}")
-                            missing.append(record["link"])
-
-            # remove urls from known sources that have no metadata (not a true document)
-            for url in missing:
-                if url in doc_records:
-                    del doc_records[url]
+                            _logger.info(f"marking doc url as unlinked: {record["title"]}")
+                            record["availability"] = "unlinked"
+                            #missing.append(record["link"])
 
             # detect any record changes and update those
             update, update_fields = _detect_changes(self._db, "Documents", doc_records.values())

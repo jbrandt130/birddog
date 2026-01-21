@@ -51,7 +51,7 @@ else:
     _NOCODB_BASE_ID     = os.environ["BIRDDOG_AWS_BASE_ID"]
     _NOCODB_API_TOKEN   = os.environ["BIRDDOG_AWS_NOCODB_API_TOKEN"]
     _NOCODB_HOST        = os.environ["BIRDDOG_AWS_NOCODB_HOST"]
-    _NOCODB_API_DELAY   = .01
+    _NOCODB_API_DELAY   = .1
     _NOCODB_BATCH_SIZE  = 10
     _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
     _logger.info(f"Using aws nocodb api: {_NOCODB_HOST}")
