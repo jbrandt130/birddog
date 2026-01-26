@@ -91,11 +91,12 @@ def _detect_changes(db, table_name, records):
     else:
         singleton = False
     key = db.key_field_name(table_name)
+    #_logger.info(f"_detect_changes: lookup: len={len(records)}, size={json_size([record[key] for record in records])}")
     id_map = db.lookup(table_name, {record[key] for record in records})
     current_records = db.read(table_name, list(id_map.values()))
     current_record_dict = {
         rec["Id"]: rec 
-        for rec in db.read(table_name, list(id_map.values()))
+        for rec in current_records
         }
     update = []
     update_fields = []
@@ -117,6 +118,17 @@ def _detect_changes(db, table_name, records):
     if singleton:
         return update[0] if update else None
     return update, update_fields
+
+def get_child_titles(db, titles):
+    if not isinstance(titles, (list, tuple)):
+        titles = [ titles ]
+    parent_ids = db.lookup("Pages", titles)
+    child_ids = []
+    for pid in parent_ids:
+        if pid:
+            child_ids.extend(db.get_links("Pages", "children", pid))
+    child_ids = list(set(child_ids))
+    return [rec["title"] for rec in db.read("Pages", child_ids)]
 
 # ----------------------------------------------------------------------
 # PAGE RECORD UPDATES
@@ -388,6 +400,7 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumb
     if not requested_titles:
         return {}
 
+    #_logger.info(f"_fetch_mediawiki_file_metadata_chunk: {requested_titles}")
     params = {
         "action": "query",
         "format": "json",
@@ -398,6 +411,7 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumb
     if thumbnails:
         params["iiurlwidth"] = thumbnail_width
         params["iilimit"] = 1
+    #_logger.info(f"fetching meta data. request size = {json_size(params)}")
     data = fetch_url(api, params=params, return_json=True)
 
     error = data.get("error")
@@ -501,7 +515,7 @@ def _fetch_mediawiki_file_metadata(titles, source, thumbnails=False, thumbnail_w
                 _logger.info(f"_fetch_mediawiki_file_metadata_chunk: .... empty metadata: {k}, {v}")
         result.update(chunk_result)
 
-    CHUNK_LIMIT = 1000
+    CHUNK_LIMIT = 800
     result = {}
 
     n = len(titles)
@@ -595,6 +609,7 @@ class DatabaseUpdater:
         if not all([isinstance(title, str) for title in page_titles]):
             raise ValueError("Updater.update_records: page_titles must be str or sequence of str")
 
+        _logger.info(f"update_records: {len(page_titles)} titles")
         page_info = self._get_page_info(page_titles)
         updated_pages = bool(self._update_page_records(
             [info["record"] for info in page_info]))
@@ -667,6 +682,8 @@ class DatabaseUpdater:
         link_children = True
         if link_children:
             _logger.info(f"Updater: linking child pages")
+            #_logger.info(f"Updater: linking child pages: {child_link_updates}")
+            #_logger.info(f"record_ids: {record_ids}")
             for parent_title, child_titles in child_link_updates.items():
                 parent_id = record_ids[parent_title]
                 child_ids = [record_ids[t] for t in child_titles]
@@ -679,6 +696,7 @@ class DatabaseUpdater:
                 if _create_links(self._db, "Pages", "children", parent_id, child_id):
                     _logger.info(f"Parent link for {child_title} updated ({parent_title})")
                     links_changed = True
+            #_logger.info(f"Updater: done linking child pages")
 
         doc_records_changed = False
         doc_links_changed = False
@@ -706,9 +724,11 @@ class DatabaseUpdater:
                             #missing.append(record["link"])
 
             # detect any record changes and update those
+            #_logger.info("doc records _detect_changes")
             update, update_fields = _detect_changes(self._db, "Documents", doc_records.values())
             for record in update:
                 record["birddog_alert"] = True
+            #_logger.info("doc records write")
             doc_ids = self._db.write("Documents", update) if update else []
             doc_records_changed = bool(doc_ids)
 
@@ -783,11 +803,15 @@ class DatabaseUpdateManager(TaskManager):
         self._stale_subtask_threshold_ms = self._BATCH_SIZE * 1000
 
     def execute_subtask(self, subtask):
-        title_batch = subtask["payload"]
+        batch = subtask["payload"]
         try:
-            subtask["payload"] = {"updated": self._updater.update_records(title_batch)}
+            subtask["payload"] = {
+                "updated": self._updater.update_records(batch["titles"]),
+                "titles": batch["titles"],
+                "deep": batch["deep"]
+                }
         except Exception as err:
-            _logger.error(f"DatabaseUpdateManager: exception during subtask execution: {err}")
+            _logger.error(f"DatabaseUpdateManager: exception during subtask execution: {err}, {batch}")
             subtask["payload"] = {"error": str(err)}
 
     def complete_task(self, task_desc, subtasks):
@@ -796,13 +820,27 @@ class DatabaseUpdateManager(TaskManager):
                 _logger.info("Update task completed. Some records changed. Starting translations")
                 # kick off translation on any new records
                 self._updater.start_translation()
+            parent_titles = []
+            for subtask in subtasks:
+                if subtask["payload"].get("deep"):
+                    #_logger.info(subtask["payload"])
+                    parent_titles.extend(subtask["payload"].get("titles", []))
+            if parent_titles:
+                # this is a deep update, create new task with child titles
+                spawn = get_child_titles(self._updater._db, parent_titles)
+                if spawn:
+                    # remove duplicates
+                    spawn = list(set(spawn))
+                    _logger.info(f"DatabaseUpdateManager: deep update: spawning new update task: {len(spawn)} titles")
+                    self.start_update(spawn, deep=True)
+
         except Exception as err:
             _logger.error(f"DatabaseUpdateManager: exception during task completion: {err}")
 
     def complete_translation(self, task_name, translation_map):
         self._updater.complete_translation(task_name, translation_map)
 
-    def start_update(self, page_titles):
+    def start_update(self, page_titles, deep=False):
         if isinstance(page_titles, str):
             page_titles = [ page_titles ]
         if not isinstance(page_titles, (list, tuple)) or not all([isinstance(title, str) for title in page_titles]):
@@ -812,7 +850,10 @@ class DatabaseUpdateManager(TaskManager):
             task_name = f"DBU_{new_id()}"
             batches = []
             for i in range(0, total, self._BATCH_SIZE):
-                batches.append(page_titles[i:i+self._BATCH_SIZE])
+                batches.append({
+                    "titles": page_titles[i:i+self._BATCH_SIZE],
+                    "deep": deep,
+                    })
             self.create(task_name, batches)
 
 

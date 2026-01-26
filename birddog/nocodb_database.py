@@ -9,6 +9,7 @@ import re
 import time
 import requests
 from copy import copy
+from urllib.parse import quote
 
 from birddog.abstract_database import (
     Database,
@@ -607,31 +608,56 @@ class NocoDBDatabase(Database):
         id_field_id = self._field_id(table_name, "Id")
         key_set, singleton = self._validate_key_set(table_name, key_set)
         result = dict()
-        missing = list(key_set)
+        key_list = list(key_set)
+        url = self._records_url(table_id)
 
-        if missing:
+        def _do_batch(batch):
+            #_logger.info(f"_do_batch: {batch}")
+            clauses = [
+                f"({key_field_id},eq,{key})"
+                for key in batch
+            ]
+
+            params = {
+                "fields": f"{id_field_id},{key_field_id}",
+                "where": "~or".join(clauses),
+                "offset": 0,
+            }
+
+            while True:
+                data = self._fetch(url, params=params)
+                records = data.get("list", [])
+                for item in records:
+                    record_id = item["Id"]
+                    key_value = item[key_field_name]
+                    result[key_value] = record_id
+
+                page_info = data.get("pageInfo", {})
+                if page_info.get("isLastPage") or not records:
+                    return
+                params["offset"] += len(records)
+
+        _BATCH_SIZE_LIMIT = 1000
+        _BATCH_COUNT_LIMIT = 100
+
+        #_logger.info(f"lookup: {key_list}")
+        if key_list:
             with LogService("NocoDB", "lookup", size=json_size(list(key_set))):
-                url = self._records_url(table_id)
-
-                for i in range(0, len(missing), _NOCODB_BATCH_SIZE):
-                    batch = missing[i:i + _NOCODB_BATCH_SIZE]
-
-                    clauses = [
-                        f"({key_field_id},eq,{key})"
-                        for key in batch
-                    ]
-
-                    params = {
-                        "fields": f"{id_field_id},{key_field_id}",
-                        "where": "~or".join(clauses),
-                    }
-
-                    data = self._fetch(url, params=params)
-
-                    for item in data.get("list", []):
-                        record_id = item["Id"]
-                        key_value = item[key_field_name]
-                        result[key_value] = record_id
+                pos = 0
+                batch = []
+                batch_size = 0
+                while pos < len(key_list):
+                    item = key_list[pos]
+                    batch.append(item)
+                    pos += 1
+                    batch_size += len(item)
+                    #batch_size += len(quote(item, safe=""))
+                    if batch_size >= _BATCH_SIZE_LIMIT or len(batch) >= _BATCH_COUNT_LIMIT:
+                        _do_batch(batch)
+                        batch = []
+                        batch_size = 0
+                if batch:
+                    _do_batch(batch)
 
         if singleton:
             return list(result.values())[0] if result else None

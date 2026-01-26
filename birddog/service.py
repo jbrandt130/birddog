@@ -705,10 +705,17 @@ def _active_updates():
 @login_required
 def database_update(user):
     page_title = request.args.get('title')
+    deep = request.args.get('title')
+    if deep in ("0", "false"):
+        deep = False
+    else:
+        deep = bool(deep)
     if page_title:
         # start new update
-        runtime.update_to_database(page_title)
+        runtime.update_to_database(page_title, deep=deep)
     return jsonify({
+        'title': title,
+        'deep': deep,
         'enabled': runtime.database_update_enabled,
         'updates': _active_updates()}), 200
 

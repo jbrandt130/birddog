@@ -349,7 +349,7 @@ class PageUpdateManager(HeartbeatManager):
         # update database if updater is active
         if pending_updates:
             update_titles = [item[0] for item in pending_updates]
-            self._runtime.update_to_database(update_titles)
+            self._runtime.update_to_database(update_titles, deep=False)
 
         error_count = 0
         for title, update in pending_updates:
@@ -570,9 +570,9 @@ class Runtime:
     def database_update_enabled(self):
         return bool(self._database_update_manager)
 
-    def update_to_database(self, titles):
+    def update_to_database(self, titles, deep=False):
         if self.database_update_enabled:
-            self._database_update_manager.start_update(titles)
+            self._database_update_manager.start_update(titles, deep)
 
     @property
     def active_database_updates(self):
