@@ -9,7 +9,7 @@ import re
 import time
 import requests
 from copy import copy
-from urllib.parse import quote
+from datetime import datetime
 
 from birddog.abstract_database import (
     Database,
@@ -85,6 +85,8 @@ def _validate_single_select(value, spec):
     return value in spec["values"]
 
 def _validate_multi_select(value, spec):
+    if isinstance(value, str):
+        value = value.split('/')
     return isinstance(value, (list, tuple)) and all(v in spec["values"] for v in value)
 
 _field_validator = {
@@ -167,6 +169,8 @@ def _normalize_record(table_schema, record):
                     record[key] = normalize(key, value)
 
 def _encode_multiselect(key, value):
+    if isinstance(value, str):
+        value = value.split('/')
     return ",".join(value) if value else None
 
 _field_encoder = {
@@ -293,6 +297,20 @@ class NocoDBDatabase(Database):
     def _links_url(self, table_id, link_field_id, record_id):
         return f"{self._host}/api/v2/tables/{table_id}/links/{link_field_id}/records/{record_id}"
     
+    def _iso_date_or_none(self, s):
+        """Accepts '21 Aug 2025', '1905-1912', etc.; returns ISO date if it looks like a date, else None."""
+        if not s:
+            return None
+        s = s.strip()
+        # Try flexible day-mon-year like '21 Aug 2025'
+        for fmt in ("%d %b %Y", "%d %B %Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(s, fmt).date().isoformat()
+            except Exception:
+                pass
+        # not a single date; keep original (e.g., year range)
+        return None
+
     def _fetch(self, url, params=None, json=None, method="GET"):
         """
         Centralized NocoDB fetch wrapper.
@@ -307,6 +325,14 @@ class NocoDBDatabase(Database):
         time.sleep(_NOCODB_API_DELAY)
 
         try:
+            if isinstance(json, list) and len(json) > 0:
+                # Format dates if present
+                json0 = json[0]
+                cd = self._iso_date_or_none(json0.get("change_date"))
+                rd = self._iso_date_or_none(json0.get("reference_date"))
+                if cd: json0["change_date"] = cd
+                if rd: json0["reference_date"] = rd
+
             # Use the shared utility (session => connection pooling/keep-alive)
             return fetch_url(
                 url,

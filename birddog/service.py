@@ -714,7 +714,7 @@ def database_update(user):
         # start new update
         runtime.update_to_database(page_title, deep=deep)
     return jsonify({
-        'title': title,
+        'title': page_title,
         'deep': deep,
         'enabled': runtime.database_update_enabled,
         'updates': _active_updates()}), 200

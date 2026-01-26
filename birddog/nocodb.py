@@ -15,6 +15,8 @@ from birddog.wiki import (
     get_title,
     )
 
+from birddog.utility import trim_after_last_slash
+
 from birddog.log import get_logger
 _logger = get_logger()
 
@@ -25,14 +27,14 @@ _NOCODB_API_DELAY       = .25
 
 _BASE_ID = "pljzqjmv8a5nvku"
 _TABLE_ID = {
-    "pages": "mtrj7h4scl3s15b",
-    "documents": "m676bm10pfq3hwk",
+    "Pages": "mtrj7h4scl3s15b",
+    "Documents": "m676bm10pfq3hwk",
 }
 _FIELD_ID = {
     "doc_links": "c42iq5cns4oof05",
     "parent": "coy5kak8p66e1kv",
     "children": "cuj7mxq51rot9kt",
-    "owning_page": "cbrvqbad1g0mdiv",
+    "owning_pages": "cbrvqbad1g0mdiv",
 }
 
 # ------------------------------------------------------------
@@ -91,6 +93,11 @@ def add_page(page: dict, page_table: dict) -> None:
     # update/merge keys
     entry.update(page)
 
+def is_positive_int(s: str) -> bool:
+    """Check if a string is a positive integer.
+    This returns True only for positive integers like "123", and False for "0", "-5", "3.14", "", "abc"."""
+    return bool(s) and s.isdigit() and s != '0'
+
 def process_archive_sheet(ws, page_table=dict()):
     parent_title = get_page_title_from_link(ws["D3"])
     source_type = get_cell_value(ws["C1"])
@@ -105,12 +112,17 @@ def process_archive_sheet(ws, page_table=dict()):
         "doc_links": get_cell_value(ws["B4"]),
         "source_type": source_type,
         "parent": "",
+        "wiki_link": get_cell_link(ws["D3"]),
         }, page_table)
     
     for r in range(7, ws.max_row+1):
         cell = ws[f"A{r}"]
         if str(cell.value).startswith("="):
             break
+        if not is_positive_int(str(cell.value)):
+            # sometimes there is some text in the A column, like "General page content" -
+            # we skip such lines
+            continue
         if cell.value:
             title = get_page_title_from_link(cell)
             label = get_cell_value(cell)
@@ -140,6 +152,8 @@ def process_fond_sheet(ws, page_table=dict()):
         "reference_date": get_cell_value(ws["O1"]),
         "doc_links": get_cell_value(ws["B4"]),
         "source_type": source_type,
+        "parent": trim_after_last_slash(parent_title),
+        "wiki_link": get_cell_link(ws["D3"]),
         }, page_table)
     
     for r in range(7, ws.max_row+1):
@@ -174,7 +188,9 @@ def process_opus_sheet(ws, page_table=dict()):
         "change_date": get_cell_value(ws["L1"]),
         "reference_date": get_cell_value(ws["O1"]),
         "doc_links": get_cell_value(ws["B4"]),
+        "parent": trim_after_last_slash(parent_title),
         "source_type": source_type,
+        "wiki_link": get_cell_link(ws["D3"]),
         }, page_table)
     
     for r in range(7, ws.max_row+1):
@@ -183,6 +199,10 @@ def process_opus_sheet(ws, page_table=dict()):
             break
         if cell.value:
             title = get_page_title_from_link(cell)
+            if title is None:
+                # If it is a comment, like "Index files linked at top of page" - skip this line
+                continue
+
             label = get_cell_value(cell)
             add_page({
                 "title": title,
@@ -226,12 +246,12 @@ def _get_field_id(field_name):
     return _FIELD_ID[field_name.lower()]
 
 _TABLE_KEY_FIELD = {
-    "pages": "title",
-    "documents": "link",
+    "Pages": "title",
+    "Documents": "link",
 }
 
 _TABLE_FIELDS = {
-    "pages": {
+    "Pages": {
         "title",
         "description",
         "years",
@@ -241,7 +261,7 @@ _TABLE_FIELDS = {
         "level",
         "comments",
         },
-    "documents": {
+    "Documents": {
         "title",
         "link",
         "doc_type",
@@ -264,7 +284,7 @@ class NocoDBClient:
 
     def _init_id_map(self):
         self._id_map = dict()
-        for table_name in ("pages", "documents"):
+        for table_name in ("Pages", "Documents"):
             records = self.list_records(table_name)
             key_field = _TABLE_KEY_FIELD[table_name]
             _logger.info(f"{table_name} loaded ({len(records)} records)")
@@ -451,22 +471,22 @@ class NocoDBClient:
             _logger.info(f"Upsert: {title}")
 
             # upload the page record
-            if self._known("pages", title):
-                result.append(self.update_record("pages", page))
+            if self._known("Pages", title):
+                result.append(self.update_record("Pages", page))
             else:
-                result.append(self.create_record("pages", page))
+                result.append(self.create_record("Pages", page))
 
             # link to parent
             parent_title = page.get("parent")
             if parent_title:
                 # ensure parent exists
-                if not self._known("pages", parent_title):
-                    self.create_record("pages", {"title": parent_title})
+                if not self._known("Pages", parent_title):
+                    self.create_record("Pages", {"title": parent_title})
                 self.create_link(
-                    "pages", 
+                    "Pages",
                     "parent", 
-                    self._id("pages", title), 
-                    self._id("pages", parent_title))
+                    self._id("Pages", title),
+                    self._id("Pages", parent_title))
 
             # check for doc links
             doc_links = page.get("doc_links")
@@ -475,21 +495,21 @@ class NocoDBClient:
                     doc_links = [doc_links]
                 if not isinstance(doc_links, (list, tuple)):
                     raise TypeError("doc_links must be str, list or tuple")
-                doc_fields = _TABLE_FIELDS["documents"]
+                doc_fields = _TABLE_FIELDS["Documents"]
                 for doc_link in doc_links:
                     _logger.info(f"Adding doc link for {title}: {doc_link}")
                     doc_payload = { k: v for k, v in page.items() if k in doc_fields }
                     doc_payload["title"] = doc_link.rstrip("/").rsplit("/", 1)[-1]
                     doc_payload["link"] = doc_link
                     _logger.info(f"doc title: {doc_payload['title']}, doc link: {doc_payload['link']}")
-                    if not self._known("documents", doc_link):
-                        self.create_record("documents", doc_payload)
+                    if not self._known("Documents", doc_link):
+                        self.create_record("Documents", doc_payload)
                     else:
-                        self.update_record("documents", doc_payload)
+                        self.update_record("Documents", doc_payload)
                     self.create_link(
-                        "documents", 
-                        "owning_page", 
-                        self._id("documents", doc_link), 
-                        self._id("pages", title))
+                        "Documents",
+                        "owning_pages",
+                        self._id("Documents", doc_link),
+                        self._id("Pages", title))
 
         return result
