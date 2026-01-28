@@ -1,1 +1,33 @@
 *.ipynb linguist-documentation
+
+# Default: normalize text files to LF in the repo
+* text=auto eol=lf
+
+# Explicitly mark code files
+*.py        text eol=lf
+*.js        text eol=lf
+*.html      text eol=lf
+*.css       text eol=lf
+*.json      text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.md        text eol=lf
+*.sh        text eol=lf
+*.sql       text eol=lf
+*.ini       text eol=lf
+*.txt       text eol=lf
+
+# Windows scripts that *must* be CRLF (if any)
+*.bat       text eol=crlf
+*.ps1       text eol=crlf
+
+# Binary files – never touch line endings
+*.png       binary
+*.jpg       binary
+*.pdf       binary
+*.zip       binary
+*.ico       binary
+*.pptx      binary
+*.xlsx      binary
+*.ipynb     binary
+
