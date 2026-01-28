@@ -13,14 +13,14 @@ from birddog.database import Database
 from birddog.wiki import (
     API_URL,
     canonicalize_title,
-    classify_page,
     page_name,
+    page_label,
+    page_kind,
     )
 from birddog.utility import (
     fetch_url, 
     new_id, 
     json_size, 
-    transliterate,
     )
 from birddog.task import TaskManager
 
@@ -57,7 +57,8 @@ def _normalize_date_string(s):
     return str(datetime.fromisoformat(s.replace("Z", "+00:00")))
 
 def _normalize_title(title):
-    return title.replace("Архів:", "").replace(' ', '_')
+    # ensure no spaces in title, and remove namespace qualifier
+    return canonicalize_title(title, include_namespace=False)
 
 def _page_title(page):
     return _normalize_title(page.page["title"]["uk"])
@@ -192,19 +193,7 @@ def _form_simple_page_record(title):
         "source_type": "wiki",
         "availability": "linked",
     }
-
-def _kind(title, record):
-    result = classify_page(title)
-    if result == "case" and record.get("children"):
-        return "opus"
-    return result
-
-def _label(title):
-    try:
-        return transliterate(page_name(title))
-    except ValueError as err:
-        return None
-        
+       
 def _get_latest_mod_date(revid):
     # Last modified date via API `revisions` (for this oldid)
     params = {
@@ -317,8 +306,8 @@ def _form_page_info_from_title(title):
             info["missing"] = True
         info["error"] = error
     else:
-        record["level"] = _kind(title, record)
-        record["label"] = _label(title)
+        record["level"] = page_kind(title, record.get("children"))
+        record["label"] = page_label(title)
         revid = parse.get("revid", "")
         record["reference_date"] = _get_latest_mod_date(revid)
         record["availability"] = "linked"

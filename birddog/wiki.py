@@ -21,6 +21,7 @@ from bs4 import BeautifulSoup
 from birddog.utility import (
     from_utc_format,
     to_utc_format,
+    transliterate,
     equal_text,
     fetch_url,
     form_text_item,
@@ -61,9 +62,12 @@ def _inventory_subarchives(archives):
 
 SUBARCHIVES = _inventory_subarchives(ARCHIVES)
 
-def canonicalize_title(title):
-    if not title.startswith(f"{WIKI_NAMESPACE}:"):
-        title = f"{WIKI_NAMESPACE}:{title}"
+def canonicalize_title(title, include_namespace=True):
+    if include_namespace:
+        if not title.startswith(f"{WIKI_NAMESPACE}:"):
+            title = f"{WIKI_NAMESPACE}:{title}"
+    else:
+        title = title.replace(f"{WIKI_NAMESPACE}:", "")
     return title.replace(" ", "_")
 
 def _archives_init():
@@ -166,8 +170,21 @@ def page_name(title):
     address = page_address(title)
     return f"{address[0]}-{address[1]}/{'/'.join(address[2:])}".rstrip("/")
 
+def page_label(title):
+    try:
+        return transliterate(page_name(title))
+    except ValueError as err:
+        return None
+
 def is_archive(title):
     return canonicalize_title(title) in ARCHIVE_BY_TITLE
+
+
+def page_kind(title, has_children=False):
+    result = classify_page(title)
+    if result == "case" and has_children:
+        return "opus"
+    return result
 
 def page_title_from_address(address):
     if isinstance(address, list):
