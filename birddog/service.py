@@ -696,7 +696,7 @@ def translate(user):
 
 def _active_updates():
     return [{
-        'title': task["name"],
+        'name': task["name"],
         'progress': task["completed"],
         'total': task["length"],
     } for task in runtime.active_database_updates]
@@ -705,13 +705,14 @@ def _active_updates():
 @login_required
 def database_update(user):
     page_title = request.args.get('title')
-    deep = request.args.get('title')
-    if deep in ("0", "false"):
+    deep = request.args.get('deep')
+    if deep in ("0", "false", "False"):
         deep = False
     else:
         deep = bool(deep)
     if page_title:
         # start new update
+        _logger.info(f"starting database update: {page_title} (deep={deep})")
         runtime.update_to_database(page_title, deep=deep)
     return jsonify({
         'title': page_title,

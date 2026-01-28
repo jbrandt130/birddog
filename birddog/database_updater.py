@@ -794,13 +794,13 @@ class DatabaseUpdater:
                 self._db.write("Pages", update)
 
 class DatabaseUpdateManager(TaskManager):
-    _BATCH_SIZE = 100
+    _BATCH_SIZE = 20
 
     def __init__(self, runtime, updater=None):
         self._updater = updater if updater else DatabaseUpdater(runtime)
         super().__init__("DatabaseUpdateManager")
-        # adjust subtask timeout to allow for approx 1 sec per item in batch
-        self._stale_subtask_threshold_ms = self._BATCH_SIZE * 1000
+        # adjust subtask timeout to allow for approx 10 sec per item in batch
+        self._stale_subtask_threshold_ms = self._BATCH_SIZE * 10000
 
     def execute_subtask(self, subtask):
         batch = subtask["payload"]
@@ -816,6 +816,7 @@ class DatabaseUpdateManager(TaskManager):
 
     def complete_task(self, task_desc, subtasks):
         try:
+            #_logger.info(f"updater.complete_task: {task_desc}, {subtasks}")
             if any([subtask["payload"].get("updated") for subtask in subtasks]):
                 _logger.info("Update task completed. Some records changed. Starting translations")
                 # kick off translation on any new records
@@ -827,7 +828,9 @@ class DatabaseUpdateManager(TaskManager):
                     parent_titles.extend(subtask["payload"].get("titles", []))
             if parent_titles:
                 # this is a deep update, create new task with child titles
+                #_logger.info(f"updater.complete_task: checking for deep subtasks {parent_titles}")
                 spawn = get_child_titles(self._updater._db, parent_titles)
+                #_logger.info(f"updater.complete_task: spawn={spawn}")
                 if spawn:
                     # remove duplicates
                     spawn = list(set(spawn))
@@ -845,6 +848,9 @@ class DatabaseUpdateManager(TaskManager):
             page_titles = [ page_titles ]
         if not isinstance(page_titles, (list, tuple)) or not all([isinstance(title, str) for title in page_titles]):
             raise ValueError("DatabaseUpdateManager.start_update_task: page_titles must be str or sequence of str")
+        page_titles = [_normalize_title(title) for title in page_titles]
+
+        #_logger.info(f"start_update: {page_titles}, deep={deep}")
         total = len(page_titles)
         if total > 0:
             task_name = f"DBU_{new_id()}"

@@ -332,23 +332,34 @@ async function translate_page() {
     update_translation_progress(data);
 }
 
-async function update_database() {
+function update_database() {
+  // Display current page title in the modal (use whatever your current selected title variable is)
+  const title = document.getElementById("page-title")?.textContent?.trim() || "-";
+  document.getElementById("db-update-page-title").textContent = title;
+
+  // Default deep update off (or preserve prior state if you prefer)
+  document.getElementById("db-update-deep-checkbox").checked = false;
+
+  const modal_el = document.getElementById("dbUpdateConfirmModal");
+  const modal = bootstrap.Modal.getOrCreateInstance(modal_el);
+  modal.show();
+}
+
+async function do_database_update(deep=false) {
     const page_title = current_page.title;
     console.log('database update:', page_title);
     
-    if (confirm(`Update database record for ${page_title}?`)) {
-        const response = await fetch(`/database_update?title=${page_title}`);
-        if (!response.ok) {
-            if (response.status === 404) {
-                alert('Your session may have expired. Please log in again.');
-                location.reload();
-                return;
-            }
-            throw new Error(`Failed during database update request: ${response.statusText}`);
+    const response = await fetch(`/database_update?title=${page_title}&deep=${deep}`);
+    if (!response.ok) {
+        if (response.status === 404) {
+            alert('Your session may have expired. Please log in again.');
+            location.reload();
+            return;
         }
-        const data = await response.json();
-        console.log('update_database:', data);
+        throw new Error(`Failed during database update request: ${response.statusText}`);
     }
+    const data = await response.json();
+    console.log('update_database:', data);
 }
 
 function sanitize_id(column_name) {
@@ -1661,6 +1672,22 @@ async function on_loaded() {
             msgBox.textContent = 'Error changing password.';
             msgBox.className = 'text-danger';
           }
+        });
+
+        // ------------------ DATABASE UPDATE HANDLER ------------------
+        const btn = document.getElementById("db-update-confirm-btn");
+        if (!btn) return;
+
+        btn.addEventListener("click", async () => {
+            const deep = document.getElementById("db-update-deep-checkbox").checked;
+
+            // Close modal immediately
+            const modal_el = document.getElementById("dbUpdateConfirmModal");
+            bootstrap.Modal.getOrCreateInstance(modal_el).hide();
+
+            // Call your existing backend update logic here
+            // Replace this stub with your existing implementation.
+            await do_database_update(deep);
         });
 
         // ------------------ EXPORT HANDLER ------------------
