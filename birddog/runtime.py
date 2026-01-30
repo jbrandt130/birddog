@@ -33,7 +33,7 @@ from birddog.wiki import (
 from birddog.tracker import PageTracker
 from birddog.translate import TranslationManager
 from birddog.excel import ExportManager
-from birddog.store import get_string_queue_store, get_key_value_store
+from birddog.store import get_key_value_store
 from birddog.env import detect_environment
 from birddog.utility import HeartbeatManager, FetchUrlFailError
 
