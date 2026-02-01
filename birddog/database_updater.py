@@ -309,7 +309,7 @@ def _form_page_info_from_title(title):
         record["level"] = page_kind(title, record.get("children"))
         record["label"] = page_label(title)
         revid = parse.get("revid", "")
-        record["reference_date"] = _get_latest_mod_date(revid)
+        record["timestamp"] = _get_latest_mod_date(revid)
         record["availability"] = "linked"
         record["source_type"] = "wiki"
     return info
