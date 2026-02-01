@@ -73,7 +73,7 @@ _fetch_timestamps = deque()
 _fetch_timestamps_lock = Lock()
 LOG_INTERVAL = 10  # seconds between logs
 RATE_WINDOW = 60   # how far back to count requests/sec
-RATE_LIMIT = 3     # fastest request rate allowed in reqs/sec
+RATE_LIMIT = 50 #3     # fastest request rate allowed in reqs/sec
 _last_log_time = 0
 
 def _record_fetch_event():
@@ -435,6 +435,16 @@ def match_text(text_item, text):
     """Check if the given text matches either the Ukrainian or English version
     of a multilingual text item."""
     return text == text_item.get('uk') or text == text_item.get('en')
+
+def trim_after_last_slash(s: str) -> str:
+    """
+    Removes the last '/' and everything after it from the given string.
+    Raises ValueError if no '/' is found.
+    """
+    index = s.rfind('/')
+    if index == -1:
+        raise ValueError(f"No '/' found in the input string {s}.")
+    return s[:index]
 
 # BACKGROUND PROCESSING ----------------------------------------------------------
 

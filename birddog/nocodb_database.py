@@ -22,9 +22,11 @@ from birddog.abstract_database import (
     MissingKey,
     )
 from birddog.utility import json_size, fetch_url
+from birddog.timer import FunctionTimer
 
 from birddog.log import get_logger, LogService, detect_environment
 _logger = get_logger()
+timer = FunctionTimer()
 
 _NOCODB_RUN_LOCAL       = os.environ.get("BIRDDOG_USE_LOCAL_NOCODB")
 _NOCODB_RUN_HOSTED      = False
@@ -579,6 +581,7 @@ class NocoDBDatabase(Database):
             log.size = json_size(records)
             return records, next_cursor
 
+    @timer.timed
     def lookup(self, table_name, key_set):
         """
         Look up record_id(s) by the table’s key field.
@@ -752,6 +755,7 @@ class NocoDBDatabase(Database):
             return result[0]
         return result
 
+    @timer.timed
     def write(self, table_name, records, raw=False):
         """
         Create or update record(s) in a table using the table's key field.
@@ -903,6 +907,7 @@ class NocoDBDatabase(Database):
                 payload = [{"Id": target_records}]
                 self._fetch(url, json=payload, method=method)
 
+    @timer.timed
     def create_links(self, table_name, link_field, source_record, target_records):
         """
         Create relation link(s) from a source record to one or more target records.
