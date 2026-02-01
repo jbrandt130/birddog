@@ -23,7 +23,6 @@ from birddog.wiki import ARCHIVE_BASE
 from birddog.ai import classify_table_columns
 from birddog.task import TaskManager
 from birddog.cache import load_cached_object, save_cached_object, remove_cached_object, CacheMissError
-from birddog.store import get_key_value_store
 
 from birddog.log import get_logger
 _logger = get_logger()

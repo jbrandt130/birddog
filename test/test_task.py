@@ -35,7 +35,8 @@ class Test(unittest.TestCase):
     def test_task(self):
         mgr = TaskTest()
         for name, value in task_register.items():
-            mgr.create(name, list(range(value["length"])))
+            #mgr.create(name, list(range(value["length"])))
+            mgr.create(name, [f"{name}-{x}" for x in range(value["length"])])
         while mgr.is_active():
             time.sleep(1)
             active = mgr.active_tasks()

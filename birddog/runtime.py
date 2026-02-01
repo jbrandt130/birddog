@@ -33,7 +33,7 @@ from birddog.wiki import (
 from birddog.tracker import PageTracker
 from birddog.translate import TranslationManager
 from birddog.excel import ExportManager
-from birddog.store import get_key_value_store
+from birddog.store import KeyValueStore
 from birddog.env import detect_environment
 from birddog.utility import HeartbeatManager, FetchUrlFailError
 
@@ -322,7 +322,7 @@ class PageUpdateManager(HeartbeatManager):
         _logger.info(f"PageUpdateManager.init(): detect_environment=={detect_environment()}")
         self._runtime = runtime
         self._tracker = PageTracker()
-        self._kv_store = get_key_value_store()
+        self._kv_store = KeyValueStore()
         super().__init__(interval=PageUpdateManager._HEARTBEAT_INTERVAL)
 
     def heartbeat(self):
@@ -382,6 +382,7 @@ class PageUpdateManager(HeartbeatManager):
                 # back off - and try the next item
                 time.sleep(10)
 
+        self._runtime.trim_logs()
         _logger.info("PageUpdateManager: finished update check...")
 
     def get_updates(self, archive, subarchive, cutoff_date=None):
@@ -446,7 +447,7 @@ class KillSwitch(HeartbeatManager):
 
 class Runtime:
     _LRU_SIZE                = 500
-    _LOG_CUTOFF_DAYS         = 60 # days
+    _LOG_CUTOFF_DAYS         = 15 # days
 
     def __init__(self):
         self._page_lru = PageLRU(maxsize=Runtime._LRU_SIZE)
@@ -456,10 +457,10 @@ class Runtime:
         self._database_update_manager = DatabaseUpdateManager(self) if _ENABLE_DB_SYNC else None
 
         self._killswitch = KillSwitch(self)
-        self._trim_logs()
+        self.trim_logs()
         self._state = "ready"
 
-    def _trim_logs(self):
+    def trim_logs(self):
         cutoff = datetime.now(UTC) - timedelta(days=Runtime._LOG_CUTOFF_DAYS)
         _logger.info(f"Runtime: truncating log history before {cutoff}")
         ServiceLogger.get_logger().truncate(cutoff)

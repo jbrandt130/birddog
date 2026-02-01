@@ -34,7 +34,7 @@ class ClaimedItem:
     receipt: str   # opaque handle for ack/extend
     value: str
 
-class StringQueue(ABC):
+class AbstractStringQueue(ABC):
     @abstractmethod
     def append(self, queue_name: str, strings: list[str]):
         """Append a list of strings to the end of the named queue."""
@@ -64,18 +64,19 @@ class StringQueue(ABC):
 
 # string queue (sqlite version) ---------------------------------------
 
-_STRING_QUEUE_PATH = ".cache/string_queues.db"
+_SQLITE_DEFAULT_STRING_QUEUE_PATH = ".cache/string_queues.db"
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
 
-class SQLiteStringQueue(StringQueue):
-    def __init__(self, db_path=_STRING_QUEUE_PATH):
+class SQLiteStringQueue(AbstractStringQueue):
+    def __init__(self, table_name = "queue", db_path=_SQLITE_DEFAULT_STRING_QUEUE_PATH):
         self._db_path = db_path
+        self._table_name = table_name
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
         with sqlite3.connect(self._db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS queue (
+            conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS {self._table_name} (
                     queue_name     TEXT NOT NULL,
                     id             INTEGER PRIMARY KEY AUTOINCREMENT,
                     value          TEXT NOT NULL,
@@ -84,8 +85,8 @@ class SQLiteStringQueue(StringQueue):
                     claimed_at_ms  INTEGER
                 )
             """)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_queue_visible ON queue(queue_name, lease_until_ms, id)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_queue_owner ON queue(queue_name, lease_owner, id)")
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_queue_visible ON {self._table_name}(queue_name, lease_until_ms, id)")
+            conn.execute(f"CREATE INDEX IF NOT EXISTS idx_queue_owner ON {self._table_name}(queue_name, lease_owner, id)")
             conn.commit()
 
     def append(self, queue_name: str, strings: list[str]):
@@ -94,18 +95,20 @@ class SQLiteStringQueue(StringQueue):
         with LogService("StringQueue", "append", path=queue_name, size=json_size(strings)):
             with sqlite3.connect(self._db_path) as conn:
                 conn.executemany(
-                    "INSERT INTO queue (queue_name, value, lease_until_ms, lease_owner, claimed_at_ms) "
+                    f"INSERT INTO {self._table_name} (queue_name, value, lease_until_ms, lease_owner, claimed_at_ms) "
                     "VALUES (?, ?, NULL, NULL, NULL)",
                     [(queue_name, s) for s in strings]
                 )
                 conn.commit()
 
     def peek(self, queue_name: str, n: int) -> list[str]:
+        if n <= 0:
+            return []
         with LogService("StringQueue", "peek", path=queue_name) as log:
             now = _now_ms()
             with sqlite3.connect(self._db_path) as conn:
                 cur = conn.execute(
-                    "SELECT value FROM queue "
+                    f"SELECT value FROM {self._table_name} "
                     "WHERE queue_name = ? AND (lease_until_ms IS NULL OR lease_until_ms <= ?) "
                     "ORDER BY id ASC LIMIT ?",
                     (queue_name, now, n)
@@ -117,42 +120,71 @@ class SQLiteStringQueue(StringQueue):
     def length(self, queue_name: str) -> int:
         with LogService("StringQueue", "length", path=queue_name):
             with sqlite3.connect(self._db_path) as conn:
-                cur = conn.execute("SELECT COUNT(*) FROM queue WHERE queue_name = ?", (queue_name,))
+                cur = conn.execute(f"SELECT COUNT(*) FROM {self._table_name} WHERE queue_name = ?", (queue_name,))
                 return int(cur.fetchone()[0])
 
     def claim(self, queue_name: str, n: int, lease_ms: int, consumer_id: str) -> List[ClaimedItem]:
         if n <= 0:
             return []
-        now = _now_ms()
+
+        now = int(_now_ms())
         lease_until = now + int(lease_ms)
 
         with LogService("StringQueue", "claim", path=queue_name) as log:
             with sqlite3.connect(self._db_path) as conn:
                 conn.execute("BEGIN IMMEDIATE")  # blocks other writers; prevents interleaving
+
                 cur = conn.execute(
-                    "SELECT id, value FROM queue "
-                    "WHERE queue_name = ? AND (lease_until_ms IS NULL OR lease_until_ms <= ?) "
-                    "ORDER BY id ASC LIMIT ?",
-                    (queue_name, now, n)
+                    f"""
+                    SELECT id, value
+                    FROM {self._table_name}
+                    WHERE queue_name = ?
+                      AND (lease_until_ms IS NULL OR lease_until_ms <= ?)
+                    ORDER BY id ASC
+                    LIMIT ?
+                    """,
+                    (queue_name, now, n),
                 )
                 rows = cur.fetchall()
                 if not rows:
                     conn.commit()
+                    log.size = 0
                     return []
 
                 ids = [r[0] for r in rows]
                 placeholders = ",".join("?" for _ in ids)
 
+                # Acquire lease ONLY if still visible at update time (critical).
                 conn.execute(
-                    f"UPDATE queue SET lease_until_ms = ?, lease_owner = ?, claimed_at_ms = ? "
-                    f"WHERE queue_name = ? AND id IN ({placeholders})",
-                    [lease_until, consumer_id, now, queue_name, *ids]
+                    f"""
+                    UPDATE {self._table_name}
+                    SET lease_until_ms = ?, lease_owner = ?, claimed_at_ms = ?
+                    WHERE queue_name = ?
+                      AND (lease_until_ms IS NULL OR lease_until_ms <= ?)
+                      AND id IN ({placeholders})
+                    """,
+                    [lease_until, consumer_id, now, queue_name, now, *ids],
                 )
+
+                # Re-read rows that we successfully leased (owner check).
+                cur2 = conn.execute(
+                    f"""
+                    SELECT id, value
+                    FROM {self._table_name}
+                    WHERE queue_name = ?
+                      AND lease_owner = ?
+                      AND id IN ({placeholders})
+                    ORDER BY id ASC
+                    """,
+                    [queue_name, consumer_id, *ids],
+                )
+                leased = cur2.fetchall()
+
                 conn.commit()
 
-            log.size = json_size(rows)
+            log.size = json_size({"requested": n, "selected": len(rows), "claimed": len(leased)})
 
-        return [ClaimedItem(receipt=str(r[0]), value=r[1]) for r in rows]
+        return [ClaimedItem(receipt=str(r[0]), value=r[1]) for r in leased]
 
     def ack(self, queue_name: str, receipts: list[str], consumer_id: str):
         if not receipts:
@@ -163,11 +195,16 @@ class SQLiteStringQueue(StringQueue):
         with LogService("StringQueue", "ack", path=queue_name, size=len(receipts)):
             with sqlite3.connect(self._db_path) as conn:
                 # Only delete items owned by this consumer; if lease expired/reclaimed, this won't delete.
-                conn.execute(
-                    f"DELETE FROM queue WHERE queue_name = ? AND lease_owner = ? AND id IN ({placeholders})",
+                cur = conn.execute(
+                    f"DELETE FROM {self._table_name} WHERE queue_name = ? AND lease_owner = ? AND id IN ({placeholders})",
                     [queue_name, consumer_id, *ids]
                 )
                 conn.commit()
+                deleted = cur.rowcount
+                if deleted != len(ids):
+                    _logger.warning(
+                        "ack: expected %d deletes, got %d (queue=%s owner=%s)", 
+                        len(ids), deleted, queue_name, consumer_id)
 
     def extend(self, queue_name: str, receipts: list[str], lease_ms: int, consumer_id: str):
         if not receipts:
@@ -179,20 +216,71 @@ class SQLiteStringQueue(StringQueue):
 
         with LogService("StringQueue", "extend", path=queue_name, size=len(receipts)):
             with sqlite3.connect(self._db_path) as conn:
-                conn.execute(
-                    f"UPDATE queue SET lease_until_ms = ? "
+                cur = conn.execute(
+                    f"UPDATE {self._table_name} SET lease_until_ms = ? "
                     f"WHERE queue_name = ? AND lease_owner = ? AND id IN ({placeholders})",
                     [lease_until, queue_name, consumer_id, *ids]
                 )
                 conn.commit()
+                deleted = cur.rowcount
+                if deleted != len(ids):
+                    _logger.warning(
+                        "extend: expected %d deletes, got %d (queue=%s owner=%s)", 
+                        len(ids), deleted, queue_name, consumer_id)
 
+    def dump(self, queue_name: str) -> list[dict]:
+        """
+        Debug helper: dump all rows for a queue, including lease fields.
+        Read-only; no filtering on lease state.
+        """
+        with LogService("StringQueue", "dump_queue", path=queue_name) as log:
+            with sqlite3.connect(self._db_path) as conn:
+                cur = conn.execute(
+                    f"""
+                    SELECT
+                        id,
+                        queue_name,
+                        value,
+                        lease_until_ms,
+                        lease_owner,
+                        claimed_at_ms
+                    FROM {self._table_name}
+                    WHERE queue_name = ?
+                    ORDER BY id ASC
+                    """,
+                    (queue_name,),
+                )
+                rows = cur.fetchall()
+
+            out = []
+            for (
+                id_,
+                qname,
+                value,
+                lease_until_ms,
+                lease_owner,
+                claimed_at_ms,
+            ) in rows:
+                out.append({
+                    "id": id_,
+                    "queue_name": qname,
+                    "value": value,
+                    "value_type": type(value).__name__,
+                    "value_len": len(value) if isinstance(value, str) else None,
+                    "lease_until_ms": lease_until_ms,
+                    "lease_owner": lease_owner,
+                    "claimed_at_ms": claimed_at_ms,
+                })
+
+            log.size = json_size({"returned": len(out)})
+            return out
 
 # string queue (dynamodb version) ---------------------------------------
 
 from decimal import Decimal
 from boto3.dynamodb.conditions import Key, Attr
 
-class DynamoDBStringQueue(StringQueue):
+class DynamoDBStringQueue(AbstractStringQueue):
     def __init__(self, table_name='birddog_string_queues'):
         self._table_name = table_name
         self._dynamodb = boto3.resource('dynamodb')
@@ -219,6 +307,8 @@ class DynamoDBStringQueue(StringQueue):
     def append(self, queue_name: str, strings: list[str]):
         if not strings:
             return
+        if any([not s for s in strings]):
+            _logger.warning("DynamoDBStringQueue: inserting empty string")
         now = Decimal(str(time.time()))
         with LogService("StringQueue", "append", path=queue_name, size=json_size(strings)):
             with self._table.batch_writer() as batch:
@@ -232,26 +322,51 @@ class DynamoDBStringQueue(StringQueue):
                     })
 
     def peek(self, queue_name: str, n: int) -> list[str]:
+        if n <= 0:
+            return []
+
+        now_ms = Decimal(str(_now_ms()))
+
+        # Read-ahead cap: prevent scanning the entire partition when everything is leased
+        max_pages = 10
+        page_limit = max(25, n * 5)
+
+        visible: list[str] = []
+        last_evaluated_key = None
+
         with LogService("StringQueue", "peek", path=queue_name) as log:
-            now_ms = Decimal(str(_now_ms()))
-            resp = self._table.query(
-                KeyConditionExpression=Key('queue_name').eq(queue_name),
-                Limit=n * 3,  # read-ahead to skip leased items
-                ScanIndexForward=True,
-                ProjectionExpression='#ts, #v, lease_until_ms',
-                ExpressionAttributeNames={'#ts': 'ts', '#v': 'value'},
-                ConsistentRead=True,
-            )
-            items = resp.get('Items', [])
-            visible = []
-            for it in items:
-                lease_until = it.get('lease_until_ms')
-                if lease_until is None or Decimal(str(lease_until)) <= now_ms:
-                    visible.append(it['value'])
-                    if len(visible) >= n:
-                        break
-            log.size = json_size(items)
-        return visible
+            scanned = 0
+
+            for _ in range(max_pages):
+                kwargs = {
+                    "KeyConditionExpression": Key("queue_name").eq(queue_name),
+                    "Limit": page_limit,
+                    "ScanIndexForward": True,
+                    "ConsistentRead": True,
+                    "ProjectionExpression": "#v, lease_until_ms",
+                    "ExpressionAttributeNames": {"#v": "value"},
+                }
+                if last_evaluated_key:
+                    kwargs["ExclusiveStartKey"] = last_evaluated_key
+
+                resp = self._table.query(**kwargs)
+                items = resp.get("Items", [])
+                scanned += len(items)
+
+                for it in items:
+                    lease_until = it.get("lease_until_ms")
+                    if lease_until is None or Decimal(str(lease_until)) <= now_ms:
+                        visible.append(it["value"])
+                        if len(visible) >= n:
+                            log.size = json_size({"scanned": scanned, "returned": len(visible)})
+                            return visible
+
+                last_evaluated_key = resp.get("LastEvaluatedKey")
+                if not last_evaluated_key or not items:
+                    break
+
+            log.size = json_size({"scanned": scanned, "returned": len(visible)})
+            return visible
 
     def length(self, queue_name: str) -> int:
         # unchanged from your code
@@ -274,55 +389,6 @@ class DynamoDBStringQueue(StringQueue):
                     break
         return total
 
-    def claim(self, queue_name: str, n: int, lease_ms: int, consumer_id: str):
-        if n <= 0:
-            return []
-
-        now_ms = Decimal(str(_now_ms()))
-        lease_until_ms = now_ms + Decimal(int(lease_ms))
-
-        claimed = []
-        scan_limit = max(25, n * 5)
-
-        with LogService("StringQueue", "claim", path=queue_name) as log:
-            resp = self._table.query(
-                KeyConditionExpression=Key('queue_name').eq(queue_name),
-                Limit=scan_limit,
-                ScanIndexForward=True,
-                ConsistentRead=True,
-                ProjectionExpression='#ts,#v,lease_until_ms',
-                ExpressionAttributeNames={'#ts': 'ts', '#v': 'value'},
-            )
-            items = resp.get('Items', [])
-            log.size = json_size(items)
-
-        for it in items:
-            if len(claimed) >= n:
-                break
-
-            ts = it['ts']
-            receipt = str(ts)
-
-            try:
-                # Acquire lease iff absent OR expired
-                self._table.update_item(
-                    Key={'queue_name': queue_name, 'ts': ts},
-                    UpdateExpression="SET lease_until_ms = :lu, lease_owner = :o, claimed_at_ms = :now",
-                    ConditionExpression="attribute_not_exists(lease_until_ms) OR lease_until_ms <= :now",
-                    ExpressionAttributeValues={
-                        ':lu': lease_until_ms,
-                        ':o': consumer_id,
-                        ':now': now_ms,
-                    },
-                )
-            except self._client.exceptions.ConditionalCheckFailedException:
-                continue
-
-            # IMPORTANT: only append after update succeeds
-            claimed.append(ClaimedItem(receipt=receipt, value=it['value']))
-
-        return claimed
-
     def ack(self, queue_name: str, receipts: list[str], consumer_id: str):
         if not receipts:
             return
@@ -340,6 +406,115 @@ class DynamoDBStringQueue(StringQueue):
                     # lease expired/reclaimed; don't delete
                     pass
 
+    def claim(self, queue_name: str, n: int, lease_ms: int, consumer_id: str):
+        if n <= 0:
+            return []
+
+        now_ms = Decimal(str(_now_ms()))
+        lease_until_ms = now_ms + Decimal(int(lease_ms))
+
+        claimed: list[ClaimedItem] = []
+        max_pages = 10
+        page_limit = max(25, n * 5)
+        last_evaluated_key = None
+
+        with LogService("StringQueue", "claim", path=queue_name) as log:
+            scanned = 0
+
+            for _ in range(max_pages):
+                kwargs = {
+                    "KeyConditionExpression": Key("queue_name").eq(queue_name),
+                    "Limit": page_limit,
+                    "ScanIndexForward": True,
+                    "ConsistentRead": True,
+                    # Pull lease fields so we can skip obviously leased items before UpdateItem
+                    "ProjectionExpression": "#ts, #v, lease_until_ms, lease_owner",
+                    "ExpressionAttributeNames": {"#ts": "ts", "#v": "value"},
+                }
+                if last_evaluated_key:
+                    kwargs["ExclusiveStartKey"] = last_evaluated_key
+
+                resp = self._table.query(**kwargs)
+                items = resp.get("Items", [])
+                scanned += len(items)
+
+                if not items:
+                    break
+
+                for it in items:
+                    if len(claimed) >= n:
+                        log.size = json_size({"scanned": scanned, "claimed": len(claimed)})
+                        return claimed
+
+                    # Skip items that are clearly leased (reduces contention / conditional failures)
+                    lu = it.get("lease_until_ms")
+                    if lu is not None:
+                        try:
+                            if Decimal(str(lu)) > now_ms:
+                                continue
+                        except Exception:
+                            # If parsing lease_until_ms fails, fall through and let the condition decide
+                            pass
+
+                    ts = it["ts"]
+                    receipt = str(ts)
+
+                    try:
+                        # IMPORTANT:
+                        # - attribute_exists(#v) prevents UpdateItem from recreating a deleted row
+                        # - ReturnValues="ALL_OLD" returns the pre-update value from the same atomic write
+                        resp2 = self._table.update_item(
+                            Key={"queue_name": queue_name, "ts": ts},
+                            UpdateExpression=(
+                                "SET lease_until_ms = :lu, lease_owner = :o, claimed_at_ms = :now"
+                            ),
+                            ConditionExpression=(
+                                "(attribute_not_exists(lease_until_ms) OR lease_until_ms <= :now) "
+                                "AND attribute_exists(#v)"
+                            ),
+                            ExpressionAttributeNames={"#v": "value"},
+                            ExpressionAttributeValues={
+                                ":lu": lease_until_ms,
+                                ":o": consumer_id,
+                                ":now": now_ms,
+                            },
+                            ReturnValues="ALL_OLD",
+                        )
+                    except self._client.exceptions.ConditionalCheckFailedException:
+                        continue
+
+                    old = resp2.get("Attributes") or {}
+                    value = old.get("value")
+                    if isinstance(value, str) and value:
+                        claimed.append(ClaimedItem(receipt=receipt, value=value))
+
+                last_evaluated_key = resp.get("LastEvaluatedKey")
+                if not last_evaluated_key:
+                    break
+
+            log.size = json_size({"scanned": scanned, "claimed": len(claimed)})
+            return claimed
+
+
+    def ack(self, queue_name: str, receipts: list[str], consumer_id: str):
+        if not receipts:
+            return
+        with LogService("StringQueue", "ack", path=queue_name, size=len(receipts)):
+            for r in receipts:
+                ts = Decimal(r)
+                try:
+                    # Only delete if we still own it, and it's a "real" row (has value).
+                    self._table.delete_item(
+                        Key={"queue_name": queue_name, "ts": ts},
+                        ConditionExpression="lease_owner = :o AND attribute_exists(#v)",
+                        ExpressionAttributeNames={"#v": "value"},
+                        ExpressionAttributeValues={":o": consumer_id},
+                    )
+                except self._client.exceptions.ConditionalCheckFailedException:
+                    # lease expired/reclaimed, or row missing/corrupt; don't delete
+                    pass
+
+
     def extend(self, queue_name: str, receipts: list[str], lease_ms: int, consumer_id: str):
         if not receipts:
             return
@@ -350,31 +525,94 @@ class DynamoDBStringQueue(StringQueue):
                 ts = Decimal(r)
                 try:
                     self._table.update_item(
-                        Key={'queue_name': queue_name, 'ts': ts},
+                        Key={"queue_name": queue_name, "ts": ts},
                         UpdateExpression="SET lease_until_ms = :lu",
-                        ConditionExpression="lease_owner = :o",
-                        ExpressionAttributeValues={':lu': lease_until_ms, ':o': consumer_id},
+                        ConditionExpression="lease_owner = :o AND attribute_exists(#v)",
+                        ExpressionAttributeNames={"#v": "value"},
+                        ExpressionAttributeValues={":lu": lease_until_ms, ":o": consumer_id},
                     )
                 except self._client.exceptions.ConditionalCheckFailedException:
                     pass
 
+    def dump(self, queue_name: str, max_pages: int = 50, page_limit: int = 100):
+        """
+        Debug helper: return *all* items in a queue partition, including lease fields.
+
+        Returns a list of dicts:
+            {
+                "queue_name": ...,
+                "ts": ...,
+                "value": ...,
+                "lease_until_ms": ...,
+                "lease_owner": ...,
+                "claimed_at_ms": ...
+            }
+
+        This method:
+          - does NOT filter on lease state
+          - does NOT mutate anything
+          - paginates defensively
+        """
+        items_out = []
+        last_evaluated_key = None
+        scanned = 0
+
+        with LogService("StringQueue", "dump_queue", path=queue_name) as log:
+            for _ in range(max_pages):
+                kwargs = {
+                    "KeyConditionExpression": Key("queue_name").eq(queue_name),
+                    "Limit": page_limit,
+                    "ScanIndexForward": True,
+                    "ConsistentRead": True,
+                    "ProjectionExpression": (
+                        "queue_name, #ts, #v, "
+                        "lease_until_ms, lease_owner, claimed_at_ms"
+                    ),
+                    "ExpressionAttributeNames": {
+                        "#ts": "ts",
+                        "#v": "value",
+                    },
+                }
+                if last_evaluated_key:
+                    kwargs["ExclusiveStartKey"] = last_evaluated_key
+
+                resp = self._table.query(**kwargs)
+                page_items = resp.get("Items", [])
+                scanned += len(page_items)
+
+                for it in page_items:
+                    items_out.append({
+                        "queue_name": it.get("queue_name"),
+                        "ts": it.get("ts"),
+                        "value": it.get("value"),
+                        "value_type": type(it.get("value")).__name__,
+                        "value_len": len(it.get("value")) if isinstance(it.get("value"), str) else None,
+                        "lease_until_ms": it.get("lease_until_ms"),
+                        "lease_owner": it.get("lease_owner"),
+                        "claimed_at_ms": it.get("claimed_at_ms"),
+                    })
+
+                last_evaluated_key = resp.get("LastEvaluatedKey")
+                if not last_evaluated_key or not page_items:
+                    break
+
+            log.size = json_size({
+                "scanned": scanned,
+                "returned": len(items_out),
+            })
+
+        return items_out
+
 # platform-independent access to string queue ----------------------------------
 
-_string_queue_store = None
-
-def get_string_queue_store():
-    global _string_queue_store
-    if not _string_queue_store:
-        #_logger.info(f"get_string_queue_store: detect_environment=='{detect_environment()}'")
-        if detect_environment() == "aws":
-            _string_queue_store = DynamoDBStringQueue()
-        else:
-            _string_queue_store = SQLiteStringQueue()
-    return _string_queue_store
+if detect_environment() == "aws":
+    StringQueue = DynamoDBStringQueue
+else:
+    StringQueue = SQLiteStringQueue
 
 # key value store (abstract version) ---------------------------------------
 
-class KeyValueStore(ABC):
+class AbstractKeyValueStore(ABC):
     @abstractmethod
     def insert(self, namespace: str, key: str, value: str):
         pass
@@ -403,9 +641,10 @@ class KeyValueStore(ABC):
 
 _KEY_VALUE_STORE_PATH = ".cache/key_value_store.db"
 
-class SQLiteKeyValueStore(KeyValueStore):
-    def __init__(self, db_path: str = _KEY_VALUE_STORE_PATH):
+class SQLiteKeyValueStore(AbstractKeyValueStore):
+    def __init__(self, db_path=_KEY_VALUE_STORE_PATH, table_name="kv"):
         self._db_path = db_path
+        self._table_name = table_name
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
         self._init_db()
 
@@ -414,8 +653,8 @@ class SQLiteKeyValueStore(KeyValueStore):
 
     def _init_db(self):
         with self._conn() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS kv (
+            conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS {self._table_name} (
                     namespace TEXT NOT NULL,
                     key       TEXT NOT NULL,
                     value     TEXT NOT NULL,
@@ -431,8 +670,8 @@ class SQLiteKeyValueStore(KeyValueStore):
             raise TypeError("value must be str")
         with LogService("KVStore", "insert", path=namespace, size=len(key) + len(value)):
             with self._conn() as conn:
-                conn.execute("""
-                    INSERT INTO kv(namespace, key, value)
+                conn.execute(f"""
+                    INSERT INTO {self._table_name}(namespace, key, value)
                     VALUES (?, ?, ?)
                     ON CONFLICT(namespace, key) DO UPDATE SET value=excluded.value
                 """, (namespace, key, value))
@@ -441,20 +680,20 @@ class SQLiteKeyValueStore(KeyValueStore):
     def remove(self, namespace: str, key: str):
         with LogService("KVStore", "remove", path=namespace, size=len(key)):
             with self._conn() as conn:
-                conn.execute("DELETE FROM kv WHERE namespace = ? AND key = ?", (namespace, key))
+                conn.execute(f"DELETE FROM {self._table_name} WHERE namespace = ? AND key = ?", (namespace, key))
                 conn.commit()
 
     def remove_all(self, namespace: str):
         with LogService("KVStore", "remove_all", path=namespace):
             with self._conn() as conn:
-                conn.execute("DELETE FROM kv WHERE namespace = ?", (namespace,))
+                conn.execute(f"DELETE FROM {self._table_name} WHERE namespace = ?", (namespace,))
                 conn.commit()
 
     def get(self, namespace: str, key: str) -> str:
         with LogService("KVStore", "get", path=namespace) as log:
             with self._conn() as conn:
                 cur = conn.execute(
-                    "SELECT value FROM kv WHERE namespace = ? AND key = ?",
+                    f"SELECT value FROM {self._table_name} WHERE namespace = ? AND key = ?",
                     (namespace, key)
                 )
                 row = cur.fetchone()
@@ -467,7 +706,7 @@ class SQLiteKeyValueStore(KeyValueStore):
         with LogService("KVStore", "get_all", path=namespace) as log:
             with self._conn() as conn:
                 cur = conn.execute(
-                    "SELECT key, value FROM kv WHERE namespace = ? ORDER BY key",
+                    f"SELECT key, value FROM {self._table_name} WHERE namespace = ? ORDER BY key",
                     (namespace,)
                 )
                 payload = cur.fetchall()
@@ -478,7 +717,7 @@ class SQLiteKeyValueStore(KeyValueStore):
         with LogService("KVStore", "count", path=namespace):
             with self._conn() as conn:
                 cur = conn.execute(
-                    "SELECT COUNT(*) FROM kv WHERE namespace = ?",
+                    f"SELECT COUNT(*) FROM {self._table_name} WHERE namespace = ?",
                     (namespace,)
                 )
                 return int(cur.fetchone()[0])
@@ -606,15 +845,7 @@ class DynamoDBKeyValueStore:
 
 # platform-independent access to key value store ----------------------------------
 
-_key_value_store = None
-
-def get_key_value_store():
-    global _key_value_store
-    if not _key_value_store:
-        #_logger.info(f"get_string_queue_store: detect_environment=='{detect_environment()}'")
-        if detect_environment() == "aws":
-            _key_value_store = DynamoDBKeyValueStore()
-        else:
-            #_key_value_store = DynamoDBKeyValueStore()
-            _key_value_store = SQLiteKeyValueStore()
-    return _key_value_store
+if detect_environment() == "aws":
+    KeyValueStore = DynamoDBKeyValueStore
+else:
+    KeyValueStore = SQLiteKeyValueStore

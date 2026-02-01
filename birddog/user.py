@@ -16,12 +16,12 @@ from birddog.cache import (
     save_cached_object,
     remove_cached_object,
     CacheMissError)
-from birddog.store import get_key_value_store
+from birddog.store import KeyValueStore
 
 from birddog.log import get_logger
 _logger = get_logger()
 
-_kv_store = get_key_value_store()
+_kv_store = KeyValueStore()
 
 # ---------------------------------------------------------------------
 # WATCHLIST MANAGEMENT

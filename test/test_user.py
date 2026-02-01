@@ -52,12 +52,7 @@ def _ensure_birddog_stubs():
         def remove(self, namespace, key):
             del self._data[(namespace, key)]
 
-    _bootstrap_kv = _BootstrapKV()
-
-    def get_key_value_store():
-        return _bootstrap_kv
-
-    store_mod.get_key_value_store = get_key_value_store
+    store_mod.KeyValueStore = _BootstrapKV
     sys.modules["birddog.store"] = store_mod
 
     # birddog.cache

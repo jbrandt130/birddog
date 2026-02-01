@@ -7,22 +7,92 @@ import threading
 from threading import Thread
 from typing import Optional
 
-from birddog.store import get_string_queue_store, get_key_value_store
 from birddog.utility import HeartbeatManager, new_id
 
 from birddog.log import get_logger
 _logger = get_logger()
 
-_TASK_MANAGER_HEARTBEAT_INTERVAL    = 5.0 # seconds
-_DEFAULT_STALE_SUBTASK_THRESHOLD_MS = 10000
-_IN_PROCESS_SUBTASK_LIMIT           = 3
+
+from birddog.store import StringQueue, KeyValueStore
+
+_DDB_TASK_MGR_TEST=0
+if _DDB_TASK_MGR_TEST:
+    from birddog.store import DynamoDBKeyValueStore, DynamoDBStringQueue
+    _logger.info("Using DDB task manager store")
+
+    StringQueue = DynamoDBStringQueue
+    KeyValueStore = DynamoDBKeyValueStore
+
+_QUEUE_TABLE_NAME       = "bd_task_queue"
+_KV_STORE_TABLE_NAME    = "bd_task_kv_store"
+
+_TASK_MANAGER_HEARTBEAT_INTERVAL    = 15.0 # seconds
+_DEFAULT_STALE_SUBTASK_THRESHOLD_MS = 10000 # msec
+_IN_PROCESS_SUBTASK_LIMIT           = 5
 
 # Queue-lease defaults (tune as desired)
-_DEFAULT_QUEUE_LEASE_MS = 10 * 60 * 1000      # 10 minutes
-_DEFAULT_QUEUE_TOUCH_MS = 20 * 1000           # 20 seconds
+_DEFAULT_QUEUE_LEASE_MS = 120 * 1000           # 2 minutes
+_DEFAULT_QUEUE_TOUCH_MS = 30 * 1000           # 30 seconds
 
 # Retry defaults
 _DEFAULT_MAX_ATTEMPTS = 5
+
+# helper for queue diagnostics
+
+_DIAGNOSE_TASK_QUEUE=0
+if _DIAGNOSE_TASK_QUEUE:
+    class QueueGuard:
+        """
+        Context manager to check subtask queue integrity on entry and exit.
+
+        If task_mgr._check_subtask_queue(id_string) returns True,
+        a warning is logged indicating possible corruption.
+        """
+
+        def __init__(self, task_mgr, id_string: str):
+            self._task_mgr = task_mgr
+            self._id = id_string
+
+        def __enter__(self):
+            try:
+                if self._task_mgr._check_subtask_queue(self._id):
+                    _logger.warning(
+                        "Task queue '%s' appears corrupt on entry (task_mgr=%s)",
+                        self._id,
+                        type(self._task_mgr).__name__,
+                    )
+            except Exception as e:
+                _logger.warning(
+                    "Failed to check task queue '%s' on entry: %r",
+                    self._id,
+                    e,
+                )
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            try:
+                if self._task_mgr._check_subtask_queue(self._id):
+                    _logger.warning(
+                        "Task queue '%s' appears corrupt on exit (task_mgr=%s)",
+                        self._id,
+                        type(self._task_mgr).__name__,
+                    )
+            except Exception as e:
+                _logger.warning(
+                    "Failed to check task queue '%s' on exit: %r",
+                    self._id,
+                    e,
+                )
+            # Never suppress exceptions
+            return False
+else:
+    class QueueGuard:
+        def __init__(self, task_mgr, id_string: str):
+            pass
+        def __enter__(self): 
+            return self
+        def __exit__(self, exc_type, exc, tb): 
+            return False
 
 def _now_ms():
     return int(datetime.now(UTC).timestamp() * 1000)
@@ -45,15 +115,35 @@ class TaskManager(HeartbeatManager):
     """
 
     def __init__(self, manager_name, auto_start=False):
-        self._queue_store = get_string_queue_store()
-        self._key_value_store = get_key_value_store()
+        self._queue_store = StringQueue(table_name=_QUEUE_TABLE_NAME)
+        self._key_value_store = KeyValueStore(table_name=_KV_STORE_TABLE_NAME)
+        self._name = manager_name
 
-        self._active_id = f"{manager_name}:active"
-        self._pending_id = f"{manager_name}:pending"
-        self._in_process_id = f"{manager_name}:in_process"
+        # ---- KV Store namespaces
+        
+        # active tasks keyed on task id
+        self._active_id = f"{self._name}:active"
 
-        self._completed_prefix = f"{manager_name}:completed"
-        self._failed_prefix = f"{manager_name}:failed"
+        # in process subtasks keyed on task_id.subtask_index
+        self._in_process_id = f"{self._name}:in_process"
+
+        # completed subtasks (namespace = manager_name:completed.task_id, key = subtask_index)
+        self._completed_prefix = f"{self._name}:completed"
+
+        # failed subtasks (namespace = manager_name:completed.task_id, key = subtask_index)
+        self._failed_prefix = f"{self._name}:failed"
+
+        # attempt count for subtasks
+        self._attempts_prefix = f"{self._name}:attempts"
+
+        # ---- String queue identifiers
+
+        self._pending_id = f"{self._name}:pending"
+
+        # Identify this manager instance for queue lease ownership
+        self._consumer_id = f"{self._name}:{new_id()}"
+
+        # ---- Tunable timeouts
 
         # Used ONLY to prune dead in_process KV entries (no requeue storm behavior).
         self._stale_subtask_threshold_ms = _DEFAULT_STALE_SUBTASK_THRESHOLD_MS
@@ -65,12 +155,24 @@ class TaskManager(HeartbeatManager):
         # Retry cap
         self._max_attempts = _DEFAULT_MAX_ATTEMPTS
 
-        # Identify this manager instance for queue lease ownership
-        self._consumer_id = f"{manager_name}:{new_id()}"
+        # worker throttling
+        self._worker_sem = threading.BoundedSemaphore(_IN_PROCESS_SUBTASK_LIMIT)
+        self._active_workers = 0
+        self._active_workers_lock = threading.Lock()
 
         super().__init__(interval=_TASK_MANAGER_HEARTBEAT_INTERVAL)
         if auto_start:
             self.start()
+
+    # diagnostic queue check
+    def _check_subtask_queue(self, message):
+        contents = self._queue_store.dump(self._pending_id)
+        flagged = False
+        for item in contents:
+            if not item.get("value"):
+                flagged = True
+                _logger.warning(f"[{message}] empty pending item: {item}")
+        return flagged
 
     # -------------------------
     # Helpers
@@ -86,21 +188,45 @@ class TaskManager(HeartbeatManager):
     def _failed_id(self, task_id: str) -> str:
         return f"{self._failed_prefix}.{task_id}"
 
+    def _attempts_id(self, task_id: str) -> str:
+        return f"{self._attempts_prefix}.{task_id}"
+
     @staticmethod
     def _form_subtask(payload, index: int, task_id: str) -> dict:
         return {
             "task_id": task_id,
             "index": index,
             "payload": payload,
-            # attempt is assigned on claim; not stored in the queue payload initially
         }
 
     def _queue_subtasks(self, batch: list[dict]):
-        self._queue_store.append(self._pending_id, [json.dumps(item) for item in batch])
+        with QueueGuard(self, "_queue_subtasks"):
+            self._queue_store.append(self._pending_id, [json.dumps(item) for item in batch])
 
     # -------------------------
     # Queue operations (claim/ack/extend)
     # -------------------------
+
+    def _get_attempts(self, subtask):
+        try:
+            return int(self._key_value_store.get(
+                self._attempts_id(subtask["task_id"]), 
+                str(subtask["index"])))
+        except KeyError:
+            return 0
+
+    def _set_attempts(self, subtask, attempts):
+        self._key_value_store.insert(
+            self._attempts_id(subtask["task_id"]), 
+            str(subtask["index"]), str(attempts))
+
+    def _clear_attempts(self, subtask):
+        try:
+            self._key_value_store.remove(
+                self._attempts_id(subtask["task_id"]), 
+                str(subtask["index"]))
+        except KeyError:
+            pass
 
     def _any_pending(self) -> bool:
         # Updated queue.peek() returns visible (unleased/expired) items.
@@ -114,14 +240,15 @@ class TaskManager(HeartbeatManager):
         """
         Claim one visible queue item. Returns a decoded subtask dict, augmented with:
           - _receipt: opaque handle used for ack/extend
-          - attempt: attempt counter for retry cap
         """
-        claimed = self._queue_store.claim(
-            self._pending_id,
-            n=1,
-            lease_ms=self._queue_lease_ms,
-            consumer_id=self._consumer_id,
-        )
+        with QueueGuard(self, "_claim_next"):
+            claimed = self._queue_store.claim(
+                self._pending_id,
+                n=1,
+                lease_ms=self._queue_lease_ms,
+                consumer_id=self._consumer_id,
+            )
+
         if not claimed:
             return None
 
@@ -131,25 +258,23 @@ class TaskManager(HeartbeatManager):
         except Exception as e:
             _logger.error(f"TaskManager: corrupt queue payload, acking. err={e}")
             try:
-                self._queue_store.ack(self._pending_id, [item.receipt], consumer_id=self._consumer_id)
+                with QueueGuard(self, "_claim_next.ack"):
+                    self._queue_store.ack(self._pending_id, [item.receipt], consumer_id=self._consumer_id)
             except Exception as e2:
                 _logger.error(f"TaskManager: failed to ack corrupt payload: {e2}")
             return None
 
         subtask["_receipt"] = item.receipt
-
-        # Maintain attempt count in the queue payload itself so it persists across leases/retries.
-        # (We will write it back into the queue item by extending lease and updating KV only,
-        # but because the queue item itself is immutable in our design, we persist attempt in KV.)
-        # Simpler: store attempt in KV in_process and in completed/failed records.
-        subtask["attempt"] = int(subtask.get("attempt", 0)) + 1
+        #_logger.info(f"_claim_next: {self._subtask_id(subtask)} (receipt={subtask['_receipt']})")
 
         return subtask
 
     def _ack_subtask(self, subtask: dict):
         receipt = subtask.get("_receipt")
         if receipt:
-            self._queue_store.ack(self._pending_id, [receipt], consumer_id=self._consumer_id)
+            #_logger.info(f"_ack_subtask: {self._subtask_id(subtask)}")
+            with QueueGuard(self, "_ack_subtask"):
+                self._queue_store.ack(self._pending_id, [receipt], consumer_id=self._consumer_id)
 
     def _release_subtask(self, subtask: dict):
         """
@@ -159,18 +284,22 @@ class TaskManager(HeartbeatManager):
         receipt = subtask.get("_receipt")
         if receipt:
             try:
-                self._queue_store.extend(self._pending_id, [receipt], lease_ms=0, consumer_id=self._consumer_id)
+                #_logger.info(f"_release_subtask: {self._subtask_id(subtask)}")
+                with QueueGuard(self, "_release_subtask"):
+                    self._queue_store.extend(self._pending_id, [receipt], lease_ms=0, consumer_id=self._consumer_id)
             except Exception:
                 pass
 
     # -------------------------
-    # KV bookkeeping (in_process)
+    # Subtask bookkeeping (in_process)
     # -------------------------
 
     def _mark_subtask_in_process(self, subtask: dict):
         now = _now_ms()
         subtask["start_ms"] = now
         subtask["last_touch_ms"] = now
+        #_logger.info(f"_mark_subtask_in_process: {self._subtask_id(subtask)}")
+
         self._key_value_store.insert(
             self._in_process_id,
             self._subtask_id(subtask),
@@ -179,6 +308,7 @@ class TaskManager(HeartbeatManager):
 
     def _touch_subtask_in_process(self, subtask: dict):
         subtask["last_touch_ms"] = _now_ms()
+        #_logger.info(f"_touch_subtask_in_process: {self._subtask_id(subtask)}")
         self._key_value_store.insert(
             self._in_process_id,
             self._subtask_id(subtask),
@@ -186,14 +316,18 @@ class TaskManager(HeartbeatManager):
         )
 
     def _unmark_subtask_in_process(self, subtask: dict):
+        #_logger.info(f"_unmark_subtask_in_process: {self._subtask_id(subtask)}")
         self._key_value_store.remove(self._in_process_id, self._subtask_id(subtask))
 
     # -------------------------
     # Completion / failure bookkeeping
     # -------------------------
 
-    def _store_task(self, task_desc: dict):
+    def _insert_task(self, task_desc: dict):
         self._key_value_store.insert(self._active_id, task_desc["task_id"], json.dumps(task_desc))
+
+    def _remove_task(self, task_id):
+        self._key_value_store.remove(self._active_id, task_id)
 
     def _task_progress_counts(self, task_id: str) -> tuple[int, int]:
         """
@@ -217,7 +351,7 @@ class TaskManager(HeartbeatManager):
         completed_count, failed_count = self._task_progress_counts(task_id)
         task["completed"] = completed_count
         task["failed"] = failed_count
-        self._store_task(task)
+        self._insert_task(task)
 
         if (completed_count + failed_count) != task["length"]:
             return
@@ -231,16 +365,22 @@ class TaskManager(HeartbeatManager):
 
         subtasks = [json.loads(v) for (_, v) in completed_items] + [json.loads(v) for (_, v) in failed_items]
         # Optional: stable ordering by index
-        subtasks.sort(key=lambda s: int(s.get("index", 0)))
+        #subtasks.sort(key=lambda s: int(s.get("index", 0)))
 
-        # Cleanup + callback
+        # Cleanup subtasks
         self._key_value_store.remove_all(self._completed_id(task_id))
         self._key_value_store.remove_all(self._failed_id(task_id))
+
+        # Finalize the task
         self.complete_task(task, subtasks)
-        self._key_value_store.remove(self._active_id, task_id)
+        
+        # Cleanup the task
+        self._remove_task(task_id)
         _logger.info(f"TaskManager completed task {task_id} (completed={completed_count}, failed={failed_count})")
 
-    def _mark_subtask_completed(self, subtask: dict):
+    def _mark_subtask_completed(self, subtask: dict, failed=False):
+        #_logger.info(f"_mark_subtask_completed: {self._subtask_id(subtask)}, receipt={subtask.get('_receipt')}, failed={failed}")
+
         # remove from in-process
         try:
             self._unmark_subtask_in_process(subtask)
@@ -249,40 +389,41 @@ class TaskManager(HeartbeatManager):
 
         task_id = subtask["task_id"]
 
-        # Avoid leaking internal receipt into results; harmless if you keep it, but usually noisy.
-        subtask.pop("_receipt", None)
-
         # Mark status
-        subtask["status"] = "completed"
+        subtask["status"] = "failed" if failed else "completed"
 
+        # store result for final processing
+        namespace_id = self._failed_id(task_id) if failed else self._completed_id(task_id)
         self._key_value_store.insert(
-            self._completed_id(task_id),
+            namespace_id,
             str(subtask["index"]),
             json.dumps(subtask)
         )
 
+        # clear subtask from the queue
+        self._ack_subtask(subtask)
+
+        # remove attempts counter, if any
+        self._clear_attempts(subtask)
+
+        # check if all subtasks are done and run final processing if so
         self._maybe_finalize_task(task_id)
 
     def _mark_subtask_failed(self, subtask: dict, error: str):
-        # remove from in-process
-        try:
-            self._unmark_subtask_in_process(subtask)
-        except Exception:
-            pass
-
-        task_id = subtask["task_id"]
-
-        subtask.pop("_receipt", None)
-        subtask["status"] = "failed"
         subtask["error"] = str(error)
+        self._mark_subtask_completed(subtask, failed=True)
 
-        self._key_value_store.insert(
-            self._failed_id(task_id),
-            str(subtask["index"]),
-            json.dumps(subtask)
-        )
-
-        self._maybe_finalize_task(task_id)
+    def _check_finished(self, subtask):
+        try:
+            self._key_value_store.get(self._completed_id(subtask["task_id"]), str(subtask["index"]))
+            return True
+        except KeyError:
+            pass
+        try:
+            self._key_value_store.get(self._failed_id(subtask["task_id"]), str(subtask["index"]))
+            return True
+        except KeyError:
+            return False
 
     # -------------------------
     # Worker execution
@@ -303,12 +444,14 @@ class TaskManager(HeartbeatManager):
         interval_ms = max(1, int(self._queue_touch_interval_ms))
         while not stop_event.wait(interval_ms / 1000.0):
             try:
-                self._queue_store.extend(
-                    self._pending_id,
-                    [receipt],
-                    lease_ms=self._queue_lease_ms,
-                    consumer_id=self._consumer_id,
-                )
+                #_logger.info(f"_lease_toucher: extending lease: {self._subtask_id(subtask)}")
+                with QueueGuard(self, "_lease_toucher"):
+                    self._queue_store.extend(
+                        self._pending_id,
+                        [receipt],
+                        lease_ms=self._queue_lease_ms,
+                        consumer_id=self._consumer_id,
+                    )
             except Exception as e:
                 _logger.warning(f"TaskManager: lease extend failed for {self._subtask_id(subtask)}: {e}")
 
@@ -318,9 +461,11 @@ class TaskManager(HeartbeatManager):
                 _logger.warning(f"TaskManager: in_process touch failed for {self._subtask_id(subtask)}: {e}")
 
     def _run_worker(self):
+        #_logger.info(f"{self._name}: starting new worker")
         while True:
             subtask = self._claim_next()
             if not subtask:
+                _logger.info(f"{self._name}: nothing claimed - exiting")
                 return
 
             task_id = subtask["task_id"]
@@ -330,24 +475,24 @@ class TaskManager(HeartbeatManager):
             try:
                 self.lookup_task(task_id)
             except KeyError:
+                _logger.info(f"_run_worker: removing zombie subtask: {subtask_key}")                
                 try:
                     self._ack_subtask(subtask)
                 except Exception:
                     pass
                 continue
 
-            # Retry cap check BEFORE doing work
-            attempt = int(subtask.get("attempt", 1))
+            # check if subtask is already completed or failed, skip if so and check for task completion
+            if self._check_finished(subtask):
+                self._ack_subtask(subtask)
+                self._maybe_finalize_task(subtask["task_id"])
+                continue
+
+            # If we've now exhausted retries, mark failed + ack
+            attempt = self._get_attempts(subtask) + 1
+            self._set_attempts(subtask, attempt)
             if attempt > int(self._max_attempts):
-                _logger.error(f"TaskManager: retry cap exceeded for {subtask_key} (attempt={attempt}), marking failed.")
-                try:
-                    self._mark_subtask_failed(subtask, error=f"retry cap exceeded (attempt={attempt})")
-                finally:
-                    # Ack so it doesn't reappear
-                    try:
-                        self._ack_subtask(subtask)
-                    except Exception:
-                        pass
+                self._mark_subtask_failed(subtask, error=f"retry cap exceeded (attempt={attempt})")
                 continue
 
             # Mark in process and start toucher
@@ -361,13 +506,22 @@ class TaskManager(HeartbeatManager):
             )
             toucher.start()
 
+            # execute against a receipt-free dict so subclass can't break ack
+            work_subtask = {
+                "task_id": subtask["task_id"],
+                "index": subtask["index"],
+                "payload": subtask.get("payload"),
+            }
+
             try:
-                self.execute_subtask(subtask)
+                #_logger.info(f"running subtask {self._subtask_id(work_subtask)}, receipt={subtask.get('_receipt')}")
+                self.execute_subtask(work_subtask)
             except Exception as e:
-                _logger.error(f"Exception in worker subtask {subtask_key} (attempt={attempt}): {e}")
+                _logger.error(f"Exception in worker subtask {subtask_key}: {e}")
 
                 stop.set()
                 try:
+                    # remove subtask from in_process kv store
                     self._unmark_subtask_in_process(subtask)
                 except Exception:
                     pass
@@ -378,33 +532,42 @@ class TaskManager(HeartbeatManager):
                     self._release_subtask(subtask)
                 except Exception:
                     pass
-
-                # If we've now exhausted retries, mark failed + ack
-                if attempt >= int(self._max_attempts):
-                    try:
-                        self._mark_subtask_failed(subtask, error=e)
-                    finally:
-                        try:
-                            self._ack_subtask(subtask)
-                        except Exception:
-                            pass
                 continue
             finally:
                 stop.set()
 
+            # Copy results back onto the original (which still has _receipt)
+            subtask["payload"] = work_subtask.get("payload")
+
             # Success: mark completed and ack
             try:
                 self._mark_subtask_completed(subtask)
-            finally:
-                try:
-                    self._ack_subtask(subtask)
-                except Exception as e:
-                    # If ack fails (lost ownership), item may reappear; if execute_subtask is non-idempotent,
-                    # that can be harmful. Lease renewal reduces this likelihood substantially.
-                    _logger.warning(f"TaskManager: ack failed for {subtask_key}: {e}")
+            except:
+                pass
+
+    def _run_worker_wrapper(self):
+        try:
+            self._run_worker()
+        finally:
+            # Always release capacity, even if worker crashes.
+            with self._active_workers_lock:
+                self._active_workers -= 1
+                n = self._active_workers
+            self._worker_sem.release()
+            _logger.info(f"{self._name} worker exit (active_workers={n})")
 
     def _spawn_worker(self):
-        thread = Thread(target=self._run_worker, name="task-worker", daemon=True)
+        # Non-blocking acquire: if at capacity, do nothing.
+        if not self._worker_sem.acquire(blocking=False):
+            return
+
+        with self._active_workers_lock:
+            self._active_workers += 1
+            n = self._active_workers
+
+        _logger.info(f"{self._name} spawning worker (active_workers={n})")
+
+        thread = Thread(target=self._run_worker_wrapper, name=f"{self._name}-worker", daemon=True)
         thread.start()
 
     # -------------------------
@@ -413,6 +576,7 @@ class TaskManager(HeartbeatManager):
 
     def heartbeat(self):
         now = _now_ms()
+        #_logger.info(f"{self._name} heartbeat: {now}")
 
         # 1) Prune stale in_process entries (worker died) so worker_count doesn't get stuck.
         try:
@@ -432,14 +596,7 @@ class TaskManager(HeartbeatManager):
 
         # 2) Spawn workers if there is visible work and we have capacity.
         if self._any_pending():
-            try:
-                worker_count = self._key_value_store.count(self._in_process_id)
-            except Exception:
-                worker_count = 0
-
-            if worker_count < _IN_PROCESS_SUBTASK_LIMIT:
-                _logger.info(f"TaskManager spawning additional worker (in_process={worker_count})")
-                self._spawn_worker()
+            self._spawn_worker()
 
     # ========
     # subclass methods
@@ -483,7 +640,7 @@ class TaskManager(HeartbeatManager):
             "completed": 0,
             "failed": 0,
         }
-        self._store_task(task_desc)
+        self._insert_task(task_desc)
 
         batch = [self._form_subtask(item, i, task_id) for i, item in enumerate(subtasks)]
         self._queue_subtasks(batch)

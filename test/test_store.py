@@ -175,7 +175,7 @@ class TestStores(unittest.TestCase):
                 self._run_common_string_queue_tests(sqlite_q, "sqlite")
 
         # DynamoDB queue
-        table_name = f"birddog_string_queues_unittest_{uuid.uuid4().hex[:12]}"
+        table_name = f"birddog_string_queues_unittest"
         try:
             ddb_q = DynamoDBStringQueue(table_name=table_name)
 
@@ -207,7 +207,7 @@ class TestStores(unittest.TestCase):
                 self._run_common_kv_store_tests(sqlite_kv, "sqlite")
 
         # DynamoDB KV
-        table_name = f"birddog_key_value_store_unittest_{uuid.uuid4().hex[:12]}"
+        table_name = f"birddog_key_value_store_unittest"
         try:
             ddb_kv = DynamoDBKeyValueStore(table_name=table_name)
 
