@@ -10,6 +10,8 @@ var
 venv*
 *key.json
 nocodb
+.env
+.idea
 
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
