@@ -49,19 +49,12 @@ def _clear_alerts(db, table_name, alert = "birddog_alert"):
     if update:
         db.write(table_name, update)
 
-def _format_date(date):
-    d = date.split(",")
-    return f"{d[0]}-{d[1]}-{d[2]} {d[3]}:00+00:00"
-
 def _normalize_date_string(s):
     return str(datetime.fromisoformat(s.replace("Z", "+00:00")))
 
 def _normalize_title(title):
     # ensure no spaces in title, and remove namespace qualifier
     return canonicalize_title(title, include_namespace=False)
-
-def _page_title(page):
-    return _normalize_title(page.page["title"]["uk"])
 
 def _edit_links(db, table_name, link_field, source_record, target_records, replace=True):
     if not isinstance(target_records, (list, tuple)):
@@ -84,41 +77,6 @@ def _replace_links(db, table_name, link_field, source_record, target_records):
 
 def _create_links(db, table_name, link_field, source_record, target_records):
     return _edit_links(db, table_name, link_field, source_record, target_records, replace=False)
-
-def _detect_changes(db, table_name, records):
-    if isinstance(records, dict):
-        records = [ records ]
-        singleton = True
-    else:
-        singleton = False
-    key = db.key_field_name(table_name)
-    #_logger.info(f"_detect_changes: lookup: len={len(records)}, size={json_size([record[key] for record in records])}")
-    id_map = db.lookup(table_name, {record[key] for record in records})
-    current_records = db.read(table_name, list(id_map.values()))
-    current_record_dict = {
-        rec["Id"]: rec 
-        for rec in current_records
-        }
-    update = []
-    update_fields = []
-    for record in records:
-        rec_id = id_map.get(record[key])
-        if rec_id:
-            changed_fields = set()
-            current_rec = current_record_dict[rec_id]
-            for k, v in record.items():
-                if not k in current_rec or current_rec[k] != v:
-                    changed_fields.add(k)
-            if changed_fields:
-                update.append(record)
-                update_fields.append(changed_fields)
-        else:
-            update.append(record)
-    #for record in update:
-    #    record["birddog_alert"] = True
-    if singleton:
-        return update[0] if update else None
-    return update, update_fields
 
 def get_child_titles(db, titles):
     if not isinstance(titles, (list, tuple)):
@@ -562,16 +520,34 @@ class DatabaseUpdater:
             if info.get("missing"):
                 _logger.error(f"Wiki page missing: {title}")
             elif info.get("error"):
-                _logger.error(f"Error loading Wiki page {title}: {record.get("error")}")
+                _logger.error(f"Error loading Wiki page {title}: {info.get('error')}")
             else:
                 result.append(info)
         return result
 
-    def _update_page_records(self, page_records, set_alert=True):
-        update, update_fields = _detect_changes(self._db, "Pages", page_records)
+    def _update_page_records_with_cache(self, page_records, id_map, existing_records, set_alert=True):
+        """Update page records using pre-fetched lookup and existing records."""
+        if not page_records:
+            return None
+        key = self._db.key_field_name("Pages")
+        update = []
+        update_fields = []
+        for record in page_records:
+            rec_id = id_map.get(record[key])
+            if rec_id:
+                changed_fields = set()
+                current_rec = existing_records.get(rec_id, {})
+                for k, v in record.items():
+                    if k not in current_rec or current_rec[k] != v:
+                        changed_fields.add(k)
+                if changed_fields:
+                    update.append(record)
+                    update_fields.append(changed_fields)
+            else:
+                update.append(record)
+                update_fields.append(set())
         if update:
             for i, changed_fields in enumerate(update_fields):
-                # clear translated fields if description changed
                 if "description_uk" in changed_fields:
                     update[i]["description"] = ""
             if set_alert:
@@ -579,18 +555,6 @@ class DatabaseUpdater:
                     rec["birddog_alert"] = True
             return self._db.write("Pages", update)
         return None
-
-    def _link_documents_with_page_id(self, page_id, urls):
-        doc_ids = self._db.lookup("Documents", urls)
-        if not all(doc_ids):
-            missing_urls = [url for url, did in zip(urls, doc_ids) if not did]
-            for url in missing_urls:
-                _logger.info(f"doc url missing: {url}. ignoring...")
-            doc_ids = [d for d in doc_ids if d]
-        if _replace_links(self._db, "Pages", "doc_links", page_id, doc_ids):
-            return True
-        # otherwise, no change in links
-        return False
 
     def update_records(self, page_titles):
         if isinstance(page_titles, str):
@@ -600,28 +564,26 @@ class DatabaseUpdater:
 
         _logger.info(f"update_records: {len(page_titles)} titles")
         page_info = self._get_page_info(page_titles)
-        updated_pages = bool(self._update_page_records(
-            [info["record"] for info in page_info]))
 
+        # First pass: collect all page titles and doc URLs we'll need
         linked_page_updates = []
         child_link_updates = {}
         parent_link_updates = {}
         title_set = set()
         doc_urls = set()
         doc_link_updates = {}
-        
+
         def _add_child_link(parent, child):
             updates = child_link_updates.get(parent, set())
             updates.add(child)
             child_link_updates[parent] = updates
-        
+
         def _add_parent_link(child, parent):
             if parent_link_updates.get(child):
                 _logger.error(f"second parent for child {child}: {parent}, {parent_link_updates.get(child)}")
             parent_link_updates[child] = parent
 
         def _add_doc_link(title, doc_url):
-            #_logger.info(f"found linked doc: {title} url={doc_url}")
             updates = doc_link_updates.get(title, set())
             updates.add(doc_url)
             doc_link_updates[title] = updates
@@ -650,42 +612,52 @@ class DatabaseUpdater:
                     doc_title = _normalize_title(link.get("title"))
                     url = f"https://uk.wikisource.org/wiki/{doc_title}"
                     _add_doc_link(title, url)
-                #else:
-                #    _logger.info(f"ignoring non-doc wiki link: {title} wiki target={link.get('title')}")
             for source in ("commons_links", "interwiki_links"):
                 for link in page_links.get(source, []):
                     if link.get("doc_type"):
                         url = link.get("url")
                         url = url.replace(" ", "_").replace("file:", "File:")
                         _add_doc_link(title, url)
-                    #else:
-                    #    _logger.info(f"ignoring non-doc link: {title} url={link.get('url')}")
             for url in page_links.get("external_links", []):
                 if _allowed_doc_link(url):
                     _add_doc_link(title, url)
 
-        linked_records_changed = bool(self._update_page_records(linked_page_updates, set_alert=False))
-        record_ids = self._db.lookup("Pages", title_set)
+        # Single lookup for all page titles
+        all_page_titles = title_set | {info["record"]["title"] for info in page_info}
+        record_ids = self._db.lookup("Pages", all_page_titles)
+        existing_page_ids = [rid for rid in record_ids.values() if rid]
+        existing_pages = {
+            rec["Id"]: rec
+            for rec in self._db.read("Pages", existing_page_ids)
+        } if existing_page_ids else {}
+
+        # Update page records using pre-fetched data
+        page_records = [info["record"] for info in page_info]
+        updated_pages = bool(self._update_page_records_with_cache(
+            page_records, record_ids, existing_pages, set_alert=True))
+
+        # Update linked page records using same cache
+        linked_records_changed = bool(self._update_page_records_with_cache(
+            linked_page_updates, record_ids, existing_pages, set_alert=False))
+
+        # Refresh record_ids after writes to include newly created records
+        if updated_pages or linked_records_changed:
+            record_ids = self._db.lookup("Pages", all_page_titles)
 
         links_changed = False
-        link_children = True
-        if link_children:
-            _logger.info(f"Updater: linking child pages")
-            #_logger.info(f"Updater: linking child pages: {child_link_updates}")
-            #_logger.info(f"record_ids: {record_ids}")
-            for parent_title, child_titles in child_link_updates.items():
-                parent_id = record_ids[parent_title]
-                child_ids = [record_ids[t] for t in child_titles]
-                if _replace_links(self._db, "Pages", "children", parent_id, child_ids):
-                    _logger.info(f"Child links for {parent_title} updated ({len(child_ids)} children)")
-                    links_changed = True
-            for child_title, parent_title in parent_link_updates.items():
-                child_id = record_ids[child_title]
-                parent_id = record_ids[parent_title]
-                if _create_links(self._db, "Pages", "children", parent_id, child_id):
-                    _logger.info(f"Parent link for {child_title} updated ({parent_title})")
-                    links_changed = True
-            #_logger.info(f"Updater: done linking child pages")
+        _logger.info(f"Updater: linking child pages")
+        for parent_title, child_titles in child_link_updates.items():
+            parent_id = record_ids[parent_title]
+            child_ids = [record_ids[t] for t in child_titles]
+            if _replace_links(self._db, "Pages", "children", parent_id, child_ids):
+                _logger.info(f"Child links for {parent_title} updated ({len(child_ids)} children)")
+                links_changed = True
+        for child_title, parent_title in parent_link_updates.items():
+            child_id = record_ids[child_title]
+            parent_id = record_ids[parent_title]
+            if _create_links(self._db, "Pages", "children", parent_id, child_id):
+                _logger.info(f"Parent link for {child_title} updated ({parent_title})")
+                links_changed = True
 
         doc_records_changed = False
         doc_links_changed = False
@@ -695,45 +667,70 @@ class DatabaseUpdater:
 
             # collect meta data for known sources
             _KNOWN_SOURCES = ("commons", "wikisource")
-            missing = []
             for source in _KNOWN_SOURCES:
                 subset = [record for record in doc_records.values() if record["source"] == source]
                 subset_titles = [rec["title"] for rec in subset]
                 if subset_titles:
                     metadata_records = _fetch_mediawiki_file_metadata(subset_titles, source)
-                    #_logger.info(f"metadata_records: {metadata_records}")
                     for record in subset:
                         metadata_record = metadata_records.get(record["title"])
                         if metadata_record:
                             record.update(metadata_record)
                             record["availability"] = "linked"
                         else:
-                            _logger.info(f"marking doc url as unlinked: {record["title"]}")
+                            _logger.info(f"marking doc url as unlinked: {record['title']}")
                             record["availability"] = "unlinked"
-                            #missing.append(record["link"])
 
-            # detect any record changes and update those
-            #_logger.info("doc records _detect_changes")
-            update, update_fields = _detect_changes(self._db, "Documents", doc_records.values())
-            for record in update:
-                record["birddog_alert"] = True
-            #_logger.info("doc records write")
-            doc_ids = self._db.write("Documents", update) if update else []
+            # Single lookup for all document URLs
+            all_doc_links = set(doc_records.keys())
+            doc_id_map = self._db.lookup("Documents", all_doc_links)
+            existing_doc_ids = [did for did in doc_id_map.values() if did]
+            existing_docs = {
+                rec["Id"]: rec
+                for rec in self._db.read("Documents", existing_doc_ids)
+            } if existing_doc_ids else {}
+
+            # Detect changes using pre-fetched data
+            doc_update = []
+            for record in doc_records.values():
+                rec_id = doc_id_map.get(record["link"])
+                if rec_id:
+                    current_rec = existing_docs[rec_id]
+                    changed = any(
+                        k not in current_rec or current_rec[k] != v
+                        for k, v in record.items()
+                    )
+                    if changed:
+                        record["birddog_alert"] = True
+                        doc_update.append(record)
+                else:
+                    record["birddog_alert"] = True
+                    doc_update.append(record)
+
+            doc_ids = self._db.write("Documents", doc_update) if doc_update else []
             doc_records_changed = bool(doc_ids)
 
-            # update page doc links
+            # Refresh doc_id_map after write to include new records
+            if doc_update:
+                doc_id_map = self._db.lookup("Documents", all_doc_links)
+
+            # Update page doc links using pre-fetched IDs
             _logger.info(f"Updater: updating document links")
-            for page_title, doc_urls in doc_link_updates.items():
+            for page_title, page_doc_urls in doc_link_updates.items():
                 page_id = record_ids[page_title]
-                if self._link_documents_with_page_id(page_id, list(doc_urls)):
-                    _logger.info(f"Doc links for {page_title} updated ({len(doc_urls)} docs)")
+                doc_ids_for_page = [doc_id_map.get(url) for url in page_doc_urls]
+                doc_ids_for_page = [d for d in doc_ids_for_page if d]
+                if not doc_ids_for_page:
+                    continue
+                if _replace_links(self._db, "Pages", "doc_links", page_id, doc_ids_for_page):
+                    _logger.info(f"Doc links for {page_title} updated ({len(doc_ids_for_page)} docs)")
                     doc_links_changed = True
 
         return any([
-            updated_pages, 
-            linked_records_changed, 
-            links_changed, 
-            doc_records_changed, 
+            updated_pages,
+            linked_records_changed,
+            links_changed,
+            doc_records_changed,
             doc_links_changed])
 
     # -------------------------------------------------------------------------
