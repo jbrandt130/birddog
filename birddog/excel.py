@@ -31,7 +31,7 @@ _logger = get_logger()
 def _format_date(date_str):
     """
     Converts a date string from 'YYYY,MM,DD,hh:mm' to 'DD Mon YYYY'.
-    
+
     Example:
         format_date('2024,04,14,07:30') -> '14 Apr 2024'
     """
@@ -333,12 +333,12 @@ def export_page(page, dest_file=None, template=None, table_name=None, column_map
             #_logger.info(f"processing template match: {match}, {parse}")
             if parse['expr'] in ['empty', 'child', 'col']:
                 _process_table_column(
-                    table, 
-                    column_header_map, 
-                    edit_cell, 
-                    sheet, 
-                    cell, 
-                    parse, 
+                    table,
+                    column_header_map,
+                    edit_cell,
+                    sheet,
+                    cell,
+                    parse,
                     match)
             elif parse['expr'] == 'edit':
                 # {edit} cells contain formatting for editing highlights (caught above)
@@ -383,7 +383,7 @@ class ExportManager(TaskManager):
         return f"export/{task_id}.xlsx"
 
     def export_page(self, title, compare=None, table_name=None, template=None, column_map=None):
-        subtask = { 
+        subtask = {
             "title": title,
             "compare": compare,
             "table_name": table_name,
@@ -436,9 +436,9 @@ class ExportManager(TaskManager):
                 # export into output memory buffer
                 output_buffer = BytesIO()
                 export_page(
-                    page, 
-                    output_buffer, 
-                    payload.get("template"), 
+                    page,
+                    output_buffer,
+                    payload.get("template"),
                     payload.get("table_name"),
                     payload.get("column_map"))
 

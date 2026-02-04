@@ -125,7 +125,7 @@ def _get_client():
         use_aws = True
         if use_aws:
             _logger.info(f'Creating AWS Bedrock client')
-            _ai_client = AWSBedrockClient()            
+            _ai_client = AWSBedrockClient()
         else:
             _logger.info(f'Creating OpenAI client')
             _ai_client = OpenAIClient()

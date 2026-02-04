@@ -35,7 +35,7 @@ from birddog.cache import (
     load_cached_object,
     CacheMissError)
 from birddog.wiki import (
-    all_archives, 
+    all_archives,
     page_address,
     lineage,
     ARCHIVE_BY_ADDRESS,
@@ -190,8 +190,8 @@ def home():
             if user:
                 start_title = user.get_preference("last_page")
     return render_template(
-        'index.html', 
-        user=user_session, 
+        'index.html',
+        user=user_session,
         start_title=start_title,
         runtime_state=runtime.state,
         database_available=runtime.database_update_enabled,
@@ -382,7 +382,7 @@ def page_data(user):
             _logger.info(f'/page mapping title to address: {address}')
             (archive, subarchive, fond, opus, case) = address
         else:
-            return "Missing required parameter: 'title'", 400 
+            return "Missing required parameter: 'title'", 400
         if page:
             ref_date = request.args.get('compare')
             if ref_date:
@@ -392,7 +392,7 @@ def page_data(user):
             address = page_address(page.title)
             true_fond, true_opus, true_case = address[2:]
             subarchive = address[1]
-            
+
             # prevent mutation of page data in LRU/cache
             page_dict = deepcopy(page.page)
             page_dict['title'] = page.title
@@ -452,7 +452,7 @@ def download_file_start(user):
                 page_title,
                 compare = data["compare"],
                 table_name=data["table"],
-                template=data["template"], 
+                template=data["template"],
                 column_map=data["column_map"])
 
             return jsonify({"status": "in-progress", "task_id": task_id}), 202
@@ -549,8 +549,8 @@ def export_dialog(user):
         if table["name"] not in header_map:
             classification = classify_table_columns(table)
             # form mapping from column header type to column index
-            header_map[table["name"]] = { 
-                col_type: [i] for i, col_type in enumerate(classification["mapping"]) 
+            header_map[table["name"]] = {
+                col_type: [i] for i, col_type in enumerate(classification["mapping"])
                 }
             _logger.info(f"inferred header map: {header_map}")
 
@@ -558,10 +558,10 @@ def export_dialog(user):
         "title":                page_title,
         "default_template":     default_template,
         "default_table":        default_table,
-        "templates":            templates, 
-        "column_classes":       list_column_classes(), 
+        "templates":            templates,
+        "column_classes":       list_column_classes(),
         "column_headers":       column_headers,
-        "column_header_map":    header_map,    
+        "column_header_map":    header_map,
     }
     return jsonify(data), 200
 
@@ -749,11 +749,11 @@ def service_usage_dashboard():
     summary = {}
     if not df.empty:
         summary = ServiceLogger.summarize_service_usage(
-            df, 
+            df,
             sample_interval_minutes=delta.total_seconds() / 60.,
             by=by)
         summary=summary.to_dict(orient="records")
-        
+
     return render_template("service_usage.html",
         summary=summary,
         selected_range=range_opt,

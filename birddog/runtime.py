@@ -350,7 +350,7 @@ class PageUpdateManager(HeartbeatManager):
 
         error_count = 0
         for title, update in pending_updates:
-            # This page may have just been created. 
+            # This page may have just been created.
             # If so, the parent's link status to this page needs to be
             # changed to indicate that the this page now exists.
             try:

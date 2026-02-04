@@ -198,7 +198,7 @@ class SQLiteStringQueue(AbstractStringQueue):
                 deleted = cur.rowcount
                 if deleted != len(ids):
                     _logger.warning(
-                        "ack: expected %d deletes, got %d (queue=%s owner=%s)", 
+                        "ack: expected %d deletes, got %d (queue=%s owner=%s)",
                         len(ids), deleted, queue_name, consumer_id)
 
     def extend(self, queue_name: str, receipts: list[str], lease_ms: int, consumer_id: str):
@@ -220,7 +220,7 @@ class SQLiteStringQueue(AbstractStringQueue):
                 deleted = cur.rowcount
                 if deleted != len(ids):
                     _logger.warning(
-                        "extend: expected %d deletes, got %d (queue=%s owner=%s)", 
+                        "extend: expected %d deletes, got %d (queue=%s owner=%s)",
                         len(ids), deleted, queue_name, consumer_id)
 
     def dump(self, queue_name: str) -> list[dict]:

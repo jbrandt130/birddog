@@ -204,7 +204,7 @@ def system_resource_report(interval=1.0):
     """
     Return a snapshot of system resource utilization.
     Includes memory pressure, CPU load, and network I/O rate.
-    
+
     Args:
         interval (float): seconds to wait for measuring CPU and network deltas.
     Returns:
@@ -289,7 +289,7 @@ def to_utc_format(time_str):
     full_str = ','.join(full_parts)
     dt = datetime.strptime(full_str, '%Y,%m,%d,%H:%M')
     return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
-   
+
 #
 # multilingual support
 

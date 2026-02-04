@@ -290,7 +290,7 @@ class Page:
         table = {"name": table_name, "header": header, "children": []}
         self.tables.append(table)
         return table
-            
+
     def adopt(self, child_id, child_title):
         if child_id not in self.child_ids:
             _logger.info(f"{self.name} adopting {child_id} with title {child_title}")

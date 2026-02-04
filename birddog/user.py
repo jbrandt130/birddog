@@ -59,9 +59,9 @@ def _update_watchlist_item(email, key, last_checked):
 def _load_watchlist(email, watchlist):
     for key, item in watchlist.items():
         _add_watchlist_item(
-            email, 
-            key, 
-            item["cutoff_date"], 
+            email,
+            key,
+            item["cutoff_date"],
             last_checked=item.get("last_checked_date"))
 
 # ---------------------------------------------------------------------
@@ -114,11 +114,11 @@ class User:
     @property
     def name(self):
         return self._name
-    
+
     @property
     def email(self):
         return self._email
-    
+
     def check_password(self, password):
         return check_password_hash(self._password_hash, password)
 

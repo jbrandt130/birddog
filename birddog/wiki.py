@@ -317,8 +317,8 @@ def update_master_archive_list():
 def all_archives():
     #_logger.info(ARCHIVES)
     return [
-        [arc, sub['subarchive']['en'], sub['title']['uk']] 
-        for arc, archive in ARCHIVES.items() 
+        [arc, sub['subarchive']['en'], sub['title']['uk']]
+        for arc, archive in ARCHIVES.items()
         for sub in archive.values()]
 
 def _select_subarchive(archive, subarchive):
