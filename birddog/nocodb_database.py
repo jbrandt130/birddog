@@ -24,7 +24,7 @@ from birddog.abstract_database import (
 from birddog.utility import json_size, fetch_url
 from birddog.timer import FunctionTimer
 
-from birddog.log import get_logger, LogService, detect_environment
+from birddog.log import get_logger, LogService
 _logger = get_logger()
 timer = FunctionTimer()
 

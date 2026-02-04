@@ -3,8 +3,7 @@
 
 from __future__ import annotations
 
-from time import sleep
-from datetime import datetime, timezone
+from datetime import datetime
 from urllib.parse import urlparse, unquote
 from pathlib import PurePosixPath
 import mwparserfromhell
@@ -13,14 +12,12 @@ from birddog.database import Database
 from birddog.wiki import (
     API_URL,
     canonicalize_title,
-    page_name,
     page_label,
     page_kind,
     )
 from birddog.utility import (
-    fetch_url, 
-    new_id, 
-    json_size, 
+    fetch_url,
+    new_id,
     )
 from birddog.task import TaskManager
 

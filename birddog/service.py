@@ -8,7 +8,6 @@ import re
 import time
 from functools import wraps
 import hashlib
-from io import BytesIO
 from copy import copy, deepcopy
 from datetime import datetime, timedelta, UTC
 from collections import defaultdict
@@ -16,9 +15,7 @@ from email.message import EmailMessage
 import smtplib
 from unidecode import unidecode
 
-from cachetools import LRUCache
 from itsdangerous import URLSafeTimedSerializer
-from werkzeug.security import generate_password_hash, check_password_hash
 
 from flask import (
     Flask,
@@ -32,12 +29,10 @@ from flask import (
     g)
 
 # Birddog packages
-from birddog.runtime import Runtime, PageLRU, ArchiveWatcher
-from birddog.excel import export_page, list_templates
+from birddog.runtime import Runtime, PageLRU
+from birddog.excel import list_templates
 from birddog.cache import (
     load_cached_object,
-    save_cached_object,
-    remove_cached_object,
     CacheMissError)
 from birddog.wiki import (
     all_archives, 

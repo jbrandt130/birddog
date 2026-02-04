@@ -5,20 +5,15 @@
 Common store support
 """
 
-import sys
 import os
 import time
-import requests
-import threading
-from collections import deque
-from datetime import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Tuple
 
 import sqlite3
 import boto3
-from boto3.dynamodb.conditions import Key, Attr
+from boto3.dynamodb.conditions import Key
 
 from decimal import Decimal
 
@@ -276,9 +271,6 @@ class SQLiteStringQueue(AbstractStringQueue):
             return out
 
 # string queue (dynamodb version) ---------------------------------------
-
-from decimal import Decimal
-from boto3.dynamodb.conditions import Key, Attr
 
 class DynamoDBStringQueue(AbstractStringQueue):
     def __init__(self, table_name='birddog_string_queues'):

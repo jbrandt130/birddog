@@ -5,7 +5,6 @@
 Utility functions for Bird Dog
 """
 
-import os
 import re
 import time
 import psutil
@@ -13,7 +12,6 @@ import json
 import requests
 import random
 import traceback
-import sys
 import ulid
 
 from threading import Lock, Semaphore, Event, Thread

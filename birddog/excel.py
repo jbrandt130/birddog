@@ -6,7 +6,6 @@ import string
 import os
 from io import BytesIO
 import glob
-import json
 
 from pathlib import Path
 from copy import copy
@@ -18,7 +17,7 @@ from openpyxl.worksheet.formula import ArrayFormula
 from openpyxl.formula.translate import Translator
 from openpyxl.utils.cell import get_column_letter
 
-from birddog.utility import get_text, is_linked, link_status, transliterate
+from birddog.utility import get_text, link_status, transliterate
 from birddog.wiki import ARCHIVE_BASE
 from birddog.ai import classify_table_columns
 from birddog.task import TaskManager

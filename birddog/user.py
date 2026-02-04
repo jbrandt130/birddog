@@ -4,7 +4,6 @@
 # user management
 
 import json
-import os
 from threading import RLock, Lock
 from datetime import datetime
 

@@ -34,7 +34,6 @@ from birddog.wiki import (
     batch_fetch_document_links,
     check_page_changes,
     )
-from birddog.ai import classify_table_columns
 from birddog.translate import (
     get_translation_items,
     apply_translation,

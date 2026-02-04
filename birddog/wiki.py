@@ -13,7 +13,6 @@ from datetime import datetime
 from urllib.parse import quote, unquote, urlparse
 from itertools import islice
 
-import requests
 import mwparserfromhell
 from cachetools import LRUCache
 from bs4 import BeautifulSoup
