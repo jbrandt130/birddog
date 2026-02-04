@@ -1,4 +1,5 @@
 from birddog.database import Database, timer
+from birddog.database_updater import form_document_record
 from birddog.abstract_database import (
     InvalidFieldValue,
     )
@@ -10,7 +11,7 @@ from birddog.wiki import (
 from colorama import Fore, init
 from openpyxl import load_workbook
 from pathlib import Path
-from urllib.parse import quote, unquote, urlparse, parse_qs
+from urllib.parse import unquote, urlparse, parse_qs
 import time
 
 from birddog.log import get_logger
@@ -92,7 +93,7 @@ def process_archive_sheet(ws, page_table=dict()):
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
         "change_date": get_cell_value(ws["L1"]),
-        "reference_date": get_cell_value(ws["O1"]),
+        "timestamp": get_cell_value(ws["O1"]),
         "doc_links": get_cell_value(ws["B4"]),
         "source_type": source_type,
         "parent": "",
@@ -134,7 +135,7 @@ def process_fond_sheet(ws, page_table=dict()):
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
         "change_date": get_cell_value(ws["L1"]),
-        "reference_date": get_cell_value(ws["O1"]),
+        "timestamp": get_cell_value(ws["O1"]),
         "doc_links": get_cell_value(ws["B4"]),
         "source_type": source_type,
         "parent": trim_after_last_slash(parent_title),
@@ -172,7 +173,7 @@ def process_opus_sheet(ws, page_table=dict()):
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
         "change_date": get_cell_value(ws["L1"]),
-        "reference_date": get_cell_value(ws["O1"]),
+        "timestamp": get_cell_value(ws["O1"]),
         "doc_links": get_cell_value(ws["B4"]),
         "parent": trim_after_last_slash(parent_title),
         "source_type": source_type,
@@ -269,13 +270,16 @@ def import_spreadsheet(filepath):
                 raise TypeError("doc_links must be str, list or tuple")
             for doc_link in doc_links:
                 _logger.info(f"Adding doc link for {title}: {doc_link}")
-                quoted_doc_link = quote(doc_link) #for document titles that contain protected characters such as "?"
+
+                # quote for document titles that contain protected characters such as "?"
+                quoted_record = form_document_record(doc_link)
+
                 doc_payload = {k: v for k, v in page.items() if k in doc_only_fields}
                 for doc_field in doc_only_fields_all_caps:
                     if doc_field in doc_payload and doc_payload[doc_field] is not None:
                         doc_payload[doc_field] = doc_payload[doc_field].rstrip().upper()
-                doc_payload["title"] = quoted_doc_link.rstrip("/").rsplit("/", 1)[-1]
-                doc_payload["link"] = quoted_doc_link
+                doc_payload["title"] = quoted_record["title"]
+                doc_payload["link"] = quoted_record["link"]
                 doc_payload["owning_pages"] = title
                 _logger.info(f"doc title: {doc_payload['title']}, doc link: {doc_link}")
                 try:
@@ -309,8 +313,9 @@ def process_dir(dir_path):
                 f.write(f"Elapsed: {end - start:.6f} seconds\n")
 
 #testing
-#filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DAHO-D-wiki-20251217.xlsx"
-#filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DASO-D-wiki-20260119.xlsx"
-#filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DAVO-D-wiki-20260125.xlsx"
-filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DADO-D-wiki-20251027.xlsx"
-import_spreadsheet(filepath)
+if __name__ == "__main__":
+    #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DAHO-D-wiki-20251217.xlsx"
+    #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DASO-D-wiki-20260119.xlsx"
+    #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DAVO-D-wiki-20260125.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DADO-D-wiki-20251027.xlsx"
+    import_spreadsheet(filepath)

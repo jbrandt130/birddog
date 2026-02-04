@@ -275,7 +275,7 @@ def _form_page_info_from_title(title):
 # ----------------------------------------------------------------------
 # DOCUMENT RECORD UPDATES
 
-def _form_document_record(url):
+def form_document_record(url):
     """
     Parse a MediaWiki file URL and return:
       {
@@ -663,7 +663,7 @@ class DatabaseUpdater:
         doc_links_changed = False
         if doc_urls:
             _logger.info(f"Updater: accessing linked document metadata")
-            doc_records = { url: _form_document_record(url) for url in doc_urls}
+            doc_records = { url: form_document_record(url) for url in doc_urls}
 
             # collect meta data for known sources
             _KNOWN_SOURCES = ("commons", "wikisource")
