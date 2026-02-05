@@ -1168,7 +1168,7 @@ def check_page_updates(archive, cutoff_date):
 # -------------------------------------------------------------------------------
 # Get most recent page modification dates within given namespace
 
-def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500, sleep_time=0.1, base=ARCHIVE_BASE):
+def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, utc_cutoff=None, limit=500, sleep_time=0.1, base=ARCHIVE_BASE):
     """
     Collects the latest modification timestamp for each page in a given namespace,
     going back to the specified cutoff date.
@@ -1185,6 +1185,9 @@ def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500,
     if not cutoff_date:
         cutoff_date = "2025"
 
+    if cutoff_date and not utc_cutoff:
+        utc_cutoff = to_utc_format(cutoff_date)
+
     latest_mods = {}
     params = {
         "action": "query",
@@ -1193,7 +1196,7 @@ def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, limit=500,
         "rcnamespace": namespace,
         "rcprop": "title|timestamp|user",
         "rclimit": limit,
-        "rcend": to_utc_format(cutoff_date),
+        "rcend": utc_cutoff,
         "rcdir": "older",  # go backward in time
         "rcshow": "!redirect",
     }

@@ -381,23 +381,6 @@ class DynamoDBStringQueue(AbstractStringQueue):
                     break
         return total
 
-    def ack(self, queue_name: str, receipts: list[str], consumer_id: str):
-        if not receipts:
-            return
-        with LogService("StringQueue", "ack", path=queue_name, size=len(receipts)):
-            for r in receipts:
-                ts = Decimal(r)
-                try:
-                    # Only delete if we still own it (prevents deleting someone else's lease)
-                    self._table.delete_item(
-                        Key={'queue_name': queue_name, 'ts': ts},
-                        ConditionExpression="lease_owner = :o",
-                        ExpressionAttributeValues={':o': consumer_id},
-                    )
-                except self._client.exceptions.ConditionalCheckFailedException:
-                    # lease expired/reclaimed; don't delete
-                    pass
-
     def claim(self, queue_name: str, n: int, lease_ms: int, consumer_id: str):
         if n <= 0:
             return []
@@ -703,7 +686,7 @@ class SQLiteKeyValueStore(AbstractKeyValueStore):
                 )
                 payload = cur.fetchall()
             log.size = json_size(payload)
-        return [(k, v) for (k, v) in payload]
+        return list(payload)
 
     def count(self, namespace: str) -> int:
         with LogService("KVStore", "count", path=namespace):

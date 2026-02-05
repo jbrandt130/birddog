@@ -470,6 +470,18 @@ class NocoDBDatabase(Database):
                 value = "false"
         return f"({field_id},{operator},{value})"
 
+    def _encode_sort_spec(self, table_name, sort_spec):
+        if isinstance(sort_spec, str):
+            field_name = sort_spec
+            ascending = True
+        elif isinstance(sort_spec, (list, tuple)):
+            field_name = sort_spec[0]
+            ascending = bool(sort_spec[1])
+        else:
+            raise ValueError(f"unrecognized sort spec: {sort_spec}")
+        field_id = self._field_id(table_name, field_name)
+        return field_id if ascending else f"-{field_id}"
+
     def _validate_key_set(self, table_name, key_set):
         if isinstance(key_set, str):
             key_set = { key_set }
@@ -516,7 +528,7 @@ class NocoDBDatabase(Database):
             params["offset"] += len(records)
         return ids
 
-    def scan(self, table_name, limit=100, cursor=None, where=None, raw=False):
+    def scan(self, table_name, limit=100, cursor=None, where=None, sort=None, raw=False):
         """
         Page through records of a table without requiring the table key.
 
@@ -563,6 +575,8 @@ class NocoDBDatabase(Database):
         params = {"offset": offset, "limit": limit}
         if where:
             params["where"] = self._encode_where_spec(table_name, where)
+        if sort:
+            params["sort"] = self._encode_sort_spec(table_name, sort)
 
         with LogService("NocoDB", "scan") as log:
             data = self._fetch(url, params=params)
