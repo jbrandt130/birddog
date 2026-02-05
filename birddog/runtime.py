@@ -7,14 +7,12 @@ Ukraine records archive monitor and scraper.
 
 import os
 import time
-import queue
 import json
 from datetime import datetime, timedelta, UTC
 
 import regex
 from cachetools import LRUCache
 
-from birddog.cache import load_cached_object, save_cached_object, CacheMissError
 from birddog.core import (
     Archive,
     Page,
@@ -25,7 +23,6 @@ from birddog.wiki import (
     WIKI_NAMESPACE,
     canonicalize_title,
     archive_root,
-    get_all_pages,
     page_address,
     page_title_from_address,
     parent_title,
@@ -353,7 +350,7 @@ class PageUpdateManager(HeartbeatManager):
 
         error_count = 0
         for title, update in pending_updates:
-            # This page may have just been created. 
+            # This page may have just been created.
             # If so, the parent's link status to this page needs to be
             # changed to indicate that the this page now exists.
             try:

@@ -89,9 +89,9 @@ else:
     class QueueGuard:
         def __init__(self, task_mgr, id_string: str):
             pass
-        def __enter__(self): 
+        def __enter__(self):
             return self
-        def __exit__(self, exc_type, exc, tb): 
+        def __exit__(self, exc_type, exc, tb):
             return False
 
 def _now_ms():
@@ -120,7 +120,7 @@ class TaskManager(HeartbeatManager):
         self._name = manager_name
 
         # ---- KV Store namespaces
-        
+
         # active tasks keyed on task id
         self._active_id = f"{self._name}:active"
 
@@ -210,20 +210,20 @@ class TaskManager(HeartbeatManager):
     def _get_attempts(self, subtask):
         try:
             return int(self._key_value_store.get(
-                self._attempts_id(subtask["task_id"]), 
+                self._attempts_id(subtask["task_id"]),
                 str(subtask["index"])))
         except KeyError:
             return 0
 
     def _set_attempts(self, subtask, attempts):
         self._key_value_store.insert(
-            self._attempts_id(subtask["task_id"]), 
+            self._attempts_id(subtask["task_id"]),
             str(subtask["index"]), str(attempts))
 
     def _clear_attempts(self, subtask):
         try:
             self._key_value_store.remove(
-                self._attempts_id(subtask["task_id"]), 
+                self._attempts_id(subtask["task_id"]),
                 str(subtask["index"]))
         except KeyError:
             pass
@@ -373,7 +373,7 @@ class TaskManager(HeartbeatManager):
 
         # Finalize the task
         self.complete_task(task, subtasks)
-        
+
         # Cleanup the task
         self._remove_task(task_id)
         _logger.info(f"TaskManager completed task {task_id} (completed={completed_count}, failed={failed_count})")
@@ -475,7 +475,7 @@ class TaskManager(HeartbeatManager):
             try:
                 self.lookup_task(task_id)
             except KeyError:
-                _logger.info(f"_run_worker: removing zombie subtask: {subtask_key}")                
+                _logger.info(f"_run_worker: removing zombie subtask: {subtask_key}")
                 try:
                     self._ack_subtask(subtask)
                 except Exception:

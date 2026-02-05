@@ -24,7 +24,7 @@ from birddog.abstract_database import (
 from birddog.utility import json_size, fetch_url
 from birddog.timer import FunctionTimer
 
-from birddog.log import get_logger, LogService, detect_environment
+from birddog.log import get_logger, LogService
 _logger = get_logger()
 timer = FunctionTimer()
 
@@ -70,7 +70,7 @@ def _list_tables_url():
     return f"{_NOCODB_V2_API_ROOT}/meta/bases/{_NOCODB_BASE_ID}/tables"
 
 def _table_info_url(table_id):
-    return f"{_NOCODB_V2_API_ROOT}/meta/tables/{table_id}" 
+    return f"{_NOCODB_V2_API_ROOT}/meta/tables/{table_id}"
 
 def _links_url(table_id, link_field_id, record_id):
     return f"{_NOCODB_V2_API_ROOT}/tables/{table_id}/links/{link_field_id}/records/{record_id}"
@@ -225,7 +225,7 @@ def clone_table_schema(db1, table_name1, db2, table_name2):
                         for option in c["colOptions"]["options"]
                     ]
                 }
-            columns.append(spec)        
+            columns.append(spec)
     create_spec = {
         "title": table_name2,
         "description": info["description"],
@@ -279,7 +279,7 @@ class NocoDBDatabase(Database):
         self._field_id_map = {}
         # initialize _schema member so that _load_schema can do a scan()
         self._schema = None
-        # load the actual schema - requires that the tables 
+        # load the actual schema - requires that the tables
         # "Schema" and "Schema Values" exist
         try:
             self._schema = self._load_schema()
@@ -294,11 +294,11 @@ class NocoDBDatabase(Database):
         return f"{self._host}/api/v2/meta/bases/{self._base_id}/tables"
 
     def _table_info_url(self, table_id):
-        return f"{self._host}/api/v2/meta/tables/{table_id}" 
+        return f"{self._host}/api/v2/meta/tables/{table_id}"
 
     def _links_url(self, table_id, link_field_id, record_id):
         return f"{self._host}/api/v2/tables/{table_id}/links/{link_field_id}/records/{record_id}"
-    
+
     def _iso_date_or_none(self, s):
         """Accepts '21 Aug 2025', '1905-1912', etc.; returns ISO date if it looks like a date, else None."""
         if not s:
@@ -370,7 +370,7 @@ class NocoDBDatabase(Database):
 
     def _get_table_id_map(self):
         table_info = self._fetch(self._list_tables_url())
-        return { 
+        return {
             item.get("title"): item.get("id")
             for item in table_info.get("list")
             if item["type"] == "table"
@@ -383,18 +383,18 @@ class NocoDBDatabase(Database):
     def _get_field_map(self, table_name):
         result = self._field_id_map.get(table_name)
         if result:
-            return result 
+            return result
         table_info = self._get_table_info(table_name)
-        result = { 
-            item["title"]: item["id"] 
-            for item in table_info.get("columns") 
+        result = {
+            item["title"]: item["id"]
+            for item in table_info.get("columns")
             }
         self._field_id_map[table_name] = result
         return result
-    
+
     def _valid_table_name(self, table_name):
         return table_name in self._table_id_map
-        
+
     def _validate_table_name(self, table_name):
         if not self._valid_table_name(table_name):
             raise InvalidTableName(table_name)
@@ -425,13 +425,13 @@ class NocoDBDatabase(Database):
         return self._field_id(table_name, self.key_field_name(table_name))
 
     def _load_schema(self):
-        schema = dict() 
+        schema = dict()
         if "Schema" not in self._table_id_map:
             raise SchemaError("Missing Schema table")
         for record in self.scan_all("Schema"):
             table_spec = schema.get(record["table_name"], dict())
             field_spec = table_spec.get("fields", dict())
-            field_spec[record["field_name"]] = { 
+            field_spec[record["field_name"]] = {
                 "type": record["field_type"],
                 "description": record["description"]
             }
@@ -481,7 +481,7 @@ class NocoDBDatabase(Database):
                 raise TypeError(f"key_set must be string or set of strings")
             singleton = False
         return key_set, singleton
-                
+
     def normalize_records(self, table_name, records):
         self._validate_table_name(table_name)
         if not isinstance(records, (list, tuple)):
@@ -728,7 +728,7 @@ class NocoDBDatabase(Database):
             singleton = True
         else:
             singleton = False
-            
+
         with LogService("NocoDB", "read") as log:
             result = dict()
             for i in range(0, len(record_id), _NOCODB_BATCH_SIZE):
@@ -816,7 +816,7 @@ class NocoDBDatabase(Database):
             raise TypeError("records must be a single dict or sequence of dicts")
         else:
             singleton = False
-        
+
         if not raw:
             records = self.encode_records(table_name, records)
         if key_field_name:
@@ -878,7 +878,7 @@ class NocoDBDatabase(Database):
             - InvalidTableName
             - FailedIO
         """
-        table_id = self._table_id(table_name)        
+        table_id = self._table_id(table_name)
         url = self._records_url(table_id)
         if not isinstance(record_id, (list, tuple)):
             record_id = [record_id]
@@ -892,7 +892,7 @@ class NocoDBDatabase(Database):
         return count
 
     def _edit_link(self, table_name, link_field, source_record, target_records, method):
-        table_id = self._table_id(table_name)   
+        table_id = self._table_id(table_name)
         link_field_id = self._field_id(table_name, link_field)
         url = self._links_url(table_id, link_field_id, source_record)
         with LogService("NocoDB", "edit_links", size=json_size(target_records)):
@@ -999,7 +999,7 @@ class NocoDBDatabase(Database):
             - InvalidFieldName
             - FailedIO
         """
-        table_id = self._table_id(table_name)   
+        table_id = self._table_id(table_name)
         link_field_id = self._field_id(table_name, link_field)
         url = self._links_url(table_id, link_field_id, source_record)
         result = []

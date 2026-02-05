@@ -7,17 +7,14 @@ Common logging support
 
 import logging
 import sys
-import os
-import requests
 import time
 import threading
 from collections import deque
-from datetime import datetime, timedelta, UTC, timezone
+from datetime import datetime, UTC, timezone
 import sqlite3
 
 import boto3
 from boto3.dynamodb.conditions import Key
-from botocore.exceptions import ClientError
 
 import pandas as pd
 
@@ -179,7 +176,6 @@ class SQLLiteEventLogger(EventLogger):
 
 import boto3
 from boto3.dynamodb.conditions import Key
-from botocore.exceptions import ClientError
 
 _DYNAMODB_TABLE_NAME = "birddog_request_logs"
 

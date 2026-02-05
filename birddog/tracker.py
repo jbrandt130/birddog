@@ -418,7 +418,7 @@ class PageChangeLog:
 
     def size(self):
         return len(self._changes)
-        
+
     def oldest(self):
         if not self._changes:
             raise ValueError("empty page change log")
@@ -434,9 +434,9 @@ class PageChangeLog:
         updates = get_recent_changes(cutoff_date=cutoff_date)
         if updates:
             _logger.info(f"PageChangeLog: recording {len(updates)} new page changes")
-            updates = { 
-                canonicalize_title(title): update 
-                for title, update in updates.items() 
+            updates = {
+                canonicalize_title(title): update
+                for title, update in updates.items()
             }
             self._table.append(updates)
             self._changes.extend([

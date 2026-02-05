@@ -13,7 +13,6 @@ from datetime import datetime
 from urllib.parse import quote, unquote, urlparse
 from itertools import islice
 
-import requests
 import mwparserfromhell
 from cachetools import LRUCache
 from bs4 import BeautifulSoup
@@ -318,8 +317,8 @@ def update_master_archive_list():
 def all_archives():
     #_logger.info(ARCHIVES)
     return [
-        [arc, sub['subarchive']['en'], sub['title']['uk']] 
-        for arc, archive in ARCHIVES.items() 
+        [arc, sub['subarchive']['en'], sub['title']['uk']]
+        for arc, archive in ARCHIVES.items()
         for sub in archive.values()]
 
 def _select_subarchive(archive, subarchive):

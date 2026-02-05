@@ -34,7 +34,6 @@ from birddog.wiki import (
     batch_fetch_document_links,
     check_page_changes,
     )
-from birddog.ai import classify_table_columns
 from birddog.translate import (
     get_translation_items,
     apply_translation,
@@ -291,7 +290,7 @@ class Page:
         table = {"name": table_name, "header": header, "children": []}
         self.tables.append(table)
         return table
-            
+
     def adopt(self, child_id, child_title):
         if child_id not in self.child_ids:
             _logger.info(f"{self.name} adopting {child_id} with title {child_title}")

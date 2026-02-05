@@ -3,8 +3,7 @@
 
 from __future__ import annotations
 
-from time import sleep
-from datetime import datetime, timezone
+from datetime import datetime
 from urllib.parse import urlparse, unquote
 from pathlib import PurePosixPath
 import mwparserfromhell
@@ -13,14 +12,12 @@ from birddog.database import Database
 from birddog.wiki import (
     API_URL,
     canonicalize_title,
-    page_name,
     page_label,
     page_kind,
     )
 from birddog.utility import (
-    fetch_url, 
-    new_id, 
-    json_size, 
+    fetch_url,
+    new_id,
     )
 from birddog.task import TaskManager
 
@@ -151,7 +148,7 @@ def _form_simple_page_record(title):
         "source_type": "wiki",
         "availability": "linked",
     }
-       
+
 def _get_latest_mod_date(revid):
     # Last modified date via API `revisions` (for this oldid)
     params = {
@@ -176,7 +173,7 @@ def _get_latest_mod_date(revid):
                 date_string = _normalize_date_string(date_string)
             return date_string
         return None
-    
+
 def _parse_wiki_templates(parse):
     wikitext = parse.get("wikitext", {}).get("*", "")
     wikicode = mwparserfromhell.parse(wikitext)
@@ -337,7 +334,7 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumb
         api = "https://uk.wikisource.org/w/api.php"
     else:
         raise ValueError(f"Unsupported source: {source}")
-    
+
     # Normalize input to list (preserve caller strings for keys)
     if isinstance(titles, str):
         requested_titles: List[str] = [titles.strip()]

@@ -104,7 +104,7 @@ class Database:
     #     set_attachments()   - attach one or more files to a record
     #     clear_attachments() - clear file attachments from a record
     # ---------------------------------------------------------------------------
-    
+
     def scan(self, table_name, limit=100, cursor=None, where=None):
         """
         Page through records of a table without requiring the table key.
