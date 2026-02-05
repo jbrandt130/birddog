@@ -82,6 +82,18 @@ def is_positive_int(s: str) -> bool:
     This returns True only for positive integers like "123", and False for "0", "-5", "3.14", "", "abc"."""
     return bool(s) and s.isdigit() and s != '0'
 
+def find_header(ws, row, start_col, end_col, header):
+    """Find a cell with the given header in the given row of the given worksheet.
+    Returns the column if found, None otherwise."""
+    header = header.upper()
+    start_ord = ord(start_col)
+    end_ord = ord(end_col)
+    for i in range(start_ord, end_ord + 1):
+        cell_addr = f"{chr(i)}{row}"
+        contents = get_cell_value(ws[cell_addr]).upper()
+        if contents == header:
+            return chr(i)
+    return None
 
 def process_archive_sheet(ws, page_table=dict()):
     parent_title = get_page_title_from_link(ws["D3"])
@@ -317,5 +329,6 @@ if __name__ == "__main__":
     #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DAHO-D-wiki-20251217.xlsx"
     #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DASO-D-wiki-20260119.xlsx"
     #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DAVO-D-wiki-20260125.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DADO-D-wiki-20251027.xlsx"
+    #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DADO-D-wiki-20251027.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/test.xlsx"
     import_spreadsheet(filepath)
