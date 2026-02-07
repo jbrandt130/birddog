@@ -90,9 +90,12 @@ def find_header(ws, row, start_col, end_col, header):
     end_ord = ord(end_col)
     for i in range(start_ord, end_ord + 1):
         cell_addr = f"{chr(i)}{row}"
-        contents = get_cell_value(ws[cell_addr]).upper()
+        contents = get_cell_value(ws[cell_addr])
+        if contents is None:
+            continue
+        contents = contents.upper()
         if contents == header:
-            return chr(i)
+            return i
     return None
 
 def process_archive_sheet(ws, page_table=dict()):
@@ -192,7 +195,14 @@ def process_opus_sheet(ws, page_table=dict()):
         "wiki_link": get_cell_link(ws["D3"]),
     }, page_table)
 
-    for r in range(7, ws.max_row + 1):
+    #there are sometimes columns inserted between "process" and "Comments",
+    #so we need to find the exact position of the latter one
+    hdr_row = 6
+    comments_col = find_header(ws, hdr_row, "G", "Z", "Comments")
+    if comments_col is None:
+        raise ValueError(f"No 'Comments' column found in sheet {parent_title}")
+
+    for r in range(hdr_row + 1, ws.max_row + 1):
         cell = ws[f"A{r}"]
         if str(cell.value).startswith("="):
             break
@@ -203,6 +213,12 @@ def process_opus_sheet(ws, page_table=dict()):
                 continue
 
             label = get_cell_value(cell)
+            comments_cell_addr = f"{chr(comments_col)}{r}" #default f"G{r}"
+            processor_cell_addr1 = f"{chr(comments_col+ 2)}{r}" #default f"I{r}"
+            processor_cell_addr2 = f"{chr(comments_col+ 5)}{r}" #default f"L{r}"
+            pages_processed_cell_addr1 = f"{chr(comments_col + 3)}{r}" #default f"J{r}"
+            pages_processed_cell_addr2 = f"{chr(comments_col + 6)}{r}" #default f"M{r}"
+
             add_page({
                 "title": title,
                 "label": label,
@@ -215,29 +231,35 @@ def process_opus_sheet(ws, page_table=dict()):
                 "doc_type": get_cell_value(ws[f"D{r}"]),
                 "content_code": get_cell_value(ws[f"E{r}"]),
                 "process_code": get_cell_value(ws[f"F{r}"]),
-                "comments": get_cell_value(ws[f"G{r}"]),
-                "processor": combine_cell_value(ws[f"I{r}"], ws[f"L{r}"]),
-                "pages_processed": get_cell_int_value(ws[f"J{r}"]) + get_cell_int_value(ws[f"M{r}"]),
                 "availability": "linked" if get_cell_link(ws[f"A{r}"]) is not None else "unlinked",
+                #the columns for the following cells are not fixed
+                "comments": get_cell_value(ws[comments_cell_addr]),
+                "processor": combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2]),
+                "pages_processed": get_cell_int_value(ws[pages_processed_cell_addr1]) +
+                                   get_cell_int_value(ws[pages_processed_cell_addr2]),
             }, page_table)
     return page_table
 
 
 def process_worksheets(worksheets, page_table=dict()):
     for sheet in worksheets:
-        _logger.info(f"processing worksheet: {sheet.title}")
-        if get_cell_value(sheet["H1"]):
-            page_table = process_opus_sheet(sheet, page_table)
-        elif get_cell_value(sheet["G1"]):
-            page_table = process_fond_sheet(sheet, page_table)
-        else:
-            page_table = process_archive_sheet(sheet, page_table)
+        try:
+            _logger.info(f"processing worksheet: {sheet.title}")
+            if get_cell_value(sheet["H1"]):
+                page_table = process_opus_sheet(sheet, page_table)
+            elif get_cell_value(sheet["G1"]):
+                page_table = process_fond_sheet(sheet, page_table)
+            else:
+                page_table = process_archive_sheet(sheet, page_table)
+        except Exception as e:
+            e.args = (f"{e} | error in sheet {sheet.title}", *e.args[1:])
+            raise  # re-raise same exception with modified message
     return page_table
 
 
-def import_spreadsheet(filepath):
+def import_spreadsheet(sw_filepath):
     db = Database()
-    workbook = load_workbook(filepath)
+    workbook = load_workbook(sw_filepath)
     page_data = process_worksheets(workbook)
 
     doc_only_fields_all_caps = {
@@ -309,7 +331,7 @@ def process_dir(dir_path):
     dir_path = Path(dir_path)
     errors_file = dir_path / 'SummaryInfo.txt'
     with errors_file.open('a', encoding='utf-8') as f:
-        for entry in dir_path.rglob('*'):
+        for entry in dir_path.glob('*.xlsx'):
             if entry.is_file():
                 start = time.perf_counter()
                 msg = f"{Fore.GREEN}Processing the spreadsheet {entry}{Fore.RESET}"
@@ -323,6 +345,7 @@ def process_dir(dir_path):
                     print(f"{Fore.RED}{error_msg}{Fore.RESET}")
                 end = time.perf_counter()
                 f.write(f"Elapsed: {end - start:.6f} seconds\n")
+                f.flush()
 
 #testing
 if __name__ == "__main__":
@@ -330,5 +353,8 @@ if __name__ == "__main__":
     #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DASO-D-wiki-20260119.xlsx"
     #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DAVO-D-wiki-20260125.xlsx"
     #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DADO-D-wiki-20251027.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/test.xlsx"
-    import_spreadsheet(filepath)
+    #filepath = "C:/temp/test.xlsx"
+    #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DAHEO-D-wiki-20260119.xlsx"
+    #import_spreadsheet(filepath)
+    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/"
+    process_dir(dir_path)

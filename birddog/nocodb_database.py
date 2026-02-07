@@ -83,6 +83,22 @@ def _escape_key_value(value: str) -> str:
     # escape backslashes and double quotes
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
+
+def _iso_date_or_none(s):
+    """Accepts '21 Aug 2025', '1905-1912', etc.; returns ISO date if it looks like a date, else None."""
+    if not s:
+        return None
+    s = s.strip()
+    # Try flexible day-mon-year like '21 Aug 2025'
+    for fmt in ("%d %b %Y", "%d %B %Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt).date().isoformat()
+        except Exception:
+            pass
+    # not a single date; keep original (e.g., year range)
+    return None
+
+
 def _validate_single_select(value, spec):
     return value in spec["values"]
 
@@ -170,12 +186,23 @@ def _normalize_record(table_schema, record):
                 if normalize:
                     record[key] = normalize(key, value)
 
-def _encode_multiselect(key, value):
+def _encode_date(value):
+    cd = _iso_date_or_none(value)
+    if cd is None:
+        error = "Cannot convert date {value} to ISO date"
+    else:
+        error = None
+    return cd, error
+
+def _encode_multiselect(value):
     if isinstance(value, str):
         value = value.split('/')
-    return ",".join(value) if value else None
+    encoded_value = ",".join(value) if value else None
+    error = None
+    return encoded_value, error
 
 _field_encoder = {
+    "date": _encode_date,
     "multi_select": _encode_multiselect,
 }
 
@@ -193,9 +220,15 @@ def _encode_record(table_schema, record):
                 if value is not None and not validator(value, field_spec):
                     raise InvalidFieldValue(f"{key}: {value}")
                 encode = _field_encoder.get(field_type)
+                error = None
                 if encode:
-                    value = encode(key, value)
+                    value, error = encode(value)
                 encoded[key] = value
+                if error:
+                    if encoded["import_message"] is None:
+                        encoded["import_message"] = error
+                    else:
+                        encoded["import_message"] += "; " + error
     return encoded
 
 # ----------------------------------------------------------------------
@@ -299,20 +332,6 @@ class NocoDBDatabase(Database):
     def _links_url(self, table_id, link_field_id, record_id):
         return f"{self._host}/api/v2/tables/{table_id}/links/{link_field_id}/records/{record_id}"
 
-    def _iso_date_or_none(self, s):
-        """Accepts '21 Aug 2025', '1905-1912', etc.; returns ISO date if it looks like a date, else None."""
-        if not s:
-            return None
-        s = s.strip()
-        # Try flexible day-mon-year like '21 Aug 2025'
-        for fmt in ("%d %b %Y", "%d %B %Y", "%Y-%m-%d"):
-            try:
-                return datetime.strptime(s, fmt).date().isoformat()
-            except Exception:
-                pass
-        # not a single date; keep original (e.g., year range)
-        return None
-
     def _fetch(self, url, params=None, json=None, method="GET"):
         """
         Centralized NocoDB fetch wrapper.
@@ -327,14 +346,6 @@ class NocoDBDatabase(Database):
         time.sleep(_NOCODB_API_DELAY)
 
         try:
-            if isinstance(json, list) and len(json) > 0:
-                # Format dates if present
-                json0 = json[0]
-                cd = self._iso_date_or_none(json0.get("change_date"))
-                rd = self._iso_date_or_none(json0.get("reference_date"))
-                if cd: json0["change_date"] = cd
-                if rd: json0["reference_date"] = rd
-
             # Use the shared utility (session => connection pooling/keep-alive)
             return fetch_url(
                 url,
@@ -839,7 +850,7 @@ class NocoDBDatabase(Database):
             url = self._records_url(table_id)
             for i in range(0, len(known_records), _NOCODB_BATCH_SIZE):
                 batch = known_records[i:i + _NOCODB_BATCH_SIZE]
-                data = self._fetch(url, json=batch, method="PATCH")
+                self._fetch(url, json=batch, method="PATCH")
             for i in range(0, len(unknown_records), _NOCODB_BATCH_SIZE):
                 batch = unknown_records[i:i + _NOCODB_BATCH_SIZE]
                 data = self._fetch(url, json=batch, method="POST")
