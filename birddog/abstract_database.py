@@ -35,6 +35,10 @@ class InvalidFieldValue(DatabaseError):
 
     These errors are detected before any writes are attempted.
     """
+    def __init__(self, field, value):
+        self.field = field
+        self.value = value
+        super().__init__(f"{field}: {value}")
 
 class MissingKey(DatabaseError):
     """

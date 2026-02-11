@@ -60,43 +60,41 @@ else:
     _logger.info(f"Using aws nocodb api: {_NOCODB_HOST}")
 
 # ----------------------------------------------------------------------
-# NocoDB API endpoints
+# Data normalization, and encoding
 
-"""
-def _records_url(table_id):
-    return f"{_NOCODB_V2_API_ROOT}/tables/{table_id}/records"
-
-def _list_tables_url():
-    return f"{_NOCODB_V2_API_ROOT}/meta/bases/{_NOCODB_BASE_ID}/tables"
-
-def _table_info_url(table_id):
-    return f"{_NOCODB_V2_API_ROOT}/meta/tables/{table_id}"
-
-def _links_url(table_id, link_field_id, record_id):
-    return f"{_NOCODB_V2_API_ROOT}/tables/{table_id}/links/{link_field_id}/records/{record_id}"
-"""
-
-# ----------------------------------------------------------------------
-# Data validation, normalization, and encoding
-
-def _escape_key_value(value: str) -> str:
-    # escape backslashes and double quotes
-    return value.replace("\\", "\\\\").replace('"', '\\"')
-
-
-def _iso_date_or_none(s):
-    """Accepts '21 Aug 2025', '1905-1912', etc.; returns ISO date if it looks like a date, else None."""
+def _iso_date(s):
+    """
+    Accepts:
+      - '21 Aug 2025'
+      - '2025-08-21'
+      - '2026-02-09 19:54:45+00:00'
+      - '2026-02-09T19:54:45+00:00'
+    Returns ISO date ('YYYY-MM-DD') if it looks like a single date,
+    else raise ValueError.
+    """
+    if s is None:
+        return None
+    if not isinstance(s, str):
+        raise TypeError("_iso_date: s must be string")
+    s = s.strip()
     if not s:
         return None
-    s = s.strip()
-    # Try flexible day-mon-year like '21 Aug 2025'
+
+    # 1. Try full ISO datetime (with optional timezone)
+    try:
+        return datetime.fromisoformat(s).date().isoformat()
+    except Exception:
+        pass
+
+    # 2. Try date-only formats
     for fmt in ("%d %b %Y", "%d %B %Y", "%Y-%m-%d"):
         try:
             return datetime.strptime(s, fmt).date().isoformat()
         except Exception:
             pass
-    # not a single date; keep original (e.g., year range)
-    return None
+
+    # Not a single date (e.g. '1905-1912')
+    raise ValueError(f"unrecognized date: {s}")
 
 
 def _validate_single_select(value, spec):
@@ -107,9 +105,16 @@ def _validate_multi_select(value, spec):
         value = value.split('/')
     return isinstance(value, (list, tuple)) and all(v in spec["values"] for v in value)
 
+def _validate_date(value, spec):
+    try:
+        _iso_date(value)
+        return True
+    except:
+        return False
+
 _field_validator = {
     "text": lambda value, spec: True,
-    "date": lambda value, spec: True,
+    "date": _validate_date,
     "user": lambda value, spec: True,
     "url": lambda value, spec:  True,
     "bool": lambda value, spec: isinstance(value, bool),
@@ -117,22 +122,6 @@ _field_validator = {
     "single_select": _validate_single_select,
     "multi_select": _validate_multi_select,
 }
-
-def _validate_record(table_schema, record, other_allowed_fields=None):
-    if not table_schema["key"] in record:
-        raise MissingKey(table_schema["key"])
-    for key, value in record.items():
-        if key not in table_schema["fields"]:
-            if other_allowed_fields and key in other_allowed_fields:
-                continue
-            raise InvalidFieldName(key)
-        field_spec = table_schema["fields"][key]
-        validator = _field_validator.get(field_spec["type"])
-        if not validator:
-            raise SchemaError(f"Unsupported type '{field_spec['type']}' for field '{key}'")
-        if value is not None and not validator(value, field_spec):
-            raise InvalidFieldValue(f"{key}: {value}")
-    return True
 
 def _coerce_bool(value):
     if isinstance(value, bool):
@@ -165,14 +154,21 @@ def _normalize_multiselect(key, value):
             return []
         value = [t.strip() for t in _MULTI_SPLIT_RE.split(value)]
         return value
-    raise InvalidFieldValue(f"{key}: {value}")
+    raise InvalidFieldValue(key, value)
 
 def _normalize_bool(key, value):
     return _coerce_bool(value)
 
+def _normalize_date(key, value):
+    try:
+        return _iso_date(value)
+    except ValueError:
+        raise InvalidFieldValue(key, value)
+
 _field_normalizer = {
     "multi_select": _normalize_multiselect,
     "bool": _normalize_bool,
+    "date": _normalize_date,
 }
 
 def _normalize_record(table_schema, record):
@@ -187,19 +183,13 @@ def _normalize_record(table_schema, record):
                     record[key] = normalize(key, value)
 
 def _encode_date(value):
-    cd = _iso_date_or_none(value)
-    if cd is None:
-        error = "Cannot convert date {value} to ISO date"
-    else:
-        error = None
-    return cd, error
+    return _iso_date(value)
 
 def _encode_multiselect(value):
     if isinstance(value, str):
         value = value.split('/')
     encoded_value = ",".join(value) if value else None
-    error = None
-    return encoded_value, error
+    return encoded_value
 
 _field_encoder = {
     "date": _encode_date,
@@ -209,26 +199,20 @@ _field_encoder = {
 def _encode_record(table_schema, record):
     # prepare record for write. only include fields that are explicitly in the schema
     encoded = {}
-    for key, value in record.items():
-        field_spec = table_schema["fields"].get(key)
+    for field_name, value in record.items():
+        field_spec = table_schema["fields"].get(field_name)
         if field_spec:
             field_type = field_spec.get("type")
             if field_type:
                 validator = _field_validator.get(field_type)
                 if not validator:
-                    raise SchemaError(f"Unsupported type '{field_type}' for field '{key}'")
+                    raise SchemaError(f"Unsupported type '{field_type}' for field '{field_name}'")
                 if value is not None and not validator(value, field_spec):
-                    raise InvalidFieldValue(f"{key}: {value}")
+                    raise InvalidFieldValue(field_name, value)
                 encode = _field_encoder.get(field_type)
-                error = None
                 if encode:
-                    value, error = encode(value)
-                encoded[key] = value
-                if error:
-                    if encoded["import_message"] is None:
-                        encoded["import_message"] = error
-                    else:
-                        encoded["import_message"] += "; " + error
+                    value = encode(value)
+                encoded[field_name] = value
     return encoded
 
 # ----------------------------------------------------------------------
@@ -520,7 +504,6 @@ class NocoDBDatabase(Database):
         self._validate_table_name(table_name)
         table_schema = self._schema[table_name]
         return [_encode_record(table_schema, record) for record in records]
-
 
     def get_all_ids(self, table_name):
         table_id = self._table_id(table_name)

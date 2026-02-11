@@ -3,12 +3,12 @@ from birddog.database_updater import form_document_record
 from birddog.abstract_database import (
     InvalidFieldValue,
     )
-from birddog.utility import trim_after_last_slash
 from birddog.wiki import (
     WIKI_NAMESPACE,
     get_title,
+    parent_title,
+    page_label,
     )
-from colorama import Fore, init
 from openpyxl import load_workbook
 from pathlib import Path
 from urllib.parse import unquote, urlparse, parse_qs
@@ -16,8 +16,32 @@ import time
 
 from birddog.log import get_logger
 _logger = get_logger()
-init()  # Windows fix
 
+# --------------------------------------------------
+# console output highlighting
+import os
+
+_ENABLE_CONSOLE_HIGHLIGHTING = os.name == "nt"
+
+if _ENABLE_CONSOLE_HIGHLIGHTING:
+    from colorama import Fore, init
+    init()  # Windows fix
+else:
+    # stub out highlight directives
+    class Fore:
+        RESET = ""
+        RED = ""
+        GREEN = ""
+# --------------------------------------------------
+
+_NS_PREFIX = f"{WIKI_NAMESPACE}:"
+def parent_title_no_ns(title):
+    result = parent_title(title)
+    if not result:
+        return None
+    if result.startswith(_NS_PREFIX):
+        result = result[len(_NS_PREFIX):]
+    return result
 
 def get_page_title_from_link(cell):
     if cell.hyperlink:
@@ -98,12 +122,14 @@ def find_header(ws, row, start_col, end_col, header):
             return i
     return None
 
-def process_archive_sheet(ws, page_table=dict()):
+def process_archive_sheet(ws, page_table=None):
+    if not page_table:
+        page_table = {}
     parent_title = get_page_title_from_link(ws["D3"])
     source_type = get_cell_value(ws["C1"])
     add_page({
         "title": parent_title,
-        "label": get_cell_value(ws["A1"]).replace(" ", "-"),
+        "label": page_label(parent_title), # get_cell_value(ws["A1"]).replace(" ", "-"),
         "level": "archive",
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
@@ -125,7 +151,7 @@ def process_archive_sheet(ws, page_table=dict()):
             continue
         if cell.value:
             title = get_page_title_from_link(cell)
-            label = get_cell_value(cell)
+            label = page_label(title), # get_cell_value(cell)
             add_page({
                 "title": title,
                 "label": label,
@@ -140,12 +166,14 @@ def process_archive_sheet(ws, page_table=dict()):
     return page_table
 
 
-def process_fond_sheet(ws, page_table=dict()):
+def process_fond_sheet(ws, page_table=None):
+    if not page_table:
+        page_table = {}
     parent_title = get_page_title_from_link(ws["D3"])
     source_type = get_cell_value(ws["C1"])
     add_page({
         "title": parent_title,
-        "label": get_cell_value(ws["G1"]),
+        "label": page_label(parent_title), # get_cell_value(ws["G1"]),
         "level": "fond",
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
@@ -153,7 +181,7 @@ def process_fond_sheet(ws, page_table=dict()):
         "timestamp": get_cell_value(ws["O1"]),
         "doc_links": get_cell_value(ws["B4"]),
         "source_type": source_type,
-        "parent": trim_after_last_slash(parent_title),
+        "parent": parent_title_no_ns(parent_title),
         "wiki_link": get_cell_link(ws["D3"]),
     }, page_table)
 
@@ -163,7 +191,10 @@ def process_fond_sheet(ws, page_table=dict()):
             break
         if cell.value:
             title = get_page_title_from_link(cell)
-            label = get_cell_value(cell)
+            if not title:
+                _logger.warning(f"cannot determine page title: sheet='{ws.title}'', row={r} (skipping)")
+                continue
+            label = page_label(title) # get_cell_value(cell)
             add_page({
                 "title": title,
                 "label": label,
@@ -178,19 +209,25 @@ def process_fond_sheet(ws, page_table=dict()):
     return page_table
 
 
-def process_opus_sheet(ws, page_table=dict()):
+def process_opus_sheet(ws, page_table=None):
+    if not page_table:
+        page_table = {}
     parent_title = get_page_title_from_link(ws["D3"])
+    if not parent_title:
+        _logger.warning(f"cannot determine page title: sheet='{ws.title}'', cell=D3 (skipping)")
+        return page_table
+    
     source_type = get_cell_value(ws["C1"])
     add_page({
         "title": parent_title,
-        "label": get_cell_value(ws["H1"]),
+        "label": page_label(parent_title), # get_cell_value(ws["H1"]),
         "level": "opus",
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
         "change_date": get_cell_value(ws["L1"]),
         "timestamp": get_cell_value(ws["O1"]),
         "doc_links": get_cell_value(ws["B4"]),
-        "parent": trim_after_last_slash(parent_title),
+        "parent": parent_title_no_ns(parent_title),
         "source_type": source_type,
         "wiki_link": get_cell_link(ws["D3"]),
     }, page_table)
@@ -212,7 +249,7 @@ def process_opus_sheet(ws, page_table=dict()):
                 # If it is a comment, like "Index files linked at top of page" - skip this line
                 continue
 
-            label = get_cell_value(cell)
+            label = page_label(title)
             comments_cell_addr = f"{chr(comments_col)}{r}" #default f"G{r}"
             processor_cell_addr1 = f"{chr(comments_col+ 2)}{r}" #default f"I{r}"
             processor_cell_addr2 = f"{chr(comments_col+ 5)}{r}" #default f"L{r}"
@@ -241,7 +278,9 @@ def process_opus_sheet(ws, page_table=dict()):
     return page_table
 
 
-def process_worksheets(worksheets, page_table=dict()):
+def process_worksheets(worksheets, page_table=None):
+    if not page_table:
+        page_table = {}
     for sheet in worksheets:
         try:
             _logger.info(f"processing worksheet: {sheet.title}")
@@ -274,37 +313,98 @@ def import_spreadsheet(sw_filepath):
 
     if isinstance(page_data, dict):
         page_data = list(page_data.values())
+
+    # Step 1: validate all page records, remove any invalid ones
+    output_pages = []
+    _logger.info(f"Upserting: {len(page_data)} pages")
+
     for page in page_data:
         title = page.get("title")
-        _logger.info(f"Upsert: {title}")
+        if not title:
+            _logger.warning(f"Cannot import page with no title: parent={page.get('parent')}, label={page.get('label')}")
+            continue
+        #_logger.info(f"Validating: {title}")
 
         # upload the page record
         page_payload = {k: v for k, v in page.items() if k not in doc_only_fields}
-        curr_record_id = db.write("Pages", page_payload)
+        page_payload["import_message"] = "" # clear any pre-existing import messages
+        abort_page = False
+        while True:
+            try:
+                # attempt to encode page payload to verify correctness
+                db.encode_records("Pages", [ page_payload ])
+                break
+            except InvalidFieldValue as err:
+                _logger.error(f"malformed value: {err}")
+                if not err.value:
+                    abort_page = True
+                    break
+                # replace unrecognized value and save a note in import_message
+                page_payload[err.field] = ""
+                prior_msg = page_payload.get("import_message")
+                msg = f"malformed: {err.field}: {err.value}"
+                page_payload["import_message"] = f"{prior_msg}; {msg}" if prior_msg else msg
+                # retry record normalization
 
-        # link to parent
+        if abort_page:
+            _logger.error(f"skipping malformed page record: {title}")
+            continue
+        output_pages.append(page_payload)
+
+    # Step 2: batch write the page records and preserve id
+    _logger.info(f"Writing {len(output_pages)} page records to db")
+    output_ids = db.write("Pages", output_pages)
+    for page, record_id in zip(output_pages, output_ids):
+        page["Id"] = record_id
+
+    # Step 3: form dict by page title
+    page_dict = {page["title"]: page for page in output_pages}
+
+    # Step 4: locate all parents and link to children
+    parent_dict = {}
+    for page in page_dict.values():
         parent_title = page.get("parent")
         if parent_title:
-            # ensure parent exists
-            parent_record_id = db.lookup("Pages", parent_title)
-            if parent_record_id is None:
-                parent_record_id = db.write("Pages", {"title": parent_title})
+            #_logger.info(f"parent->child link found: {parent_title}->{page['title']}")
+            parent_page = parent_dict.get(parent_title)
+            if not parent_page:
+                parent_page = page_dict.get(parent_title)
+                if not parent_page:
+                    parent_page = {"title": parent_title}
+                    parent_record_id = db.lookup("Pages", parent_title)
+                    if not parent_record_id:
+                        # create a stub page for parent
+                        parent_record_id = db.write("Pages", parent_page)
+                    parent_page["Id"] = parent_record_id
+                parent_dict[parent_title] = parent_page
+            child_ids = parent_page.get("child_ids", [])
+            child_ids.append(page["Id"])
+            #_logger.info(f"child_ids: {parent_title}: {child_ids}")
+            parent_page["child_ids"] = child_ids
+
+    # Step 5: link parents to their children
+    for parent in parent_dict.values():
+        child_ids = parent.get("child_ids")
+        if child_ids:
+            _logger.info(f"Linking {len(child_ids)} children for {parent['title']}")
             db.create_links(
                 "Pages",
                 "children",
-                parent_record_id,
-                curr_record_id)
+                parent["Id"],
+                child_ids)
 
-        # check for doc links
+    # Step 6: create records for all linked docs
+    output_docs = {}
+    doc_link_dict = {}
+    for page in output_pages:
         doc_links = page.get("doc_links")
         if doc_links:
             if isinstance(doc_links, str):
                 doc_links = [doc_links]
             if not isinstance(doc_links, (list, tuple)):
                 raise TypeError("doc_links must be str, list or tuple")
-            for doc_link in doc_links:
-                _logger.info(f"Adding doc link for {title}: {doc_link}")
 
+            for doc_link in doc_links:
                 # quote for document titles that contain protected characters such as "?"
                 quoted_record = form_document_record(doc_link)
 
@@ -313,18 +413,32 @@ def import_spreadsheet(sw_filepath):
                     if doc_field in doc_payload and doc_payload[doc_field] is not None:
                         doc_payload[doc_field] = doc_payload[doc_field].rstrip().upper()
                 doc_payload["title"] = quoted_record["title"]
-                doc_payload["link"] = quoted_record["link"]
-                doc_payload["owning_pages"] = title
-                _logger.info(f"doc title: {doc_payload['title']}, doc link: {doc_link}")
-                try:
-                    doc_record_id = db.write("Documents", doc_payload)
-                    db.create_links(
-                        "Documents",
-                        "owning_pages",
-                        doc_record_id,
-                        curr_record_id)
-                except InvalidFieldValue as e:
-                    print(f"{Fore.RED}{e}{Fore.RESET}")
+                link = quoted_record["link"]
+                doc_payload["link"] = link
+                output_docs[link] = doc_payload
+                linked_docs = doc_link_dict.get(page["title"], [])
+                linked_docs.append(doc_payload)
+                doc_link_dict[page["title"]] = linked_docs
+
+    # Step 7: write doc records to db
+    all_docs = list(output_docs.values())
+    _logger.info(f"Writing {len(all_docs)} doc records")
+
+    doc_ids = db.write("Documents", all_docs)
+    for doc_id, doc in zip(doc_ids, all_docs):
+        output_docs[doc["link"]]["Id"] = doc_id
+
+    # Step 8: link pages to docs
+    for page_title, linked_docs in doc_link_dict.items():
+        page_id = page_dict[page_title]["Id"]
+        linked_ids = [output_docs[d["link"]]["Id"] for d in doc_link_dict[page_title]]
+        _logger.info(f"Adding doc links for {page_title} ({page_id}): {linked_ids}")
+        db.create_links(
+            "Pages",
+            "doc_links",
+            page_id,
+            linked_ids)
+
     timer.report()  # See average time spent in DB functions
 
 def process_dir(dir_path):
@@ -335,14 +449,14 @@ def process_dir(dir_path):
             if entry.is_file():
                 start = time.perf_counter()
                 msg = f"{Fore.GREEN}Processing the spreadsheet {entry}{Fore.RESET}"
-                print(msg)
+                _logger.info(msg)
                 f.write(msg + "\n")
                 try:
                     import_spreadsheet(entry)
                 except Exception as e:
                     error_msg = f"Error processing {entry}: {e}\n"
                     f.write(error_msg)
-                    print(f"{Fore.RED}{error_msg}{Fore.RESET}")
+                    _logger.info(f"{Fore.RED}{error_msg}{Fore.RESET}")
                 end = time.perf_counter()
                 f.write(f"Elapsed: {end - start:.6f} seconds\n")
                 f.flush()
