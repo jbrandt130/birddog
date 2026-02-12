@@ -36,7 +36,8 @@ from birddog.utility import HeartbeatManager, FetchUrlFailError
 
 _ENABLE_DB_SYNC = os.environ.get("BIRDDOG_ENABLE_DB_SYNC", False)
 if _ENABLE_DB_SYNC:
-    from birddog.database_updater import DatabaseUpdateManager
+    from birddog.database_updater import DatabaseUpdater, DatabaseUpdateManager
+    from birddog.database import Database
 
 from birddog.log import get_logger, ServiceLogger, EventLogger
 _logger = get_logger()
@@ -451,7 +452,18 @@ class Runtime:
         self._update_manager = PageUpdateManager(self)
         self._translation_manager = TranslationManager(self)
         self._export_manager = ExportManager(self)
-        self._database_update_manager = DatabaseUpdateManager(self) if _ENABLE_DB_SYNC else None
+        if _ENABLE_DB_SYNC:
+            self._database = Database()
+            self._database_updater = DatabaseUpdater(
+                self,
+                db=self._database)
+            self._database_update_manager = DatabaseUpdateManager(
+                self, 
+                updater=self._database_updater)
+        else:
+            self._database = None
+            self._database_updater = None
+            self._database_update_manager = None
 
         self._killswitch = KillSwitch(self)
         self.trim_logs()
@@ -566,7 +578,7 @@ class Runtime:
 
     @property
     def database_update_enabled(self):
-        return bool(self._database_update_manager)
+        return _ENABLE_DB_SYNC
 
     def update_to_database(self, titles, deep=False):
         if self.database_update_enabled:
@@ -575,3 +587,12 @@ class Runtime:
     @property
     def active_database_updates(self):
         return self._database_update_manager.active_tasks()
+
+    @property
+    def database(self):
+        return self._database
+
+    @property
+    def database_updater(self):
+        return self._database_updater
+    

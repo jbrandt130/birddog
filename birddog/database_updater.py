@@ -553,13 +553,13 @@ class DatabaseUpdater:
             return self._db.write("Pages", update)
         return None
 
-    def update_records(self, page_titles):
+    def update_page_records(self, page_titles):
         if isinstance(page_titles, str):
             page_titles = [ page_titles ]
         if not all([isinstance(title, str) for title in page_titles]):
-            raise ValueError("Updater.update_records: page_titles must be str or sequence of str")
+            raise ValueError("Updater.update_page_records: page_titles must be str or sequence of str")
 
-        _logger.info(f"update_records: {len(page_titles)} titles")
+        _logger.info(f"update_page_records: {len(page_titles)} titles")
         page_info = self._get_page_info(page_titles)
 
         # First pass: collect all page titles and doc URLs we'll need
@@ -659,7 +659,41 @@ class DatabaseUpdater:
         doc_records_changed = False
         doc_links_changed = False
         if doc_urls:
-            _logger.info(f"Updater: accessing linked document metadata")
+            doc_records_changed = self.update_doc_records(doc_urls)
+
+            # Refresh doc_id_map after update to include new records
+            doc_id_map = self._db.lookup("Documents", doc_urls)
+
+            # Update page doc links using pre-fetched IDs
+            _logger.info(f"Updater: updating document links")
+            for page_title, page_doc_urls in doc_link_updates.items():
+                page_id = record_ids[page_title]
+                doc_ids_for_page = [doc_id_map.get(url) for url in page_doc_urls]
+                doc_ids_for_page = [d for d in doc_ids_for_page if d]
+                if not doc_ids_for_page:
+                    continue
+                if _replace_links(self._db, "Pages", "doc_links", page_id, doc_ids_for_page):
+                    _logger.info(f"Doc links for {page_title} updated ({len(doc_ids_for_page)} docs)")
+                    doc_links_changed = True
+
+        return any([
+            updated_pages,
+            linked_records_changed,
+            links_changed,
+            doc_records_changed,
+            doc_links_changed])
+
+    def update_doc_records(self, doc_urls):
+        doc_records_changed = False
+        if isinstance(doc_urls, str):
+            doc_urls = set(doc_urls)
+        elif isinstance(doc_urls, (list, tuple)):
+            doc_urls = set(doc_urls)
+        if not isinstance(doc_urls, set):
+            raise ValueError("doc_urls must be str, squence of str, or set of str")
+
+        if doc_urls:
+            _logger.info(f"Updater.update_doc_records: accessing linked document metadata")
             doc_records = { url: form_document_record(url) for url in doc_urls}
 
             # collect meta data for known sources
@@ -679,8 +713,7 @@ class DatabaseUpdater:
                             record["availability"] = "unlinked"
 
             # Single lookup for all document URLs
-            all_doc_links = set(doc_records.keys())
-            doc_id_map = self._db.lookup("Documents", all_doc_links)
+            doc_id_map = self._db.lookup("Documents", doc_urls)
             existing_doc_ids = [did for did in doc_id_map.values() if did]
             existing_docs = {
                 rec["Id"]: rec
@@ -706,29 +739,7 @@ class DatabaseUpdater:
 
             doc_ids = self._db.write("Documents", doc_update) if doc_update else []
             doc_records_changed = bool(doc_ids)
-
-            # Refresh doc_id_map after write to include new records
-            if doc_update:
-                doc_id_map = self._db.lookup("Documents", all_doc_links)
-
-            # Update page doc links using pre-fetched IDs
-            _logger.info(f"Updater: updating document links")
-            for page_title, page_doc_urls in doc_link_updates.items():
-                page_id = record_ids[page_title]
-                doc_ids_for_page = [doc_id_map.get(url) for url in page_doc_urls]
-                doc_ids_for_page = [d for d in doc_ids_for_page if d]
-                if not doc_ids_for_page:
-                    continue
-                if _replace_links(self._db, "Pages", "doc_links", page_id, doc_ids_for_page):
-                    _logger.info(f"Doc links for {page_title} updated ({len(doc_ids_for_page)} docs)")
-                    doc_links_changed = True
-
-        return any([
-            updated_pages,
-            linked_records_changed,
-            links_changed,
-            doc_records_changed,
-            doc_links_changed])
+        return doc_records_changed
 
     # -------------------------------------------------------------------------
     # TRANSLATION SUPPORT
@@ -789,7 +800,7 @@ class DatabaseUpdateManager(TaskManager):
         batch = subtask["payload"]
         try:
             subtask["payload"] = {
-                "updated": self._updater.update_records(batch["titles"]),
+                "updated": self._updater.update_page_records(batch["titles"]),
                 "titles": batch["titles"],
                 "deep": batch["deep"]
                 }
