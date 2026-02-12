@@ -38,7 +38,8 @@ _logger = get_logger()
 # global constants
 
 ARCHIVE_BASE    = 'https://uk.wikisource.org'
-WIKI_NAMESPACE  = 'Архів'
+WIKI_NAMESPACE  = "Архів"
+WIKI_NAMESPACE_ALIASES = ("Архів", "Архіви")  # add others if they exist
 WIKI_NAMESPACE_ID = '116' # use lookup_namespace_id() to find this out
 ARCHIVES        = None
 API_URL         = f"{ARCHIVE_BASE}/w/api.php"
@@ -61,13 +62,40 @@ def _inventory_subarchives(archives):
 
 SUBARCHIVES = _inventory_subarchives(ARCHIVES)
 
-def canonicalize_title(title, include_namespace=True):
+def canonicalize_title(title: str, include_namespace: bool = True) -> str | None:
+    if not title:
+        return None
+
+    t = title.strip().replace(" ", "_")
+
+    # Step 1: normalize namespace aliases and separator variants independently.
+    # Recognize either "Ns:Rest" (true MW title form) or "Ns/Rest" (path form).
+    # Only rewrite if the prefix is a known alias.
+    for sep in (":", "/"):
+        prefix = None
+        rest = None
+
+        if sep == ":":
+            if ":" in t:
+                prefix, rest = t.split(":", 1)
+        else:  # "/"
+            if "/" in t:
+                prefix, rest = t.split("/", 1)
+
+        if prefix in WIKI_NAMESPACE_ALIASES and rest is not None:
+            t = f"{WIKI_NAMESPACE}:{rest}"
+            break
+
+    # Step 2: enforce include/exclude canonical namespace
+    ns_prefix = f"{WIKI_NAMESPACE}:"
     if include_namespace:
-        if not title.startswith(f"{WIKI_NAMESPACE}:"):
-            title = f"{WIKI_NAMESPACE}:{title}"
+        if not t.startswith(ns_prefix):
+            t = ns_prefix + t
     else:
-        title = title.replace(f"{WIKI_NAMESPACE}:", "")
-    return title.replace(" ", "_")
+        if t.startswith(ns_prefix):
+            t = t[len(ns_prefix):]
+
+    return t
 
 def _archives_init():
     archives_by_root = {}
@@ -1223,6 +1251,92 @@ def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, utc_cutoff
             break
 
     return latest_mods
+
+def get_recent_changes_v2(
+    base=ARCHIVE_BASE,
+    namespace=WIKI_NAMESPACE_ID,
+    utc_start=None,
+    utc_end=None,
+    limit=None,
+    prefer_newer=True,
+):
+    """
+    Collects modification timestamps for each title in a given namespace,
+    between utc_start and utc_end (inclusive-ish, per MediaWiki semantics).
+
+    If limit is set, it limits the number of UNIQUE TITLES returned.
+
+    prefer_newer:
+      - True: bias toward most-recently changed titles (scan newest→older)
+      - False: bias toward least-recently changed titles (scan oldest→newer)
+
+    Returns:
+        dict: {title: {"timestamp": <utc>, "user": <user>}}
+    """
+    _FETCH_DELAY = 0.1   # seconds
+    _FETCH_LIMIT = 500   # max results per query (non-bot)
+
+    # MediaWiki recentchanges:
+    # - rcstart is the "start" timestamp at the *directional* head of the list
+    # - rcend is the other bound
+    # - rcdir=older means traverse backward in time from rcstart toward rcend
+    # - rcdir=newer means traverse forward in time from rcstart toward rcend
+    params = {
+        "action": "query",
+        "format": "json",
+        "list": "recentchanges",
+        "rcnamespace": namespace,
+        "rcprop": "title|timestamp|user",
+        "rclimit": _FETCH_LIMIT,
+        "rcshow": "!redirect",
+        "rcdir": "older" if prefer_newer else "newer",
+    }
+
+    # Interpret utc_start/utc_end as an absolute bracket [utc_start, utc_end].
+    # For rcdir=older, rcstart should be the newer bound.
+    # For rcdir=newer, rcstart should be the older bound.
+    if prefer_newer:
+        if utc_end:
+            params["rcstart"] = utc_end
+        if utc_start:
+            params["rcend"] = utc_start
+    else:
+        if utc_start:
+            params["rcstart"] = utc_start
+        if utc_end:
+            params["rcend"] = utc_end
+
+    latest_mods = {}
+    cont = None
+
+    while True:
+        if cont:
+            params.update(cont)
+
+        data = fetch_url(_api_url(base), params=params, return_json=True)
+        rcs = data.get("query", {}).get("recentchanges", [])
+
+        for rc in rcs:
+            title = rc["title"]
+            timestamp = rc["timestamp"]  # MW UTC ISO8601, lex-order == time-order
+            user = rc.get("user")
+
+            entry = latest_mods.get(title)
+            if not entry or timestamp > entry["timestamp"]:
+                latest_mods[title] = {"timestamp": timestamp, "user": user}
+
+        # Stop early if we've collected enough unique titles (your intended "limit")
+        if limit and len(latest_mods) >= limit:
+            break
+
+        cont = data.get("continue")
+        if cont:
+            time.sleep(_FETCH_DELAY)
+        else:
+            break
+
+    return latest_mods
+
 
 # -------------------------------------------------------------------------------
 # Get most recent page modification dates within given namespace
