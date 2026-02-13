@@ -63,7 +63,6 @@ def get_page_title_from_link(cell):
             return result
     if "redlink" in url:
         url = urlparse(url).path
-        #_logger.info(f"redlink title: {url}")
     return get_title(unquote(url), include_namespace=False)
 
 def get_cell_link(cell):
@@ -122,19 +121,39 @@ def find_header(ws, row, start_col, end_col, header):
             return i
     return None
 
-def process_archive_sheet(ws, page_table=None):
+def get_source_type(ws):
+    source_type = get_cell_value(ws["C1"])
+    #it is sometimes "archive" instead of "archives"
+    if source_type.startswith("archive"):
+        source_type = "archives"
+    return source_type
+
+def get_dates(ws, change_date_col, ref_date_col):
+    change_date = get_cell_value(ws[f"{chr(change_date_col + 1)}1"])  # default L1
+    timestamp = get_cell_value(ws[f"{chr(ref_date_col + 1)}1"])  # default 01
+    return change_date, timestamp
+
+def get_parent_title(ws):
+    row = 3
+    source_col = find_header(ws, row, "B", "Z", "source:")
+    parent_title = ws[f"{chr(source_col + 1)}{row}"] #default D3
+    parent_title = get_page_title_from_link(parent_title)
+    return parent_title
+
+def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    parent_title = get_page_title_from_link(ws["D3"])
-    source_type = get_cell_value(ws["C1"])
+    parent_title = get_parent_title(ws)
+    source_type = get_source_type(ws)
+    change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
     add_page({
         "title": parent_title,
         "label": page_label(parent_title), # get_cell_value(ws["A1"]).replace(" ", "-"),
         "level": "archive",
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
-        "change_date": get_cell_value(ws["L1"]),
-        "timestamp": get_cell_value(ws["O1"]),
+        "change_date": change_date,
+        "timestamp": timestamp,
         "doc_links": get_cell_value(ws["B4"]),
         "source_type": source_type,
         "parent": "",
@@ -151,7 +170,7 @@ def process_archive_sheet(ws, page_table=None):
             continue
         if cell.value:
             title = get_page_title_from_link(cell)
-            label = page_label(title), # get_cell_value(cell)
+            label = page_label(title),
             add_page({
                 "title": title,
                 "label": label,
@@ -166,19 +185,20 @@ def process_archive_sheet(ws, page_table=None):
     return page_table
 
 
-def process_fond_sheet(ws, page_table=None):
+def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    parent_title = get_page_title_from_link(ws["D3"])
-    source_type = get_cell_value(ws["C1"])
+    parent_title = get_parent_title(ws)
+    source_type = get_source_type(ws)
+    change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
     add_page({
         "title": parent_title,
         "label": page_label(parent_title), # get_cell_value(ws["G1"]),
         "level": "fond",
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
-        "change_date": get_cell_value(ws["L1"]),
-        "timestamp": get_cell_value(ws["O1"]),
+        "change_date": change_date,
+        "timestamp": timestamp,
         "doc_links": get_cell_value(ws["B4"]),
         "source_type": source_type,
         "parent": parent_title_no_ns(parent_title),
@@ -209,23 +229,20 @@ def process_fond_sheet(ws, page_table=None):
     return page_table
 
 
-def process_opus_sheet(ws, page_table=None):
+def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    parent_title = get_page_title_from_link(ws["D3"])
-    if not parent_title:
-        _logger.warning(f"cannot determine page title: sheet='{ws.title}'', cell=D3 (skipping)")
-        return page_table
-    
-    source_type = get_cell_value(ws["C1"])
+    parent_title = get_parent_title(ws)
+    source_type = get_source_type(ws)
+    change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
     add_page({
         "title": parent_title,
-        "label": page_label(parent_title), # get_cell_value(ws["H1"]),
+        "label": page_label(parent_title),
         "level": "opus",
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
-        "change_date": get_cell_value(ws["L1"]),
-        "timestamp": get_cell_value(ws["O1"]),
+        "change_date": change_date,
+        "timestamp": timestamp,
         "doc_links": get_cell_value(ws["B4"]),
         "parent": parent_title_no_ns(parent_title),
         "source_type": source_type,
@@ -277,19 +294,46 @@ def process_opus_sheet(ws, page_table=None):
             }, page_table)
     return page_table
 
+def count_fund_opus_attributes(sheet, end_col):
+    """Fund name and opus name appear in the first row,
+    typically but not always in cells G1 and H1. We count the number of nonempty cells.
+    For archive, there would be none, for fund - one, anf for opus - two."""
+    start_col = "D"
+    row = 1
+    start_ord = ord(start_col)
+    num_nonempty_cells = 0
+    for i in range(start_ord, end_col):
+        cell_addr = f"{chr(i)}{row}"
+        contents = get_cell_value(sheet[cell_addr])
+        if contents is None:
+            continue
+        num_nonempty_cells += 1
+    return num_nonempty_cells
 
 def process_worksheets(worksheets, page_table=None):
     if not page_table:
         page_table = {}
+    hdr_row = 1
     for sheet in worksheets:
         try:
             _logger.info(f"processing worksheet: {sheet.title}")
-            if get_cell_value(sheet["H1"]):
-                page_table = process_opus_sheet(sheet, page_table)
-            elif get_cell_value(sheet["G1"]):
-                page_table = process_fond_sheet(sheet, page_table)
-            else:
-                page_table = process_archive_sheet(sheet, page_table)
+            change_date_col = find_header(sheet, hdr_row, "K", "Z", "change date:")
+            if change_date_col is None:
+                raise ValueError(f"No 'change date:' column")
+            ref_date_col = find_header(sheet, hdr_row, chr(change_date_col + 2), "Z", "reference date:")
+            if ref_date_col is None:
+                raise ValueError(f"No 'reference date:' column")
+            num_attributes = count_fund_opus_attributes(sheet, change_date_col)
+            match num_attributes:
+                case 2:
+                    page_table = process_opus_sheet(sheet, change_date_col, ref_date_col, page_table)
+                case 1:
+                    page_table = process_fond_sheet(sheet, change_date_col, ref_date_col, page_table)
+                case 0:
+                    page_table = process_archive_sheet(sheet, change_date_col, ref_date_col, page_table)
+                case _:
+                    raise ValueError(f"{num_attributes} for worksheet {sheet.title}")
+
         except Exception as e:
             e.args = (f"{e} | error in sheet {sheet.title}", *e.args[1:])
             raise  # re-raise same exception with modified message
@@ -458,17 +502,12 @@ def process_dir(dir_path):
                     f.write(error_msg)
                     _logger.info(f"{Fore.RED}{error_msg}{Fore.RESET}")
                 end = time.perf_counter()
-                f.write(f"Elapsed: {end - start:.6f} seconds\n")
+                f.write(f"Elapsed: {end - start:.2f} seconds\n")
                 f.flush()
 
 #testing
 if __name__ == "__main__":
-    #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DAHO-D-wiki-20251217.xlsx"
-    #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DASO-D-wiki-20260119.xlsx"
-    #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DAVO-D-wiki-20260125.xlsx"
-    #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DADO-D-wiki-20251027.xlsx"
-    #filepath = "C:/temp/test.xlsx"
-    #filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/DAHEO-D-wiki-20260119.xlsx"
-    #import_spreadsheet(filepath)
-    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/"
-    process_dir(dir_path)
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/TSDAVO-archive-20260119.xlsx"
+    import_spreadsheet(filepath)
+    #dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/"
+    #process_dir(dir_path)
