@@ -116,7 +116,9 @@ def get_parent_title(ws):
     parent_title = get_page_title_from_link(parent_title)
     return parent_title
 
-def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=dict()):
+def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=None):
+    if not page_table:
+        page_table = {}
     parent_title = get_parent_title(ws)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
@@ -159,7 +161,9 @@ def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=dict()):
     return page_table
 
 
-def process_fond_sheet(ws, change_date_col, ref_date_col, page_table):
+def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
+    if not page_table:
+        page_table = {}
     parent_title = get_parent_title(ws)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
@@ -198,7 +202,9 @@ def process_fond_sheet(ws, change_date_col, ref_date_col, page_table):
     return page_table
 
 
-def process_opus_sheet(ws, change_date_col, ref_date_col, page_table):
+def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
+    if not page_table:
+        page_table = {}
     parent_title = get_parent_title(ws)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
@@ -277,7 +283,9 @@ def count_fund_opus_attributes(sheet, end_col):
         num_nonempty_cells += 1
     return num_nonempty_cells
 
-def process_worksheets(worksheets, page_table=dict()):
+def process_worksheets(worksheets, page_table=None):
+    if not page_table:
+        page_table = {}
     hdr_row = 1
     for sheet in worksheets:
         try:
@@ -325,58 +333,133 @@ def import_spreadsheet(sw_filepath):
 
     if isinstance(page_data, dict):
         page_data = list(page_data.values())
+
+    # Step 1: validate all page records, remove any invalid ones
+    output_pages = []
+    _logger.info(f"Upserting: {len(page_data)} pages")
+
     for page in page_data:
         title = page.get("title")
-        _logger.info(f"Upsert: {title}")
+        if not title:
+            _logger.warning(f"Cannot import page with no title: parent={page.get('parent')}, label={page.get('label')}")
+            continue
+        # _logger.info(f"Validating: {title}")
 
         # upload the page record
         page_payload = {k: v for k, v in page.items() if k not in doc_only_fields}
-        curr_record_id = db.write("Pages", page_payload)
+        page_payload["import_message"] = ""  # clear any pre-existing import messages
+        abort_page = False
+        while True:
+            try:
+                # attempt to encode page payload to verify correctness
+                db.encode_records("Pages", [page_payload])
+                break
+            except InvalidFieldValue as err:
+                _logger.error(f"malformed value: {err}")
+                if not err.value:
+                    abort_page = True
+                    break
+                # replace unrecognized value and save a note in import_message
+                page_payload[err.field] = ""
+                prior_msg = page_payload.get("import_message")
+                msg = f"malformed: {err.field}: {err.value}"
+                page_payload["import_message"] = f"{prior_msg}; {msg}" if prior_msg else msg
+                # retry record normalization
 
-        # link to parent
+        if abort_page:
+            _logger.error(f"skipping malformed page record: {title}")
+            continue
+        output_pages.append(page_payload)
+
+    # Step 2: batch write the page records and preserve id
+    _logger.info(f"Writing {len(output_pages)} page records to db")
+    output_ids = db.write("Pages", output_pages)
+    for page, record_id in zip(output_pages, output_ids):
+        page["Id"] = record_id
+
+    # Step 3: form dict by page title
+    page_dict = {page["title"]: page for page in output_pages}
+
+    # Step 4: locate all parents and link to children
+    parent_dict = {}
+    for page in page_dict.values():
         parent_title = page.get("parent")
         if parent_title:
-            # ensure parent exists
-            parent_record_id = db.lookup("Pages", parent_title)
-            if parent_record_id is None:
-                parent_record_id = db.write("Pages", {"title": parent_title})
+            # _logger.info(f"parent->child link found: {parent_title}->{page['title']}")
+            parent_page = parent_dict.get(parent_title)
+            if not parent_page:
+                parent_page = page_dict.get(parent_title)
+                if not parent_page:
+                    parent_page = {"title": parent_title}
+                    parent_record_id = db.lookup("Pages", parent_title)
+                    if not parent_record_id:
+                        # create a stub page for parent
+                        parent_record_id = db.write("Pages", parent_page)
+                    parent_page["Id"] = parent_record_id
+                parent_dict[parent_title] = parent_page
+            child_ids = parent_page.get("child_ids", [])
+            child_ids.append(page["Id"])
+            # _logger.info(f"child_ids: {parent_title}: {child_ids}")
+            parent_page["child_ids"] = child_ids
+
+    # Step 5: link parents to their children
+    for parent in parent_dict.values():
+        child_ids = parent.get("child_ids")
+        if child_ids:
+            _logger.info(f"Linking {len(child_ids)} children for {parent['title']}")
             db.create_links(
                 "Pages",
                 "children",
-                parent_record_id,
-                curr_record_id)
+                parent["Id"],
+                child_ids)
 
-        # check for doc links
-        doc_links = page.get("doc_links")
-        if doc_links:
-            if isinstance(doc_links, str):
-                doc_links = [doc_links]
-            if not isinstance(doc_links, (list, tuple)):
-                raise TypeError("doc_links must be str, list or tuple")
-            for doc_link in doc_links:
-                _logger.info(f"Adding doc link for {title}: {doc_link}")
+        # Step 6: create records for all linked docs
+        output_docs = {}
+        doc_link_dict = {}
+        for page in output_pages:
+            doc_links = page.get("doc_links")
+            if doc_links:
+                if isinstance(doc_links, str):
+                    doc_links = [doc_links]
+                if not isinstance(doc_links, (list, tuple)):
+                    raise TypeError("doc_links must be str, list or tuple")
 
-                # quote for document titles that contain protected characters such as "?"
-                quoted_record = form_document_record(doc_link)
+                for doc_link in doc_links:
+                    # quote for document titles that contain protected characters such as "?"
+                    quoted_record = form_document_record(doc_link)
 
-                doc_payload = {k: v for k, v in page.items() if k in doc_only_fields}
-                for doc_field in doc_only_fields_all_caps:
-                    if doc_field in doc_payload and doc_payload[doc_field] is not None:
-                        doc_payload[doc_field] = doc_payload[doc_field].rstrip().upper()
-                doc_payload["title"] = quoted_record["title"]
-                doc_payload["link"] = quoted_record["link"]
-                doc_payload["owning_pages"] = title
-                _logger.info(f"doc title: {doc_payload['title']}, doc link: {doc_link}")
-                try:
-                    doc_record_id = db.write("Documents", doc_payload)
-                    db.create_links(
-                        "Documents",
-                        "owning_pages",
-                        doc_record_id,
-                        curr_record_id)
-                except InvalidFieldValue as e:
-                    print(f"{Fore.RED}Invalid field value {e}{Fore.RESET}")
-    timer.report()  # See average time spent in DB functions
+                    doc_payload = {k: v for k, v in page.items() if k in doc_only_fields}
+                    for doc_field in doc_only_fields_all_caps:
+                        if doc_field in doc_payload and doc_payload[doc_field] is not None:
+                            doc_payload[doc_field] = doc_payload[doc_field].rstrip().upper()
+                    doc_payload["title"] = quoted_record["title"]
+                    link = quoted_record["link"]
+                    doc_payload["link"] = link
+                    output_docs[link] = doc_payload
+                    linked_docs = doc_link_dict.get(page["title"], [])
+                    linked_docs.append(doc_payload)
+                    doc_link_dict[page["title"]] = linked_docs
+
+        # Step 7: write doc records to db
+        all_docs = list(output_docs.values())
+        _logger.info(f"Writing {len(all_docs)} doc records")
+
+        doc_ids = db.write("Documents", all_docs)
+        for doc_id, doc in zip(doc_ids, all_docs):
+            output_docs[doc["link"]]["Id"] = doc_id
+
+        # Step 8: link pages to docs
+        for page_title, linked_docs in doc_link_dict.items():
+            page_id = page_dict[page_title]["Id"]
+            linked_ids = [output_docs[d["link"]]["Id"] for d in doc_link_dict[page_title]]
+            _logger.info(f"Adding doc links for {page_title} ({page_id}): {linked_ids}")
+            db.create_links(
+                "Pages",
+                "doc_links",
+                page_id,
+                linked_ids)
+
+        timer.report()  # See average time spent in DB functions
 
 def process_dir(dir_path):
     dir_path = Path(dir_path)
