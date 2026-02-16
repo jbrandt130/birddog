@@ -30,7 +30,11 @@ function empty(item) {
 
 // check if valid link
 function is_linked(item) {
-    return item != null && item.link != null && item.exists && !item.link.includes("redlink");
+    return item != null && 
+        item.link != null && 
+        item.exists && 
+        !item.link.includes("redlink") &&
+        item.link.startsWith("/wiki/");
 }
 
 function format_date(mod_date, strip_time=false) {
