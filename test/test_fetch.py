@@ -50,6 +50,9 @@ class FakeThrottle:
     def report_exception(self, url_or_key):
         self.exc_reports.append(url_or_key)
 
+    def format_report(self):
+        return ""
+
 
 # ------------------ FETCH_URL TESTS ------------------
 

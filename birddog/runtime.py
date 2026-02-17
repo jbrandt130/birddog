@@ -32,7 +32,8 @@ from birddog.translate import TranslationManager
 from birddog.excel import ExportManager
 from birddog.store import KeyValueStore
 from birddog.env import detect_environment
-from birddog.utility import HeartbeatManager, FetchUrlFailError
+from birddog.utility import HeartbeatManager
+from birddog.fetch import FetchUrlFailError
 
 _ENABLE_DB_SYNC = os.environ.get("BIRDDOG_ENABLE_DB_SYNC", False)
 if _ENABLE_DB_SYNC:

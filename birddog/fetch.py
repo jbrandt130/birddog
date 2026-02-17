@@ -489,6 +489,43 @@ class AdaptiveThrottle:
                 for hk, st in self._hosts.items()
             }
 
+    def format_report(self) -> str:
+        """
+        Format a one-shot textual report of current host throttle state.
+
+        Uses snapshot() (thread-safe) and returns a multi-line string suitable
+        for logging/printing.
+        """
+        snap = self.snapshot()
+        if not snap:
+            return "AdaptiveThrottle report: (no hosts seen yet)"
+
+        # stable ordering for readability
+        keys = sorted(snap.keys())
+
+        # header
+        lines = []
+        lines.append("AdaptiveThrottle report:")
+        lines.append(
+            "  {:<34} {:>8} {:>8} {:>10} {:>12}".format(
+                "host_key", "rps", "tokens", "blocked_s", "max_in_flight"
+            )
+        )
+        lines.append("  " + "-" * 78)
+
+        for hk in keys:
+            st = snap[hk]
+            lines.append(
+                "  {:<34} {:>8.2f} {:>8.2f} {:>10.2f} {:>12d}".format(
+                    hk[:34],
+                    float(st.get("rate_rps", 0.0)),
+                    float(st.get("tokens", 0.0)),
+                    float(st.get("blocked_for_s", 0.0)),
+                    int(st.get("max_in_flight", 0)),
+                )
+            )
+
+        return "\n".join(lines)
 
 # ---------------------------------------------------------------------------
 # profiles & resolver rules
@@ -496,20 +533,20 @@ class AdaptiveThrottle:
 
 PROFILES: Dict[str, HostProfile] = {
     "uk.wikisource.org:api": HostProfile(
-        initial_rps=1.5, min_rps=0.2, max_rps=10.0, bucket_capacity=5.0,
+        initial_rps=4.0, min_rps=0.2, max_rps=50.0, bucket_capacity=5.0,
         ai_step=0.25, increase_every_s=15.0,
         md_429=0.6, md_transient=0.9,
         transient_cooldown_s=(0.2, 0.6),
         max_in_flight=4,
     ),
     "commons.wikimedia.org:api": HostProfile(
-        initial_rps=1.5, min_rps=0.2, max_rps=10.0, bucket_capacity=5.0,
+        initial_rps=4.0, min_rps=0.2, max_rps=50.0, bucket_capacity=5.0,
         ai_step=0.25, increase_every_s=15.0,
         md_429=0.6, md_transient=0.9,
         transient_cooldown_s=(0.2, 0.6),
         max_in_flight=4,
     ),
-    "translate.googleapis.com:api": HostProfile(
+    "translation.googleapis.com:api": HostProfile(
         initial_rps=2.0, min_rps=0.2, max_rps=20.0, bucket_capacity=5.0,
         ai_step=0.25, increase_every_s=20.0,
         md_429=0.6, md_transient=0.9,
@@ -517,7 +554,7 @@ PROFILES: Dict[str, HostProfile] = {
         max_in_flight=8,
     ),
     "nocodb.internal:api": HostProfile(
-        initial_rps=10.0, min_rps=1.0, max_rps=100.0, bucket_capacity=20.0,
+        initial_rps=20.0, min_rps=1.0, max_rps=100.0, bucket_capacity=20.0,
         ai_step=1.0, increase_every_s=10.0,
         md_429=0.7, md_transient=0.85,
         transient_cooldown_s=(0.1, 0.3),
@@ -526,7 +563,7 @@ PROFILES: Dict[str, HostProfile] = {
 }
 
 DEFAULT_PROFILE = HostProfile(
-    initial_rps=1.0, min_rps=0.1, max_rps=5.0, bucket_capacity=3.0,
+    initial_rps=1.0, min_rps=0.1, max_rps=20.0, bucket_capacity=3.0,
     ai_step=0.10, increase_every_s=20.0,
     md_429=0.6, md_transient=0.9,
     transient_cooldown_s=(0.5, 1.0),
@@ -580,6 +617,29 @@ _TRANSIENT_HTTP = {408, 500, 502, 503, 504}
 _MW_RATE_LIMIT_CODES = {"ratelimited"}   # treat as 429
 _MW_TRANSIENT_CODES = {"maxlag"}         # treat as transient/backoff
 
+# reporting globals
+_THROTTLE_REPORT_EVERY_S = 60.0
+_throttle_last_report_ts = 0.0
+_throttle_report_lock = threading.Lock()
+
+def _maybe_log_throttle_report() -> None:
+    global _throttle_last_report_ts
+    now = _now()
+    if now - _throttle_last_report_ts < _THROTTLE_REPORT_EVERY_S:
+        return
+    # only one thread logs, others skip
+    if not _throttle_report_lock.acquire(blocking=False):
+        return
+    try:
+        now = _now()
+        if now - _throttle_last_report_ts < _THROTTLE_REPORT_EVERY_S:
+            return
+        _throttle_last_report_ts = now
+        _logger.info("\n%s", THROTTLE.format_report())
+    finally:
+        _throttle_report_lock.release()
+
+
 def _maybe_mediawiki_error_code(response: requests.Response) -> Optional[str]:
     """
     If response looks like MediaWiki JSON error payload, return error.code (lowercased), else None.
@@ -607,6 +667,7 @@ def fetch_url(
     url,
     params=None,
     send_json=None,
+    data=None,
     return_json=False,
     content=False,
     method="GET",
@@ -734,7 +795,8 @@ def fetch_url(
                 kwargs["params"] = params
             if send_json is not None:
                 kwargs["json"] = send_json
-
+            if data is not None:
+                kwargs["data"] = data
         try:
             with THROTTLE.acquire(url):
                 response = req(url, **kwargs)
@@ -749,6 +811,9 @@ def fetch_url(
                 response.headers,
                 is_rate_limited_payload=(mw_code in _MW_RATE_LIMIT_CODES),
             )
+
+            # report throttle state periodically
+            _maybe_log_throttle_report()
 
             # MW “maxlag” is a transient overload signal (treat like transient)
             if mw_code in _MW_TRANSIENT_CODES:
