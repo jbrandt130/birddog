@@ -12,11 +12,9 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Optional, Sequence, Union, Protocol
 
-import requests
 from requests.exceptions import Timeout, ReadTimeout, ConnectTimeout, ConnectionError as RequestsConnectionError
 
 from google.cloud import translate_v2 as google_translate
-from google.api_core.exceptions import GoogleAPICallError
 from google.api_core.exceptions import (
     GoogleAPICallError, RetryError,
     ServiceUnavailable, DeadlineExceeded, InternalServerError,
@@ -26,22 +24,16 @@ from google.api_core.exceptions import (
 
 from birddog.task import TaskManager
 from birddog.utility import json_size
+from birddog.fetch import fetch_url, FetchUrlFailError
 from birddog.log import get_logger, LogService
 _logger = get_logger()
 
 # --- Translation globals ---
 
 _ENABLE_TRANSLATION = True
-_USE_DUMMY_TRANSLATE = False
 _USE_GOOGLE_CLOUD_TRANSLATE = os.getenv("BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE", None) in ("true", "True", "1")
-_DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", None)
 
-if os.getenv("BIRDDOG_TRANSLATION_DEBUG", None) in ("true", "True", "1"):
-    _logger.info("Translation is enabled. Using dummy translator")
-    _ENABLE_TRANSLATION = True
-    #_USE_DUMMY_TRANSLATE = True
-
-if _ENABLE_TRANSLATION and not _USE_DUMMY_TRANSLATE and _USE_GOOGLE_CLOUD_TRANSLATE:
+if _ENABLE_TRANSLATION and _USE_GOOGLE_CLOUD_TRANSLATE:
     _logger.info("Translation is enabled. Using GCP translator")
 
 _MAX_TRANSLATE_REQUESTS_PER_MINUTE = 1000  # example, adjust as needed
@@ -96,25 +88,6 @@ class Translator(Protocol):
     def translate(self, text: TextLike) -> TextLike: ...
     def translate_batch(self, text: Sequence[str]) -> Sequence[str]: ...
 
-# ---- shared helpers ----
-
-class _LocalRateLimitMixin:
-    def __init__(self, *, max_per_hour: int | None = None):
-        self._max_per_hour = max_per_hour
-        self._ts = deque()
-        self._lock = threading.Lock()
-
-    def _check_quota_local(self, *, provider: str):
-        if not self._max_per_hour:
-            return
-        now, cutoff = time.time(), time.time() - 3600
-        with self._lock:
-            while self._ts and self._ts[0] < cutoff:
-                self._ts.popleft()
-            if len(self._ts) >= self._max_per_hour:
-                raise QuotaExceededError(provider=provider, retry_after_seconds=60)
-            self._ts.append(now)
-
 # --- Google Cloud service support ---
 
 class GoogleCloudTranslator(Translator):
@@ -134,8 +107,7 @@ class GoogleCloudTranslator(Translator):
         self._use_rest = bool(self._api_key) and not use_client
         if self._use_rest:
             _logger.info(f"GoogleCloudTranslator using REST API")
-
-        if not self._use_rest:
+        else:
             # falls back to your existing client (needs service-account/ADC)
             _logger.info(f"GoogleCloudTranslator using translate_v2 python client")
             self._client = google_translate.Client()
@@ -157,6 +129,7 @@ class GoogleCloudTranslator(Translator):
             self._timestamps.append(now)
 
     # ----------- exception mapping (works for REST + client) ------------------
+
     def _map_exc(self, e: BaseException) -> TranslationError:
         _logger.info(f"Translation exception: {e}")
         # Retryable (Google client)
@@ -175,10 +148,6 @@ class GoogleCloudTranslator(Translator):
         if isinstance(e, GoogleAPICallError):
             return PermanentServiceError(provider=self._provider, status_code=getattr(e, "code", None), original=e)
 
-        # REST/requests path
-        if isinstance(e, (Timeout, ReadTimeout, ConnectTimeout, RequestsConnectionError)):
-            return TransientServiceError(provider=self._provider, original=e)
-
         # If we bubbled an HTTP error with a response, classify by status
         resp = getattr(e, "response", None)
         status = getattr(resp, "status_code", None)
@@ -190,6 +159,19 @@ class GoogleCloudTranslator(Translator):
             # 4xx default: permanent
             if 400 <= status < 500:
                 return PermanentServiceError(provider=self._provider, status_code=status, original=e)
+
+        if isinstance(e, FetchUrlFailError):
+            cause = getattr(e, "__cause__", None)
+            # If the last cause was an HTTPError with a response, classify by status
+            resp = getattr(cause, "response", None)
+            status = getattr(resp, "status_code", None)
+            if status == 429:
+                return QuotaExceededError(provider=self._provider, original=e)
+            if isinstance(status, int) and 500 <= status < 600:
+                return TransientServiceError(provider=self._provider, status_code=status, original=e)
+            # networkish causes
+            if isinstance(cause, (Timeout, ReadTimeout, ConnectTimeout, RequestsConnectionError)):
+                return TransientServiceError(provider=self._provider, original=e)
 
         return PermanentServiceError(provider=self._provider, original=e)
 
@@ -221,36 +203,28 @@ class GoogleCloudTranslator(Translator):
             "format": "text",
         }
 
-        # modest backoff for transient faults
-        wait = 1.0
-        for attempt in range(5):
-            try:
-                resp = requests.post(
-                    self._V2_ENDPOINT,
-                    params=params,
-                    data=[("q", s) for s in q],  # repeated q
-                    timeout=self._timeout,
-                )
-                resp.raise_for_status()
-                payload = resp.json()
-                # REST v2: payload["data"]["translations"] -> list of dicts
-                translations = payload["data"]["translations"]
-                out = [html.unescape(t["translatedText"]) for t in translations]
-                if is_list:
-                    if len(out) != len(q):
-                        raise IncompleteTranslationError(expected=len(q), got=len(out))
-                    return out
-                return out[0]
-            except requests.RequestException as ex:
-                # classify by HTTP status; retry only on 5xx/timeout
-                status = getattr(ex.response, "status_code", None)
-                retryable = isinstance(ex, (Timeout, ReadTimeout, ConnectTimeout, RequestsConnectionError)) or (
-                    isinstance(status, int) and (status >= 500)
-                )
-                if not retryable or attempt == 4:
-                    raise
-                time.sleep(wait)
-                wait *= 2
+        # Google v2 REST expects repeated 'q' fields; preserve prior behavior.
+        form_data = [("q", s) for s in q]
+
+        payload = fetch_url(
+            self._V2_ENDPOINT,
+            method="POST",
+            params=params,
+            data=form_data,
+            return_json=True,
+            timeout=self._timeout,
+        )
+
+        # REST v2: payload["data"]["translations"] -> list of dicts
+        translations = payload["data"]["translations"]
+        out = [html.unescape(t["translatedText"]) for t in translations]
+
+        if is_list:
+            if len(out) != len(q):
+                raise IncompleteTranslationError(expected=len(q), got=len(out))
+            return out
+
+        return out[0]
 
     # ----------- v2 via client (service account) ------------------------------
     def _translate_v2_client(self, text: TextLike) -> TextLike:
@@ -271,154 +245,18 @@ class GoogleCloudTranslator(Translator):
             )
             return html.unescape(result["translatedText"])
 
-# --- Dummy translator (for debug) ---
-
-class DummyTranslator(_LocalRateLimitMixin):
-    """
-    A deterministic/stochastic stub for tests and dev. Implements the Translator contract and
-    raises only standardized exceptions.
-
-    Failure knobs:
-      - p_transient: chance per call to raise TransientServiceError (simulate 500/503/timeouts)
-      - p_permanent: chance per call to raise PermanentServiceError (simulate 4xx/auth/args)
-      - p_quota:     chance per call to raise QuotaExceededError (simulate provider 429)
-      - p_contract:  chance per *batch* call to violate the length contract (debugging)
-    Latency knobs:
-      - mean_latency: base seconds per call (scaled by batch size)
-      - jitter:       added uniform[0, jitter] seconds
-      - per_item_ms:  extra milliseconds per input item (simulates batch size effect)
-    """
-    def __init__(
-        self,
-        *,
-        source: str = "uk",
-        target: str = "en",
-        provider_name: str = "dummy",
-        mode: str = "constant",             # "constant" or "echo"
-        max_per_hour: int | None = None,    # app-level local quota
-        seed: int | None = None,
-        p_transient: float = 0.05,
-        p_permanent: float = 0.01,
-        p_quota: float = 0.00,
-        p_contract: float = 0.00,
-        mean_latency: float = 0.05,         # seconds per call
-        jitter: float = 0.05,               # extra random seconds
-        per_item_ms: float = 2.0,           # ms per item in a batch
-        quota_retry_after_range: tuple[float, float] = (10.0, 30.0),
-    ):
-        super().__init__(max_per_hour=max_per_hour)
-        self._provider = provider_name
-        self._source, self._target = source, target
-        self._mode = mode
-
-        self._p_transient = float(p_transient)
-        self._p_permanent = float(p_permanent)
-        self._p_quota = float(p_quota)
-        self._p_contract = float(p_contract)
-
-        self._mean_latency = float(mean_latency)
-        self._jitter = float(jitter)
-        self._per_item_ms = float(per_item_ms)
-        self._quota_retry_after_range = quota_retry_after_range
-
-        self._rng = random.Random(seed)
-        self._rng_lock = threading.Lock()   # thread-safe RNG
-
-    # -------------- helpers --------------
-    def _rand(self) -> float:
-        with self._rng_lock:
-            return self._rng.random()
-
-    def _uniform(self, a: float, b: float) -> float:
-        with self._rng_lock:
-            return self._rng.uniform(a, b)
-
-    def _maybe_sleep(self, n_items: int):
-        # Base latency + jitter + small per-item scaling
-        sleep_s = self._mean_latency + self._uniform(0.0, self._jitter) + (self._per_item_ms / 1000.0) * max(1, n_items)
-        if sleep_s > 0:
-            time.sleep(sleep_s)
-
-    def _maybe_fault(self):
-        # Order: provider quota -> transient -> permanent (tune as needed)
-        r = self._rand()
-        if r < self._p_quota:
-            ra = self._uniform(*self._quota_retry_after_range)
-            raise QuotaExceededError(provider=self._provider, retry_after_seconds=ra)
-        r = self._rand()
-        if r < self._p_transient:
-            raise TransientServiceError(provider=self._provider)
-        r = self._rand()
-        if r < self._p_permanent:
-            raise PermanentServiceError(provider=self._provider, original=ValueError("dummy permanent failure"))
-
-    def _produce(self, s: str) -> str:
-        if self._mode == "constant":
-            return "I am a test dummy translator. This is placeholder text."
-        elif self._mode == "echo":
-            return s
-        else:
-            # Programmer error — don't retry
-            raise PermanentServiceError(provider=self._provider,
-                                        original=ValueError(f"Unknown dummy mode: {self._mode!r}"))
-
-    # -------------- contract methods --------------
-    def translate(self, text: TextLike) -> TextLike:
-        # local app quota
-        self._check_quota_local(provider=self._provider)
-
-        # determine batch size for latency
-        n_items = len(text) if isinstance(text, (list, tuple)) else 1
-
-        # simulate latency/jitter
-        self._maybe_sleep(n_items)
-
-        # simulate faults
-        self._maybe_fault()
-
-        with LogService("DummyTranslator", "translate", size=json_size(text)):
-            # normal path
-            if isinstance(text, (list, tuple)):
-                out = [self._produce(t) for t in text]
-
-                # Optional: simulate a contract bug in the adapter
-                if self._p_contract > 0.0 and self._rand() < self._p_contract:
-                    out = out[:-1] or out  # drop one to trigger mismatch
-
-                if len(out) != len(text):
-                    raise IncompleteTranslationError(expected=len(text), got=len(out))
-                return out
-
-            if isinstance(text, str):
-                return self._produce(text)
-
-        # Bad caller input → permanent
-        raise PermanentServiceError(provider=self._provider, original=TypeError(f"Invalid input type: {type(text)}"))
-
-    def translate_batch(self, text: Sequence[str]) -> Sequence[str]:
-        return self.translate(text)
-
 # --- Configure Translator ---
 
 if _ENABLE_TRANSLATION:
-    if _USE_DUMMY_TRANSLATE:
-        _logger.info('Using test dummy translator')
-        _translator = DummyTranslator(source="uk", target="en")
-    elif _USE_GOOGLE_CLOUD_TRANSLATE:
+    if _USE_GOOGLE_CLOUD_TRANSLATE:
         _logger.info('Using Google Cloud translation API')
         _translator = GoogleCloudTranslator(source="uk", target="en")
-    elif _DEEPL_API_KEY:
-        _logger.info('Using DeepL translation API')
-        from deep_translator import DeeplTranslator
-        _translator = DeeplTranslator(api_key=_DEEPL_API_KEY, source="uk", target="en", use_free_api=True)
     else:
-        from deep_translator import GoogleTranslator
-        _logger.info('Using free Google translation API')
-        _translator = GoogleTranslator(source='uk', target='en')
+        _ENABLE_TRANSLATION = False
 
 # --- Basic Translation Logic ---
 
-def translation(text: TextLike, *, retries=5, base_delay=1.0, max_delay=8.0, jitter=0.25):
+def translation(text: TextLike, *, retries=2, base_delay=1.0, max_delay=8.0, jitter=0.25):
     if not _ENABLE_TRANSLATION:
         raise TranslationDisabledError("Translation is disabled in this configuration")
 
@@ -452,9 +290,9 @@ def translation(text: TextLike, *, retries=5, base_delay=1.0, max_delay=8.0, jit
                 continue
             break
 
-        except PermanentServiceError as e:
+        except PermanentServiceError:
             # fail fast — don't burn retries
-            raise e
+            raise
 
         except IncompleteTranslationError:
             # fail fast; it's a logic/contract issue
@@ -503,13 +341,13 @@ def translate_structure(structure, dry_run=False):
         result = translation(items)
         elapsed = time.time() - start
         _logger.info(f'    ...completed ({elapsed:.2f} sec.)')
-        translation_map = { x[0]: x[1] for x in zip(items, result) }
+        translation_map = dict(zip(items, result))
         apply_translation(structure, translation_map)
     return len(items)
 
 # --- ASYNC TRANSLATION MANAGER ---
 
-_BATCH_SIZE = 10 if _USE_GOOGLE_CLOUD_TRANSLATE else 5 # google cloud is faster than the alternatives
+_BATCH_SIZE = 10
 
 class TranslationManager(TaskManager):
     def __init__(self, runtime):
