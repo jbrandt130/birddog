@@ -472,7 +472,7 @@ def download_file_check(user):
     page = runtime.lookup_by_title(page_title)
     if not page:
         return 'Page not found', 404
-    _logger.info(f'/download: system resources: {system_resource_report()}')
+    #_logger.info(f'/download: system resources: {system_resource_report()}')
     if runtime.export_manager.is_complete(task_id):
         # return file when done
         excel_io = runtime.export_manager.get_result(task_id)

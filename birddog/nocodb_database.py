@@ -21,7 +21,8 @@ from birddog.abstract_database import (
     InvalidTableName,
     MissingKey,
     )
-from birddog.utility import json_size, fetch_url
+from birddog.fetch import fetch_url
+from birddog.utility import json_size
 from birddog.timer import FunctionTimer
 
 from birddog.log import get_logger, LogService

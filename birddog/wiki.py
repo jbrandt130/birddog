@@ -22,13 +22,13 @@ from birddog.utility import (
     to_utc_format,
     transliterate,
     equal_text,
-    fetch_url,
     form_text_item,
     format_date,
     get_text,
     is_linked,
     )
 from birddog.translate import translate_structure
+from birddog.fetch import fetch_url
 
 from birddog.log import get_logger
 _logger = get_logger()

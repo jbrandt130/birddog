@@ -16,10 +16,10 @@ from birddog.wiki import (
     page_kind,
     )
 from birddog.utility import (
-    fetch_url,
     new_id,
     )
 from birddog.task import TaskManager
+from birddog.fetch import fetch_url
 
 from birddog.log import get_logger
 _logger = get_logger()
