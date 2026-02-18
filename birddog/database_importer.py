@@ -11,6 +11,7 @@ from birddog.wiki import (
     )
 from openpyxl import load_workbook
 from pathlib import Path
+from typing import Tuple
 from urllib.parse import unquote, urlparse, parse_qs
 import time
 
@@ -101,9 +102,19 @@ def add_page(page: dict, page_table: dict) -> None:
     entry.update(page)
 
 def is_positive_int(s: str) -> bool:
-    """Check if a string is a positive integer.
-    This returns True only for positive integers like "123", and False for "0", "-5", "3.14", "", "abc"."""
-    return bool(s) and s.isdigit() and s != '0'
+    """
+    Returns True if the string represents a positive integer (>0),
+    including float strings like "11.0" that equal an integer value.
+    Handles leading/trailing whitespace; rejects empty, zero, negatives, non-numbers.
+    """
+    stripped = s.strip()
+    if not stripped:  # Handles empty or whitespace-only
+        return False
+    try:
+        num = float(stripped)
+        return num.is_integer() and num > 0  # Key: float to int check + positive
+    except ValueError:
+        return False
 
 def find_header(ws, row, start_col, end_col, header):
     """Find a cell with the given header in the given row of the given worksheet.
@@ -122,10 +133,20 @@ def find_header(ws, row, start_col, end_col, header):
     return None
 
 def get_source_type(ws):
-    source_type = get_cell_value(ws["C1"])
-    #it is sometimes "archive" instead of "archives"
-    if source_type.startswith("archive"):
-        source_type = "archives"
+    #it is usually in C1, but it may occur also in E1
+    start_ord = ord("C")
+    end_ord = ord("E")
+    source_type = None #default
+    for i in range(start_ord, end_ord + 1):
+        cell_addr = f"{chr(i)}1"
+        source_type = get_cell_value(ws[cell_addr])
+        if source_type is None:
+            continue
+
+        #it is sometimes "archive" instead of "archives"
+        if source_type.startswith("archive"):
+            source_type = "archives"
+        break
     return source_type
 
 def get_dates(ws, change_date_col, ref_date_col):
@@ -136,9 +157,74 @@ def get_dates(ws, change_date_col, ref_date_col):
 def get_parent_title(ws):
     row = 3
     source_col = find_header(ws, row, "B", "Z", "source:")
-    parent_title = ws[f"{chr(source_col + 1)}{row}"] #default D3
-    parent_title = get_page_title_from_link(parent_title)
+    parent_title_cell = ws[f"{chr(source_col + 1)}{row}"] #default D3
+    parent_title = get_page_title_from_link(parent_title_cell)
     return parent_title
+
+def to_positive_int_str(s: str) -> str:
+    """
+    If input converts to positive integer (>0), returns str(int).
+    Otherwise, returns original input unchanged.
+    Handles "11.0" → "11", rejects "0", negatives, non-numbers.
+    """
+    stripped = s.strip()
+    if not stripped:
+        return s
+    try:
+        num = float(stripped)
+        if num.is_integer() and num > 0:
+            return str(int(num))
+        else:
+            return s
+    except ValueError:
+        return s
+
+
+def cyrillic_to_latin(s: str) -> str:
+    """
+    Converts Ukrainian/Russian Cyrillic letters to Latin equivalents.
+    Leaves digits, hyphens, punctuation unchanged.
+    """
+    # Cyrillic → Latin transliteration map (Russian + Ukrainian)
+    trans_map = {
+        # Russian lowercase
+        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+        'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+        'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+        'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+        'ъ': "'", 'ы': 'y', 'ь': "'", 'э': 'e', 'ю': 'yu', 'я': 'ya',
+
+        # Ukrainian lowercase (+ unique letters)
+        'ґ': 'g', 'є': 'ye', 'і': 'i', 'ї': 'yi',
+
+        # Uppercase (same transliteration, capitalized)
+        'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo',
+        'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M',
+        'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
+        'Ф': 'F', 'Х': 'H', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch',
+        'Ъ': "'", 'Ы': 'Y', 'Ь': "'", 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya',
+        'Ґ': 'G', 'Є': 'Ye', 'І': 'I', 'Ї': 'Yi'
+    }
+
+    result = []
+    for char in s:
+        result.append(trans_map.get(char, char))  # Keep non-Cyrillic chars unchanged
+
+    return ''.join(result)
+
+
+def title_cell_val_identical(title: str, cell_val:str) -> tuple[bool, str]:
+    """Returns everything after the last '/' or original string if no slash."""
+    title_after_last_slash = title.rsplit('/', 1)[-1] if '/' in title else title
+    title_after_last_slash = cyrillic_to_latin(title_after_last_slash)
+    cell_val_posit_int_cyr = to_positive_int_str(cell_val)
+    cell_val_posit_int_lat = cyrillic_to_latin(cell_val_posit_int_cyr)
+    identical = title_after_last_slash == cell_val_posit_int_lat
+
+    modified_title = title
+    if not identical:
+        modified_title = title.rsplit('/', 1)[0] + "/" + cell_val_posit_int_cyr if '/' in title else cell_val_posit_int_cyr
+    return identical, modified_title
 
 def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=None):
     if not page_table:
@@ -193,7 +279,7 @@ def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
     change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
     add_page({
         "title": parent_title,
-        "label": page_label(parent_title), # get_cell_value(ws["G1"]),
+        "label": page_label(parent_title),
         "level": "fond",
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
@@ -214,7 +300,7 @@ def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
             if not title:
                 _logger.warning(f"cannot determine page title: sheet='{ws.title}'', row={r} (skipping)")
                 continue
-            label = page_label(title) # get_cell_value(cell)
+            label = page_label(title)
             add_page({
                 "title": title,
                 "label": label,
@@ -273,6 +359,15 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
             pages_processed_cell_addr1 = f"{chr(comments_col + 3)}{r}" #default f"J{r}"
             pages_processed_cell_addr2 = f"{chr(comments_col + 6)}{r}" #default f"M{r}"
 
+            #title sanity check
+            identical, modified_title = title_cell_val_identical(title, str(cell.value))
+            if identical:
+                import_message = ""
+            else:
+                import_message = f"Case {str(int(cell.value))} links to {title}"
+                title = modified_title
+                _logger.warning(f"Opus {parent_title}: {import_message}")
+
             add_page({
                 "title": title,
                 "label": label,
@@ -286,6 +381,7 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
                 "content_code": get_cell_value(ws[f"E{r}"]),
                 "process_code": get_cell_value(ws[f"F{r}"]),
                 "availability": "linked" if get_cell_link(ws[f"A{r}"]) is not None else "unlinked",
+                "import_message": import_message,
                 #the columns for the following cells are not fixed
                 "comments": get_cell_value(ws[comments_cell_addr]),
                 "processor": combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2]),
@@ -317,7 +413,7 @@ def process_worksheets(worksheets, page_table=None):
     for sheet in worksheets:
         try:
             _logger.info(f"processing worksheet: {sheet.title}")
-            change_date_col = find_header(sheet, hdr_row, "K", "Z", "change date:")
+            change_date_col = find_header(sheet, hdr_row, "I", "Z", "change date:")
             if change_date_col is None:
                 raise ValueError(f"No 'change date:' column")
             ref_date_col = find_header(sheet, hdr_row, chr(change_date_col + 2), "Z", "reference date:")
@@ -367,11 +463,10 @@ def import_spreadsheet(sw_filepath):
         if not title:
             _logger.warning(f"Cannot import page with no title: parent={page.get('parent')}, label={page.get('label')}")
             continue
-        #_logger.info(f"Validating: {title}")
 
         # upload the page record
         page_payload = {k: v for k, v in page.items() if k not in doc_only_fields}
-        page_payload["import_message"] = "" # clear any pre-existing import messages
+        #page_payload["import_message"] = "" # clear any pre-existing import messages
         abort_page = False
         while True:
             try:
@@ -507,7 +602,7 @@ def process_dir(dir_path):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/TSDAVO-archive-20260119.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DACHVO-D-wiki-20260116.xlsx"
     import_spreadsheet(filepath)
-    #dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/"
+    #dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
     #process_dir(dir_path)
