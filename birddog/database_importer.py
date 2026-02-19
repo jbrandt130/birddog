@@ -44,6 +44,17 @@ def parent_title_no_ns(title):
         result = result[len(_NS_PREFIX):]
     return result
 
+def get_case_id(cell_contents: str) -> str:
+    """If the cell contents is a string representing a number,
+    we return its integer part. Otherwise, we return the original string."""
+    try:
+        case_id_float = float(cell_contents)
+        case_id = str(int(case_id_float))
+        return case_id
+    except ValueError:
+        return cell_contents
+
+
 def get_page_title_from_link(cell):
     if cell.hyperlink:
         url = cell.hyperlink.target
@@ -51,7 +62,11 @@ def get_page_title_from_link(cell):
         if isinstance(cell.value, str):
             url = cell.value
         else:
-            return None
+            try:
+                url = str(int(float(cell.value)))
+                return url
+            except ValueError:
+                return None
 
     if "index.php" in url:
         query = urlparse(url).query
@@ -364,7 +379,8 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
             if identical:
                 import_message = ""
             else:
-                import_message = f"Case {str(int(cell.value))} links to {title}"
+                case_id = get_case_id(cell.value)
+                import_message = f"Case {case_id} links to {title}"
                 title = modified_title
                 _logger.warning(f"Opus {parent_title}: {import_message}")
 
@@ -602,7 +618,7 @@ def process_dir(dir_path):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DACHVO-D-wiki-20260116.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/CDIAK-wiki-20260215.xlsx"
     import_spreadsheet(filepath)
     #dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
     #process_dir(dir_path)
