@@ -85,13 +85,13 @@ class Database:
           unknown; callers MUST assume some records may have been mutated.
     """
 
-    def scan_all(self, table_name, where=None):
+    def scan_all(self, table_name, where=None, fields=None, sort=None):
         """
         Convenience method to scan all records in a table using scan()
         """
-        records, cursor = self.scan(table_name, where=where)
+        records, cursor = self.scan(table_name, where=where, fields=fields, sort=sort)
         while cursor:
-            more, cursor = self.scan(table_name, cursor=cursor, where=where)
+            more, cursor = self.scan(table_name, cursor=cursor, where=where, fields=fields, sort=sort)
             records.extend(more)
         return records
 
@@ -109,7 +109,7 @@ class Database:
     #     clear_attachments() - clear file attachments from a record
     # ---------------------------------------------------------------------------
 
-    def scan(self, table_name, limit=100, cursor=None, where=None):
+    def scan(self, table_name, limit=100, cursor=None, where=None, fields=None, sort=None):
         """
         Page through records of a table without requiring the table key.
 
@@ -130,6 +130,14 @@ class Database:
                 Optional condition filter for returned records.
                 Filter is a triple: (field_name, condition, value), where condition
                 is one of ("eq", "neq", "is", "isnot", "lt", "le", "gt", "ge")
+
+            fields:
+                Optional list of fields to be included in the returned records.
+                By default, all fields are included.
+
+            sort:
+                Optional sort specification of the form (fieldname, ascending).
+                If ascending is True then sort on the named field ascending, else descending.
 
         Returns:
             (records, next_cursor)
@@ -195,7 +203,7 @@ class Database:
         """
         raise NotImplementedError
 
-    def read(self, table_name, record_id):
+    def read(self, table_name, record_id, fields=None):
         """
         Read record(s) by record_id.
 
@@ -205,6 +213,10 @@ class Database:
 
             record_id:
                 A single record_id (str) or a sequence of record_ids.
+
+            fields:
+                Optional list of fields to be included in the returned records.
+                By default, all fields are included.
 
         Returns:
             - If record_id is a string: dict for the record, or {} if not found.

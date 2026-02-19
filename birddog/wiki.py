@@ -206,7 +206,6 @@ def page_label(title):
 def is_archive(title):
     return canonicalize_title(title) in ARCHIVE_BY_TITLE
 
-
 def page_kind(title, has_children=False):
     result = classify_page(title)
     if result == "case" and has_children:
@@ -220,6 +219,35 @@ def page_title_from_address(address):
     if not tail:
         return ARCHIVE_BY_ADDRESS[address[:2]]
     return "/".join([archive_root(*address[:2]), tail])
+
+# -------------------------------------------------------------------------------
+# sequential page label (for sorting)
+
+_DIGIT_SPLIT_RE = re.compile(r"\d+|\D+", re.UNICODE)
+
+def _split_parts(s: str) -> list[str]:
+    if not s:
+        return []
+    return _DIGIT_SPLIT_RE.findall(s)
+
+def _make_sequential_frag(s):
+    if not s:
+        return ""
+    if s[0].isdigit():
+        return f"{int(s):08d}"
+    return s
+    
+def _make_sequential_part(s):
+    if not s:
+        return ""
+    s_parts = [_make_sequential_frag(f) for f in _split_parts(s)]
+    return "".join(s_parts)
+
+def sequential_page_label(page_label):
+    if not page_label:
+        return ""
+    parts = [_make_sequential_part(p) for p in page_label.split("/")]
+    return "/".join(parts)
 
 # -------------------------------------------------------------------------------
 # namespace id lookup (utility)

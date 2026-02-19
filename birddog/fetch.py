@@ -554,11 +554,22 @@ PROFILES: Dict[str, HostProfile] = {
         max_in_flight=8,
     ),
     "nocodb.internal:api": HostProfile(
-        initial_rps=20.0, min_rps=1.0, max_rps=100.0, bucket_capacity=20.0,
+        initial_rps=20.0, min_rps=1.0, max_rps=100.0, bucket_capacity=40.0,
         ai_step=1.0, increase_every_s=10.0,
         md_429=0.7, md_transient=0.85,
         transient_cooldown_s=(0.1, 0.3),
-        max_in_flight=16,
+        max_in_flight=24,
+    ),
+    # NocoDB Cloud (hosted on nocodb.com)
+    # Docs indicate 5 req/s per user; when exceeded, 429 and "wait ~30s".
+    # We stay under the limit to reduce oscillation, ramp slowly, and back off hard on 429.
+    "nocodb.cloud:api": HostProfile(
+        initial_rps=3.0, min_rps=0.2, max_rps=4.5, bucket_capacity=4.0,
+        ai_step=0.25, increase_every_s=20.0,
+        md_429=0.5, md_transient=0.9,
+        transient_cooldown_s=(0.3, 0.9),
+        burst_error_window_s=30.0, burst_error_threshold=3, burst_md=0.7, burst_cooldown_s=(2.0, 5.0),
+        max_in_flight=4,
     ),
 }
 
@@ -572,8 +583,11 @@ DEFAULT_PROFILE = HostProfile(
 
 RESOLVER = HostKeyResolver(
     alias_rules={
-        # Match any EB hostname containing "nocodb"
-        "nocodb.internal:api": r".*nocodb.*elasticbeanstalk\.com",
+        # EB hostnames containing "nocodb" somewhere in the host label(s)
+        "nocodb.internal:api": r"(?i)(?:https?://)?[^/\s]*nocodb[^/\s]*\.elasticbeanstalk\.com\b",
+
+        # NocoDB Cloud (nocodb.com) — match URL or bare hostname
+        "nocodb.cloud:api": r"(?i)(?:https?://)?([a-z0-9-]+\.)*nocodb\.com(?:[:/]|$)",
     }
 )
 

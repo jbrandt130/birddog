@@ -478,6 +478,16 @@ class NocoDBDatabase(Database):
         field_id = self._field_id(table_name, field_name)
         return field_id if ascending else f"-{field_id}"
 
+    def _encode_field_spec(self, table_name, fields):
+        if isinstance(fields, str):
+            fields = [ fields ]
+        elif not isinstance(fields, (list, tuple)):
+            raise ValueError(f"unrecognized field spec: {fields}")
+        for field_name in fields:
+            # verify field names (will raise if invalid)
+            self._field_id(table_name, field_name)
+        return ",".join(fields)
+
     def _validate_key_set(self, table_name, key_set):
         if isinstance(key_set, str):
             key_set = { key_set }
@@ -523,7 +533,7 @@ class NocoDBDatabase(Database):
             params["offset"] += len(records)
         return ids
 
-    def scan(self, table_name, limit=100, cursor=None, where=None, sort=None, raw=False):
+    def scan(self, table_name, limit=100, cursor=None, where=None, sort=None, fields=None, raw=False):
         """
         Page through records of a table without requiring the table key.
 
@@ -572,6 +582,8 @@ class NocoDBDatabase(Database):
             params["where"] = self._encode_where_spec(table_name, where)
         if sort:
             params["sort"] = self._encode_sort_spec(table_name, sort)
+        if fields:
+            params["fields"] = self._encode_field_spec(table_name, fields)
 
         with LogService("NocoDB", "scan") as log:
             data = self._fetch(url, params=params)
@@ -703,7 +715,7 @@ class NocoDBDatabase(Database):
             return [result.get(key) for key in key_sequence]
         return result
 
-    def read(self, table_name, record_id):
+    def read(self, table_name, record_id, fields=None):
         """
         Read record(s) by record_id.
 
@@ -751,7 +763,9 @@ class NocoDBDatabase(Database):
                 params = {
                     "where": "~or".join(clauses),
                 }
-
+                if fields:
+                    params["fields"] = self._encode_field_spec(table_name, fields)
+                    
                 data = self._fetch(url, params=params)
 
                 for item in data.get("list", []):
