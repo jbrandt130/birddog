@@ -88,7 +88,7 @@ def _iso_date(s):
         pass
 
     # 2. Try date-only formats
-    for fmt in ("%d %b %Y", "%d %B %Y", "%Y-%m-%d"):
+    for fmt in ("%d %b %Y", "%d %B %Y", "%Y-%m-%d", "%d/%m/%Y"):
         try:
             return datetime.strptime(s, fmt).date().isoformat()
         except Exception:
