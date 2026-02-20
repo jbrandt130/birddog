@@ -374,6 +374,36 @@ class UserTest(unittest.TestCase):
         self.assertEqual(u2.name, "Test2")
         self.assertEqual(u2.email, "s2@example.com")
 
+    def test_check_archive_raises_if_not_in_watchlist(self):
+        u = User(name="Test", email="nowatch@example.com", password="pw")
+        with self.assertRaises(KeyError):
+            u.check_archive("NOPE", "X")
+
+    def test_user_set_and_get_preference(self):
+        u = User(name="Test", email="prefuser@example.com", password="pw")
+        u.set_preference("theme", "dark")
+        self.assertEqual(u.get_preference("theme"), "dark")
+        self.assertIsNone(u.get_preference("missing"))
+        self.assertEqual(u.get_preference("missing", default_value="fallback"), "fallback")
+
+    def test_resolve_item_tree_returns_dict(self):
+        u = User(name="Test", email="rtree@example.com", password="pw")
+        u.add_to_watchlist("DAARK", "D", cutoff_date="2020,01,01,00:00")
+        watcher_path = user_mod._watcher_cache_path(u.email, "DAARK", "D")
+        self.cache.save(FakeArchiveWatcher("DAARK", "D", "2020,01,01,00:00").save(), watcher_path)
+        result = u.resolve_item("DAARK", "D", fond="1", opus="2", case="3", tree=True)
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["name"], "root")
+
+    def test_update_watchlist_item_preserves_cutoff_date(self):
+        email = "upd@example.com"
+        _add_watchlist_item(email, "A-B", cutoff="2020,06,01")
+        _update_watchlist_item(email, "A-B", last_checked="2021,01,02,03:04")
+        item = _get_watchlist_item(email, "A-B")
+        self.assertEqual(item["cutoff_date"], "2020,06,01",
+            "_update_watchlist_item must not overwrite cutoff_date")
+        self.assertEqual(item["last_checked_date"], "2021,01,02,03:04")
+
     def test_user_migrates_legacy_watchlist_and_preferences_on_init(self):
         email = "migrate@example.com"
         legacy_watchlist = {"A-B": {"cutoff_date": "2010,01,01,00:00"}}

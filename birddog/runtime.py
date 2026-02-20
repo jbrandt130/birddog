@@ -288,6 +288,7 @@ class ArchiveWatcher:
 
     def resolve(self, item, deep=False):
         #_logger.info(f'ArchiveWatcher.resolve: before\n\tunresolved: {self._unresolved}\n\tresolved: {self._resolved}')
+        now = datetime.now().strftime('%Y,%m,%d,%H:%M')
         if deep:
             _logger.info(f'ArchiveWatcher: deep resolve: {item}')
             item = item.rstrip(',').split(",")
@@ -295,10 +296,12 @@ class ArchiveWatcher:
                 split_key = key.split(",")[:len(item)]
                 if split_key == item:
                     unresolved_item = self._unresolved.pop(key)
+                    unresolved_item["last_resolved"] = now
                     _logger.info(f'ArchiveWatcher: deep resolving subitem: {key}; {item}; {unresolved_item}')
                     self._resolved.setdefault(key, []).append(unresolved_item)
         elif item in self._unresolved:
             unresolved_item = self._unresolved.pop(item)
+            unresolved_item["last_resolved"] = now
             self._resolved.setdefault(item, []).append(unresolved_item)
         #_logger.info(f'ArchiveWatcher.resolve: after\n\tunresolved: {self._unresolved}\n\tresolved: {self._resolved}')
 

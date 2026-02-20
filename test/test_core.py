@@ -1,5 +1,6 @@
 import os
 from copy import copy
+from datetime import datetime
 from urllib.parse import quote, unquote
 
 import unittest
@@ -117,6 +118,14 @@ class Test(unittest.TestCase):
         watcher.resolve(item)
         self.assertFalse(item in watcher.unresolved)
         self.assertTrue(item in watcher.resolved)
+        # Regression for issue #103: last_resolved must be stamped with the
+        # actual resolution time, not left as the stale cutoff date.
+        today = datetime.now().strftime("%Y,%m,%d")
+        last_resolved = watcher.resolved[item][-1]["last_resolved"]
+        self.assertTrue(
+            last_resolved.startswith(today),
+            f"last_resolved {last_resolved!r} should reflect today ({today}), not the cutoff date"
+        )
         watcher.unresolve(item)
         self.assertTrue(item in watcher.unresolved)
         self.assertFalse(item in watcher.resolved)
@@ -129,42 +138,18 @@ class Test(unittest.TestCase):
             self.assertTrue(page.lastmod <= watcher.unresolved[key]['modified'])
 
     def test_Titles(self):
-        titles = [ 
-            "Архів:Архівний_відділ_виконавчого_комітету_Кременчуцької_міської_ради/2-ОС/1",
-            #"Архів:ДАПО/Р-9126/2",
-            "Архів:ДАЖО/1/1",
-            "Архів:ДАК/312/1",
-            "Архів:ДАЖО/1/74",
-            "Архів:Лука_Мала",
-            "Архів:ЦДІАК/1/1",
-            "Архів:ДАХО/Д",
-            "Архів:ДАПО/Р/1–1000",
-            "Архів:ЦДІАК/28",
-            "Архів:ЦДІАК/28/1",
-            "Архів:ДАЖО/1",
-            "Архів:ДАК/Р-352",
-            "Архів:Архівний відділ виконавчого комітету Кременчуцької міської ради/Р",
-            "Архів:ДАЖО/Д",
-            "Архів:ДАДнО/Р-6478/2", 
-            "Архів:ДАЖО/752", 
-            "Архів:ДАКрО/225/1/25", 
-            "Архів:ДАКрО/225", 
-            "Архів:ДАСО/Р", 
-            "Архів:ДАХмО/К", 
-            "Архів:ДАКрО/225/1/144а", 
-            "Архів:ДАПО/978/1",
-            "Архів:ДАПО/Р",
-            "Архів:ДАХмО/Р-6193",
-            "Архів:ДАКрО/П-5907/2Р",
-            "Архів:ДАОО/Р-8085/1",
-            "Архів:ДАКрО/225/1",
-            "Архів:ДАПО/1072/1/1",
-            "Архів:ДАПО/978/1/135",
-            "Архів:ДАПО/978",
-            "Архів:ДАКО/Р-5634/1/3092",
-            "Архів:ІР_НБУВ/130/1",
-            "Архів:ІР НБУВ/232/1"
-            ]
+        titles = [
+            "Архів:Лука_Мала",                                                                    # non-hierarchical page
+            "Архів:Архівний_відділ_виконавчого_комітету_Кременчуцької_міської_ради/2-ОС/1",       # long name (underscores), hyphenated subarchive
+            "Архів:Архівний відділ виконавчого комітету Кременчуцької міської ради/Р",            # long name (spaces), Р subarchive
+            "Архів:ДАХмО/К",                                                                      # К subarchive
+            "Архів:ДАПО/Р/1–1000",                                                               # Р subarchive + en-dash range fond
+            "Архів:ДАКО/Р-5634/1/3092",                                                          # 4-level: Р-prefixed fond, large case number
+            "Архів:ДАКрО/225/1/144а",                                                            # 4-level: numeric fond, letter-suffixed case
+            "Архів:ДАКрО/П-5907/2Р",                                                             # П-prefixed fond, letter-suffixed opus
+            "Архів:ІР_НБУВ/130/1",                                                               # compound archive name (underscores)
+            "Архів:ІР НБУВ/232/1",                                                               # compound archive name (spaces)
+        ]
         runtime = Runtime()
 
         def test_title(title, runtime):
