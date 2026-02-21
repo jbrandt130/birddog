@@ -70,8 +70,9 @@ def _iso_date(s):
       - '2025-08-21'
       - '2026-02-09 19:54:45+00:00'
       - '2026-02-09T19:54:45+00:00'
-    Returns ISO date ('YYYY-MM-DD') if it looks like a single date,
-    else raise ValueError.
+    Returns the full datetime string ('YYYY-MM-DD HH:MM:SS[+TZ]') when a time
+    component is present, or 'YYYY-MM-DD 00:00:00' for date-only inputs.
+    Raises ValueError for unrecognized formats.
     """
     if s is None:
         return None
@@ -81,16 +82,22 @@ def _iso_date(s):
     if not s:
         return None
 
+    has_time = 'T' in s or (len(s) > 10 and s[10] == ' ')
+
     # 1. Try full ISO datetime (with optional timezone)
     try:
-        return datetime.fromisoformat(s).date().isoformat()
+        dt = datetime.fromisoformat(s)
+        if has_time:
+            return dt.isoformat(sep=' ')
+        else:
+            return dt.date().isoformat() + " 00:00:00"
     except Exception:
         pass
 
     # 2. Try date-only formats
     for fmt in ("%d %b %Y", "%d %B %Y", "%Y-%m-%d", "%d/%m/%Y"):
         try:
-            return datetime.strptime(s, fmt).date().isoformat()
+            return datetime.strptime(s, fmt).date().isoformat() + " 00:00:00"
         except Exception:
             pass
 
