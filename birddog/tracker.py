@@ -1,6 +1,7 @@
 # (c) 2025 Jonathan Brandt
 # Licensed under the MIT License. See LICENSE file in the project root.
 
+import json
 import os
 
 from datetime import datetime, timedelta, timezone
@@ -134,7 +135,6 @@ class SQLitePageTrackerTable:
 # -------------------------------------------------------------------------------
 # DynamoDB table implementations
 
-import time
 import uuid
 import boto3
 from boto3.dynamodb.conditions import Attr
@@ -420,8 +420,11 @@ else:
 
 class PageChangeLog:
     def __init__(self):
-        self._table = PageChangeLogTable()
-        self._changes = self._table.get()
+        self._kv = KeyValueStore(table_name=_TRACKER_KV_TABLE)
+        self._changes = {
+            k: json.loads(v)
+            for k, v in self._kv.get_all(_TRACKER_KV_NS_CHANGE_LOG)
+        }
 
     def size(self):
         return len(self._changes)
@@ -429,12 +432,12 @@ class PageChangeLog:
     def oldest(self):
         if not self._changes:
             raise ValueError("empty page change log")
-        return min(item[1] for item in self._changes)
+        return min(v["timestamp"] for v in self._changes.values())
 
     def newest(self):
         if not self._changes:
             raise ValueError("empty page change log")
-        return max(item[1] for item in self._changes)
+        return max(v["timestamp"] for v in self._changes.values())
 
     def refresh(self):
         cutoff_date = self.newest() if self._changes else None
@@ -445,41 +448,35 @@ class PageChangeLog:
                 canonicalize_title(title): update
                 for title, update in updates.items()
             }
-            self._table.append(updates)
-            self._changes.extend([
-                (title, update["timestamp"], update["user"])
-                for title, update in updates.items()])
-
-    def truncate(self, cutoff_date):
-        self._table.truncate(cutoff_date)
-        self._changes = [item for item in self._changes if item[1] >= cutoff_date]
+            for title, update in updates.items():
+                entry = {"timestamp": update["timestamp"], "user": update["user"]}
+                self._kv.insert(_TRACKER_KV_NS_CHANGE_LOG, title, json.dumps(entry))
+                self._changes[title] = entry
 
     def get(self):
-        result = {}
-        for title, timestamp, user in self._changes:
-            if title not in result or result[title]["timestamp"] < timestamp:
-                result[title] = { "timestamp": timestamp, "user": user }
-        return result
+        return dict(self._changes)
 
 class PageTracker:
     def __init__(self):
         self._change_log = PageChangeLog()
-        self._table = PageTrackerTable()
+        self._kv = KeyValueStore(table_name=_TRACKER_KV_TABLE)
         self._load_cache()
 
     def _load_cache(self):
         self._page_dict = {
-            title: { "timestamp": timestamp, "user": user }
-            for title, timestamp, user in self._table.get() }
+            k: json.loads(v)
+            for k, v in self._kv.get_all(_TRACKER_KV_NS_TRACKER)
+        }
 
     def reset(self, all_titles=None):
         if not all_titles:
             _logger.info("PageTracker.reset: generating title inventory for archive...")
             all_titles = get_all_pages()
-        self._table.clear()
+        self._kv.remove_all(_TRACKER_KV_NS_TRACKER)
         if all_titles:
             _logger.info(f"PageTracker.reset: inserting {len(all_titles)} titles into tracker")
-            self._table.put(all_titles)
+            for title, item in all_titles.items():
+                self._kv.insert(_TRACKER_KV_NS_TRACKER, title, json.dumps(item))
         self._load_cache()
 
     def refresh(self):
@@ -493,9 +490,8 @@ class PageTracker:
                 newer_updates[title] = item
         if newer_updates:
             _logger.info(f"PageTracker.refresh found {len(newer_updates)} page updates")
-            self._table.put(newer_updates)
             for title, item in newer_updates.items():
-                #_logger.info(f"{title}, {item}")
+                self._kv.insert(_TRACKER_KV_NS_TRACKER, title, json.dumps(item))
                 self._page_dict[title] = item
         return newer_updates
 
@@ -513,14 +509,14 @@ class PageTracker:
                 updates = get_last_mod(good_titles, api_delay=api_delay)
                 updates = {title: {"timestamp": value} for title, value in updates.items()}
                 _logger.info(f"PageTracker: initializing mod dates for {len(updates)} titles")
-                self._table.put(updates)
                 for title, item in updates.items():
+                    self._kv.insert(_TRACKER_KV_NS_TRACKER, title, json.dumps(item))
                     self._page_dict[title] = item
             if bad_titles:
                 # take non-existent titles out of tracker table
                 _logger.info(f"PageTracker: removing {len(bad_titles)} non-existent titles")
-                self._table.remove(bad_titles)
                 for title in bad_titles:
+                    self._kv.remove(_TRACKER_KV_NS_TRACKER, title)
                     del self._page_dict[title]
         return True
 
@@ -539,6 +535,8 @@ class PageTracker:
 # -------------------------------------------------------------------------------
 # table bootstrapping utilities
 
+from birddog.store import DynamoDBKeyValueStore
+
 def process_tracker_unknowns():
     from time import sleep
     tracker = PageTracker()
@@ -546,6 +544,37 @@ def process_tracker_unknowns():
     while still_more:
         still_more = tracker.initialize_batch_of_unknowns()
         sleep(1)
+
+_TRACKER_KV_TABLE = "bd_tracker_kv_store"
+_TRACKER_KV_NS_TRACKER    = "pt"
+_TRACKER_KV_NS_CHANGE_LOG = "pcl"
+
+def migrate_page_tracker_to_kv(force_ddb=False):
+    """One-time migration: copy PageTrackerTable data into KeyValueStore.
+    Pass force_ddb=True to explicitly use DynamoDB tables regardless of environment."""
+    src_table = DynamoDBPageTrackerTable() if force_ddb else PageTrackerTable()
+    kv = DynamoDBKeyValueStore(table_name=_TRACKER_KV_TABLE) if force_ddb else KeyValueStore(table_name=_TRACKER_KV_TABLE)
+    rows = src_table.get()   # [(title, timestamp, user), ...]
+    _logger.info(f"migrate_page_tracker_to_kv: {len(rows)} rows")
+    for title, timestamp, user in rows:
+        kv.insert(_TRACKER_KV_NS_TRACKER, title, json.dumps({"timestamp": timestamp, "user": user}))
+    _logger.info("migrate_page_tracker_to_kv: done")
+
+def migrate_page_change_log_to_kv(force_ddb=False):
+    """One-time migration: copy PageChangeLogTable data into KeyValueStore.
+    Coalesces to the latest timestamp per title (matching PageChangeLog.get() semantics).
+    Pass force_ddb=True to explicitly use DynamoDB tables regardless of environment."""
+    src_table = DynamoDBPageChangeLogTable() if force_ddb else PageChangeLogTable()
+    kv = DynamoDBKeyValueStore(table_name=_TRACKER_KV_TABLE) if force_ddb else KeyValueStore(table_name=_TRACKER_KV_TABLE)
+    rows = src_table.get()   # [(title, timestamp, user), ...] sorted ts asc
+    latest = {}
+    for title, timestamp, user in rows:
+        if title not in latest or timestamp > latest[title]["timestamp"]:
+            latest[title] = {"timestamp": timestamp, "user": user}
+    _logger.info(f"migrate_page_change_log_to_kv: {len(latest)} entries (from {len(rows)} rows)")
+    for title, data in latest.items():
+        kv.insert(_TRACKER_KV_NS_CHANGE_LOG, title, json.dumps(data))
+    _logger.info("migrate_page_change_log_to_kv: done")
 
 def copy_page_tracker_to_ddb(batch_size=100, limit=None):
     ddb_table = DynamoDBPageTrackerTable()
@@ -748,7 +777,7 @@ class WikiDocTracker(HeartbeatManager):
         if changes:
             _logger.info(f"found {len(changes)} changes")
             newest_seen = max(v["timestamp"] for v in changes.values())
-            hits = { title for title in changes if title in self._doc_map }
+            hits = { title: changes[title] for title in changes if title in self._doc_map }
             return hits, newest_seen
         return None, utc_end_z
 
@@ -757,10 +786,6 @@ class WikiDocTracker(HeartbeatManager):
         doc_updates: list[{"title": <normalized_title>, "link": <link>, "timestamp": <utc>, "user": <user>}]
         Placeholder for the DB update step.
         """
-        # TODO: implement:
-        # - resolve link/title -> document record id
-        # - refresh metadata for those docs
-        # - write updates to DB
         if not self._runtime.database_updater:
             _logger.warning(f"WikiDocTracker: database updater unavailable - skipping document updates")
             return

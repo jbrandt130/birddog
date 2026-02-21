@@ -35,6 +35,12 @@ class TestPageChangeLog(unittest.TestCase):
         os.chdir(self._tmpdir.name)
         self.addCleanup(lambda: os.chdir(self._old_cwd))
 
+        # birddog.store binds LogService at import time, so patch it there
+        # for the full duration of each test (not just during reload).
+        p = mock.patch("birddog.store.LogService", _DummyLogService)
+        p.start()
+        self.addCleanup(p.stop)
+
         self.tracker = _reload_tracker_with_local_env()
 
     def test_oldest_newest_empty_raises(self):
@@ -50,11 +56,8 @@ class TestPageChangeLog(unittest.TestCase):
 
         # Start with one existing change so refresh uses newest() as cutoff_date.
         log = tracker.PageChangeLog()
-        log._changes.extend([
-            ("Page:A", "2025-01-01T00:00:00Z", "u1"),
-        ])
+        log._changes["Page:A"] = {"timestamp": "2025-01-01T00:00:00Z", "user": "u1"}
 
-        #log.append({"Page:A": {"timestamp": "2025-01-01T00:00:00Z", "user": "u1"}})
 
         # Prepare a refresh payload that includes:
         # - a newer update to an existing title
@@ -88,6 +91,40 @@ class TestPageChangeLog(unittest.TestCase):
         self.assertEqual(got["PAGE:B"]["timestamp"], "2025-01-04T00:00:00Z")
         self.assertEqual(got["PAGE:B"]["user"], "u4")
 
+    def test_changes_persisted_and_reloaded(self):
+        """__init__ deserializes entries that a previous refresh() wrote to the KV store."""
+        tracker = self.tracker
+        log = tracker.PageChangeLog()
+        self.assertEqual(log.size(), 0)
+
+        recent_changes = {
+            "Page:X": {"timestamp": "2025-06-01T00:00:00Z", "user": "alice"},
+            "Page:Y": {"timestamp": "2025-06-02T00:00:00Z", "user": "bob"},
+        }
+        with mock.patch.object(tracker, "get_recent_changes", return_value=recent_changes), \
+             mock.patch.object(tracker, "canonicalize_title", side_effect=lambda t: t.upper()):
+            log.refresh()
+
+        # New instance should deserialize from the same KV store (same temp dir)
+        log2 = tracker.PageChangeLog()
+        got = log2.get()
+        self.assertEqual(got["PAGE:X"]["timestamp"], "2025-06-01T00:00:00Z")
+        self.assertEqual(got["PAGE:X"]["user"], "alice")
+        self.assertEqual(got["PAGE:Y"]["timestamp"], "2025-06-02T00:00:00Z")
+        self.assertEqual(got["PAGE:Y"]["user"], "bob")
+
+    def test_refresh_with_empty_log_passes_none_cutoff(self):
+        """refresh() on an empty log calls get_recent_changes with cutoff_date=None."""
+        tracker = self.tracker
+        log = tracker.PageChangeLog()
+
+        with mock.patch.object(tracker, "get_recent_changes", return_value={}) as grc:
+            log.refresh()
+
+        grc.assert_called_once()
+        _, kwargs = grc.call_args
+        self.assertIsNone(kwargs.get("cutoff_date"))
+
 
 class TestPageTracker(unittest.TestCase):
     def setUp(self):
@@ -97,6 +134,12 @@ class TestPageTracker(unittest.TestCase):
         os.chdir(self._tmpdir.name)
         self.addCleanup(lambda: os.chdir(self._old_cwd))
 
+        # birddog.store binds LogService at import time, so patch it there
+        # for the full duration of each test (not just during reload).
+        p = mock.patch("birddog.store.LogService", _DummyLogService)
+        p.start()
+        self.addCleanup(p.stop)
+
         self.tracker = _reload_tracker_with_local_env()
 
     def test_refresh_writes_only_newer_updates(self):
@@ -104,29 +147,27 @@ class TestPageTracker(unittest.TestCase):
 
         pt = tracker.PageTracker()
 
-        # Seed existing state
-        pt._table.put({
-            "Page:Old": {"timestamp": "2025-01-10T00:00:00Z", "user": "u0"},
+        # Seed existing state directly into the in-memory cache
+        pt._page_dict = {
+            "Page:Old":  {"timestamp": "2025-01-10T00:00:00Z", "user": "u0"},
             "Page:Keep": {"timestamp": "2025-01-05T00:00:00Z", "user": "u0"},
-        })
-        pt._load_cache()
-
-        updates = {
-            "Page:Old": {"timestamp": "2025-01-09T00:00:00Z", "user": "u1"},   # older than latest -> ignored
-            "Page:Keep": {"timestamp": "2025-01-06T00:00:00Z", "user": "u2"},  # newer -> applied
-            "Page:New": {"timestamp": "2025-01-01T00:00:00Z", "user": "u3"},   # new title -> applied
         }
 
-        with mock.patch.object(pt._change_log, "refresh", return_value=None) as _refresh, \
+        updates = {
+            "Page:Old":  {"timestamp": "2025-01-09T00:00:00Z", "user": "u1"},  # older -> ignored
+            "Page:Keep": {"timestamp": "2025-01-06T00:00:00Z", "user": "u2"},  # newer -> applied
+            "Page:New":  {"timestamp": "2025-01-01T00:00:00Z", "user": "u3"},  # new title -> applied
+        }
+
+        with mock.patch.object(pt._change_log, "refresh"), \
              mock.patch.object(pt._change_log, "get", return_value=updates), \
-             mock.patch.object(pt._table, "put", wraps=pt._table.put) as put_spy:
+             mock.patch.object(pt._kv, "insert") as insert_spy:
             newer = pt.refresh()
 
         self.assertEqual(set(newer.keys()), {"Page:Keep", "Page:New"})
-        # Verify persisted write includes only newer updates
-        self.assertTrue(put_spy.called)
-        written = put_spy.call_args.args[0]
-        self.assertEqual(set(written.keys()), {"Page:Keep", "Page:New"})
+        # Verify only the newer titles were persisted
+        written_titles = {c.args[1] for c in insert_spy.call_args_list}
+        self.assertEqual(written_titles, {"Page:Keep", "Page:New"})
 
         # Cache updated
         self.assertEqual(pt._page_dict["Page:Keep"]["timestamp"], "2025-01-06T00:00:00Z")
@@ -146,8 +187,8 @@ class TestPageTracker(unittest.TestCase):
 
         with mock.patch.object(tracker, "batch_page_exists", return_value={"A": True, "B": False, "C": True}) as bpe, \
              mock.patch.object(tracker, "get_last_mod", return_value={"A": "tA", "C": "tC"}) as glm, \
-             mock.patch.object(pt._table, "put") as put_mock, \
-             mock.patch.object(pt._table, "remove") as remove_mock:
+             mock.patch.object(pt._kv, "insert") as insert_mock, \
+             mock.patch.object(pt._kv, "remove") as remove_mock:
             still_more = pt.initialize_batch_of_unknowns(batch_size=50, api_delay=0.0)
 
         self.assertTrue(still_more)
@@ -155,11 +196,13 @@ class TestPageTracker(unittest.TestCase):
         bpe.assert_called_once()
         glm.assert_called_once()
 
-        # Good titles should be stored with {"timestamp": ...}
-        put_mock.assert_called_once_with({"A": {"timestamp": "tA"}, "C": {"timestamp": "tC"}})
+        # Good titles should each be inserted into the kv store
+        inserted_titles = {c.args[1] for c in insert_mock.call_args_list}
+        self.assertEqual(inserted_titles, {"A", "C"})
 
-        # Bad titles removed
-        remove_mock.assert_called_once_with(["B"])
+        # Bad titles each removed from the kv store
+        removed_titles = {c.args[1] for c in remove_mock.call_args_list}
+        self.assertEqual(removed_titles, {"B"})
 
         self.assertEqual(pt._page_dict["A"]["timestamp"], "tA")
         self.assertEqual(pt._page_dict["C"]["timestamp"], "tC")
@@ -186,6 +229,60 @@ class TestPageTracker(unittest.TestCase):
 
         self.assertEqual(set(got.keys()), {"ARCHIVE:ABC/2"})
         self.assertEqual(got["ARCHIVE:ABC/2"]["user"], "u2")
+
+    def test_reset_clears_and_repopulates(self):
+        """reset() calls remove_all on the PT namespace then inserts each supplied title."""
+        tracker = self.tracker
+        pt = tracker.PageTracker()
+
+        new_titles = {"Page:A": {"timestamp": "t1"}, "Page:B": {"timestamp": "t2"}}
+        with mock.patch.object(pt._kv, "remove_all") as remove_all_spy, \
+             mock.patch.object(pt._kv, "insert") as insert_spy, \
+             mock.patch.object(pt._kv, "get_all", return_value=[]):
+            pt.reset(all_titles=new_titles)
+
+        remove_all_spy.assert_called_once_with(tracker._TRACKER_KV_NS_TRACKER)
+        inserted_titles = {c.args[1] for c in insert_spy.call_args_list}
+        self.assertEqual(inserted_titles, {"Page:A", "Page:B"})
+
+    def test_refresh_no_op_when_nothing_newer(self):
+        """refresh() returns {} and writes nothing to KV when all change-log entries are older."""
+        tracker = self.tracker
+        pt = tracker.PageTracker()
+
+        pt._page_dict = {
+            "Page:X": {"timestamp": "2025-05-10T00:00:00Z", "user": "u0"},
+        }
+        updates = {
+            "Page:X": {"timestamp": "2025-05-09T00:00:00Z", "user": "u1"},  # older -> ignored
+        }
+        with mock.patch.object(pt._change_log, "refresh"), \
+             mock.patch.object(pt._change_log, "get", return_value=updates), \
+             mock.patch.object(pt._kv, "insert") as insert_spy:
+            result = pt.refresh()
+
+        self.assertEqual(result, {})
+        insert_spy.assert_not_called()
+        self.assertEqual(pt._page_dict["Page:X"]["user"], "u0")
+
+    def test_page_dict_persisted_and_reloaded(self):
+        """_load_cache() correctly deserializes entries written by a previous refresh()."""
+        tracker = self.tracker
+        pt1 = tracker.PageTracker()
+
+        updates = {
+            "Page:Alpha": {"timestamp": "2025-03-01T00:00:00Z", "user": "u1"},
+            "Page:Beta":  {"timestamp": "2025-03-02T00:00:00Z", "user": "u2"},
+        }
+        with mock.patch.object(pt1._change_log, "refresh"), \
+             mock.patch.object(pt1._change_log, "get", return_value=updates):
+            pt1.refresh()
+
+        # New instance reads from the same KV store (same temp dir)
+        pt2 = tracker.PageTracker()
+        self.assertEqual(pt2._page_dict["Page:Alpha"]["timestamp"], "2025-03-01T00:00:00Z")
+        self.assertEqual(pt2._page_dict["Page:Beta"]["user"], "u2")
+        self.assertNotIn("Page:Gamma", pt2._page_dict)
 
 
 if __name__ == "__main__":
