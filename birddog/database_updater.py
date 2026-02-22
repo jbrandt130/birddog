@@ -283,6 +283,7 @@ def form_document_record(url):
 
     If source == "other", title will be None and link is the original URL.
     """
+    url = url.strip()
     parsed = urlparse(url)
     host = parsed.netloc.lower()
     path = parsed.path
