@@ -13,6 +13,7 @@ from birddog.wiki import (
     API_URL,
     canonicalize_title,
     page_label,
+    sequential_page_label,
     page_kind,
     )
 from birddog.utility import (
@@ -263,6 +264,7 @@ def _form_page_info_from_title(title):
     else:
         record["level"] = page_kind(title, record.get("children"))
         record["label"] = page_label(title)
+        record["seq_label"] = sequential_page_label(record["label"])
         revid = parse.get("revid", "")
         record["timestamp"] = _get_latest_mod_date(revid)
         record["availability"] = "linked"
