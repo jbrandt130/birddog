@@ -364,15 +364,17 @@ class TaskManager(HeartbeatManager):
             return
 
         subtasks = [json.loads(v) for (_, v) in completed_items] + [json.loads(v) for (_, v) in failed_items]
-        # Optional: stable ordering by index
-        #subtasks.sort(key=lambda s: int(s.get("index", 0)))
+
+        # Finalize the task
+        try:
+            self.complete_task(task, subtasks)
+        except Exception:
+            _logger.exception("complete_task failed for task_id=%s; leaving subtasks for retry", task_id)
+            return
 
         # Cleanup subtasks
         self._key_value_store.remove_all(self._completed_id(task_id))
         self._key_value_store.remove_all(self._failed_id(task_id))
-
-        # Finalize the task
-        self.complete_task(task, subtasks)
 
         # Cleanup the task
         self._remove_task(task_id)
@@ -542,8 +544,15 @@ class TaskManager(HeartbeatManager):
             # Success: mark completed and ack
             try:
                 self._mark_subtask_completed(subtask)
-            except:
-                pass
+            except Exception as e:
+                _logger.exception("Failed to mark subtask completed: %s (task=%s index=%s)",
+                                  e, subtask.get("task_id"), subtask.get("index"))
+                # best-effort: let it retry by releasing lease early
+                try:
+                    self._release_subtask(subtask)
+                except Exception:
+                    pass
+                continue
 
     def _run_worker_wrapper(self):
         try:
@@ -569,6 +578,22 @@ class TaskManager(HeartbeatManager):
 
         thread = Thread(target=self._run_worker_wrapper, name=f"{self._name}-worker", daemon=True)
         thread.start()
+
+    def _reap_completed_tasks(self, max_tasks: int = 50):
+        try:
+            active = self._key_value_store.get_all(self._active_id)
+        except Exception as e:
+            _logger.warning("TaskManager: failed to list active tasks for reap: %s", e)
+            return
+
+        for _, v in active[:max_tasks]:
+            try:
+                task = json.loads(v)
+                task_id = task.get("task_id")
+                if task_id:
+                    self._maybe_finalize_task(task_id)   # rely on counts
+            except Exception:
+                _logger.exception("TaskManager: reap failed")
 
     # -------------------------
     # Heartbeat processing
@@ -597,6 +622,9 @@ class TaskManager(HeartbeatManager):
         # 2) Spawn workers if there is visible work and we have capacity.
         if self._any_pending():
             self._spawn_worker()
+
+        # 3) Reap/finalize completed tasks that may have gotten stuck.
+        self._reap_completed_tasks()
 
     # ========
     # subclass methods
