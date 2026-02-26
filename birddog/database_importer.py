@@ -8,6 +8,7 @@ from birddog.wiki import (
     get_title,
     parent_title,
     page_label,
+    sequential_page_label,
     )
 from openpyxl import load_workbook
 from pathlib import Path
@@ -247,9 +248,11 @@ def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=None):
     parent_title = get_parent_title(ws)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
+    label = page_label(parent_title)
     add_page({
         "title": parent_title,
-        "label": page_label(parent_title), # get_cell_value(ws["A1"]).replace(" ", "-"),
+        "label": label,
+        "seq_label": sequential_page_label(label),
         "level": "archive",
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
@@ -271,10 +274,11 @@ def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=None):
             continue
         if cell.value:
             title = get_page_title_from_link(cell)
-            label = page_label(title),
+            label = page_label(title)
             add_page({
                 "title": title,
                 "label": label,
+                "seq_label": sequential_page_label(label),
                 "level": "fond",
                 "description": get_cell_value(ws[f"B{r}"]),
                 "years": get_cell_value(ws[f"C{r}"]),
@@ -292,9 +296,11 @@ def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
     parent_title = get_parent_title(ws)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
+    label = page_label(parent_title)
     add_page({
         "title": parent_title,
-        "label": page_label(parent_title),
+        "label": label,
+        "seq_label": sequential_page_label(label),
         "level": "fond",
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
@@ -319,6 +325,7 @@ def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
             add_page({
                 "title": title,
                 "label": label,
+                "seq_label": sequential_page_label(label),
                 "level": "opus",
                 "description": get_cell_value(ws[f"B{r}"]),
                 "years": get_cell_value(ws[f"C{r}"]),
@@ -339,6 +346,7 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
     add_page({
         "title": parent_title,
         "label": page_label(parent_title),
+        "seq_label": sequential_page_label(parent_title),
         "level": "opus",
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
@@ -361,6 +369,10 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
         cell = ws[f"A{r}"]
         if str(cell.value).startswith("="):
             break
+        if not is_positive_int(str(cell.value)):
+            # sometimes there is some text in the A column, like "INFORMATION AND INSTRUCTIONAL DEPARTMENT" -
+            # we skip such lines
+            continue
         if cell.value:
             title = get_page_title_from_link(cell)
             if title is None:
@@ -387,6 +399,7 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
             add_page({
                 "title": title,
                 "label": label,
+                "seq_label": sequential_page_label(label),
                 "level": "case",
                 "description": get_cell_value(ws[f"B{r}"]),
                 "years": get_cell_value(ws[f"C{r}"]),
@@ -618,7 +631,7 @@ def process_dir(dir_path):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/CDIAK-wiki-20260215.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DAVIO-R-wiki-20251224.xlsx"
     import_spreadsheet(filepath)
     #dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
     #process_dir(dir_path)
