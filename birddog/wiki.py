@@ -470,7 +470,7 @@ def _check_page_existence_chunked(page_links, chunk_size=50):
             'titles': title_batch,
             'format': 'json'
         }
-        data = fetch_url(API_URL, params=params, return_json=True, method="POST")
+        data = fetch_url(API_URL, data=params, return_json=True, method="POST")
         for page_data in data['query']['pages'].values():
             title = page_data['title'].replace(" ", "_").lower()
             # If invalid or missing, mark as False
@@ -838,21 +838,69 @@ def _included_link(link):
         re.search(r".(png|jpg)$", link, re.IGNORECASE),
         ])
 
-def mw_page_doc_url(page):
-    links = page["other_links"].get("internal_links", [])
-    links = [link for link in links if _included_link(link)]
-    if links:
-        return expand_link_target(links[0], page["title"]["uk"])
-    links = page["notes"].get("commons_links", [])
-    links = [link for link in links if _included_link(link)]
-    if links:
-        return links[0]
-    links = page["other_links"].get("external_links", [])
-    links = [link for link in links if _included_link(link)]
-    if links:
-        return links[0]
-    return None
+def _included_link(link: str) -> bool:
+    return not any([
+        _is_relative_link_target(link),
+        _is_familysearch_url(link),
+        re.search(r"\.(png|jpg)$", link, re.IGNORECASE),
+    ])
 
+def _normalize_link_title(title: str) -> str:
+    """Normalize for comparisons across lists (spaces/underscores, fragments, leading ':', URL-escapes)."""
+    if not title:
+        return ""
+    t = unquote(title)
+    t = t.split("#", 1)[0]         # drop anchors
+    t = t.lstrip(":").strip()      # drop leading ':' used for namespace escape
+    t = t.replace("_", " ").strip()
+    return t
+
+_CATEGORY_NS_PREFIXES = ("Категорія:", "Category:")
+
+def _strip_category_namespace(title: str) -> str:
+    t = _normalize_link_title(title)
+    for p in _CATEGORY_NS_PREFIXES:
+        if t.lower().startswith(p.lower()):
+            return t[len(p):].strip()
+    return t
+
+def mw_page_doc_url(page):
+    # 1) Prefer explicit commons PDF links first (these are usually the actual “doc”)
+    links = page.get("notes", {}).get("commons_links", [])
+    links = [link for link in links if _included_link(link)]
+    if links:
+        return links[0]
+
+    # 2) Filter internal links that are really category targets
+    category_links = page.get("other_links", {}).get("category_links", [])
+    category_targets = {
+        _strip_category_namespace(c) for c in category_links if c
+    }
+
+    internal = page.get("other_links", {}).get("internal_links", [])
+    internal = [l for l in internal if _included_link(l)]
+
+    internal = [
+        l for l in internal
+        if _normalize_link_title(l) not in category_targets
+    ]
+
+    if internal:
+        return expand_link_target(internal[0], page["title"]["uk"])
+
+    # 3) Then any “other” commons links if you have them (non-notes bucket)
+    links = page.get("other_links", {}).get("commons_links", [])
+    links = [link for link in links if _included_link(link)]
+    if links:
+        return links[0]
+
+    # 4) Finally external links
+    links = page.get("other_links", {}).get("external_links", [])
+    links = [link for link in links if _included_link(link)]
+    if links:
+        return links[0]
+
+    return None
 
 def _extract_table(table_code, page_title, page_links, all_page_links):
     header, rows = _parse_wikitext_table(table_code)
