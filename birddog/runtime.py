@@ -35,7 +35,8 @@ from birddog.env import detect_environment
 from birddog.utility import HeartbeatManager
 from birddog.fetch import FetchUrlFailError
 
-_ENABLE_DB_SYNC = os.environ.get("BIRDDOG_ENABLE_DB_SYNC", False)
+#_ENABLE_DB_SYNC = os.environ.get("BIRDDOG_ENABLE_DB_SYNC", False)
+_ENABLE_DB_SYNC = True
 if _ENABLE_DB_SYNC:
     from birddog.database_updater import DatabaseUpdater, DatabaseUpdateManager
     from birddog.database import Database
