@@ -25,6 +25,11 @@ import os
 
 _ENABLE_CONSOLE_HIGHLIGHTING = os.name == "nt"
 
+START_HDR_ROW = 5 #the headers are sometimes in row 5 and sometimes in row 6 or 7
+END_HDR_ROW = 7
+FIRST_OPUS_HDR = "Case #, link"
+FIRST_FUND_HDR = "Opus #, link"
+
 if _ENABLE_CONSOLE_HIGHLIGHTING:
     from colorama import Fore, init
     init()  # Windows fix
@@ -132,7 +137,7 @@ def is_positive_int(s: str) -> bool:
     except ValueError:
         return False
 
-def find_header(ws, row, start_col, end_col, header):
+def find_header_in_row(ws, row, start_col, end_col, header):
     """Find a cell with the given header in the given row of the given worksheet.
     Returns the column if found, None otherwise."""
     header = header.upper()
@@ -140,6 +145,20 @@ def find_header(ws, row, start_col, end_col, header):
     end_ord = ord(end_col)
     for i in range(start_ord, end_ord + 1):
         cell_addr = f"{chr(i)}{row}"
+        contents = get_cell_value(ws[cell_addr])
+        if contents is None:
+            continue
+        contents = contents.upper()
+        if contents == header:
+            return i
+    return None
+
+def find_header_in_col(ws, start_row, end_row, col, header):
+    """Find a cell with the given header in the given column of the given worksheet.
+    Returns the row if found, None otherwise."""
+    header = header.upper()
+    for i in range(start_row, end_row + 1):
+        cell_addr = f"{col}{i}"
         contents = get_cell_value(ws[cell_addr])
         if contents is None:
             continue
@@ -172,7 +191,7 @@ def get_dates(ws, change_date_col, ref_date_col):
 
 def get_parent_title(ws):
     row = 3
-    source_col = find_header(ws, row, "B", "Z", "source:")
+    source_col = find_header_in_row(ws, row, "B", "Z", "source:")
     parent_title_cell = ws[f"{chr(source_col + 1)}{row}"] #default D3
     parent_title = get_page_title_from_link(parent_title_cell)
     return parent_title
@@ -312,7 +331,12 @@ def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
         "wiki_link": get_cell_link(ws["D3"]),
     }, page_table)
 
-    for r in range(7, ws.max_row + 1):
+    #the header row can be 5, 6 or 7
+    hdr_row = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, "A", FIRST_FUND_HDR)
+    if hdr_row is None:
+        raise ValueError(f"No {FIRST_OPUS_HDR} header found in sheet {parent_title}")
+
+    for r in range(hdr_row + 1, ws.max_row + 1):
         cell = ws[f"A{r}"]
         if str(cell.value).startswith("="):
             break
@@ -341,12 +365,13 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
     parent_title = get_parent_title(ws)
+    label = page_label(parent_title)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
     add_page({
         "title": parent_title,
-        "label": page_label(parent_title),
-        "seq_label": sequential_page_label(parent_title),
+        "label": label,
+        "seq_label": sequential_page_label(label),
         "level": "opus",
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
@@ -358,10 +383,14 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
         "wiki_link": get_cell_link(ws["D3"]),
     }, page_table)
 
+    #the header row can be 5, 6 or 7
+    hdr_row = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, "A", FIRST_OPUS_HDR)
+    if hdr_row is None:
+        raise ValueError(f"No {FIRST_OPUS_HDR} header found in sheet {parent_title}")
+
     #there are sometimes columns inserted between "process" and "Comments",
     #so we need to find the exact position of the latter one
-    hdr_row = 6
-    comments_col = find_header(ws, hdr_row, "G", "Z", "Comments")
+    comments_col = find_header_in_row(ws, hdr_row, "G", "Z", "Comments")
     if comments_col is None:
         raise ValueError(f"No 'Comments' column found in sheet {parent_title}")
 
@@ -442,10 +471,10 @@ def process_worksheets(worksheets, page_table=None):
     for sheet in worksheets:
         try:
             _logger.info(f"processing worksheet: {sheet.title}")
-            change_date_col = find_header(sheet, hdr_row, "I", "Z", "change date:")
+            change_date_col = find_header_in_row(sheet, hdr_row, "I", "Z", "change date:")
             if change_date_col is None:
                 raise ValueError(f"No 'change date:' column")
-            ref_date_col = find_header(sheet, hdr_row, chr(change_date_col + 2), "Z", "reference date:")
+            ref_date_col = find_header_in_row(sheet, hdr_row, chr(change_date_col + 2), "Z", "reference date:")
             if ref_date_col is None:
                 raise ValueError(f"No 'reference date:' column")
             num_attributes = count_fund_opus_attributes(sheet, change_date_col)
@@ -631,7 +660,7 @@ def process_dir(dir_path):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DAVIO-R-wiki-20251224.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DADNO-D-wiki-20251031.xlsx"
     import_spreadsheet(filepath)
     #dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
     #process_dir(dir_path)
