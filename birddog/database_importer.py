@@ -10,11 +10,13 @@ from birddog.wiki import (
     page_label,
     sequential_page_label,
     )
+from datetime import datetime
 from openpyxl import load_workbook
 from pathlib import Path
-from typing import Tuple
 from urllib.parse import unquote, urlparse, parse_qs
 import time
+from typing import List
+import re
 
 from birddog.log import get_logger
 _logger = get_logger()
@@ -121,6 +123,78 @@ def add_page(page: dict, page_table: dict) -> None:
     entry = page_table.setdefault(title, dict())
     # update/merge keys
     entry.update(page)
+
+def log_strange_parsing_result(ws, r, cell, ints: List[str]):
+    num_results = len(ints)
+    match num_results:
+        case 1:
+            #default result - do nothing
+            return
+        case 0:
+            if len(str(cell.value)) == 0:
+                #empty cell - do nothing
+                return
+            _logger.warning(f"Irregular fund number '{str(cell.value)}', sheet='{ws.title}', row={r} - skipping")
+        case _:
+            _logger.warning(f"Irregular fund number '{str(cell.value)}', sheet='{ws.title}', row={r} - splitting to {ints}")
+
+
+def parse_cell_integers(cell) -> List[str]:
+    """
+    Parses an openpyxl cell value into a list of integers based on specific rules.
+
+    Rules:
+    1. Float that is integer (e.g., 41.0) -> [41]
+    2. String with comma-separated integers (e.g., "41, 42") -> [41, 42]
+    3. datetime object -> [day, month]
+    4. String range "10-13" -> [10, 11, 12, 13]
+    5. Otherwise -> []
+
+    Args:
+        cell: openpyxl.cell.cell.Cell object
+
+    Returns:
+        List[str]: List of parsed integers converted to strings
+    """
+    value = cell.value
+
+    # Case 1: Float that is integer
+    if isinstance(value, float) and value.is_integer():
+        return [str(int(value))]
+
+    # Case 4: datetime -> [day, month]
+    if isinstance(value, datetime):
+        return [str(value.day), str(value.month)]
+
+    # Case 2 & 4: Convert to string and parse
+    if value is None:
+        return []
+    s = str(value).strip()
+
+    # Case 4: Range like "10-13"
+    if '-' in s and re.match(r'^\d+-\d+$', s):
+        try:
+            start, end = map(int, s.split('-'))
+            return list(str(range(start, end + 1)))
+        except ValueError:
+            pass
+
+    # Case 2: Comma-separated "41, 42"
+    if ',' in s:
+        parts = [p.strip() for p in s.split(',')]
+        ints = []
+        for p in parts:
+            try:
+                num = float(p)
+                if num.is_integer():
+                    ints.append(str(int(num)))
+            except ValueError:
+                pass
+        if ints:
+            return ints
+
+    return []
+
 
 def is_positive_int(s: str) -> bool:
     """
@@ -261,15 +335,43 @@ def title_cell_val_identical(title: str, cell_val:str) -> tuple[bool, str]:
         modified_title = title.rsplit('/', 1)[0] + "/" + cell_val_posit_int_cyr if '/' in title else cell_val_posit_int_cyr
     return identical, modified_title
 
+def add_fund_page_if_necessary(ws, archive_title, title, source_type, r, page_table):
+    """ We only add linked pages or pages with comments."""
+    availability = get_cell_value(ws[f"D{r}"])
+    comments = get_cell_value(ws[f"O{r}"])
+    if availability != 'linked' and comments is None:
+        # we do not add such pages
+        return
+
+    parent = parent_title
+    if availability != 'linked':
+        # in this case we set the parent title to the archive name
+        parent = archive_title
+
+    label = page_label(title)
+    add_page({
+        "title": title,
+        "label": label,
+        "seq_label": sequential_page_label(label),
+        "level": "fond",
+        "description": get_cell_value(ws[f"B{r}"]),
+        "years": get_cell_value(ws[f"C{r}"]),
+        "availability": availability,
+        "source_type": source_type,
+        "parent": parent,
+        "comments": comments,
+    }, page_table)
+
+
 def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    parent_title = get_parent_title(ws)
+    archive_name = get_parent_title(ws)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
-    label = page_label(parent_title)
+    label = page_label(archive_name)
     add_page({
-        "title": parent_title,
+        "title": archive_name,
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "archive",
@@ -287,25 +389,23 @@ def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=None):
         cell = ws[f"A{r}"]
         if str(cell.value).startswith("="):
             break
-        if not is_positive_int(str(cell.value)):
-            # sometimes there is some text in the A column, like "General page content" -
-            # we skip such lines
-            continue
-        if cell.value:
-            title = get_page_title_from_link(cell)
-            label = page_label(title)
-            add_page({
-                "title": title,
-                "label": label,
-                "seq_label": sequential_page_label(label),
-                "level": "fond",
-                "description": get_cell_value(ws[f"B{r}"]),
-                "years": get_cell_value(ws[f"C{r}"]),
-                "availability": get_cell_value(ws[f"D{r}"]),
-                "source_type": source_type,
-                "parent": parent_title,
-                "comments": get_cell_value(ws[f"O{r}"]),
-            }, page_table)
+        cell_integers = parse_cell_integers(cell)
+        log_strange_parsing_result(ws, r, cell, cell_integers)
+        num_results = len(cell_integers)
+        match num_results:
+            case 0:
+                # probably some text in the A column, like "General page content" -
+                # we skip such lines
+                continue
+            case 1:
+                # regular fund number
+                title = get_page_title_from_link(cell)
+                add_fund_page_if_necessary(ws, archive_name, title, source_type, r, page_table)
+            case _:
+                for fund_number in cell_integers:
+                    title = f"{archive_name}/{fund_number}"
+                    add_fund_page_if_necessary(ws, archive_name, title, source_type, r, page_table)
+
     return page_table
 
 
@@ -343,7 +443,7 @@ def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
         if cell.value:
             title = get_page_title_from_link(cell)
             if not title:
-                _logger.warning(f"cannot determine page title: sheet='{ws.title}'', row={r} (skipping)")
+                _logger.warning(f"cannot determine page title: sheet='{ws.title}', row={r} (skipping)")
                 continue
             label = page_label(title)
             add_page({
@@ -660,7 +760,8 @@ def process_dir(dir_path):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DADNO-D-wiki-20251031.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DADO-archives-20250923.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/GDA-MVS-wiki-20250616.xlsx"
     import_spreadsheet(filepath)
     #dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
     #process_dir(dir_path)
