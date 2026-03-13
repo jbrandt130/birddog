@@ -267,8 +267,8 @@ def get_parent_title(ws):
     row = 3
     source_col = find_header_in_row(ws, row, "B", "Z", "source:")
     parent_title_cell = ws[f"{chr(source_col + 1)}{row}"] #default D3
-    parent_title = get_page_title_from_link(parent_title_cell)
-    return parent_title
+    title = get_page_title_from_link(parent_title_cell)
+    return title
 
 def to_positive_int_str(s: str) -> str:
     """
@@ -343,11 +343,6 @@ def add_fund_page_if_necessary(ws, archive_title, title, source_type, r, page_ta
         # we do not add such pages
         return
 
-    parent = parent_title
-    if availability != 'linked':
-        # in this case we set the parent title to the archive name
-        parent = archive_title
-
     label = page_label(title)
     add_page({
         "title": title,
@@ -358,7 +353,7 @@ def add_fund_page_if_necessary(ws, archive_title, title, source_type, r, page_ta
         "years": get_cell_value(ws[f"C{r}"]),
         "availability": availability,
         "source_type": source_type,
-        "parent": parent,
+        "parent": archive_title,
         "comments": comments,
     }, page_table)
 
@@ -412,12 +407,12 @@ def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=None):
 def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    parent_title = get_parent_title(ws)
+    parent_name = get_parent_title(ws)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
-    label = page_label(parent_title)
+    label = page_label(parent_name)
     add_page({
-        "title": parent_title,
+        "title": parent_name,
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "fond",
@@ -427,14 +422,14 @@ def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
         "timestamp": timestamp,
         "doc_links": get_cell_value(ws["B4"]),
         "source_type": source_type,
-        "parent": parent_title_no_ns(parent_title),
+        "parent": parent_title_no_ns(parent_name),
         "wiki_link": get_cell_link(ws["D3"]),
     }, page_table)
 
     #the header row can be 5, 6 or 7
     hdr_row = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, "A", FIRST_FUND_HDR)
     if hdr_row is None:
-        raise ValueError(f"No {FIRST_OPUS_HDR} header found in sheet {parent_title}")
+        raise ValueError(f"No {FIRST_OPUS_HDR} header found in sheet {parent_name}")
 
     for r in range(hdr_row + 1, ws.max_row + 1):
         cell = ws[f"A{r}"]
@@ -455,7 +450,7 @@ def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
                 "years": get_cell_value(ws[f"C{r}"]),
                 "availability": get_cell_value(ws[f"D{r}"]),
                 "source_type": source_type,
-                "parent": parent_title,
+                "parent": parent_name,
                 "comments": get_cell_value(ws[f"O{r}"]),
             }, page_table)
     return page_table
@@ -464,12 +459,12 @@ def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
 def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    parent_title = get_parent_title(ws)
-    label = page_label(parent_title)
+    parent_name = get_parent_title(ws)
+    label = page_label(parent_name)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
     add_page({
-        "title": parent_title,
+        "title": parent_name,
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "opus",
@@ -478,7 +473,7 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
         "change_date": change_date,
         "timestamp": timestamp,
         "doc_links": get_cell_value(ws["B4"]),
-        "parent": parent_title_no_ns(parent_title),
+        "parent": parent_title_no_ns(parent_name),
         "source_type": source_type,
         "wiki_link": get_cell_link(ws["D3"]),
     }, page_table)
@@ -486,13 +481,13 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
     #the header row can be 5, 6 or 7
     hdr_row = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, "A", FIRST_OPUS_HDR)
     if hdr_row is None:
-        raise ValueError(f"No {FIRST_OPUS_HDR} header found in sheet {parent_title}")
+        raise ValueError(f"No {FIRST_OPUS_HDR} header found in sheet {parent_name}")
 
     #there are sometimes columns inserted between "process" and "Comments",
     #so we need to find the exact position of the latter one
     comments_col = find_header_in_row(ws, hdr_row, "G", "Z", "Comments")
     if comments_col is None:
-        raise ValueError(f"No 'Comments' column found in sheet {parent_title}")
+        raise ValueError(f"No 'Comments' column found in sheet {parent_name}")
 
     for r in range(hdr_row + 1, ws.max_row + 1):
         cell = ws[f"A{r}"]
@@ -523,7 +518,7 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
                 case_id = get_case_id(cell.value)
                 import_message = f"Case {case_id} links to {title}"
                 title = modified_title
-                _logger.warning(f"Opus {parent_title}: {import_message}")
+                _logger.warning(f"Opus {parent_name}: {import_message}")
 
             add_page({
                 "title": title,
@@ -533,7 +528,7 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
                 "description": get_cell_value(ws[f"B{r}"]),
                 "years": get_cell_value(ws[f"C{r}"]),
                 "source_type": source_type,
-                "parent": parent_title,
+                "parent": parent_name,
                 "doc_links": get_cell_link(ws[f"B{r}"]),
                 "doc_type": get_cell_value(ws[f"D{r}"]),
                 "content_code": get_cell_value(ws[f"E{r}"]),
@@ -660,23 +655,21 @@ def import_spreadsheet(sw_filepath):
     # Step 4: locate all parents and link to children
     parent_dict = {}
     for page in page_dict.values():
-        parent_title = page.get("parent")
-        if parent_title:
-            #_logger.info(f"parent->child link found: {parent_title}->{page['title']}")
-            parent_page = parent_dict.get(parent_title)
+        parent_name = page.get("parent")
+        if parent_name:
+            parent_page = parent_dict.get(parent_name)
             if not parent_page:
-                parent_page = page_dict.get(parent_title)
+                parent_page = page_dict.get(parent_name)
                 if not parent_page:
-                    parent_page = {"title": parent_title}
-                    parent_record_id = db.lookup("Pages", parent_title)
+                    parent_page = {"title": parent_name}
+                    parent_record_id = db.lookup("Pages", parent_name)
                     if not parent_record_id:
                         # create a stub page for parent
                         parent_record_id = db.write("Pages", parent_page)
                     parent_page["Id"] = parent_record_id
-                parent_dict[parent_title] = parent_page
+                parent_dict[parent_name] = parent_page
             child_ids = parent_page.get("child_ids", [])
             child_ids.append(page["Id"])
-            #_logger.info(f"child_ids: {parent_title}: {child_ids}")
             parent_page["child_ids"] = child_ids
 
     # Step 5: link parents to their children
@@ -761,7 +754,7 @@ def process_dir(dir_path):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DADO-archives-20250923.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/GDA-MVS-wiki-20250616.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DADO-D-wiki-20251027.xlsx"
     import_spreadsheet(filepath)
     #dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
     #process_dir(dir_path)
