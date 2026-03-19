@@ -197,11 +197,14 @@ def page_name(title):
     address = page_address(title)
     return f"{address[0]}-{address[1]}/{'/'.join(address[2:])}".rstrip("/")
 
-def page_label(title):
-    try:
-        return transliterate(page_name(title))
-    except ValueError as err:
-        return None
+def page_label(title, wiki_spreadsheet):
+    if wiki_spreadsheet:
+        try:
+            return transliterate(page_name(title))
+        except ValueError as err:
+            return None
+    else:
+        return title
 
 def is_archive(title):
     return canonicalize_title(title) in ARCHIVE_BY_TITLE
