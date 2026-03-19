@@ -197,7 +197,7 @@ def page_name(title):
     address = page_address(title)
     return f"{address[0]}-{address[1]}/{'/'.join(address[2:])}".rstrip("/")
 
-def page_label(title, wiki_spreadsheet):
+def page_label(title, wiki_spreadsheet = True):
     if wiki_spreadsheet:
         try:
             return transliterate(page_name(title))
