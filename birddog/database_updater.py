@@ -15,6 +15,7 @@ from birddog.wiki import (
     page_label,
     sequential_page_label,
     page_kind,
+    page_url_from_title,
     )
 from birddog.utility import (
     new_id,
@@ -76,10 +77,22 @@ def _replace_links(db, table_name, link_field, source_record, target_records):
 def _create_links(db, table_name, link_field, source_record, target_records):
     return _edit_links(db, table_name, link_field, source_record, target_records, replace=False)
 
+def _page_urls_from_titles(titles):
+    if isinstance(titles, set):
+        return {page_url_from_title(title) for title in titles}
+    if isinstance(titles, (list, tuple)):
+        return [page_url_from_title(title) for title in titles]
+    if isinstance(titles, str):
+        return page_url_from_title(titles)
+    raise TypeError(f"_page_urls_from_titles: invalid type: {type(titles)}")
+
+def _lookup_pages(db, titles):
+    return db.lookup("Pages", _page_urls_from_titles(titles))
+
 def get_child_titles(db, titles):
     if not isinstance(titles, (list, tuple)):
         titles = [ titles ]
-    parent_ids = db.lookup("Pages", titles)
+    parent_ids = _lookup_pages(db, titles)
     child_ids = []
     for pid in parent_ids:
         if pid:
@@ -146,6 +159,7 @@ def _allowed_doc_link(link):
 def _form_simple_page_record(title):
     return {
         "title": title,
+        "url": page_url_from_title(title),
         "source_type": "wiki",
         "availability": "linked",
     }
@@ -256,13 +270,14 @@ def _form_page_info_from_title(title):
     }
     record = info["record"]
     record["title"] = _normalize_title(title)
+    record["url"] = page_url_from_title(title)
     error = raw.get("error")
     if error:
         if error.get("code") == "missingtitle":
             info["missing"] = True
         info["error"] = error
     else:
-        record["level"] = page_kind(title, record.get("children"))
+        record["level"] = page_kind(title, info["links"].get("children"))
         record["label"] = page_label(title)
         record["seq_label"] = sequential_page_label(record["label"])
         revid = parse.get("revid", "")
@@ -340,7 +355,7 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumb
 
     # Normalize input to list (preserve caller strings for keys)
     if isinstance(titles, str):
-        requested_titles: List[str] = [titles.strip()]
+        requested_titles: list[str] = [titles.strip()]
     else:
         requested_titles = [t.strip() for t in titles if t and t.strip()]
 
@@ -529,23 +544,34 @@ class DatabaseUpdater:
         """Update page records using pre-fetched lookup and existing records."""
         if not page_records:
             return None
-        key = self._db.key_field_name("Pages")
+
         update = []
         update_fields = []
+
         for record in page_records:
-            rec_id = id_map.get(record[key])
-            if rec_id:
-                changed_fields = set()
-                current_rec = existing_records.get(rec_id, {})
-                for k, v in record.items():
-                    if k not in current_rec or current_rec[k] != v:
-                        changed_fields.add(k)
-                if changed_fields:
-                    update.append(record)
-                    update_fields.append(changed_fields)
-            else:
+            record_url = record["url"]
+            rec_id = id_map.get(record_url)
+            if not rec_id:
+                #_logger.info(f"NO ID MATCH: record title={record.get('title')} url={record_url}")
+                #_logger.info(f"id_map sample keys: {list(id_map.keys())[:3]}")
                 update.append(record)
                 update_fields.append(set())
+                continue
+
+            current_rec = existing_records.get(rec_id, {})
+            changed_fields = set()
+            for k, v in record.items():
+                if k not in current_rec or current_rec[k] != v:
+                    changed_fields.add(k)
+            if changed_fields:
+                #_logger.info(
+                #    f"CHANGED: title={record.get('title')} fields={sorted(changed_fields)} "
+                #    f"new={[record.get(k) for k in sorted(changed_fields)]} "
+                #    f"old={[current_rec.get(k) for k in sorted(changed_fields)]}"
+                #)
+                update.append(record)
+                update_fields.append(changed_fields)
+
         if update:
             for i, changed_fields in enumerate(update_fields):
                 if "description_uk" in changed_fields:
@@ -554,18 +580,18 @@ class DatabaseUpdater:
                 for rec in update:
                     rec["birddog_alert"] = True
             return self._db.write("Pages", update)
+
         return None
 
     def update_page_records(self, page_titles):
         if isinstance(page_titles, str):
-            page_titles = [ page_titles ]
-        if not all([isinstance(title, str) for title in page_titles]):
+            page_titles = [page_titles]
+        if not all(isinstance(title, str) for title in page_titles):
             raise ValueError("Updater.update_page_records: page_titles must be str or sequence of str")
 
         _logger.info(f"update_page_records: {len(page_titles)} titles")
         page_info = self._get_page_info(page_titles)
 
-        # First pass: collect all page titles and doc URLs we'll need
         linked_page_updates = []
         child_link_updates = {}
         parent_link_updates = {}
@@ -580,7 +606,9 @@ class DatabaseUpdater:
 
         def _add_parent_link(child, parent):
             if parent_link_updates.get(child):
-                _logger.error(f"second parent for child {child}: {parent}, {parent_link_updates.get(child)}")
+                _logger.error(
+                    f"second parent for child {child}: {parent}, {parent_link_updates.get(child)}"
+                )
             parent_link_updates[child] = parent
 
         def _add_doc_link(title, doc_url):
@@ -589,17 +617,19 @@ class DatabaseUpdater:
             doc_link_updates[title] = updates
             doc_urls.add(doc_url)
 
-        _logger.info(f"Updater: analyzing page links")
+        _logger.info("Updater: analyzing page links")
         for info in page_info:
             page_links = info.get("links", {})
             title = info["title"]
             title_set.add(title)
+
             parent = page_links.get("parent") or {}
             if parent.get("exists"):
                 parent_title = _normalize_title(parent["title"])
                 title_set.add(parent_title)
                 linked_page_updates.append(_form_simple_page_record(parent_title))
                 _add_parent_link(title, parent_title)
+
             child_links = page_links.get("children") or []
             for child in child_links:
                 if child.get("exists"):
@@ -607,54 +637,94 @@ class DatabaseUpdater:
                     title_set.add(child_title)
                     linked_page_updates.append(_form_simple_page_record(child_title))
                     _add_child_link(title, child_title)
+
             for link in page_links.get("internal_links", []):
                 if link.get("doc_type"):
                     doc_title = _normalize_title(link.get("title"))
                     url = f"https://uk.wikisource.org/wiki/{doc_title}"
                     _add_doc_link(title, url)
+
             for source in ("commons_links", "interwiki_links"):
                 for link in page_links.get(source, []):
                     if link.get("doc_type"):
                         url = link.get("url")
                         url = url.replace(" ", "_").replace("file:", "File:")
                         _add_doc_link(title, url)
+
             for url in page_links.get("external_links", []):
                 if _allowed_doc_link(url):
                     _add_doc_link(title, url)
 
-        # Single lookup for all page titles
-        all_page_titles = title_set | {info["record"]["title"] for info in page_info}
-        record_ids = self._db.lookup("Pages", all_page_titles)
-        existing_page_ids = [rid for rid in record_ids.values() if rid]
-        existing_pages = {
-            rec["Id"]: rec
-            for rec in self._db.read("Pages", existing_page_ids)
-        } if existing_page_ids else {}
-
-        # Update page records using pre-fetched data
         page_records = [info["record"] for info in page_info]
-        updated_pages = bool(self._update_page_records_with_cache(
-            page_records, record_ids, existing_pages, set_alert=True))
 
-        # Update linked page records using same cache
-        linked_records_changed = bool(self._update_page_records_with_cache(
-            linked_page_updates, record_ids, existing_pages, set_alert=False))
+        # Build page lookup from the exact URLs used in page records, plus linked placeholder URLs.
+        requested_page_urls = {record["url"] for record in page_records}
+        linked_page_urls = {page_url_from_title(rec["title"]) for rec in linked_page_updates}
+        all_page_titles = title_set | {record["title"] for record in page_records}
+        all_page_urls = requested_page_urls | linked_page_urls
 
-        # Refresh record_ids after writes to include newly created records
-        if updated_pages or linked_records_changed:
-            record_ids = self._db.lookup("Pages", all_page_titles)
+        page_id_by_url = self._db.lookup("Pages", all_page_urls)
+        existing_page_ids = [rid for rid in page_id_by_url.values() if rid]
+        existing_pages = (
+            {rec["Id"]: rec for rec in self._db.read("Pages", existing_page_ids)}
+            if existing_page_ids else {}
+        )
+
+        updated_pages = bool(
+            self._update_page_records_with_cache(
+                page_records, page_id_by_url, existing_pages, set_alert=True
+            )
+        )
+
+        # Refresh cache before linked placeholder updates so newly written pages
+        # are not treated as missing.
+        if updated_pages:
+            page_id_by_url = self._db.lookup("Pages", all_page_urls)
+            existing_page_ids = [rid for rid in page_id_by_url.values() if rid]
+            existing_pages = (
+                {rec["Id"]: rec for rec in self._db.read("Pages", existing_page_ids)}
+                if existing_page_ids else {}
+            )
+
+        linked_records_changed = bool(
+            self._update_page_records_with_cache(
+                linked_page_updates, page_id_by_url, existing_pages, set_alert=False
+            )
+        )
+
+        # Refresh once more if linked placeholders were inserted.
+        if linked_records_changed:
+            page_id_by_url = self._db.lookup("Pages", all_page_urls)
+
+        # Derive title -> page_id mapping explicitly for link operations.
+        page_id_by_title = {
+            title: page_id_by_url.get(page_url_from_title(title))
+            for title in all_page_titles
+        }
 
         links_changed = False
-        _logger.info(f"Updater: linking child pages")
+        _logger.info("Updater: linking child pages")
+
         for parent_title, child_titles in child_link_updates.items():
-            parent_id = record_ids[parent_title]
-            child_ids = [record_ids[t] for t in child_titles]
+            parent_id = page_id_by_title.get(parent_title)
+            if not parent_id:
+                continue
+
+            child_ids = [
+                page_id_by_title[child_title]
+                for child_title in child_titles
+                if page_id_by_title.get(child_title)
+            ]
             if _replace_links(self._db, "Pages", "children", parent_id, child_ids):
                 _logger.info(f"Child links for {parent_title} updated ({len(child_ids)} children)")
                 links_changed = True
+
         for child_title, parent_title in parent_link_updates.items():
-            child_id = record_ids[child_title]
-            parent_id = record_ids[parent_title]
+            child_id = page_id_by_title.get(child_title)
+            parent_id = page_id_by_title.get(parent_title)
+            if not child_id or not parent_id:
+                continue
+
             if _create_links(self._db, "Pages", "children", parent_id, child_id):
                 _logger.info(f"Parent link for {child_title} updated ({parent_title})")
                 links_changed = True
@@ -664,17 +734,18 @@ class DatabaseUpdater:
         if doc_urls:
             doc_records_changed = self.update_doc_records(doc_urls)
 
-            # Refresh doc_id_map after update to include new records
+            # One lookup for all document IDs, then reuse locally.
             doc_id_map = self._db.lookup("Documents", doc_urls)
 
-            # Update page doc links using pre-fetched IDs
-            _logger.info(f"Updater: updating document links")
+            _logger.info("Updater: updating document links")
             for page_title, page_doc_urls in doc_link_updates.items():
-                page_id = record_ids[page_title]
-                doc_ids_for_page = [doc_id_map.get(url) for url in page_doc_urls]
-                doc_ids_for_page = [d for d in doc_ids_for_page if d]
-                if not doc_ids_for_page:
+                page_id = page_id_by_title.get(page_title)
+                if not page_id:
                     continue
+
+                doc_ids_for_page = [doc_id_map.get(url) for url in page_doc_urls]
+                doc_ids_for_page = [doc_id for doc_id in doc_ids_for_page if doc_id]
+
                 if _replace_links(self._db, "Pages", "doc_links", page_id, doc_ids_for_page):
                     _logger.info(f"Doc links for {page_title} updated ({len(doc_ids_for_page)} docs)")
                     doc_links_changed = True
@@ -684,12 +755,13 @@ class DatabaseUpdater:
             linked_records_changed,
             links_changed,
             doc_records_changed,
-            doc_links_changed])
+            doc_links_changed,
+        ])
 
     def update_doc_records(self, doc_urls):
         doc_records_changed = False
         if isinstance(doc_urls, str):
-            doc_urls = set(doc_urls)
+            doc_urls = { doc_urls }
         elif isinstance(doc_urls, (list, tuple)):
             doc_urls = set(doc_urls)
         if not isinstance(doc_urls, set):

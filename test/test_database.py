@@ -21,14 +21,14 @@ class TestDatabase(unittest.TestCase):
 
     This test exercises:
       - scan (Pages, Documents)
-      - lookup (Pages.title, Documents.link)
+      - lookup (Pages.url, Documents.link)
       - read (single and batch by Id)
       - write (create + update; single + batch)
       - create_links / delete_links / get_links (Pages.parent, Pages.children, Documents.owning_pages)
 
     Cleanup:
       - Deletes any records created during the test (tracked by returned Ids).
-      - All created records contain "test" in title (and Documents.link).
+      - All created records contain "test" in title (and Documents.link / Pages.url).
     """
 
     def setUp(self):
@@ -57,6 +57,10 @@ class TestDatabase(unittest.TestCase):
     def _mk_page_title(self, name: str) -> str:
         return f"test {self._run_suffix} {name}"
 
+    def _mk_page_url(self, name: str) -> str:
+        safe_name = name.replace(" ", "_")
+        return f"http://test.page/{self._run_suffix}/{safe_name}"
+
     def _mk_doc_link(self, i: int) -> str:
         # Ensure "test" is present and uniqueness is guaranteed.
         return f"http://test.doc/{self._run_suffix}/{i}"
@@ -77,7 +81,8 @@ class TestDatabase(unittest.TestCase):
         # 2) write + read + update: single Page
         # -----------------------
         title_one = self._mk_page_title("one")
-        page = {"title": title_one, "comments": "foo"}
+        url_one = self._mk_page_url("one")
+        page = {"title": title_one, "url": url_one, "comments": "foo"}
 
         page_id = self.db.write("Pages", page)
         self.assertTrue(page_id)
@@ -86,6 +91,7 @@ class TestDatabase(unittest.TestCase):
         read_back = self.db.read("Pages", page_id)
         self.assertIsInstance(read_back, dict)
         self.assertEqual(read_back.get("title"), title_one)
+        self.assertEqual(read_back.get("url"), url_one)
         self.assertEqual(read_back.get("comments"), "foo")
 
         # update (read/modify/write workflow)
@@ -96,41 +102,50 @@ class TestDatabase(unittest.TestCase):
         read_back2 = self.db.read("Pages", page_id)
         self.assertEqual(read_back2.get("comments"), "bar")
 
-        # lookup by key
-        lookup_id = self.db.lookup("Pages", title_one)
+        # lookup by key (Pages.url)
+        lookup_id = self.db.lookup("Pages", url_one)
         self.assertEqual(lookup_id, page_id)
 
         # -----------------------
-        # 2b) lookup with sequences: Pages.title (order, duplicates, empty, missing)
+        # 2b) lookup with sequences: Pages.url (order, duplicates, empty, missing)
         # -----------------------
-        # Create a few pages whose titles we can use as lookup keys
         seq_title_a = self._mk_page_title("seq_a")
         seq_title_b = self._mk_page_title("seq_b")
         seq_title_c = self._mk_page_title("seq_c")
 
-        seq_id_a = self.db.write("Pages", {"title": seq_title_a})
-        seq_id_b = self.db.write("Pages", {"title": seq_title_b})
-        seq_id_c = self.db.write("Pages", {"title": seq_title_c})
+        seq_url_a = self._mk_page_url("seq_a")
+        seq_url_b = self._mk_page_url("seq_b")
+        seq_url_c = self._mk_page_url("seq_c")
+
+        seq_id_a = self.db.write("Pages", {"title": seq_title_a, "url": seq_url_a})
+        seq_id_b = self.db.write("Pages", {"title": seq_title_b, "url": seq_url_b})
+        seq_id_c = self.db.write("Pages", {"title": seq_title_c, "url": seq_url_c})
         self.created_page_ids.extend([seq_id_a, seq_id_b, seq_id_c])
 
         # (a) Empty sequence -> empty list
         self.assertEqual(self.db.lookup("Pages", []), [])
 
         # (b) Order preserved + duplicates preserved
-        seq_keys = [seq_title_b, seq_title_a, seq_title_b, seq_title_c]
+        seq_keys = [seq_url_b, seq_url_a, seq_url_b, seq_url_c]
         seq_expected = [seq_id_b, seq_id_a, seq_id_b, seq_id_c]
         self.assertEqual(self.db.lookup("Pages", seq_keys), seq_expected)
 
         # (c) Missing key yields None in corresponding position
-        missing_key = self._mk_page_title("seq_missing_does_not_exist")
-        seq_keys2 = [seq_title_a, missing_key, seq_title_c, missing_key]
+        missing_key = self._mk_page_url("seq_missing_does_not_exist")
+        seq_keys2 = [seq_url_a, missing_key, seq_url_c, missing_key]
         seq_expected2 = [seq_id_a, None, seq_id_c, None]
         self.assertEqual(self.db.lookup("Pages", seq_keys2), seq_expected2)
 
         # -----------------------
         # 3) batch write + batch read: Pages
         # -----------------------
-        batch_pages = [{"title": self._mk_page_title(f"page_{i}")} for i in range(10)]
+        batch_pages = [
+            {
+                "title": self._mk_page_title(f"page_{i}"),
+                "url": self._mk_page_url(f"page_{i}"),
+            }
+            for i in range(10)
+        ]
         batch_ids = self.db.write("Pages", batch_pages)
         self.assertEqual(len(batch_ids), len(batch_pages))
         self.assertTrue(all(batch_ids))
@@ -192,9 +207,11 @@ class TestDatabase(unittest.TestCase):
         # -----------------------
         parent_title = self._mk_page_title("parent")
         child_title = self._mk_page_title("child")
+        parent_url = self._mk_page_url("parent")
+        child_url = self._mk_page_url("child")
 
-        parent_id = self.db.write("Pages", {"title": parent_title})
-        child_id = self.db.write("Pages", {"title": child_title})
+        parent_id = self.db.write("Pages", {"title": parent_title, "url": parent_url})
+        child_id = self.db.write("Pages", {"title": child_title, "url": child_url})
         self.created_page_ids.extend([parent_id, child_id])
 
         self.db.create_links("Pages", "parent", child_id, parent_id)
@@ -207,8 +224,11 @@ class TestDatabase(unittest.TestCase):
         # -----------------------
         child2_title = self._mk_page_title("child2")
         child3_title = self._mk_page_title("child3")
-        child2_id = self.db.write("Pages", {"title": child2_title})
-        child3_id = self.db.write("Pages", {"title": child3_title})
+        child2_url = self._mk_page_url("child2")
+        child3_url = self._mk_page_url("child3")
+
+        child2_id = self.db.write("Pages", {"title": child2_title, "url": child2_url})
+        child3_id = self.db.write("Pages", {"title": child3_title, "url": child3_url})
         self.created_page_ids.extend([child2_id, child3_id])
 
         # link single
@@ -220,8 +240,7 @@ class TestDatabase(unittest.TestCase):
         self.assertIn(child2_id, children_links)
         self.assertIn(child3_id, children_links)
 
-        # unlink one child and verify removal (idempotence/behavior is backend-defined;
-        # we just require that it no longer appears if backend applies the delete)
+        # unlink one child and verify removal
         self.db.delete_links("Pages", "children", parent_id, child3_id)
         children_links2 = self.db.get_links("Pages", "children", parent_id)
         self.assertIn(child2_id, children_links2)
@@ -230,7 +249,6 @@ class TestDatabase(unittest.TestCase):
         # -----------------------
         # 7) Links: Documents.owning_pages (doc -> page)
         # -----------------------
-        # Link first document to parent page.
         first_doc_link = self._mk_doc_link(0)
         first_doc_id = self.db.lookup("Documents", first_doc_link)
         self.assertTrue(first_doc_id)
@@ -239,7 +257,7 @@ class TestDatabase(unittest.TestCase):
         owning_links = self.db.get_links("Documents", "owning_pages", first_doc_id)
         self.assertIn(parent_id, owning_links)
 
-        # Remove and verify it disappears (if backend enforces)
+        # Remove and verify it disappears
         self.db.delete_links("Documents", "owning_pages", first_doc_id, parent_id)
         owning_links2 = self.db.get_links("Documents", "owning_pages", first_doc_id)
         self.assertNotIn(parent_id, owning_links2)

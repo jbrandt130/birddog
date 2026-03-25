@@ -560,6 +560,13 @@ PROFILES: Dict[str, HostProfile] = {
         transient_cooldown_s=(0.1, 0.3),
         max_in_flight=24,
     ),
+    "localhost:api": HostProfile(
+        initial_rps=20.0, min_rps=1.0, max_rps=100.0, bucket_capacity=40.0,
+        ai_step=1.0, increase_every_s=10.0,
+        md_429=0.7, md_transient=0.85,
+        transient_cooldown_s=(0.1, 0.3),
+        max_in_flight=24,
+    ),
     # NocoDB Cloud (hosted on nocodb.com)
     # Docs indicate 5 req/s per user; when exceeded, 429 and "wait ~30s".
     # We stay under the limit to reduce oscillation, ramp slowly, and back off hard on 429.

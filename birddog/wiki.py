@@ -97,6 +97,9 @@ def canonicalize_title(title: str, include_namespace: bool = True) -> str | None
 
     return t
 
+def page_url_from_title(title):
+    return f"{ARCHIVE_BASE}/wiki/{canonicalize_title(title)}"
+
 def _archives_init():
     archives_by_root = {}
     archive_by_title = {}
