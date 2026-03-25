@@ -898,11 +898,12 @@ class DatabaseUpdateManager(TaskManager):
             if parent_titles:
                 # this is a deep update, create new task with child titles
                 #_logger.info(f"updater.complete_task: checking for deep subtasks {parent_titles}")
-                spawn = get_child_titles(self._updater._db, parent_titles)
+                spawn = set(get_child_titles(self._updater._db, parent_titles))
+                spawn -= set(parent_titles)
                 #_logger.info(f"updater.complete_task: spawn={spawn}")
                 if spawn:
                     # remove duplicates
-                    spawn = list(set(spawn))
+                    spawn = list(spawn)
                     _logger.info(f"DatabaseUpdateManager: deep update: spawning new update task: {len(spawn)} titles")
                     self.start_update(spawn, deep=True)
 
