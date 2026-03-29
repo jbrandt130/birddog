@@ -337,7 +337,7 @@ class TaskManager(HeartbeatManager):
         failed = self._key_value_store.count(self._failed_id(task_id))
         return completed, failed
 
-    def _maybe_finalize_task(self, task_id: str):
+    def _maybe_finalize_task(self, task_id: str, caller: str = "worker"):
         """
         Finalize when completed + failed == length.
         Passes a single list of subtask dicts to complete_task(), including failures.
@@ -346,6 +346,7 @@ class TaskManager(HeartbeatManager):
         try:
             task = self.lookup_task(task_id)
         except KeyError:
+            _logger.info(f"_maybe_finalize_task [{caller}]: task {task_id} not in active (already removed or never inserted)")
             return
 
         completed_count, failed_count = self._task_progress_counts(task_id)
@@ -359,9 +360,19 @@ class TaskManager(HeartbeatManager):
         completed_items = self._key_value_store.get_all(self._completed_id(task_id))
         failed_items = self._key_value_store.get_all(self._failed_id(task_id))
 
-        if (len(completed_items) + len(failed_items)) != task["length"]:
+        item_count = len(completed_items) + len(failed_items)
+        if item_count != task["length"]:
             # Another manager may be mid-write; try again next time.
+            _logger.info(
+                f"_maybe_finalize_task [{caller}]: task {task_id} count mismatch "
+                f"(kv_items={item_count} count={completed_count+failed_count} length={task['length']}) — deferring"
+            )
             return
+
+        _logger.info(
+            f"_maybe_finalize_task [{caller}]: finalizing task {task_id} "
+            f"(completed={completed_count} failed={failed_count} length={task['length']})"
+        )
 
         subtasks = [json.loads(v) for (_, v) in completed_items] + [json.loads(v) for (_, v) in failed_items]
 
@@ -381,7 +392,8 @@ class TaskManager(HeartbeatManager):
         _logger.info(f"TaskManager completed task {task_id} (completed={completed_count}, failed={failed_count})")
 
     def _mark_subtask_completed(self, subtask: dict, failed=False):
-        #_logger.info(f"_mark_subtask_completed: {self._subtask_id(subtask)}, receipt={subtask.get('_receipt')}, failed={failed}")
+        subtask_id = self._subtask_id(subtask)
+        _logger.info(f"_mark_subtask_completed: {subtask_id} failed={failed}")
 
         # remove from in-process
         try:
@@ -403,7 +415,12 @@ class TaskManager(HeartbeatManager):
         )
 
         # clear subtask from the queue
+        receipt = subtask.get("_receipt")
         self._ack_subtask(subtask)
+        # Note: ack is conditional on still owning the lease. If the lease expired and
+        # another worker reclaimed the item, ack silently no-ops. Log to detect this.
+        if not receipt:
+            _logger.warning(f"_mark_subtask_completed: {subtask_id} has no receipt — subtask may never be acked")
 
         # remove attempts counter, if any
         self._clear_attempts(subtask)
@@ -586,12 +603,15 @@ class TaskManager(HeartbeatManager):
             _logger.warning("TaskManager: failed to list active tasks for reap: %s", e)
             return
 
+        if active:
+            _logger.info(f"TaskManager reap: checking {len(active)} active task(s)")
+
         for _, v in active[:max_tasks]:
             try:
                 task = json.loads(v)
                 task_id = task.get("task_id")
                 if task_id:
-                    self._maybe_finalize_task(task_id)   # rely on counts
+                    self._maybe_finalize_task(task_id, caller="reap")
             except Exception:
                 _logger.exception("TaskManager: reap failed")
 
@@ -669,11 +689,12 @@ class TaskManager(HeartbeatManager):
             "failed": 0,
         }
         self._insert_task(task_desc)
+        _logger.info(f"TaskManager.create: task {task_id} inserted (name={task_name!r} length={len(subtasks)}) — queuing subtasks")
 
         batch = [self._form_subtask(item, i, task_id) for i, item in enumerate(subtasks)]
         self._queue_subtasks(batch)
 
-        _logger.info(f"TaskManager starting task {task_id}")
+        _logger.info(f"TaskManager.create: task {task_id} fully queued — spawning worker")
         self._spawn_worker()
         return task_id
 

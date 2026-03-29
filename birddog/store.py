@@ -486,8 +486,13 @@ class DynamoDBStringQueue(AbstractStringQueue):
                         ExpressionAttributeValues={":o": consumer_id},
                     )
                 except self._client.exceptions.ConditionalCheckFailedException:
-                    # lease expired/reclaimed, or row missing/corrupt; don't delete
-                    pass
+                    # Lease expired or was reclaimed by another consumer before ack.
+                    # The item was NOT deleted — it remains visible for re-claim/retry.
+                    _logger.warning(
+                        "StringQueue.ack: conditional check failed for queue=%s ts=%s consumer=%s "
+                        "(lease lost — item not deleted, will be re-claimed)",
+                        queue_name, ts, consumer_id,
+                    )
 
 
     def extend(self, queue_name: str, receipts: list[str], lease_ms: int, consumer_id: str):
@@ -773,6 +778,7 @@ class DynamoDBKeyValueStore:
                 Key={"namespace": namespace, "key": key},
                 ProjectionExpression="#v",
                 ExpressionAttributeNames={"#v": "value"},
+                ConsistentRead=True,
             )
             item = resp.get("Item")
             if not item:
@@ -788,6 +794,7 @@ class DynamoDBKeyValueStore:
                 KeyConditionExpression=Key("namespace").eq(namespace),
                 ProjectionExpression="#k,#v",
                 ExpressionAttributeNames={"#k": "key", "#v": "value"},
+                ConsistentRead=True,
             )
             items.extend((it["key"], it.get("value", "")) for it in resp.get("Items", []))
             while "LastEvaluatedKey" in resp:
@@ -795,6 +802,7 @@ class DynamoDBKeyValueStore:
                     KeyConditionExpression=Key("namespace").eq(namespace),
                     ProjectionExpression="#k,#v",
                     ExpressionAttributeNames={"#k": "key", "#v": "value"},
+                    ConsistentRead=True,
                     ExclusiveStartKey=resp["LastEvaluatedKey"],
                 )
                 items.extend((it["key"], it.get("value", "")) for it in resp.get("Items", []))
@@ -807,12 +815,14 @@ class DynamoDBKeyValueStore:
             resp = self._table.query(
                 KeyConditionExpression=Key("namespace").eq(namespace),
                 Select="COUNT",
+                ConsistentRead=True,
             )
             count = resp.get("Count", 0)
             while "LastEvaluatedKey" in resp:
                 resp = self._table.query(
                     KeyConditionExpression=Key("namespace").eq(namespace),
                     Select="COUNT",
+                    ConsistentRead=True,
                     ExclusiveStartKey=resp["LastEvaluatedKey"],
                 )
                 count += resp.get("Count", 0)
