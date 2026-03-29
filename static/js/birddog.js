@@ -79,6 +79,11 @@ function show_tab(tab_id) {
     tab.show();
 }
 
+const _TRANSLATE_POLL_INTERVAL_MS = 1000;
+const _TRANSLATE_NO_PROGRESS_TIMEOUT_MS = 15 * 1000; // give up if progress stalls for 15s
+let _translate_last_progress = null;
+let _translate_last_progress_at = null;
+
 async function update_translation_progress(data) {
     console.log('translate result:', data);
 
@@ -92,9 +97,11 @@ async function update_translation_progress(data) {
     }
 
     const translations = data.translations || [];
+    let current_progress = null;
     for (const item of translations) {
         //console.log(item.page_name, current_page.name);
         if (item.title == current_page.title) {
+            current_progress = item.progress;
             const progress_bar = document.getElementById("progress-bar");
             if (progress_bar) {
                 const percent = (100. * item.progress / item.total).toFixed(1);
@@ -110,6 +117,31 @@ async function update_translation_progress(data) {
     }
 
     if (translations.length > 0) {
+        // Track progress changes to detect a stuck task.
+        const now = Date.now();
+        if (current_progress !== _translate_last_progress) {
+            _translate_last_progress = current_progress;
+            _translate_last_progress_at = now;
+        }
+        const stalled_ms = now - (_translate_last_progress_at ?? now);
+        if (stalled_ms >= _TRANSLATE_NO_PROGRESS_TIMEOUT_MS) {
+            console.warn(`Translation progress stalled for ${stalled_ms}ms — task may be stuck. Reloading.`);
+            _translate_last_progress = null;
+            _translate_last_progress_at = null;
+            hide('progress-container');
+            hide('translating-badge');
+            enable_if("translate-btn", true);
+            const reload = confirm(
+                "Translation seems to be taking longer than expected and may be stuck.\n\n" +
+                "Click OK to reload the page (translation may already be complete), " +
+                "or Cancel to leave the page as-is."
+            );
+            if (reload) {
+                load_page_by_title(current_page.title, compare=current_page.refmod ?? null);
+            }
+            return;
+        }
+
         // Continue polling after 1 second
         setTimeout(async () => {
             try {
@@ -128,9 +160,11 @@ async function update_translation_progress(data) {
             } catch (err) {
                 console.error("Polling error:", err);
             }
-        }, 1000);
+        }, _TRANSLATE_POLL_INTERVAL_MS);
     }
     else {
+        _translate_last_progress = null;
+        _translate_last_progress_at = null;
         // reload in case we're on the translated page
         // FIXME: don't do this if not on a translated page
         load_page_by_title(current_page.title, compare=current_page.refmod ?? null);
