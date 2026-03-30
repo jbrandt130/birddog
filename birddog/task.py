@@ -326,6 +326,11 @@ class TaskManager(HeartbeatManager):
     def _insert_task(self, task_desc: dict):
         self._key_value_store.insert(self._active_id, task_desc["task_id"], json.dumps(task_desc))
 
+    def _update_task_progress(self, task_desc: dict):
+        """Update task progress in the active store only if the entry still exists.
+        Prevents re-creating an entry that was already removed by a concurrent finalization."""
+        self._key_value_store.update_if_exists(self._active_id, task_desc["task_id"], json.dumps(task_desc))
+
     def _remove_task(self, task_id):
         self._key_value_store.remove(self._active_id, task_id)
 
@@ -352,7 +357,7 @@ class TaskManager(HeartbeatManager):
         completed_count, failed_count = self._task_progress_counts(task_id)
         task["completed"] = completed_count
         task["failed"] = failed_count
-        self._insert_task(task)
+        self._update_task_progress(task)
 
         if (completed_count + failed_count) != task["length"]:
             return

@@ -598,6 +598,11 @@ class AbstractKeyValueStore(ABC):
         pass
 
     @abstractmethod
+    def update_if_exists(self, namespace: str, key: str, value: str):
+        """Update value only if the entry already exists. No-op if it doesn't."""
+        pass
+
+    @abstractmethod
     def remove(self, namespace: str, key: str):
         pass
 
@@ -655,6 +660,17 @@ class SQLiteKeyValueStore(AbstractKeyValueStore):
                     VALUES (?, ?, ?)
                     ON CONFLICT(namespace, key) DO UPDATE SET value=excluded.value
                 """, (namespace, key, value))
+                conn.commit()
+
+    def update_if_exists(self, namespace: str, key: str, value: str):
+        if not isinstance(value, str):
+            raise TypeError("value must be str")
+        with LogService("KVStore", "update_if_exists", path=namespace, size=len(key) + len(value)):
+            with self._conn() as conn:
+                conn.execute(f"""
+                    UPDATE {self._table_name} SET value = ?
+                    WHERE namespace = ? AND key = ?
+                """, (value, namespace, key))
                 conn.commit()
 
     def remove(self, namespace: str, key: str):
@@ -741,6 +757,21 @@ class DynamoDBKeyValueStore:
                 "key": key,
                 "value": value
             })
+
+    def update_if_exists(self, namespace: str, key: str, value: str):
+        if not isinstance(value, str):
+            raise TypeError("value must be str")
+        if not isinstance(key, str):
+            raise TypeError("key must be str")
+        with LogService("KVStore", "update_if_exists", path=namespace, size=len(key) + len(value)):
+            try:
+                self._table.put_item(
+                    Item={"namespace": namespace, "key": key, "value": value},
+                    ConditionExpression="attribute_exists(#ns) AND attribute_exists(#k)",
+                    ExpressionAttributeNames={"#ns": "namespace", "#k": "key"},
+                )
+            except self._client.exceptions.ConditionalCheckFailedException:
+                pass  # Item no longer exists; no-op
 
     def remove(self, namespace: str, key: str):
         if not isinstance(key, str):

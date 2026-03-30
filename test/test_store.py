@@ -146,6 +146,22 @@ class TestStores(unittest.TestCase):
         kv.insert(ns, k_empty, v_empty)
         self.assertEqual(kv.get(ns, k_empty), v_empty)
 
+        # update_if_exists: no-op on missing key
+        kv.update_if_exists(ns, "does-not-exist", "x")
+        with self.assertRaises(KeyError):
+            kv.get(ns, "does-not-exist")
+
+        # update_if_exists: updates an existing key
+        kv.update_if_exists(ns, k1, "v1c")
+        self.assertEqual(kv.get(ns, k1), "v1c")
+        self.assertEqual(kv.count(ns), 4)  # k1, k2, k3, empty
+
+        # update_if_exists: no-op after key is removed
+        kv.remove(ns, k3)
+        kv.update_if_exists(ns, k3, "should-not-appear")
+        with self.assertRaises(KeyError):
+            kv.get(ns, k3)
+
         # remove missing key should be idempotent (no exception)
         kv.remove(ns, "does-not-exist")
 
@@ -153,7 +169,7 @@ class TestStores(unittest.TestCase):
         kv.remove(ns, k2)
         with self.assertRaises(KeyError):
             kv.get(ns, k2)
-        self.assertEqual(kv.count(ns), 3)  # k1, k3, empty
+        self.assertEqual(kv.count(ns), 2)  # k1, empty (k3 already removed above)
 
         # remove_all wipes namespace
         kv.remove_all(ns)
