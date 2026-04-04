@@ -9,6 +9,7 @@ from birddog.abstract_database import (
     InvalidFieldValue,
     InvalidRecordId,
     InvalidTableName,
+    InvalidViewName,
     MissingKey,
 )
 
@@ -261,6 +262,35 @@ class TestDatabase(unittest.TestCase):
         self.db.delete_links("Documents", "owning_pages", first_doc_id, parent_id)
         owning_links2 = self.db.get_links("Documents", "owning_pages", first_doc_id)
         self.assertNotIn(parent_id, owning_links2)
+
+
+    def test_scan_with_view_name(self):
+        # -----------------------
+        # Discover available views for the Pages table, then scan using one.
+        # -----------------------
+        views = self.db._list_views("Pages")
+        self.assertIsInstance(views, dict)
+        self.assertTrue(views, "Expected at least one view defined for the Pages table")
+
+        # Pick the first available view and scan it.
+        view_name = next(iter(views))
+        records, cursor = self.db.scan("Pages", limit=5, view_name=view_name)
+        self.assertIsInstance(records, list)
+        self.assertLessEqual(len(records), 5)
+
+        # scan_all with view_name should also work.
+        all_records = self.db.scan_all("Pages", view_name=view_name)
+        self.assertIsInstance(all_records, list)
+
+        # If the view returned pages, scan_all should return at least as many
+        # as the first page.
+        self.assertGreaterEqual(len(all_records), len(records))
+
+        # -----------------------
+        # An unknown view name must raise InvalidViewName.
+        # -----------------------
+        with self.assertRaises(InvalidViewName):
+            self.db.scan("Pages", view_name="__nonexistent_view__")
 
 
 if __name__ == "__main__":

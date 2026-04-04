@@ -40,6 +40,9 @@ class InvalidFieldValue(DatabaseError):
         self.value = value
         super().__init__(f"{field}: {value}")
 
+class InvalidViewName(DatabaseError):
+    """Named view for given table is unknown."""
+
 class MissingKey(DatabaseError):
     """
     Payload for write() is missing the table's key field.
@@ -85,13 +88,13 @@ class Database:
           unknown; callers MUST assume some records may have been mutated.
     """
 
-    def scan_all(self, table_name, where=None, fields=None, sort=None):
+    def scan_all(self, table_name, where=None, fields=None, sort=None, view_name=None):
         """
         Convenience method to scan all records in a table using scan()
         """
-        records, cursor = self.scan(table_name, where=where, fields=fields, sort=sort)
+        records, cursor = self.scan(table_name, where=where, fields=fields, sort=sort, view_name=view_name)
         while cursor:
-            more, cursor = self.scan(table_name, cursor=cursor, where=where, fields=fields, sort=sort)
+            more, cursor = self.scan(table_name, cursor=cursor, where=where, fields=fields, sort=sort, view_name=view_name)
             records.extend(more)
         return records
 
@@ -109,7 +112,15 @@ class Database:
     #     clear_attachments() - clear file attachments from a record
     # ---------------------------------------------------------------------------
 
-    def scan(self, table_name, limit=100, cursor=None, where=None, fields=None, sort=None):
+    def scan(self, 
+        table_name, 
+        limit=100, 
+        cursor=None, 
+        where=None, 
+        view_name=None, 
+        sort=None, 
+        fields=None, 
+        raw=False):
         """
         Page through records of a table without requiring the table key.
 
@@ -130,6 +141,10 @@ class Database:
                 Optional condition filter for returned records.
                 Filter is a triple: (field_name, condition, value), where condition
                 is one of ("eq", "neq", "is", "isnot", "lt", "le", "gt", "ge")
+
+            view_name:
+                Optional name of view to scan. If specified, returned records 
+                are limited to those included in the named view.
 
             fields:
                 Optional list of fields to be included in the returned records.

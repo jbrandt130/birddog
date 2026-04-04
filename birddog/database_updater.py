@@ -591,6 +591,7 @@ class DatabaseUpdater:
 
         _logger.info(f"update_page_records: {len(page_titles)} titles")
         page_info = self._get_page_info(page_titles)
+        _logger.info(f"page_info: {page_info}")
 
         linked_page_updates = []
         child_link_updates = {}
@@ -819,23 +820,21 @@ class DatabaseUpdater:
     # -------------------------------------------------------------------------
     # TRANSLATION SUPPORT
 
-    # collect all untranslated descriptions from Pages table
+    # collect all untranslated descriptions from Pages table. Depends on predefined view "Untranslated Pages"
     def _collect_translations(self):
         table_name = "Pages"
-        description_uk = "description_uk"
-        description = "description"
-        where = (description_uk, "isnot", None)
+        view_name = "Untranslated Pages"
         key_field = self._db.key_field_name(table_name)
         translations = []
         cursor = None
         while True:
-            batch, cursor = self._db.scan(table_name, cursor=cursor, where=where)
+            batch, cursor = self._db.scan(table_name, cursor=cursor, view_name=view_name)
             for record in batch:
-                ukrainian_description = record.get(description_uk)
-                if ukrainian_description and not record.get(description):
+                ukrainian_description = record.get("description_uk")
+                if ukrainian_description and not record.get("description"):
                     translations.append({
                         key_field: record[key_field],
-                        description_uk: ukrainian_description,
+                        "description_uk": ukrainian_description,
                     })
             if not cursor:
                 break
@@ -860,7 +859,7 @@ class DatabaseUpdater:
                     update.append(record)
             if update:
                 _logger.info(f"Updater: updating translations (length={len(update)})")
-                self._db.write("Pages", update)
+                result = self._db.write("Pages", update)
 
 class DatabaseUpdateManager(TaskManager):
     _BATCH_SIZE = 20
