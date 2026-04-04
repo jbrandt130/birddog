@@ -591,7 +591,7 @@ class DatabaseUpdater:
 
         _logger.info(f"update_page_records: {len(page_titles)} titles")
         page_info = self._get_page_info(page_titles)
-        _logger.info(f"page_info: {page_info}")
+        #_logger.info(f"page_info: {page_info}")
 
         linked_page_updates = []
         child_link_updates = {}
