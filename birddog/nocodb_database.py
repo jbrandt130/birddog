@@ -238,7 +238,7 @@ def clone_table_schema(db1, table_name1, db2, table_name2):
     info = db1._fetch(db1._table_info_url(table_id1))
     columns = []
     for i, c in enumerate(info["columns"]):
-        if not c["system"] and c["uidt"] not in ("Links", "ForeignKey", "Formula",):
+        if not c["system"] and c["uidt"] not in ("Links", "ForeignKey", "Formula", "Lookup"):
             spec = {
                 "title": c["title"],
                 "description": c["description"],
@@ -251,6 +251,7 @@ def clone_table_schema(db1, table_name1, db2, table_name2):
                         for option in c["colOptions"]["options"]
                     ]
                 }
+            #_logger.info(f"spec={spec}")
             columns.append(spec)
     create_spec = {
         "title": table_name2,
@@ -338,7 +339,7 @@ class NocoDBDatabase(Database):
           - Raise FailedIO(...) on any communications / HTTP failure
         """
         if self._verbose:
-            _logger.info(f"{method}: {url}, {params}")
+            _logger.info(f"{method}: {url}, params={params}, json={json}")
         time.sleep(_NOCODB_API_DELAY)
 
         try:
