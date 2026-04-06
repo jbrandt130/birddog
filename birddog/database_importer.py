@@ -8,6 +8,7 @@ from birddog.wiki import (
     get_title,
     parent_title,
     page_label,
+    page_url_from_title,
     sequential_page_label,
     )
 from datetime import datetime
@@ -15,7 +16,7 @@ from openpyxl import load_workbook
 from pathlib import Path
 from urllib.parse import unquote, urlparse, parse_qs
 import time
-from typing import List
+from typing import List, Any
 import re
 
 from birddog.log import get_logger
@@ -29,7 +30,11 @@ _ENABLE_CONSOLE_HIGHLIGHTING = os.name == "nt"
 
 START_HDR_ROW = 5 #the headers are sometimes in row 5 and sometimes in row 6 or 7
 END_HDR_ROW = 7
-FIRST_OPUS_HDR = "Case #, link"
+FIRST_OPUS_HDR1 = "Case #, link"
+FIRST_OPUS_HDR2 = "P#, link"
+FIRST_OPUS_HDR3 = "Index #, link"
+FIRST_OPUS_HDR4 = "NEW NUMBERING"
+FIRST_OPUS_HDR5 = "#"
 FIRST_FUND_HDR = "Opus #, link"
 
 if _ENABLE_CONSOLE_HIGHLIGHTING:
@@ -44,13 +49,20 @@ else:
 # --------------------------------------------------
 
 _NS_PREFIX = f"{WIKI_NAMESPACE}:"
-def parent_title_no_ns(title):
-    result = parent_title(title)
-    if not result:
-        return None
-    if result.startswith(_NS_PREFIX):
-        result = result[len(_NS_PREFIX):]
-    return result
+def parent_title_no_ns(title, wiki_spreadsheet, archive_unit_name):
+    if wiki_spreadsheet:
+        result = parent_title(title)
+        if not result:
+            return None
+        if result.startswith(_NS_PREFIX):
+            result = result[len(_NS_PREFIX):]
+        return result
+    else:
+        last_slash_pos = archive_unit_name.rfind('/')
+        if last_slash_pos != -1:
+            return archive_unit_name[0 : last_slash_pos]
+        else:
+            raise ValueError(f"Archive unit name: {archive_unit_name} contains no slashes")
 
 def get_case_id(cell_contents: str) -> str:
     """If the cell contents is a string representing a number,
@@ -62,20 +74,7 @@ def get_case_id(cell_contents: str) -> str:
     except ValueError:
         return cell_contents
 
-
-def get_page_title_from_link(cell):
-    if cell.hyperlink:
-        url = cell.hyperlink.target
-    else:
-        if isinstance(cell.value, str):
-            url = cell.value
-        else:
-            try:
-                url = str(int(float(cell.value)))
-                return url
-            except ValueError:
-                return None
-
+def url_to_title(url: str) -> str:
     if "index.php" in url:
         query = urlparse(url).query
         params = parse_qs(query)
@@ -88,6 +87,39 @@ def get_page_title_from_link(cell):
     if "redlink" in url:
         url = urlparse(url).path
     return get_title(unquote(url), include_namespace=False)
+
+def cell_to_title(cell, archive_unit_name) -> str:
+    val = cell.value
+    if isinstance(val, float):
+        subunit_name = str(int(val))
+    else:
+        subunit_name = str(val)
+    return f"{archive_unit_name}/{subunit_name}"
+
+
+def get_page_title_from_link(cell, wiki_spreadsheet, archive_unit_name):
+    if wiki_spreadsheet:
+        if cell.hyperlink:
+            url = cell.hyperlink.target
+        else:
+            if isinstance(cell.value, str):
+                url = cell.value
+            else:
+                try:
+                    url = str(int(float(cell.value)))
+                    return url
+                except ValueError:
+                    return None
+
+        return url_to_title(url)
+    else:
+        return cell_to_title(cell, archive_unit_name)
+
+def get_case_title(url, cell, wiki_spreadsheet, archive_unit_name):
+    if wiki_spreadsheet:
+        return url_to_title(url)
+    else:
+        return cell_to_title(cell, archive_unit_name)
 
 def get_cell_link(cell):
     return unquote(cell.hyperlink.target) if cell.hyperlink else ""
@@ -124,60 +156,110 @@ def add_page(page: dict, page_table: dict) -> None:
     # update/merge keys
     entry.update(page)
 
-def log_strange_parsing_result(ws, r, cell, ints: List[str]):
-    num_results = len(ints)
+def normalize_to_int_str(s: str) -> str:
+    if not isinstance(s, str):
+        return s
+
+    # Check if integer
+    if re.fullmatch(r'-?\d+', s):
+        return str(int(s))
+
+    # Check if float that converts to integer
+    if re.fullmatch(r'-?\d+(\.\d+)?', s):
+        try:
+            f = float(s)
+            if f.is_integer():
+                return str(int(f))
+        except ValueError:
+            pass
+
+    return s
+
+def log_strange_parsing_result(ws, r, cell, subunits: List[str]):
+    num_results = len(subunits)
+    normaalized_val = normalize_to_int_str(str(cell.value))
     match num_results:
         case 1:
             #default result - do nothing
             return
         case 0:
-            if len(str(cell.value)) == 0:
+            if cell.value is None or len(str(cell.value)) == 0:
                 #empty cell - do nothing
                 return
-            _logger.warning(f"Irregular fund number '{str(cell.value)}', sheet='{ws.title}', row={r} - skipping")
+            _logger.warning(f"No URl found for the fund '{normaalized_val}', sheet='{ws.title}', row={r} - skipping")
         case _:
-            _logger.warning(f"Irregular fund number '{str(cell.value)}', sheet='{ws.title}', row={r} - splitting to {ints}")
+            _logger.warning(f"Irregular fund number '{normaalized_val}', sheet='{ws.title}', row={r} - splitting to {subunits}")
+
+def get_url_from_2_cells(unit_num_cell, unit_descr_cell) -> str:
+    cell_to_use = unit_num_cell
+    if cell_to_use.hyperlink is None:
+        cell_to_use = unit_descr_cell
+    if cell_to_use.hyperlink is None:
+        return ""
+
+    hyperlink = cell_to_use.hyperlink
+    url = unquote(hyperlink.target)
+#    if hyperlink.location is not None:
+#        url = f"{url}#{hyperlink.location}"
+    return url
 
 
-def parse_cell_integers(cell) -> List[str]:
+def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str]:
     """
     Parses an openpyxl cell value into a list of integers based on specific rules.
+    If no link found in both fund_num_cell, fund_descr_cell, the resulting list is empty
 
     Rules:
-    1. Float that is integer (e.g., 41.0) -> [41]
+    1. Float that is integer (e.g., 41.0) -> [41]; integer -> integer
     2. String with comma-separated integers (e.g., "41, 42") -> [41, 42]
     3. datetime object -> [day, month]
     4. String range "10-13" -> [10, 11, 12, 13]
     5. Otherwise -> []
+    All the integers are converted to strings.
 
     Args:
-        cell: openpyxl.cell.cell.Cell object
+        fund_num_cell: openpyxl.cell.cell.Cell object
+        fund_descr_cell: openpyxl.cell.cell.Cell object
 
     Returns:
-        List[str]: List of parsed integers converted to strings
+        1) List[str]: List of parsed integers converted to strings
+        2) str: the url from one of the two input cells.
     """
-    value = cell.value
+    value = fund_num_cell.value
+    if value is None:
+        return [], ""
+
+    url = get_url_from_2_cells(fund_num_cell, fund_descr_cell)
+    if url == "":
+        return [], ""
 
     # Case 1: Float that is integer
     if isinstance(value, float) and value.is_integer():
-        return [str(int(value))]
+        return [str(int(value))], url
+
+    # Case 1: integer
+    if isinstance(value, int):
+        return [str(value)], url
 
     # Case 4: datetime -> [day, month]
     if isinstance(value, datetime):
-        return [str(value.day), str(value.month)]
+        return [str(value.day), str(value.month)], url
 
     # Case 2 & 4: Convert to string and parse
-    if value is None:
-        return []
     s = str(value).strip()
 
-    # Case 4: Range like "10-13"
-    if '-' in s and re.match(r'^\d+-\d+$', s):
-        try:
-            start, end = map(int, s.split('-'))
-            return list(str(range(start, end + 1)))
-        except ValueError:
-            pass
+    if '-' in s:
+        if re.match(r'^\d+-\d+$', s):
+            # Case 4: Range like "10-13"
+            try:
+                start, end = map(int, s.split('-'))
+                return [str(x) for x in list(range(start, end + 1))], url
+            except ValueError:
+                pass
+        pattern = r'^[A-Z]-[1-9]\d*$'
+        is_prefixed_number = bool(re.match(pattern, s))
+        if is_prefixed_number:
+            return [s], url
 
     # Case 2: Comma-separated "41, 42"
     if ',' in s:
@@ -191,25 +273,27 @@ def parse_cell_integers(cell) -> List[str]:
             except ValueError:
                 pass
         if ints:
-            return ints
+            return ints, url
 
-    return []
+    return [], ""
 
 
-def is_positive_int(s: str) -> bool:
-    """
-    Returns True if the string represents a positive integer (>0),
-    including float strings like "11.0" that equal an integer value.
-    Handles leading/trailing whitespace; rejects empty, zero, negatives, non-numbers.
-    """
-    stripped = s.strip()
-    if not stripped:  # Handles empty or whitespace-only
+def is_series_of_integer_like_numbers(s: str) -> bool:
+    if not isinstance(s, str) or not s:
         return False
-    try:
-        num = float(stripped)
-        return num.is_integer() and num > 0  # Key: float to int check + positive
-    except ValueError:
+
+    parts = s.split('-')
+    if any(part == '' for part in parts):
         return False
+
+    for part in parts:
+        if re.fullmatch(r'\d+', part):
+            continue
+        if re.fullmatch(r'\d+\.\d+', part) and float(part).is_integer():
+            continue
+        return False
+
+    return True
 
 def find_header_in_row(ws, row, start_col, end_col, header):
     """Find a cell with the given header in the given row of the given worksheet.
@@ -227,18 +311,22 @@ def find_header_in_row(ws, row, start_col, end_col, header):
             return i
     return None
 
-def find_header_in_col(ws, start_row, end_row, col, header):
-    """Find a cell with the given header in the given column of the given worksheet.
+def find_header_in_col(ws, start_row, end_row, col, headers):
+    """Find a cell with one of the given headers in the given column of the given worksheet.
     Returns the row if found, None otherwise."""
-    header = header.upper()
-    for i in range(start_row, end_row + 1):
-        cell_addr = f"{col}{i}"
-        contents = get_cell_value(ws[cell_addr])
-        if contents is None:
-            continue
-        contents = contents.upper()
-        if contents == header:
-            return i
+    for header in headers:
+        header = header.upper()
+        for i in range(start_row, end_row + 1):
+            cell_addr = f"{col}{i}"
+            contents = get_cell_value(ws[cell_addr])
+            if contents is None:
+                continue
+            contents = contents.upper()
+            if contents == header:
+                return i
+            if header == FIRST_OPUS_HDR4 and header in contents:
+                # it can be something like "NEW NUMBERING (listed here 06/2025)"
+                return i
     return None
 
 def get_source_type(ws):
@@ -255,19 +343,31 @@ def get_source_type(ws):
         #it is sometimes "archive" instead of "archives"
         if source_type.startswith("archive"):
             source_type = "archives"
+        elif source_type.startswith("wiki"):
+            source_type = "wiki"
+        else:
+            source_type = "other"
         break
     return source_type
 
-def get_dates(ws, change_date_col, ref_date_col):
+def get_dates(ws, archive_name, change_date_col, ref_date_col):
     change_date = get_cell_value(ws[f"{chr(change_date_col + 1)}1"])  # default L1
     timestamp = get_cell_value(ws[f"{chr(ref_date_col + 1)}1"])  # default 01
+    if str(timestamp) == '?' and "DAOO" in archive_name:
+        # Juliana's recommendation for these specific spreadsheets
+        timestamp = "09 Nov 2024"
+        _logger.warning(f"Using change date of {timestamp}")
+
     return change_date, timestamp
 
-def get_parent_title(ws):
-    row = 3
-    source_col = find_header_in_row(ws, row, "B", "Z", "source:")
-    parent_title_cell = ws[f"{chr(source_col + 1)}{row}"] #default D3
-    title = get_page_title_from_link(parent_title_cell)
+def get_parent_title(ws, wiki_spreadsheet, archive_unit_name):
+    if wiki_spreadsheet:
+        row = 3
+        source_col = find_header_in_row(ws, row, "B", "Z", "source:")
+        parent_title_cell = ws[f"{chr(source_col + 1)}{row}"] #default D3
+        title = get_page_title_from_link(parent_title_cell, wiki_spreadsheet, archive_unit_name)
+    else:
+        title = archive_unit_name
     return title
 
 def to_positive_int_str(s: str) -> str:
@@ -335,7 +435,19 @@ def title_cell_val_identical(title: str, cell_val:str) -> tuple[bool, str]:
         modified_title = title.rsplit('/', 1)[0] + "/" + cell_val_posit_int_cyr if '/' in title else cell_val_posit_int_cyr
     return identical, modified_title
 
-def add_fund_page_if_necessary(ws, archive_title, title, source_type, r, page_table):
+def general_page_label(title, wiki_spreadsheet):
+    if wiki_spreadsheet:
+        return page_label(title)
+    else:
+        return title
+
+def get_page_url(title, url, wiki_spreadsheet):
+    if wiki_spreadsheet:
+        return page_url_from_title(title)
+    else:
+        return url
+
+def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, title, url, source_type, r, page_table):
     """ We only add linked pages or pages with comments."""
     availability = get_cell_value(ws[f"D{r}"])
     comments = get_cell_value(ws[f"O{r}"])
@@ -343,9 +455,10 @@ def add_fund_page_if_necessary(ws, archive_title, title, source_type, r, page_ta
         # we do not add such pages
         return
 
-    label = page_label(title)
+    label = general_page_label(title, wiki_spreadsheet)
     add_page({
         "title": title,
+        "url": get_page_url(title, url, wiki_spreadsheet),
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "fond",
@@ -358,15 +471,16 @@ def add_fund_page_if_necessary(ws, archive_title, title, source_type, r, page_ta
     }, page_table)
 
 
-def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=None):
+def process_archive_sheet(ws, wiki_spreadsheet, archive_name, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    archive_name = get_parent_title(ws)
+    archive_name = get_parent_title(ws, wiki_spreadsheet, archive_name)
     source_type = get_source_type(ws)
-    change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
-    label = page_label(archive_name)
+    change_date, timestamp = get_dates(ws, archive_name, change_date_col, ref_date_col)
+    label = general_page_label(archive_name, wiki_spreadsheet)
     add_page({
         "title": archive_name,
+        "url": get_cell_link(ws["D3"]),
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "archive",
@@ -377,16 +491,16 @@ def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=None):
         "doc_links": get_cell_value(ws["B4"]),
         "source_type": source_type,
         "parent": "",
-        "wiki_link": get_cell_link(ws["D3"]),
     }, page_table)
 
     for r in range(7, ws.max_row + 1):
-        cell = ws[f"A{r}"]
-        if str(cell.value).startswith("="):
+        fund_num_cell = ws[f"A{r}"]
+        fund_descr_cell = ws[f"B{r}"]
+        if str(fund_num_cell.value).startswith("="):
             break
-        cell_integers = parse_cell_integers(cell)
-        log_strange_parsing_result(ws, r, cell, cell_integers)
-        num_results = len(cell_integers)
+        fund_ids, url = parse_cell_integers(fund_num_cell, fund_descr_cell)
+        log_strange_parsing_result(ws, r, fund_num_cell, fund_ids)
+        num_results = len(fund_ids)
         match num_results:
             case 0:
                 # probably some text in the A column, like "General page content" -
@@ -394,25 +508,27 @@ def process_archive_sheet(ws, change_date_col, ref_date_col, page_table=None):
                 continue
             case 1:
                 # regular fund number
-                title = get_page_title_from_link(cell)
-                add_fund_page_if_necessary(ws, archive_name, title, source_type, r, page_table)
+                title = get_page_title_from_link(fund_num_cell, wiki_spreadsheet, archive_name)
+                add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, title, url, source_type, r, page_table)
             case _:
-                for fund_number in cell_integers:
-                    title = f"{archive_name}/{fund_number}"
-                    add_fund_page_if_necessary(ws, archive_name, title, source_type, r, page_table)
+                for fund_id in fund_ids:
+                    title = f"{archive_name}/{fund_id}"
+                    add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, title, url, source_type, r, page_table)
 
     return page_table
 
 
-def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
+def process_fond_sheet(ws, wiki_spreadsheet, fund_name, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    parent_name = get_parent_title(ws)
+    parent_name = get_parent_title(ws, wiki_spreadsheet, fund_name)
     source_type = get_source_type(ws)
-    change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
-    label = page_label(parent_name)
+    change_date, timestamp = get_dates(ws, fund_name, change_date_col, ref_date_col)
+    label = general_page_label(parent_name, wiki_spreadsheet)
+    url = get_cell_link(ws["D3"])
     add_page({
         "title": parent_name,
+        "url": url,
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "fond",
@@ -422,27 +538,28 @@ def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
         "timestamp": timestamp,
         "doc_links": get_cell_value(ws["B4"]),
         "source_type": source_type,
-        "parent": parent_title_no_ns(parent_name),
-        "wiki_link": get_cell_link(ws["D3"]),
+        "parent": parent_title_no_ns(parent_name, wiki_spreadsheet, fund_name),
     }, page_table)
 
     #the header row can be 5, 6 or 7
-    hdr_row = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, "A", FIRST_FUND_HDR)
+    hdr_row = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, "A", [FIRST_FUND_HDR])
     if hdr_row is None:
-        raise ValueError(f"No {FIRST_OPUS_HDR} header found in sheet {parent_name}")
+        raise ValueError(f"No '{FIRST_FUND_HDR}' header found in sheet {parent_name}")
 
     for r in range(hdr_row + 1, ws.max_row + 1):
         cell = ws[f"A{r}"]
         if str(cell.value).startswith("="):
             break
         if cell.value:
-            title = get_page_title_from_link(cell)
+            title = get_page_title_from_link(cell, wiki_spreadsheet, fund_name)
             if not title:
                 _logger.warning(f"cannot determine page title: sheet='{ws.title}', row={r} (skipping)")
                 continue
-            label = page_label(title)
+            label = general_page_label(title, wiki_spreadsheet)
+            raw_url = get_cell_link(cell)
             add_page({
                 "title": title,
+                "url": get_page_url(title, raw_url, wiki_spreadsheet),
                 "label": label,
                 "seq_label": sequential_page_label(label),
                 "level": "opus",
@@ -456,15 +573,24 @@ def process_fond_sheet(ws, change_date_col, ref_date_col, page_table=None):
     return page_table
 
 
-def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
+def process_opus_sheet(ws, wiki_spreadsheet, opus_name, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    parent_name = get_parent_title(ws)
-    label = page_label(parent_name)
+    parent_name = get_parent_title(ws, wiki_spreadsheet, opus_name)
+    label = general_page_label(parent_name, wiki_spreadsheet)
     source_type = get_source_type(ws)
-    change_date, timestamp = get_dates(ws, change_date_col, ref_date_col)
+    change_date, timestamp = get_dates(ws, opus_name, change_date_col, ref_date_col)
+    url = get_cell_link(ws["D3"])
+    curr_parent_title = parent_name
+    try:
+        curr_parent_title = parent_title_no_ns(parent_name, wiki_spreadsheet, opus_name)
+    except ValueError as err:
+        if "Unrecognized archive root" in str(err):
+            source_type = "other"
+
     add_page({
         "title": parent_name,
+        "url": url,
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "opus",
@@ -473,15 +599,19 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
         "change_date": change_date,
         "timestamp": timestamp,
         "doc_links": get_cell_value(ws["B4"]),
-        "parent": parent_title_no_ns(parent_name),
+        "parent": curr_parent_title,
         "source_type": source_type,
-        "wiki_link": get_cell_link(ws["D3"]),
     }, page_table)
 
     #the header row can be 5, 6 or 7
-    hdr_row = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, "A", FIRST_OPUS_HDR)
+    headers = [FIRST_OPUS_HDR1, FIRST_OPUS_HDR2, FIRST_OPUS_HDR3, FIRST_OPUS_HDR4, FIRST_OPUS_HDR5]
+    case_num_col = "A"
+    hdr_row = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, case_num_col, headers)
     if hdr_row is None:
-        raise ValueError(f"No {FIRST_OPUS_HDR} header found in sheet {parent_name}")
+        case_num_col = chr(ord(case_num_col) + 1)
+        hdr_row = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, case_num_col, headers)
+        if hdr_row is None:
+            raise ValueError(f"No '{FIRST_OPUS_HDR1}' header found in sheet {parent_name}")
 
     #there are sometimes columns inserted between "process" and "Comments",
     #so we need to find the exact position of the latter one
@@ -490,20 +620,31 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
         raise ValueError(f"No 'Comments' column found in sheet {parent_name}")
 
     for r in range(hdr_row + 1, ws.max_row + 1):
-        cell = ws[f"A{r}"]
-        if str(cell.value).startswith("="):
+        curr_source_type = source_type
+        case_num_cell = ws[f"{case_num_col}{r}"]
+        case_descr_cell = ws[f"{chr(ord(case_num_col) + 1)}{r}"]
+        if str(case_num_cell.value).startswith("="):
             break
-        if not is_positive_int(str(cell.value)):
+        if not is_series_of_integer_like_numbers(str(case_num_cell.value)):
             # sometimes there is some text in the A column, like "INFORMATION AND INSTRUCTIONAL DEPARTMENT" -
             # we skip such lines
             continue
-        if cell.value:
-            title = get_page_title_from_link(cell)
+        raw_url = get_url_from_2_cells(case_num_cell, case_descr_cell)
+        if raw_url == "":
+            # no link found - cannot proceed
+            continue
+
+        if case_num_cell.value:
+            title = get_case_title(raw_url, case_num_cell, wiki_spreadsheet, opus_name)
             if title is None:
                 # If it is a comment, like "Index files linked at top of page" - skip this line
                 continue
 
-            label = page_label(title)
+            label = general_page_label(title, wiki_spreadsheet)
+            if label is None:
+                curr_source_type = "other"
+                label = title
+
             comments_cell_addr = f"{chr(comments_col)}{r}" #default f"G{r}"
             processor_cell_addr1 = f"{chr(comments_col+ 2)}{r}" #default f"I{r}"
             processor_cell_addr2 = f"{chr(comments_col+ 5)}{r}" #default f"L{r}"
@@ -511,28 +652,29 @@ def process_opus_sheet(ws, change_date_col, ref_date_col, page_table=None):
             pages_processed_cell_addr2 = f"{chr(comments_col + 6)}{r}" #default f"M{r}"
 
             #title sanity check
-            identical, modified_title = title_cell_val_identical(title, str(cell.value))
+            identical, modified_title = title_cell_val_identical(title, str(case_num_cell.value))
             if identical:
                 import_message = ""
             else:
-                case_id = get_case_id(cell.value)
+                case_id = get_case_id(case_num_cell.value)
                 import_message = f"Case {case_id} links to {title}"
                 title = modified_title
                 _logger.warning(f"Opus {parent_name}: {import_message}")
 
             add_page({
                 "title": title,
+                "url": get_page_url(title, raw_url, wiki_spreadsheet),
                 "label": label,
                 "seq_label": sequential_page_label(label),
                 "level": "case",
-                "description": get_cell_value(ws[f"B{r}"]),
-                "years": get_cell_value(ws[f"C{r}"]),
-                "source_type": source_type,
+                "description": get_cell_value(ws[f"{chr(ord(case_num_col) + 1)}{r}"]),
+                "years": get_cell_value(ws[f"{chr(ord(case_num_col) + 2)}{r}"]),
+                "source_type": curr_source_type,
                 "parent": parent_name,
-                "doc_links": get_cell_link(ws[f"B{r}"]),
-                "doc_type": get_cell_value(ws[f"D{r}"]),
-                "content_code": get_cell_value(ws[f"E{r}"]),
-                "process_code": get_cell_value(ws[f"F{r}"]),
+                "doc_links": get_cell_link(ws[f"{chr(ord(case_num_col) + 1)}{r}"]),#B
+                "doc_type": get_cell_value(ws[f"{chr(ord(case_num_col) + 3)}{r}"]),#D
+                "content_code": get_cell_value(ws[f"{chr(ord(case_num_col) + 4)}{r}"]),#E
+                "process_code": get_cell_value(ws[f"{chr(ord(case_num_col) + 5)}{r}"]),#F
                 "availability": "linked" if get_cell_link(ws[f"A{r}"]) is not None else "unlinked",
                 "import_message": import_message,
                 #the columns for the following cells are not fixed
@@ -551,15 +693,17 @@ def count_fund_opus_attributes(sheet, end_col):
     row = 1
     start_ord = ord(start_col)
     num_nonempty_cells = 0
+    fund_opus_attributes = []
     for i in range(start_ord, end_col):
         cell_addr = f"{chr(i)}{row}"
         contents = get_cell_value(sheet[cell_addr])
         if contents is None:
             continue
         num_nonempty_cells += 1
-    return num_nonempty_cells
+        fund_opus_attributes.append(str(contents))
+    return num_nonempty_cells, fund_opus_attributes
 
-def process_worksheets(worksheets, page_table=None):
+def process_worksheets(worksheets, wiki_spreadsheet, archive_name, page_table=None):
     if not page_table:
         page_table = {}
     hdr_row = 1
@@ -568,18 +712,28 @@ def process_worksheets(worksheets, page_table=None):
             _logger.info(f"processing worksheet: {sheet.title}")
             change_date_col = find_header_in_row(sheet, hdr_row, "I", "Z", "change date:")
             if change_date_col is None:
-                raise ValueError(f"No 'change date:' column")
+                raise ValueError(f"No 'change date:' column, cannot proceed")
             ref_date_col = find_header_in_row(sheet, hdr_row, chr(change_date_col + 2), "Z", "reference date:")
             if ref_date_col is None:
-                raise ValueError(f"No 'reference date:' column")
-            num_attributes = count_fund_opus_attributes(sheet, change_date_col)
+                if archive_name == "DAHO" or archive_name == "DAOO":
+                    # Juliana's recommendation for these specific spreadsheets
+                    ref_date_col = change_date_col + 3
+                    _logger.warning(f"No 'change date:' column, proceeding anyway with date")
+                else:
+                    raise ValueError(f"No 'reference date:' column")
+
+            num_attributes, fund_opus_attributes = count_fund_opus_attributes(sheet, change_date_col)
+            archive_unit_name = archive_name #unit is either archive, or fund, or opus
+            for attribute in fund_opus_attributes:
+                archive_unit_name = f"{archive_unit_name}/{attribute}"
+
             match num_attributes:
                 case 2:
-                    page_table = process_opus_sheet(sheet, change_date_col, ref_date_col, page_table)
+                    page_table = process_opus_sheet(sheet, wiki_spreadsheet, archive_unit_name, change_date_col, ref_date_col, page_table)
                 case 1:
-                    page_table = process_fond_sheet(sheet, change_date_col, ref_date_col, page_table)
+                    page_table = process_fond_sheet(sheet, wiki_spreadsheet, archive_unit_name, change_date_col, ref_date_col, page_table)
                 case 0:
-                    page_table = process_archive_sheet(sheet, change_date_col, ref_date_col, page_table)
+                    page_table = process_archive_sheet(sheet, wiki_spreadsheet, archive_unit_name, change_date_col, ref_date_col, page_table)
                 case _:
                     raise ValueError(f"{num_attributes} for worksheet {sheet.title}")
 
@@ -592,7 +746,22 @@ def process_worksheets(worksheets, page_table=None):
 def import_spreadsheet(sw_filepath):
     db = Database()
     workbook = load_workbook(sw_filepath)
-    page_data = process_worksheets(workbook)
+    wiki_spreadsheet = "-wiki" in sw_filepath.lower()
+    archive_name = "" # default for wiki, where we'll construct it later
+    if not wiki_spreadsheet:
+        last_slash_pos = max(sw_filepath.rfind('/'), sw_filepath.rfind('\\'))
+        if last_slash_pos != -1:
+            file_name = sw_filepath[last_slash_pos + 1:]
+        else:
+            file_name = sw_filepath
+        archive_substring_position = file_name.find("-archive")
+        if archive_substring_position != -1:
+            archive_name = file_name[0 : archive_substring_position]
+        else:
+            _logger.error(f"Spreadsheet file name {file_name} contains neither 'wiki' nor 'archive'")
+            return
+
+    page_data = process_worksheets(workbook, wiki_spreadsheet, archive_name)
 
     doc_only_fields_all_caps = {
         "doc_type",
@@ -660,17 +829,11 @@ def import_spreadsheet(sw_filepath):
             parent_page = parent_dict.get(parent_name)
             if not parent_page:
                 parent_page = page_dict.get(parent_name)
-                if not parent_page:
-                    parent_page = {"title": parent_name}
-                    parent_record_id = db.lookup("Pages", parent_name)
-                    if not parent_record_id:
-                        # create a stub page for parent
-                        parent_record_id = db.write("Pages", parent_page)
-                    parent_page["Id"] = parent_record_id
+            if parent_page:
                 parent_dict[parent_name] = parent_page
-            child_ids = parent_page.get("child_ids", [])
-            child_ids.append(page["Id"])
-            parent_page["child_ids"] = child_ids
+                child_ids = parent_page.get("child_ids", [])
+                child_ids.append(page["Id"])
+                parent_page["child_ids"] = child_ids
 
     # Step 5: link parents to their children
     for parent in parent_dict.values():
@@ -742,7 +905,7 @@ def process_dir(dir_path):
                 _logger.info(msg)
                 f.write(msg + "\n")
                 try:
-                    import_spreadsheet(entry)
+                    import_spreadsheet(str(entry))
                 except Exception as e:
                     error_msg = f"Error processing {entry}: {e}\n"
                     f.write(error_msg)
@@ -753,8 +916,8 @@ def process_dir(dir_path):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DADO-archives-20250923.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DADO-D-wiki-20251027.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHEO-D-archive-202501009.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/ImportProblems/DAVIO-D-wiki+other-20260213.xlsx"
     import_spreadsheet(filepath)
-    #dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
-    #process_dir(dir_path)
+#    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
+#    process_dir(dir_path)
