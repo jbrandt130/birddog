@@ -690,11 +690,12 @@ def translate(user):
 # ---- DATABASE SYNC  -------------------------------------------------
 
 def _active_updates():
-    return [{
-        'name': task["name"],
-        'progress': task["completed"],
-        'total': task["length"],
-    } for task in runtime.active_database_updates]
+    #return [{
+    #    'name': task["name"],
+    #    'progress': task["completed"],
+    #    'total': task["length"],
+    #} for task in runtime.active_database_updates]
+    return runtime.active_database_updates
 
 @app.route('/database_update', methods=['GET'])
 @login_required

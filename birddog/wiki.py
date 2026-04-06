@@ -44,6 +44,13 @@ WIKI_NAMESPACE_ID = '116' # use lookup_namespace_id() to find this out
 ARCHIVES        = None
 API_URL         = f"{ARCHIVE_BASE}/w/api.php"
 
+# Wiki sites that support batch existence checks via the MediaWiki API.
+# Maps netloc -> base URL. Add new sites here to enable existence checking.
+_WIKI_EXISTENCE_CHECK_BASES = {
+    "commons.wikimedia.org": "https://commons.wikimedia.org",
+    "uk.wikisource.org":     ARCHIVE_BASE,
+}
+
 # load static data resources
 
 _ARCHIVE_MASTER_PATH = 'resources/archives_master.json'
@@ -391,17 +398,32 @@ def find_archive(archive_tag, subarchive=None):
     sub = _select_subarchive(archive, subarchive)
     return { "title": sub["title"], "subarchive": sub["subarchive"] }
 
-def batch_page_exists(titles, batch_size=50):
+def batch_page_exists(titles, base_url=None, batch_size=50):
     """
-    Check if a list of Wikimedia page titles exist using the MediaWiki API.
+    Check if a list of wiki page titles exist using the MediaWiki API.
 
     Args:
         titles (list of str): Page titles to check.
+        base_url (str): Wiki base URL (e.g. "https://commons.wikimedia.org").
+                        Defaults to ARCHIVE_BASE (uk.wikisource.org).
         batch_size (int): Max titles per request (50 for normal users).
 
     Returns:
-        dict: Mapping of title -> True (exists) or False (missing)
+        dict: Mapping of title -> True (exists) or False (missing).
+              Keys are canonicalized for the archive wiki, or space-normalized
+              for other wikis.
     """
+    if base_url is None:
+        base_url = ARCHIVE_BASE
+    api_url = f"{base_url}/w/api.php"
+
+    # Use archive-specific canonicalization for the archive wiki;
+    # simple space normalization for all other wikis.
+    if base_url == ARCHIVE_BASE:
+        _normalize = canonicalize_title
+    else:
+        _normalize = lambda t: (t or "").replace(" ", "_")
+
     results = {}
 
     for i in range(0, len(titles), batch_size):
@@ -413,14 +435,14 @@ def batch_page_exists(titles, batch_size=50):
         }
 
         try:
-            response = fetch_url(API_URL, params=params, return_json=True, method="POST")
+            response = fetch_url(api_url, data=params, return_json=True, method="POST")
             pages = response.get("query", {}).get("pages", {})
             for page in pages.values():
-                title = canonicalize_title(page.get("title"))
+                title = _normalize(page.get("title"))
                 results[title] = "missing" not in page
         except Exception as e:
             for title in batch:
-                results[canonicalize_title(title)] = False
+                results[_normalize(title)] = False
             _logger.error(f"Error checking titles {batch}: {e}")
 
     return results
@@ -1649,12 +1671,20 @@ def _collect_doc_links_from_page(page):
     return _deduplicate_links(links)
 
 def batch_fetch_document_links(titles, map_to_url=True, chunk_size=20):
+    """
+    Fetch document links for a list of archive page titles.
+
+    Returns:
+        dict: title -> list of {"link": url, "exists": bool}
+              "exists" is False only for URLs on known wiki sites that were
+              confirmed missing via the API. All other URLs default to True.
+    """
     if not isinstance(titles, (list, tuple)):
         titles = [titles]
     titles = [canonicalize_title(title) for title in titles]
-    result = {}
 
-    #_logger.info(f"batch_fetch_document_links: {titles}")
+    # Pass 1: collect raw links for all titles
+    raw_links = {}
     for chunk in _chunked(titles, chunk_size):
         data = fetch_url(_wiki_content_url(chunk), return_json=True)
         if 'query' not in data:
@@ -1677,15 +1707,36 @@ def batch_fetch_document_links(titles, map_to_url=True, chunk_size=20):
 
                 links = _collect_doc_links_from_page(parsed)
                 if map_to_url:
-                    # Make _file_link_to_url a no-op for already-URLs:
                     links = [_file_link_to_url(link) for link in links]
 
-                result[title] = _deduplicate_links(links)
+                raw_links[title] = _deduplicate_links([l for l in links if l])
 
             except (KeyError, IndexError):
-                result[title] = []
+                raw_links[title] = []
 
-    return result
+    # Pass 2: batch-check existence for URLs on known wiki sites.
+    # Group by base URL: {base_url: {normalized_title: original_url}}
+    wiki_titles = {}
+    for links in raw_links.values():
+        for url in links:
+            parsed_url = urlparse(url)
+            base = _WIKI_EXISTENCE_CHECK_BASES.get(parsed_url.netloc)
+            if base and parsed_url.path.startswith("/wiki/"):
+                wiki_title = unquote(parsed_url.path[6:]).replace(" ", "_")
+                wiki_titles.setdefault(base, {})[wiki_title] = url
+
+    # url -> bool (only populated for checked URLs)
+    existence = {}
+    for base, title_map in wiki_titles.items():
+        results = batch_page_exists(list(title_map.keys()), base_url=base)
+        for wiki_title, url in title_map.items():
+            existence[url] = results.get(wiki_title, True)
+
+    # Pass 3: build final result
+    return {
+        title: [{"link": url, "exists": existence.get(url, True)} for url in links]
+        for title, links in raw_links.items()
+    }
 
 
 # -------------------------------------------------------------------------------

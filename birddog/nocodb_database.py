@@ -19,6 +19,7 @@ from birddog.abstract_database import (
     InvalidFieldValue,
     InvalidRecordId,
     InvalidTableName,
+    InvalidViewName,
     MissingKey,
     )
 from birddog.fetch import fetch_url
@@ -237,7 +238,7 @@ def clone_table_schema(db1, table_name1, db2, table_name2):
     info = db1._fetch(db1._table_info_url(table_id1))
     columns = []
     for i, c in enumerate(info["columns"]):
-        if not c["system"] and c["uidt"] not in ("Links", "ForeignKey", "Formula",):
+        if not c["system"] and c["uidt"] not in ("Links", "ForeignKey", "Formula", "Lookup"):
             spec = {
                 "title": c["title"],
                 "description": c["description"],
@@ -250,6 +251,7 @@ def clone_table_schema(db1, table_name1, db2, table_name2):
                         for option in c["colOptions"]["options"]
                     ]
                 }
+            #_logger.info(f"spec={spec}")
             columns.append(spec)
     create_spec = {
         "title": table_name2,
@@ -299,9 +301,9 @@ class NocoDBDatabase(Database):
         )
         # load the ids for all the tables in the database
         self._table_id_map = self._get_table_id_map()
-        # create placeholder for field ids that are loaded lazily when
-        # a table is first accessed
+        # create placeholder for field ids and view ids that are loaded lazily as needed
         self._field_id_map = {}
+        self._view_id_map = {}
         # initialize _schema member so that _load_schema can do a scan()
         self._schema = None
         # load the actual schema - requires that the tables
@@ -324,6 +326,9 @@ class NocoDBDatabase(Database):
     def _links_url(self, table_id, link_field_id, record_id):
         return f"{self._host}/api/v2/tables/{table_id}/links/{link_field_id}/records/{record_id}"
 
+    def _view_info_url(self, table_id):
+        return f"{self._host}/api/v2/meta/tables/{table_id}/views"
+
     def _fetch(self, url, params=None, json=None, method="GET"):
         """
         Centralized NocoDB fetch wrapper.
@@ -334,7 +339,7 @@ class NocoDBDatabase(Database):
           - Raise FailedIO(...) on any communications / HTTP failure
         """
         if self._verbose:
-            _logger.info(f"{method}: {url}, {params}")
+            _logger.info(f"{method}: {url}, params={params}, json={json}")
         time.sleep(_NOCODB_API_DELAY)
 
         try:
@@ -507,6 +512,38 @@ class NocoDBDatabase(Database):
             singleton = False
         return key_set, singleton
 
+    def _list_views(self, table_name):
+        params = {"offset": 0, "limit": 100}
+        url = self._view_info_url(self._table_id(table_name))
+        views = {}
+        while True:
+            data = self._fetch(url, params=params)
+            records = data.get("list", []) or []
+            for record in records:
+                title = record.get("title")
+                view_id = record.get("id")
+                if title and view_id:
+                    views[title] = view_id
+            page_info = data.get("pageInfo") or {}
+            if not page_info or bool(page_info.get("isLastPage")) or not records:
+                break
+            params["offset"] += len(records)                
+        return views
+
+    def _view_id(self, table_name, view_name):
+        view_ids = self._view_id_map.get(table_name)
+        if not view_ids:
+            # first time for this table - load the view id map
+            view_ids = self._view_id_map[table_name] = self._list_views(table_name)
+        view_id = view_ids.get(view_name)
+        if not view_id:
+            # view_name is not defined - refresh list to be sure
+            view_ids = self._view_id_map[table_name] = self._list_views(table_name)
+            view_id = view_ids.get(view_name)
+            if not view_id:
+                raise InvalidViewName(view_name)
+        return view_id
+
     def normalize_records(self, table_name, records):
         self._validate_table_name(table_name)
         if not isinstance(records, (list, tuple)):
@@ -540,7 +577,15 @@ class NocoDBDatabase(Database):
             params["offset"] += len(records)
         return ids
 
-    def scan(self, table_name, limit=100, cursor=None, where=None, sort=None, fields=None, raw=False):
+    def scan(self, 
+        table_name, 
+        limit=100, 
+        cursor=None, 
+        where=None, 
+        view_name=None, 
+        sort=None, 
+        fields=None, 
+        raw=False):
         """
         Page through records of a table without requiring the table key.
 
@@ -591,6 +636,8 @@ class NocoDBDatabase(Database):
             params["sort"] = self._encode_sort_spec(table_name, sort)
         if fields:
             params["fields"] = self._encode_field_spec(table_name, fields)
+        if view_name:
+            params["viewId"] = self._view_id(table_name, view_name)
 
         with LogService("NocoDB", "scan") as log:
             data = self._fetch(url, params=params)

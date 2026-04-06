@@ -591,7 +591,7 @@ class Runtime:
 
     @property
     def active_database_updates(self):
-        return self._database_update_manager.active_tasks()
+        return self._database_update_manager.status()
 
     @property
     def database(self):

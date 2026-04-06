@@ -486,8 +486,13 @@ class DynamoDBStringQueue(AbstractStringQueue):
                         ExpressionAttributeValues={":o": consumer_id},
                     )
                 except self._client.exceptions.ConditionalCheckFailedException:
-                    # lease expired/reclaimed, or row missing/corrupt; don't delete
-                    pass
+                    # Lease expired or was reclaimed by another consumer before ack.
+                    # The item was NOT deleted — it remains visible for re-claim/retry.
+                    _logger.warning(
+                        "StringQueue.ack: conditional check failed for queue=%s ts=%s consumer=%s "
+                        "(lease lost — item not deleted, will be re-claimed)",
+                        queue_name, ts, consumer_id,
+                    )
 
 
     def extend(self, queue_name: str, receipts: list[str], lease_ms: int, consumer_id: str):
@@ -593,6 +598,11 @@ class AbstractKeyValueStore(ABC):
         pass
 
     @abstractmethod
+    def update_if_exists(self, namespace: str, key: str, value: str):
+        """Update value only if the entry already exists. No-op if it doesn't."""
+        pass
+
+    @abstractmethod
     def remove(self, namespace: str, key: str):
         pass
 
@@ -650,6 +660,17 @@ class SQLiteKeyValueStore(AbstractKeyValueStore):
                     VALUES (?, ?, ?)
                     ON CONFLICT(namespace, key) DO UPDATE SET value=excluded.value
                 """, (namespace, key, value))
+                conn.commit()
+
+    def update_if_exists(self, namespace: str, key: str, value: str):
+        if not isinstance(value, str):
+            raise TypeError("value must be str")
+        with LogService("KVStore", "update_if_exists", path=namespace, size=len(key) + len(value)):
+            with self._conn() as conn:
+                conn.execute(f"""
+                    UPDATE {self._table_name} SET value = ?
+                    WHERE namespace = ? AND key = ?
+                """, (value, namespace, key))
                 conn.commit()
 
     def remove(self, namespace: str, key: str):
@@ -737,6 +758,21 @@ class DynamoDBKeyValueStore:
                 "value": value
             })
 
+    def update_if_exists(self, namespace: str, key: str, value: str):
+        if not isinstance(value, str):
+            raise TypeError("value must be str")
+        if not isinstance(key, str):
+            raise TypeError("key must be str")
+        with LogService("KVStore", "update_if_exists", path=namespace, size=len(key) + len(value)):
+            try:
+                self._table.put_item(
+                    Item={"namespace": namespace, "key": key, "value": value},
+                    ConditionExpression="attribute_exists(#ns) AND attribute_exists(#k)",
+                    ExpressionAttributeNames={"#ns": "namespace", "#k": "key"},
+                )
+            except self._client.exceptions.ConditionalCheckFailedException:
+                pass  # Item no longer exists; no-op
+
     def remove(self, namespace: str, key: str):
         if not isinstance(key, str):
             raise TypeError("key must be str")
@@ -773,6 +809,7 @@ class DynamoDBKeyValueStore:
                 Key={"namespace": namespace, "key": key},
                 ProjectionExpression="#v",
                 ExpressionAttributeNames={"#v": "value"},
+                ConsistentRead=True,
             )
             item = resp.get("Item")
             if not item:
@@ -788,6 +825,7 @@ class DynamoDBKeyValueStore:
                 KeyConditionExpression=Key("namespace").eq(namespace),
                 ProjectionExpression="#k,#v",
                 ExpressionAttributeNames={"#k": "key", "#v": "value"},
+                ConsistentRead=True,
             )
             items.extend((it["key"], it.get("value", "")) for it in resp.get("Items", []))
             while "LastEvaluatedKey" in resp:
@@ -795,6 +833,7 @@ class DynamoDBKeyValueStore:
                     KeyConditionExpression=Key("namespace").eq(namespace),
                     ProjectionExpression="#k,#v",
                     ExpressionAttributeNames={"#k": "key", "#v": "value"},
+                    ConsistentRead=True,
                     ExclusiveStartKey=resp["LastEvaluatedKey"],
                 )
                 items.extend((it["key"], it.get("value", "")) for it in resp.get("Items", []))
@@ -807,12 +846,14 @@ class DynamoDBKeyValueStore:
             resp = self._table.query(
                 KeyConditionExpression=Key("namespace").eq(namespace),
                 Select="COUNT",
+                ConsistentRead=True,
             )
             count = resp.get("Count", 0)
             while "LastEvaluatedKey" in resp:
                 resp = self._table.query(
                     KeyConditionExpression=Key("namespace").eq(namespace),
                     Select="COUNT",
+                    ConsistentRead=True,
                     ExclusiveStartKey=resp["LastEvaluatedKey"],
                 )
                 count += resp.get("Count", 0)

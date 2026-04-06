@@ -133,6 +133,12 @@ class TaskManager(HeartbeatManager):
         # failed subtasks (namespace = manager_name:completed.task_id, key = subtask_index)
         self._failed_prefix = f"{self._name}:failed"
 
+        # cancelled subtasks (namespace = manager_name:cancelled.task_id, key = subtask_index)
+        self._cancelled_prefix = f"{self._name}:cancelled"
+
+        # cancel flags keyed on task_id (separate from task_desc to avoid read-modify-write races)
+        self._cancel_flags_id = f"{self._name}:cancel_flags"
+
         # attempt count for subtasks
         self._attempts_prefix = f"{self._name}:attempts"
 
@@ -187,6 +193,9 @@ class TaskManager(HeartbeatManager):
 
     def _failed_id(self, task_id: str) -> str:
         return f"{self._failed_prefix}.{task_id}"
+
+    def _cancelled_id(self, task_id: str) -> str:
+        return f"{self._cancelled_prefix}.{task_id}"
 
     def _attempts_id(self, task_id: str) -> str:
         return f"{self._attempts_prefix}.{task_id}"
@@ -319,6 +328,13 @@ class TaskManager(HeartbeatManager):
         #_logger.info(f"_unmark_subtask_in_process: {self._subtask_id(subtask)}")
         self._key_value_store.remove(self._in_process_id, self._subtask_id(subtask))
 
+    def _is_task_cancelled(self, task_id: str) -> bool:
+        try:
+            self._key_value_store.get(self._cancel_flags_id, task_id)
+            return True
+        except KeyError:
+            return False
+
     # -------------------------
     # Completion / failure bookkeeping
     # -------------------------
@@ -326,62 +342,92 @@ class TaskManager(HeartbeatManager):
     def _insert_task(self, task_desc: dict):
         self._key_value_store.insert(self._active_id, task_desc["task_id"], json.dumps(task_desc))
 
+    def _update_task_progress(self, task_desc: dict):
+        """Update task progress in the active store only if the entry still exists.
+        Prevents re-creating an entry that was already removed by a concurrent finalization."""
+        self._key_value_store.update_if_exists(self._active_id, task_desc["task_id"], json.dumps(task_desc))
+
     def _remove_task(self, task_id):
         self._key_value_store.remove(self._active_id, task_id)
 
-    def _task_progress_counts(self, task_id: str) -> tuple[int, int]:
+    def _task_progress_counts(self, task_id: str) -> tuple[int, int, int]:
         """
-        Returns (completed_count, failed_count).
+        Returns (completed_count, failed_count, cancelled_count).
         """
         completed = self._key_value_store.count(self._completed_id(task_id))
         failed = self._key_value_store.count(self._failed_id(task_id))
-        return completed, failed
+        cancelled = self._key_value_store.count(self._cancelled_id(task_id))
+        return completed, failed, cancelled
 
-    def _maybe_finalize_task(self, task_id: str):
+    def _maybe_finalize_task(self, task_id: str, caller: str = "worker"):
         """
-        Finalize when completed + failed == length.
+        Finalize when completed + failed + cancelled == length.
         Passes a single list of subtask dicts to complete_task(), including failures.
         Each failed subtask will include: {"status": "failed", "error": "..."}.
+        complete_task() is skipped if the task is cancelled.
         """
         try:
             task = self.lookup_task(task_id)
         except KeyError:
+            _logger.info(f"_maybe_finalize_task [{caller}]: task {task_id} not in active (already removed or never inserted)")
             return
 
-        completed_count, failed_count = self._task_progress_counts(task_id)
+        completed_count, failed_count, cancelled_count = self._task_progress_counts(task_id)
         task["completed"] = completed_count
         task["failed"] = failed_count
-        self._insert_task(task)
+        task["cancelled"] = cancelled_count
+        self._update_task_progress(task)
 
-        if (completed_count + failed_count) != task["length"]:
+        if (completed_count + failed_count + cancelled_count) != task["length"]:
             return
 
         completed_items = self._key_value_store.get_all(self._completed_id(task_id))
         failed_items = self._key_value_store.get_all(self._failed_id(task_id))
+        cancelled_items = self._key_value_store.get_all(self._cancelled_id(task_id))
 
-        if (len(completed_items) + len(failed_items)) != task["length"]:
+        item_count = len(completed_items) + len(failed_items) + len(cancelled_items)
+        if item_count != task["length"]:
             # Another manager may be mid-write; try again next time.
+            _logger.info(
+                f"_maybe_finalize_task [{caller}]: task {task_id} count mismatch "
+                f"(kv_items={item_count} count={completed_count+failed_count+cancelled_count} length={task['length']}) — deferring"
+            )
             return
 
-        subtasks = [json.loads(v) for (_, v) in completed_items] + [json.loads(v) for (_, v) in failed_items]
+        _logger.info(
+            f"_maybe_finalize_task [{caller}]: finalizing task {task_id} "
+            f"(completed={completed_count} failed={failed_count} cancelled={cancelled_count} length={task['length']})"
+        )
 
-        # Finalize the task
-        try:
-            self.complete_task(task, subtasks)
-        except Exception:
-            _logger.exception("complete_task failed for task_id=%s; leaving subtasks for retry", task_id)
-            return
+        is_cancelled = self._is_task_cancelled(task_id)
+
+        if not is_cancelled:
+            subtasks = [json.loads(v) for (_, v) in completed_items] + [json.loads(v) for (_, v) in failed_items]
+            # Finalize the task
+            try:
+                self.complete_task(task, subtasks)
+            except Exception:
+                _logger.exception("complete_task failed for task_id=%s; leaving subtasks for retry", task_id)
+                return
 
         # Cleanup subtasks
         self._key_value_store.remove_all(self._completed_id(task_id))
         self._key_value_store.remove_all(self._failed_id(task_id))
+        self._key_value_store.remove_all(self._cancelled_id(task_id))
+
+        # Cleanup cancel flag (if any)
+        try:
+            self._key_value_store.remove(self._cancel_flags_id, task_id)
+        except KeyError:
+            pass
 
         # Cleanup the task
         self._remove_task(task_id)
-        _logger.info(f"TaskManager completed task {task_id} (completed={completed_count}, failed={failed_count})")
+        _logger.info(f"TaskManager {'cancelled' if is_cancelled else 'completed'} task {task_id} (completed={completed_count}, failed={failed_count}, cancelled={cancelled_count})")
 
-    def _mark_subtask_completed(self, subtask: dict, failed=False):
-        #_logger.info(f"_mark_subtask_completed: {self._subtask_id(subtask)}, receipt={subtask.get('_receipt')}, failed={failed}")
+    def _mark_subtask_completed(self, subtask: dict, failed=False, cancelled=False):
+        subtask_id = self._subtask_id(subtask)
+        _logger.info(f"_mark_subtask_completed: {subtask_id} failed={failed} cancelled={cancelled}")
 
         # remove from in-process
         try:
@@ -392,10 +438,20 @@ class TaskManager(HeartbeatManager):
         task_id = subtask["task_id"]
 
         # Mark status
-        subtask["status"] = "failed" if failed else "completed"
+        if cancelled:
+            subtask["status"] = "cancelled"
+        elif failed:
+            subtask["status"] = "failed"
+        else:
+            subtask["status"] = "completed"
 
         # store result for final processing
-        namespace_id = self._failed_id(task_id) if failed else self._completed_id(task_id)
+        if cancelled:
+            namespace_id = self._cancelled_id(task_id)
+        elif failed:
+            namespace_id = self._failed_id(task_id)
+        else:
+            namespace_id = self._completed_id(task_id)
         self._key_value_store.insert(
             namespace_id,
             str(subtask["index"]),
@@ -403,7 +459,12 @@ class TaskManager(HeartbeatManager):
         )
 
         # clear subtask from the queue
+        receipt = subtask.get("_receipt")
         self._ack_subtask(subtask)
+        # Note: ack is conditional on still owning the lease. If the lease expired and
+        # another worker reclaimed the item, ack silently no-ops. Log to detect this.
+        if not receipt:
+            _logger.warning(f"_mark_subtask_completed: {subtask_id} has no receipt — subtask may never be acked")
 
         # remove attempts counter, if any
         self._clear_attempts(subtask)
@@ -416,16 +477,15 @@ class TaskManager(HeartbeatManager):
         self._mark_subtask_completed(subtask, failed=True)
 
     def _check_finished(self, subtask):
-        try:
-            self._key_value_store.get(self._completed_id(subtask["task_id"]), str(subtask["index"]))
-            return True
-        except KeyError:
-            pass
-        try:
-            self._key_value_store.get(self._failed_id(subtask["task_id"]), str(subtask["index"]))
-            return True
-        except KeyError:
-            return False
+        task_id = subtask["task_id"]
+        index = str(subtask["index"])
+        for ns in (self._completed_id(task_id), self._failed_id(task_id), self._cancelled_id(task_id)):
+            try:
+                self._key_value_store.get(ns, index)
+                return True
+            except KeyError:
+                pass
+        return False
 
     # -------------------------
     # Worker execution
@@ -475,13 +535,19 @@ class TaskManager(HeartbeatManager):
 
             # If task is already gone, ack and skip (prevents zombie work after completion).
             try:
-                self.lookup_task(task_id)
+                task = self.lookup_task(task_id)
             except KeyError:
                 _logger.info(f"_run_worker: removing zombie subtask: {subtask_key}")
                 try:
                     self._ack_subtask(subtask)
                 except Exception:
                     pass
+                continue
+
+            # If the task is cancelled, mark subtask cancelled and skip execution.
+            if self._is_task_cancelled(task_id):
+                _logger.info(f"_run_worker: task {task_id} is cancelled, skipping subtask {subtask_key}")
+                self._mark_subtask_completed(subtask, cancelled=True)
                 continue
 
             # check if subtask is already completed or failed, skip if so and check for task completion
@@ -586,12 +652,15 @@ class TaskManager(HeartbeatManager):
             _logger.warning("TaskManager: failed to list active tasks for reap: %s", e)
             return
 
+        if active:
+            _logger.info(f"TaskManager reap: checking {len(active)} active task(s)")
+
         for _, v in active[:max_tasks]:
             try:
                 task = json.loads(v)
                 task_id = task.get("task_id")
                 if task_id:
-                    self._maybe_finalize_task(task_id)   # rely on counts
+                    self._maybe_finalize_task(task_id, caller="reap")
             except Exception:
                 _logger.exception("TaskManager: reap failed")
 
@@ -641,7 +710,8 @@ class TaskManager(HeartbeatManager):
     def lookup_task(self, task_id):
         # KeyValueStore.get raises KeyError if missing
         item = self._key_value_store.get(self._active_id, task_id)
-        return json.loads(item)
+        task = json.loads(item)
+        return task
 
     def lookup_by_name(self, task_name):
         for task in self.active_tasks():
@@ -656,6 +726,15 @@ class TaskManager(HeartbeatManager):
     def is_active(self):
         return any(self._key_value_store.get_all(self._active_id))
 
+    def cancel(self, task_id):
+        try:
+            self.lookup_task(task_id)  # raises KeyError if not active
+        except KeyError:
+            _logger.info(f"TaskManager.cancel: task {task_id} not found (already completed or never created)")
+            return
+        self._key_value_store.insert(self._cancel_flags_id, task_id, "true")
+        _logger.info(f"TaskManager.cancel: task {task_id} marked cancelled")
+
     def create(self, task_name, subtasks):
         if not subtasks:
             raise ValueError("Empty task")
@@ -669,11 +748,12 @@ class TaskManager(HeartbeatManager):
             "failed": 0,
         }
         self._insert_task(task_desc)
+        _logger.info(f"TaskManager.create: task {task_id} inserted (name={task_name!r} length={len(subtasks)}) — queuing subtasks")
 
         batch = [self._form_subtask(item, i, task_id) for i, item in enumerate(subtasks)]
         self._queue_subtasks(batch)
 
-        _logger.info(f"TaskManager starting task {task_id}")
+        _logger.info(f"TaskManager.create: task {task_id} fully queued — spawning worker")
         self._spawn_worker()
         return task_id
 
