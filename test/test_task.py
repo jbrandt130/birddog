@@ -27,7 +27,7 @@ class TaskTest(TaskManager):
         time.sleep(random.uniform(0, 1))
         print("subtask:", subtask['payload'])
 
-    def complete_task(self, task_desc, subtasks):
+    def complete_task(self, task_desc, subtasks, is_cancelled=False):
         global task_register
         task_register[task_desc['name']]['complete'] = True
         print("complete:", task_desc['name'])
@@ -62,7 +62,7 @@ class BlockingTaskManager(TaskManager):
     def execute_subtask(self, subtask):
         self._proceed.wait()
 
-    def complete_task(self, task_desc, subtasks):
+    def complete_task(self, task_desc, subtasks, is_cancelled=False):
         self.complete_task_called = True
         self.complete_task_subtasks = subtasks
 

@@ -607,6 +607,11 @@ class AbstractKeyValueStore(ABC):
         pass
 
     @abstractmethod
+    def remove_if_exists(self, namespace: str, key: str) -> bool:
+        """Remove entry if it exists. Returns True if it was present and deleted, False otherwise."""
+        pass
+
+    @abstractmethod
     def remove_all(self, namespace: str):
         pass
 
@@ -678,6 +683,16 @@ class SQLiteKeyValueStore(AbstractKeyValueStore):
             with self._conn() as conn:
                 conn.execute(f"DELETE FROM {self._table_name} WHERE namespace = ? AND key = ?", (namespace, key))
                 conn.commit()
+
+    def remove_if_exists(self, namespace: str, key: str) -> bool:
+        with LogService("KVStore", "remove_if_exists", path=namespace, size=len(key)):
+            with self._conn() as conn:
+                cur = conn.execute(
+                    f"DELETE FROM {self._table_name} WHERE namespace = ? AND key = ?",
+                    (namespace, key)
+                )
+                conn.commit()
+                return cur.rowcount > 0
 
     def remove_all(self, namespace: str):
         with LogService("KVStore", "remove_all", path=namespace):
@@ -778,6 +793,16 @@ class DynamoDBKeyValueStore:
             raise TypeError("key must be str")
         with LogService("KVStore", "remove", path=namespace, size=len(key)):
             self._table.delete_item(Key={"namespace": namespace, "key": key})
+
+    def remove_if_exists(self, namespace: str, key: str) -> bool:
+        if not isinstance(key, str):
+            raise TypeError("key must be str")
+        with LogService("KVStore", "remove_if_exists", path=namespace, size=len(key)):
+            resp = self._table.delete_item(
+                Key={"namespace": namespace, "key": key},
+                ReturnValues="ALL_OLD",
+            )
+            return "Attributes" in resp
 
     def remove_all(self, namespace: str):
         with LogService("KVStore", "remove_all", path=namespace):

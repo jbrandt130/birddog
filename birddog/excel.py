@@ -451,6 +451,6 @@ class ExportManager(TaskManager):
         except Exception as err:
             _logger.info(f"Exception in export task: {err}")
 
-    def complete_task(self, task_desc, subtasks):
-        _logger.info(f"{task_desc['task_id']}: completed")
+    def complete_task(self, task_desc, subtasks, is_cancelled=False):
+        _logger.info(f"{task_desc['task_id']}: {'cancelled' if is_cancelled else 'completed'}")
 

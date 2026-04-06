@@ -714,7 +714,7 @@ def database_update(user):
         'title': page_title,
         'deep': deep,
         'enabled': runtime.database_update_enabled,
-        'updates': _active_updates()}), 200
+        'tasks': _active_updates()}), 200
 
 # ---- LOG ACCESS ---------------------------------------------------------------
 

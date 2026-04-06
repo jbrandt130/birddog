@@ -429,7 +429,9 @@ class TranslationManager(TaskManager):
             self._available = False     # be conservative
             return
 
-    def complete_task(self, task_desc, subtasks):
+    def complete_task(self, task_desc, subtasks, is_cancelled=False):
+        if is_cancelled:
+            return
         _logger.info(f"TranslationManager.complete: {task_desc['name']}")
         translation_map = {}
         for subtask in subtasks:
