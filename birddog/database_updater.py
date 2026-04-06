@@ -6,6 +6,8 @@ from __future__ import annotations
 from datetime import datetime
 from urllib.parse import urlparse, unquote
 from pathlib import PurePosixPath
+import json
+import threading
 import mwparserfromhell
 
 from birddog.database import Database
@@ -22,6 +24,7 @@ from birddog.utility import (
     )
 from birddog.task import TaskManager
 from birddog.fetch import fetch_url
+from birddog.store import KeyValueStore
 
 from birddog.log import get_logger
 _logger = get_logger()
@@ -861,11 +864,15 @@ class DatabaseUpdater:
                 _logger.info(f"Updater: updating translations (length={len(update)})")
                 result = self._db.write("Pages", update)
 
+_UPDATE_STATE_NS = "tasks"
+
 class DatabaseUpdateManager(TaskManager):
     _BATCH_SIZE = 20
 
     def __init__(self, runtime, updater=None):
         self._updater = updater if updater else DatabaseUpdater(runtime)
+        self._state_store = KeyValueStore(table_name="bd_db_update")
+        self._state_lock = threading.Lock()
         super().__init__("DatabaseUpdateManager")
         # adjust subtask timeout to allow for approx 10 sec per item in batch
         self._stale_subtask_threshold_ms = self._BATCH_SIZE * 10000
@@ -881,6 +888,17 @@ class DatabaseUpdateManager(TaskManager):
         except Exception as err:
             _logger.error(f"DatabaseUpdateManager: exception during subtask execution: {err}, {batch}")
             subtask["payload"] = {"error": str(err)}
+        task_id = subtask["task_id"]
+        n_titles = len(batch["titles"])
+        with self._state_lock:
+            try:
+                task = self.lookup_task(task_id)
+                task_name = task["name"]
+                state = json.loads(self._state_store.get(_UPDATE_STATE_NS, task_name))
+                state["completed"] += n_titles
+                self._state_store.insert(_UPDATE_STATE_NS, task_name, json.dumps(state))
+            except KeyError:
+                pass
 
     def complete_task(self, task_desc, subtasks):
         try:
@@ -908,6 +926,11 @@ class DatabaseUpdateManager(TaskManager):
 
         except Exception as err:
             _logger.error(f"DatabaseUpdateManager: exception during task completion: {err}")
+        with self._state_lock:
+            try:
+                self._state_store.remove(_UPDATE_STATE_NS, task_desc["name"])
+            except KeyError:
+                pass
 
     def complete_translation(self, task_name, translation_map):
         self._updater.complete_translation(task_name, translation_map)
@@ -929,7 +952,30 @@ class DatabaseUpdateManager(TaskManager):
                     "titles": page_titles[i:i+self._BATCH_SIZE],
                     "deep": deep,
                     })
+            preview = page_titles[:50]
+            titles_str = ", ".join(preview) + ("..." if total > 50 else "")
+            state = json.dumps({
+                "titles": titles_str,
+                "total": total,
+                "completed": 0,
+            })
+            self._state_store.insert(_UPDATE_STATE_NS, task_name, state)
             self.create(task_name, batches)
+
+    def status(self):
+        items = self._state_store.get_all(_UPDATE_STATE_NS)
+        result = []
+        for _, v in items:
+            state = json.loads(v)
+            total = state["total"]
+            completed = state["completed"]
+            result.append({
+                "titles": state["titles"],
+                "pending": total,
+                "in_progress": total - completed,
+                "completed": completed,
+            })
+        return result
 
 
 
