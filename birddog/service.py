@@ -714,7 +714,24 @@ def database_update(user):
         'title': page_title,
         'deep': deep,
         'enabled': runtime.database_update_enabled,
-        'updates': _active_updates()}), 200
+        'tasks': _active_updates()}), 200
+
+@app.route('/database_cancel_task', methods=['POST'])
+@login_required
+def database_cancel_task(user):
+    task_name = request.args.get('task')
+    if not task_name:
+        return jsonify({'error': 'Missing required parameter: task'}), 400
+    try:
+        runtime.cancel_update(task_name)
+        return '', 200
+    except KeyError:
+        return jsonify({'error': f'Task not found: {task_name}'}), 404
+
+@app.route('/database_status', methods=['GET'])
+@login_required
+def database_status(user):
+    return render_template('database_status.html')
 
 # ---- LOG ACCESS ---------------------------------------------------------------
 

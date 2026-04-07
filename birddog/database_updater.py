@@ -15,6 +15,7 @@ from birddog.wiki import (
     API_URL,
     canonicalize_title,
     page_label,
+    parent_title,
     sequential_page_label,
     page_kind,
     page_url_from_title,
@@ -211,11 +212,18 @@ def _parse_wiki_templates(parse):
         "years": dates.strip(),
     }
 
+def _safe_parent_title(title):
+    try:
+        return parent_title(title)
+    except ValueError:
+        return None
+
 def _extract_links_from_wiki_parse(title, parse):
     internal_links = []
     category_links = []
     children = []
     parent = None
+    parent_title_name = _safe_parent_title(title)
     for link in parse.get("links", []):
         other_title = link.get("*")
         if other_title:
@@ -226,10 +234,12 @@ def _extract_links_from_wiki_parse(title, parse):
             }
             if canonical_title.startswith(title):
                 children.append(item)
-            elif title.rsplit("/", 1)[0] == canonical_title:
+            elif parent_title_name == canonical_title:
                 parent = item
             elif _is_category_link(other_title):
                 category_links.append(item)
+            elif _safe_parent_title(item["title"]) == title:
+                children.append(item)
             else:
                 item["doc_type"] = _sniff_suffix(canonical_title)
                 internal_links.append(item)
@@ -900,32 +910,34 @@ class DatabaseUpdateManager(TaskManager):
             except KeyError:
                 pass
 
-    def complete_task(self, task_desc, subtasks):
-        try:
-            #_logger.info(f"updater.complete_task: {task_desc}, {subtasks}")
-            if any([subtask["payload"].get("updated") for subtask in subtasks]):
-                _logger.info("Update task completed. Some records changed. Starting translations")
-                # kick off translation on any new records
-                self._updater.start_translation()
-            parent_titles = []
-            for subtask in subtasks:
-                if subtask["payload"].get("deep"):
-                    #_logger.info(subtask["payload"])
-                    parent_titles.extend(subtask["payload"].get("titles", []))
-            if parent_titles:
-                # this is a deep update, create new task with child titles
-                #_logger.info(f"updater.complete_task: checking for deep subtasks {parent_titles}")
-                spawn = set(get_child_titles(self._updater._db, parent_titles))
-                spawn -= set(parent_titles)
-                #_logger.info(f"updater.complete_task: spawn={spawn}")
-                if spawn:
-                    # remove duplicates
-                    spawn = list(spawn)
-                    _logger.info(f"DatabaseUpdateManager: deep update: spawning new update task: {len(spawn)} titles")
-                    self.start_update(spawn, deep=True)
+    def complete_task(self, task_desc, subtasks, is_cancelled=False):
+        if not is_cancelled:
+            try:
+                _logger.info(f"updater.complete_task: {task_desc}, {subtasks}")
+                if any([subtask["payload"].get("updated") for subtask in subtasks]):
+                    _logger.info("Update task completed. Some records changed. Starting translations")
+                    # kick off translation on any new records
+                    self._updater.start_translation()
+                parent_titles = []
+                for subtask in subtasks:
+                    if subtask["payload"].get("deep"):
+                        #_logger.info(subtask["payload"])
+                        parent_titles.extend(subtask["payload"].get("titles", []))
+                if parent_titles:
+                    # this is a deep update, create new task with child titles
+                    _logger.info(f"updater.complete_task: checking for deep subtasks {parent_titles}")
+                    spawn = set(get_child_titles(self._updater._db, parent_titles))
+                    _logger.info(f"updater.complete_task: spawn={spawn}")
+                    spawn -= set(parent_titles)
+                    _logger.info(f"updater.complete_task: spawn={spawn}")
+                    if spawn:
+                        # remove duplicates
+                        spawn = list(spawn)
+                        _logger.info(f"DatabaseUpdateManager: deep update: spawning new update task: {len(spawn)} titles")
+                        self.start_update(spawn, deep=True)
 
-        except Exception as err:
-            _logger.error(f"DatabaseUpdateManager: exception during task completion: {err}")
+            except Exception as err:
+                _logger.error(f"DatabaseUpdateManager: exception during task completion: {err}")
         with self._state_lock:
             try:
                 self._state_store.remove(_UPDATE_STATE_NS, task_desc["name"])
@@ -956,26 +968,24 @@ class DatabaseUpdateManager(TaskManager):
             titles_str = ", ".join(preview) + ("..." if total > 50 else "")
             state = json.dumps({
                 "titles": titles_str,
+                "deep": deep,
                 "total": total,
                 "completed": 0,
             })
             self._state_store.insert(_UPDATE_STATE_NS, task_name, state)
             self.create(task_name, batches)
-
+            return task_name
+            
     def status(self):
-        items = self._state_store.get_all(_UPDATE_STATE_NS)
-        result = []
-        for _, v in items:
-            state = json.loads(v)
-            total = state["total"]
-            completed = state["completed"]
-            result.append({
-                "titles": state["titles"],
-                "pending": total,
-                "in_progress": total - completed,
-                "completed": completed,
-            })
-        return result
+        active_tasks = self._state_store.get_all(_UPDATE_STATE_NS)
+        return { item[0]: json.loads(item[1]) for item in active_tasks }
+
+    def cancel(self, task_name):
+        for task in self.active_tasks():
+            if task.get("name") == task_name:
+                super().cancel(task.get("task_id"))
+                return
+        raise KeyError(task_name)
 
 
 

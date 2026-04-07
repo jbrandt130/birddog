@@ -347,8 +347,8 @@ class TaskManager(HeartbeatManager):
         Prevents re-creating an entry that was already removed by a concurrent finalization."""
         self._key_value_store.update_if_exists(self._active_id, task_desc["task_id"], json.dumps(task_desc))
 
-    def _remove_task(self, task_id):
-        self._key_value_store.remove(self._active_id, task_id)
+    def _remove_task(self, task_id) -> bool:
+        return self._key_value_store.remove_if_exists(self._active_id, task_id)
 
     def _task_progress_counts(self, task_id: str) -> tuple[int, int, int]:
         """
@@ -394,6 +394,12 @@ class TaskManager(HeartbeatManager):
             )
             return
 
+        # Atomically claim finalization by removing the task from the active store.
+        # Only one concurrent caller can win this; others see False and return.
+        if not self._remove_task(task_id):
+            _logger.info(f"_maybe_finalize_task [{caller}]: task {task_id} already claimed by another finalizer — skipping")
+            return
+
         _logger.info(
             f"_maybe_finalize_task [{caller}]: finalizing task {task_id} "
             f"(completed={completed_count} failed={failed_count} cancelled={cancelled_count} length={task['length']})"
@@ -401,28 +407,25 @@ class TaskManager(HeartbeatManager):
 
         is_cancelled = self._is_task_cancelled(task_id)
 
-        if not is_cancelled:
-            subtasks = [json.loads(v) for (_, v) in completed_items] + [json.loads(v) for (_, v) in failed_items]
-            # Finalize the task
-            try:
-                self.complete_task(task, subtasks)
-            except Exception:
-                _logger.exception("complete_task failed for task_id=%s; leaving subtasks for retry", task_id)
-                return
+        subtasks = (
+            [json.loads(v) for (_, v) in completed_items]
+            + [json.loads(v) for (_, v) in failed_items]
+            + [json.loads(v) for (_, v) in cancelled_items]
+        )
+        try:
+            self.complete_task(task, subtasks, is_cancelled=is_cancelled)
+        except Exception:
+            _logger.exception("complete_task failed for task_id=%s", task_id)
 
-        # Cleanup subtasks
+        # Cleanup subtasks and cancel flag
         self._key_value_store.remove_all(self._completed_id(task_id))
         self._key_value_store.remove_all(self._failed_id(task_id))
         self._key_value_store.remove_all(self._cancelled_id(task_id))
-
-        # Cleanup cancel flag (if any)
         try:
             self._key_value_store.remove(self._cancel_flags_id, task_id)
         except KeyError:
             pass
 
-        # Cleanup the task
-        self._remove_task(task_id)
         _logger.info(f"TaskManager {'cancelled' if is_cancelled else 'completed'} task {task_id} (completed={completed_count}, failed={failed_count}, cancelled={cancelled_count})")
 
     def _mark_subtask_completed(self, subtask: dict, failed=False, cancelled=False):
@@ -700,7 +703,7 @@ class TaskManager(HeartbeatManager):
     def execute_subtask(self, subtask):
         raise NotImplementedError
 
-    def complete_task(self, task_desc, subtasks):
+    def complete_task(self, task_desc, subtasks, is_cancelled=False):
         raise NotImplementedError
     # ========
 

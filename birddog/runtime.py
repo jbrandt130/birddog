@@ -593,6 +593,9 @@ class Runtime:
     def active_database_updates(self):
         return self._database_update_manager.status()
 
+    def cancel_update(self, task_name):
+        self._database_update_manager.cancel(task_name)
+
     @property
     def database(self):
         return self._database
