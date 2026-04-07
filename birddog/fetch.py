@@ -138,6 +138,9 @@ class HostProfile:
     # concurrency
     max_in_flight: int = 4
 
+    # bypass all throttling (rate + concurrency) for this host
+    unthrottled: bool = False
+
 # HostState field reference
 #
 # profile
@@ -196,23 +199,29 @@ class HostState:
     transient_err_times: list[float] = field(default_factory=list)
     sem: threading.Semaphore = field(default_factory=lambda: threading.Semaphore(1))
 
+    # actual throughput tracking
+    completed: int = 0
+    completed_since: float = field(default_factory=_now)
+
 
 # ---------------------------------------------------------------------------
 # lease
 # ---------------------------------------------------------------------------
 
 class Lease:
-    __slots__ = ("_throttle", "_host_key", "_released")
+    __slots__ = ("_throttle", "_host_key", "_released", "_has_sem")
 
-    def __init__(self, throttle: "AdaptiveThrottle", host_key: str):
+    def __init__(self, throttle: "AdaptiveThrottle", host_key: str, *, has_sem: bool = True):
         self._throttle = throttle
         self._host_key = host_key
         self._released = False
+        self._has_sem = has_sem
 
     def release(self) -> None:
         if not self._released:
             self._released = True
-            self._throttle._release(self._host_key)
+            if self._has_sem:
+                self._throttle._release(self._host_key)
 
     def __enter__(self) -> "Lease":
         return self
@@ -340,6 +349,8 @@ class AdaptiveThrottle:
 
         with self._lock:
             st = self._get_state(host_key)
+            if st.profile.unthrottled:
+                return Lease(self, host_key, has_sem=False)
             sem = st.sem
 
         sem.acquire()
@@ -389,6 +400,9 @@ class AdaptiveThrottle:
         is_rate_limited_payload: bool = False,
     ) -> None:
         host_key = self.key_from(url_or_key)
+
+        with self._lock:
+            self._get_state(host_key).completed += 1
 
         if status_code == 429 or is_rate_limited_payload:
             self._on_throttle(host_key, headers)
@@ -493,38 +507,43 @@ class AdaptiveThrottle:
         """
         Format a one-shot textual report of current host throttle state.
 
-        Uses snapshot() (thread-safe) and returns a multi-line string suitable
-        for logging/printing.
+        Computes actual throughput (rps) since the last call to this method,
+        then resets per-host counters. Thread-safe.
         """
-        snap = self.snapshot()
-        if not snap:
-            return "AdaptiveThrottle report: (no hosts seen yet)"
+        with self._lock:
+            now = _now()
+            if not self._hosts:
+                return "AdaptiveThrottle report: (no hosts seen yet)"
 
-        # stable ordering for readability
-        keys = sorted(snap.keys())
+            rows = []
+            for hk in sorted(self._hosts.keys()):
+                st = self._hosts[hk]
+                elapsed = now - st.completed_since
+                actual_rps = st.completed / max(elapsed, 1e-9)
+                rows.append((
+                    hk,
+                    st.rate_rps,
+                    actual_rps,
+                    st.tokens,
+                    max(0.0, st.blocked_until - now),
+                    st.profile.max_in_flight,
+                ))
+                st.completed = 0
+                st.completed_since = now
 
-        # header
-        lines = []
-        lines.append("AdaptiveThrottle report:")
+        lines = ["AdaptiveThrottle report:"]
         lines.append(
-            "  {:<34} {:>8} {:>8} {:>10} {:>12}".format(
-                "host_key", "rps", "tokens", "blocked_s", "max_in_flight"
+            "  {:<34} {:>8} {:>8} {:>8} {:>10} {:>12}".format(
+                "host_key", "cfg_rps", "act_rps", "tokens", "blocked_s", "max_in_flight"
             )
         )
-        lines.append("  " + "-" * 78)
-
-        for hk in keys:
-            st = snap[hk]
+        lines.append("  " + "-" * 88)
+        for hk, cfg_rps, act_rps, tokens, blocked_s, max_in_flight in rows:
             lines.append(
-                "  {:<34} {:>8.2f} {:>8.2f} {:>10.2f} {:>12d}".format(
-                    hk[:34],
-                    float(st.get("rate_rps", 0.0)),
-                    float(st.get("tokens", 0.0)),
-                    float(st.get("blocked_for_s", 0.0)),
-                    int(st.get("max_in_flight", 0)),
+                "  {:<34} {:>8.2f} {:>8.2f} {:>8.2f} {:>10.2f} {:>12d}".format(
+                    hk[:34], cfg_rps, act_rps, tokens, blocked_s, max_in_flight,
                 )
             )
-
         return "\n".join(lines)
 
 # ---------------------------------------------------------------------------
