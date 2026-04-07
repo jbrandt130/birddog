@@ -930,10 +930,12 @@ class DatabaseUpdater:
         table_name = "Pages"
         view_name = "Untranslated Pages"
         key_field = self._db.key_field_name(table_name)
+        fields = [key_field, "description", "description_uk"]
         translations = []
         cursor = None
         while True:
-            batch, cursor = self._db.scan(table_name, cursor=cursor, view_name=view_name)
+            batch, cursor = self._db.scan(table_name, cursor=cursor, fields=fields, view_name=view_name)
+            _logger.info(f"collect translation batch: {len(batch)}")
             for record in batch:
                 ukrainian_description = record.get("description_uk")
                 if ukrainian_description and not record.get("description"):
@@ -947,6 +949,7 @@ class DatabaseUpdater:
 
     def start_translation(self):
         translations = self._collect_translations()
+        _logger.info(f"Updater: collecting needed translations (length={len(translations)})")
         if translations:
             task_name = f"DBT_{new_id()}"
             translation_items = [t["description_uk"] for t in translations]

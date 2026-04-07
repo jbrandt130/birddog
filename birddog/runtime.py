@@ -593,13 +593,17 @@ class Runtime:
 
     @property
     def active_database_updates(self):
-        return self._database_update_manager.status()
+        if self.database_update_enabled:
+            return self._database_update_manager.status()
+        return None
 
     def cancel_update(self, task_name):
-        self._database_update_manager.cancel(task_name)
+        if self.database_update_enabled:
+            self._database_update_manager.cancel(task_name)
 
     def update_database_translations(self):
-        self._database_updater.start_translation()
+        if self.database_update_enabled:
+            self._database_updater.start_translation()
 
     @property
     def database(self):
