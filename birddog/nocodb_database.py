@@ -495,6 +495,8 @@ class NocoDBDatabase(Database):
             fields = [ fields ]
         elif not isinstance(fields, (list, tuple)):
             raise ValueError(f"unrecognized field spec: {fields}")
+        if "Id" not in fields:
+            fields.append("Id")
         for field_name in fields:
             # verify field names (will raise if invalid)
             self._field_id(table_name, field_name)
@@ -1046,9 +1048,90 @@ class NocoDBDatabase(Database):
             table_name, link_field, source_record, target_records,
             "DELETE")
 
+    def scan_links(self, table_name, link_field, source_record, limit=100, cursor=None):
+        """
+        Page through linked target record_ids for a relation field on a source record.
+
+        Args:
+            table_name:
+                Logical name of the source table that owns the relation field.
+
+            link_field:
+                Name of the relation field on the source table.
+
+            source_record:
+                Record_id ("Id") of the source record.
+
+            limit:
+                Maximum number of linked record_ids to return in this call.
+
+            cursor:
+                Opaque paging token returned by a previous call to scan_links(), or
+                None to request the first page. In this implementation the cursor is
+                a stringified integer offset.
+
+        Returns:
+            (link_ids, next_cursor)
+                link_ids:
+                    List of linked target record_ids.
+                next_cursor:
+                    None if there are no more pages, otherwise an opaque token that
+                    can be passed back to scan_links() to retrieve the next page.
+
+        Semantics:
+            - scan_links() is read-only and side-effect free.
+            - If cursor is invalid (non-integer for this backend), InvalidRecordId
+              is raised.
+            - Supports both paged and non-paged NocoDB responses:
+                * If NocoDB returns a paged payload with "list" and "pageInfo", a
+                  single page of links is returned.
+                * If NocoDB returns a singular object with an "Id", that single Id
+                  is returned on the first page only.
+
+        Errors:
+            - InvalidTableName
+            - InvalidFieldName
+            - InvalidRecordId
+            - FailedIO
+        """
+        table_id = self._table_id(table_name)
+        link_field_id = self._field_id(table_name, link_field)
+
+        try:
+            offset = int(cursor) if cursor is not None else 0
+        except (TypeError, ValueError):
+            raise InvalidRecordId(f"Invalid cursor value: {cursor}")
+
+        url = self._links_url(table_id, link_field_id, source_record)
+        params = {
+            "offset": offset,
+            "limit": limit,
+        }
+
+        with LogService("NocoDB", "scan_links") as log:
+            response = self._fetch(url, params=params, method="GET")
+            log.size = json_size(response)
+
+            page_info = response.get("pageInfo")
+            if page_info:
+                link_ids = [item["Id"] for item in response.get("list", []) or []]
+                is_last = bool(page_info.get("isLastPage")) or not link_ids
+                next_cursor = None if is_last else str(offset + len(link_ids))
+                return link_ids, next_cursor
+
+            # Non-paged fallback: some NocoDB responses may return a singular object.
+            link_id = response.get("Id")
+            if link_id:
+                if offset > 0:
+                    return [], None
+                return [link_id], None
+
+            return [], None
+
+
     def get_links(self, table_name, link_field, source_record):
         """
-        Retrieve the linked target record_ids for a relation field on a source record.
+        Retrieve all linked target record_ids for a relation field on a source record.
 
         Args:
             table_name:
@@ -1061,47 +1144,35 @@ class NocoDBDatabase(Database):
                 Record_id ("Id") of the source record.
 
         Returns:
-            A list of linked target record_ids (strings/ints as returned by NocoDB).
-            If no links exist, returns an empty list.
+            A list of all linked target record_ids. If no links exist, returns an
+            empty list.
 
         Semantics:
-            - Supports both paged and non-paged NocoDB responses:
-                * If NocoDB returns a paged payload with "list" and "pageInfo", the
-                  method iterates pages until "isLastPage" is True.
-                * If NocoDB returns a singular object with an "Id", that single Id is
-                  returned as a one-element list.
+            - Eagerly retrieves all pages of links by calling scan_links().
+            - For large fanout relations, callers that do not need the full link set
+              should prefer scan_links().
 
         Errors:
             - InvalidTableName
             - InvalidFieldName
             - FailedIO
         """
-        table_id = self._table_id(table_name)
-        link_field_id = self._field_id(table_name, link_field)
-        url = self._links_url(table_id, link_field_id, source_record)
         result = []
-        params = { "offset": 0}
+        cursor = None
+
         with LogService("NocoDB", "get_links") as log:
             log.size = 0
             while True:
-                response = self._fetch(url, params=params, method="GET")
-                log.size += json_size(response)
-                page_info = response.get("pageInfo")
-                if page_info:
-                    # paged results
-                    resp = [item["Id"] for item in response.get("list", [])]
-                    result.extend(resp)
-                    if page_info["isLastPage"]:
-                        return result
-                    # iterate to get the next page
-                    params["offset"] += len(resp)
-                else:
-                    # not paged: singular Id returned
-                    link_id = response.get("Id")
-                    if link_id:
-                        result.append(link_id)
+                page, cursor = self.scan_links(
+                    table_name,
+                    link_field,
+                    source_record,
+                    cursor=cursor,
+                )
+                log.size += json_size(page)
+                result.extend(page)
+                if not cursor:
                     return result
-            return response
 
     def _upload_files(self, file_paths):
         """

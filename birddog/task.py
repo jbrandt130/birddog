@@ -3,6 +3,7 @@
 
 from datetime import datetime, UTC
 import json
+import random
 import threading
 from threading import Thread
 from typing import Optional
@@ -144,7 +145,8 @@ class TaskManager(HeartbeatManager):
 
         # ---- String queue identifiers
 
-        self._pending_id = f"{self._name}:pending"
+        # Each task gets its own pending queue: {name}:pending.{task_id}
+        self._pending_prefix = f"{self._name}:pending"
 
         # Identify this manager instance for queue lease ownership
         self._consumer_id = f"{self._name}:{new_id()}"
@@ -172,7 +174,9 @@ class TaskManager(HeartbeatManager):
 
     # diagnostic queue check
     def _check_subtask_queue(self, message):
-        contents = self._queue_store.dump(self._pending_id)
+        contents = []
+        for task in self.active_tasks():
+            contents.extend(self._queue_store.dump(self._pending_queue_id(task["task_id"])))
         flagged = False
         for item in contents:
             if not item.get("value"):
@@ -187,6 +191,9 @@ class TaskManager(HeartbeatManager):
     @staticmethod
     def _subtask_id(subtask: dict) -> str:
         return f"{subtask['task_id']}.{subtask['index']}"
+
+    def _pending_queue_id(self, task_id: str) -> str:
+        return f"{self._pending_prefix}.{task_id}"
 
     def _completed_id(self, task_id: str) -> str:
         return f"{self._completed_prefix}.{task_id}"
@@ -208,9 +215,9 @@ class TaskManager(HeartbeatManager):
             "payload": payload,
         }
 
-    def _queue_subtasks(self, batch: list[dict]):
+    def _queue_subtasks(self, batch: list[dict], task_id: str):
         with QueueGuard(self, "_queue_subtasks"):
-            self._queue_store.append(self._pending_id, [json.dumps(item) for item in batch])
+            self._queue_store.append(self._pending_queue_id(task_id), [json.dumps(item) for item in batch])
 
     # -------------------------
     # Queue operations (claim/ack/extend)
@@ -238,52 +245,63 @@ class TaskManager(HeartbeatManager):
             pass
 
     def _any_pending(self) -> bool:
-        # Updated queue.peek() returns visible (unleased/expired) items.
         try:
-            return bool(self._queue_store.peek(self._pending_id, 1))
+            for task in self.active_tasks():
+                if self._queue_store.peek(self._pending_queue_id(task["task_id"]), 1):
+                    return True
+            return False
         except Exception:
-            # Be conservative: if peek fails transiently, don't spin.
             return False
 
     def _claim_next(self) -> Optional[dict]:
         """
-        Claim one visible queue item. Returns a decoded subtask dict, augmented with:
-          - _receipt: opaque handle used for ack/extend
+        Claim one visible queue item using random task sampling for fairness.
+
+        Shuffles the active task list so each worker independently picks a random
+        starting task, then tries each task's queue in order until one yields a
+        claimable item. Returns a decoded subtask dict augmented with _receipt.
         """
-        with QueueGuard(self, "_claim_next"):
-            claimed = self._queue_store.claim(
-                self._pending_id,
-                n=1,
-                lease_ms=self._queue_lease_ms,
-                consumer_id=self._consumer_id,
-            )
-
-        if not claimed:
+        tasks = self.active_tasks()
+        if not tasks:
             return None
 
-        item = claimed[0]
-        try:
-            subtask = json.loads(item.value)
-        except Exception as e:
-            _logger.error(f"TaskManager: corrupt queue payload, acking. err={e}")
+        random.shuffle(tasks)
+        for task in tasks:
+            queue_id = self._pending_queue_id(task["task_id"])
+            with QueueGuard(self, "_claim_next"):
+                claimed = self._queue_store.claim(
+                    queue_id,
+                    n=1,
+                    lease_ms=self._queue_lease_ms,
+                    consumer_id=self._consumer_id,
+                )
+            if not claimed:
+                continue
+
+            item = claimed[0]
             try:
-                with QueueGuard(self, "_claim_next.ack"):
-                    self._queue_store.ack(self._pending_id, [item.receipt], consumer_id=self._consumer_id)
-            except Exception as e2:
-                _logger.error(f"TaskManager: failed to ack corrupt payload: {e2}")
-            return None
+                subtask = json.loads(item.value)
+            except Exception as e:
+                _logger.error(f"TaskManager: corrupt queue payload, acking. err={e}")
+                try:
+                    with QueueGuard(self, "_claim_next.ack"):
+                        self._queue_store.ack(queue_id, [item.receipt], consumer_id=self._consumer_id)
+                except Exception as e2:
+                    _logger.error(f"TaskManager: failed to ack corrupt payload: {e2}")
+                continue
 
-        subtask["_receipt"] = item.receipt
-        #_logger.info(f"_claim_next: {self._subtask_id(subtask)} (receipt={subtask['_receipt']})")
+            subtask["_receipt"] = item.receipt
+            return subtask
 
-        return subtask
+        return None
 
     def _ack_subtask(self, subtask: dict):
         receipt = subtask.get("_receipt")
         if receipt:
             #_logger.info(f"_ack_subtask: {self._subtask_id(subtask)}")
+            queue_id = self._pending_queue_id(subtask["task_id"])
             with QueueGuard(self, "_ack_subtask"):
-                self._queue_store.ack(self._pending_id, [receipt], consumer_id=self._consumer_id)
+                self._queue_store.ack(queue_id, [receipt], consumer_id=self._consumer_id)
 
     def _release_subtask(self, subtask: dict):
         """
@@ -294,8 +312,9 @@ class TaskManager(HeartbeatManager):
         if receipt:
             try:
                 #_logger.info(f"_release_subtask: {self._subtask_id(subtask)}")
+                queue_id = self._pending_queue_id(subtask["task_id"])
                 with QueueGuard(self, "_release_subtask"):
-                    self._queue_store.extend(self._pending_id, [receipt], lease_ms=0, consumer_id=self._consumer_id)
+                    self._queue_store.extend(queue_id, [receipt], lease_ms=0, consumer_id=self._consumer_id)
             except Exception:
                 pass
 
@@ -364,7 +383,6 @@ class TaskManager(HeartbeatManager):
         Finalize when completed + failed + cancelled == length.
         Passes a single list of subtask dicts to complete_task(), including failures.
         Each failed subtask will include: {"status": "failed", "error": "..."}.
-        complete_task() is skipped if the task is cancelled.
         """
         try:
             task = self.lookup_task(task_id)
@@ -417,7 +435,7 @@ class TaskManager(HeartbeatManager):
         except Exception:
             _logger.exception("complete_task failed for task_id=%s", task_id)
 
-        # Cleanup subtasks and cancel flag
+        # Cleanup subtasks, cancel flag, and per-task queue
         self._key_value_store.remove_all(self._completed_id(task_id))
         self._key_value_store.remove_all(self._failed_id(task_id))
         self._key_value_store.remove_all(self._cancelled_id(task_id))
@@ -510,9 +528,10 @@ class TaskManager(HeartbeatManager):
         while not stop_event.wait(interval_ms / 1000.0):
             try:
                 #_logger.info(f"_lease_toucher: extending lease: {self._subtask_id(subtask)}")
+                queue_id = self._pending_queue_id(subtask["task_id"])
                 with QueueGuard(self, "_lease_toucher"):
                     self._queue_store.extend(
-                        self._pending_id,
+                        queue_id,
                         [receipt],
                         lease_ms=self._queue_lease_ms,
                         consumer_id=self._consumer_id,
@@ -754,7 +773,7 @@ class TaskManager(HeartbeatManager):
         _logger.info(f"TaskManager.create: task {task_id} inserted (name={task_name!r} length={len(subtasks)}) — queuing subtasks")
 
         batch = [self._form_subtask(item, i, task_id) for i, item in enumerate(subtasks)]
-        self._queue_subtasks(batch)
+        self._queue_subtasks(batch, task_id)
 
         _logger.info(f"TaskManager.create: task {task_id} fully queued — spawning worker")
         self._spawn_worker()

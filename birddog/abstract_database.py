@@ -107,6 +107,7 @@ class Database:
     #     delete()            - delete records
     #     create_links()      - link a source record to one or more targetss
     #     delete_links()      - delete one or more links from source to targets
+    #     scan_links()        - page through record links
     #     get_links()         - return linked record ids from a given record
     #     set_attachments()   - attach one or more files to a record
     #     clear_attachments() - clear file attachments from a record
@@ -378,6 +379,54 @@ class Database:
             - FailedIO
         """
         raise NotImplementedError
+
+def scan_links(self, table_name, link_field, source_record, limit=100, cursor=None):
+    """
+    Page through linked target record_ids for a relation field on a source record.
+
+    Args:
+        table_name:
+            Logical name of the source table that owns the relation field.
+
+        link_field:
+            Name of the relation field on the source table.
+
+        source_record:
+            Record_id ("Id") of the source record.
+
+        limit:
+            Maximum number of linked record_ids to return in this call.
+
+        cursor:
+            Opaque paging token returned by a previous call to scan_links(), or
+            None to request the first page. In this implementation the cursor is
+            a stringified integer offset.
+
+    Returns:
+        (link_ids, next_cursor)
+            link_ids:
+                List of linked target record_ids.
+            next_cursor:
+                None if there are no more pages, otherwise an opaque token that
+                can be passed back to scan_links() to retrieve the next page.
+
+    Semantics:
+        - scan_links() is read-only and side-effect free.
+        - If cursor is invalid (non-integer for this backend), InvalidRecordId
+          is raised.
+        - Supports both paged and non-paged NocoDB responses:
+            * If NocoDB returns a paged payload with "list" and "pageInfo", a
+              single page of links is returned.
+            * If NocoDB returns a singular object with an "Id", that single Id
+              is returned on the first page only.
+
+    Errors:
+        - InvalidTableName
+        - InvalidFieldName
+        - InvalidRecordId
+        - FailedIO
+    """
+    raise NotImplementedError
 
     def get_links(self, table_name, link_field, source_record):
         """

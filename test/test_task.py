@@ -56,6 +56,7 @@ class BlockingTaskManager(TaskManager):
     def __init__(self):
         self.complete_task_called = False
         self.complete_task_subtasks = None
+        self.complete_task_is_cancelled = None
         self._proceed = threading.Event()
         super().__init__("CancellationTest", auto_start=True)
 
@@ -65,6 +66,7 @@ class BlockingTaskManager(TaskManager):
     def complete_task(self, task_desc, subtasks, is_cancelled=False):
         self.complete_task_called = True
         self.complete_task_subtasks = subtasks
+        self.complete_task_is_cancelled = is_cancelled
 
     def wait_until_inactive(self, timeout=10):
         deadline = time.time() + timeout
@@ -73,15 +75,16 @@ class BlockingTaskManager(TaskManager):
 
 
 class TestCancellation(unittest.TestCase):
-    def test_cancel_prevents_complete_task(self):
-        """Cancelling a task should suppress the complete_task() callback."""
+    def test_cancel_calls_complete_task_with_flag(self):
+        """Cancelling a task should call complete_task() with is_cancelled=True."""
         mgr = BlockingTaskManager()
         task_id = mgr.create("cancel-test", list(range(5)))
         mgr.cancel(task_id)
         mgr._proceed.set()  # let subtasks run (they will be skipped as cancelled)
         mgr.wait_until_inactive()
         self.assertFalse(mgr.is_active())
-        self.assertFalse(mgr.complete_task_called)
+        self.assertTrue(mgr.complete_task_called)
+        self.assertTrue(mgr.complete_task_is_cancelled)
 
     def test_cancel_removes_task_from_active(self):
         """Cancelled task should be removed from active tasks after finalization."""
@@ -100,15 +103,16 @@ class TestCancellation(unittest.TestCase):
         mgr.cancel("nonexistent-task-id")  # should not raise
 
     def test_cancel_subtask_statuses(self):
-        """Subtasks of a cancelled task should have status 'cancelled'."""
+        """Subtasks of a cancelled task should have status 'cancelled' in the complete_task callback."""
         mgr = BlockingTaskManager()
         task_id = mgr.create("cancel-status-test", list(range(4)))
         mgr.cancel(task_id)
         mgr._proceed.set()
         mgr.wait_until_inactive()
-        # complete_task is not called for cancelled tasks, so inspect via
-        # the flag being cleared (task gone) and no complete_task invocation
-        self.assertFalse(mgr.complete_task_called)
+        self.assertTrue(mgr.complete_task_called)
+        self.assertTrue(mgr.complete_task_is_cancelled)
+        cancelled_statuses = [s.get("status") for s in (mgr.complete_task_subtasks or [])]
+        self.assertTrue(all(s == "cancelled" for s in cancelled_statuses))
 
     def test_cancel_clears_cancel_flag(self):
         """Cancel flag should be cleaned up after the task is finalized."""

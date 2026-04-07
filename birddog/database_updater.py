@@ -64,7 +64,7 @@ def _edit_links(db, table_name, link_field, source_record, target_records, repla
         target_records = [ target_records ]
     target_set = set(target_records)
     target_records = list(target_set)
-    #_logger.info(f"_edit_links: {link_field}, {source_record}, {target_records}, replace={replace}")
+    _logger.info(f"_edit_links: {link_field}, {source_record}, target len={len(target_records)}, replace={replace}")
     existing_targets = db.get_links(table_name, link_field, source_record)
     existing_set = set(existing_targets)
     if existing_set == target_set or not replace and target_set.issubset(existing_set):
@@ -95,14 +95,82 @@ def _lookup_pages(db, titles):
 
 def get_child_titles(db, titles):
     if not isinstance(titles, (list, tuple)):
-        titles = [ titles ]
+        titles = [titles]
+
     parent_ids = _lookup_pages(db, titles)
+
+    result = []
+    cursor = None
+
+    while True:
+        page, cursor = scan_child_titles_by_id(
+            db,
+            parent_ids,
+            limit=100,   # reasonable default batch size
+            cursor=cursor,
+        )
+        result.extend(page)
+        if not cursor:
+            break
+
+    # preserve legacy behavior: deduplicate
+    return list(set(result))
+
+def scan_child_titles_by_id(db, parent_ids, limit=100, cursor=None):
+    if not isinstance(parent_ids, (list, tuple)):
+        parent_ids = [parent_ids]
+
+    if limit <= 0:
+        return [], cursor
+
+    if cursor is None:
+        parent_index = 0
+        link_cursor = None
+    else:
+        try:
+            parent_index, link_cursor = cursor
+        except Exception:
+            raise InvalidRecordId(f"Invalid cursor value: {cursor}")
+
     child_ids = []
-    for pid in parent_ids:
-        if pid:
-            child_ids.extend(db.get_links("Pages", "children", pid))
-    child_ids = list(set(child_ids))
-    return [rec["title"] for rec in db.read("Pages", child_ids)]
+
+    while parent_index < len(parent_ids) and len(child_ids) < limit:
+        parent_id = parent_ids[parent_index]
+
+        if not parent_id:
+            parent_index += 1
+            link_cursor = None
+            continue
+
+        remaining = limit - len(child_ids)
+        page_ids, next_link_cursor = db.scan_links(
+            "Pages",
+            "children",
+            parent_id,
+            limit=remaining,
+            cursor=link_cursor,
+        )
+        child_ids.extend(page_ids)
+
+        if next_link_cursor is None:
+            parent_index += 1
+            link_cursor = None
+        else:
+            link_cursor = next_link_cursor
+
+    # optimized read: only fetch "title"
+    if child_ids:
+        records = db.read("Pages", child_ids, fields="title")
+        child_titles = [rec.get("title") for rec in records if rec]
+    else:
+        child_titles = []
+
+    if parent_index >= len(parent_ids) and link_cursor is None:
+        next_cursor = None
+    else:
+        next_cursor = (parent_index, link_cursor)
+
+    return child_titles, next_cursor
 
 # ----------------------------------------------------------------------
 # PAGE RECORD UPDATES
@@ -592,6 +660,7 @@ class DatabaseUpdater:
             if set_alert:
                 for rec in update:
                     rec["birddog_alert"] = True
+            _logger.info(f"_update_page_records_with_cache: write {len(update)} records")
             return self._db.write("Pages", update)
 
         return None
@@ -602,7 +671,8 @@ class DatabaseUpdater:
         if not all(isinstance(title, str) for title in page_titles):
             raise ValueError("Updater.update_page_records: page_titles must be str or sequence of str")
 
-        _logger.info(f"update_page_records: {len(page_titles)} titles")
+        tid = threading.get_ident()
+        _logger.info(f"Updater {tid}: starting update_page_records: {len(page_titles)} titles")
         page_info = self._get_page_info(page_titles)
         #_logger.info(f"page_info: {page_info}")
 
@@ -631,7 +701,7 @@ class DatabaseUpdater:
             doc_link_updates[title] = updates
             doc_urls.add(doc_url)
 
-        _logger.info("Updater: analyzing page links")
+        _logger.info(f"Updater {tid}: analyzing page links")
         for info in page_info:
             page_links = info.get("links", {})
             title = info["title"]
@@ -677,8 +747,11 @@ class DatabaseUpdater:
         all_page_titles = title_set | {record["title"] for record in page_records}
         all_page_urls = requested_page_urls | linked_page_urls
 
+        _logger.info(f"Updater {tid}: looking up page ids {len(all_page_urls)}")
         page_id_by_url = self._db.lookup("Pages", all_page_urls)
         existing_page_ids = [rid for rid in page_id_by_url.values() if rid]
+
+        _logger.info(f"Updater {tid}: loading existing page records {len(existing_page_ids)}")
         existing_pages = (
             {rec["Id"]: rec for rec in self._db.read("Pages", existing_page_ids)}
             if existing_page_ids else {}
@@ -695,6 +768,7 @@ class DatabaseUpdater:
         if updated_pages:
             page_id_by_url = self._db.lookup("Pages", all_page_urls)
             existing_page_ids = [rid for rid in page_id_by_url.values() if rid]
+            _logger.info(f"Updater {tid}: refresh existing page records {len(existing_page_ids)}")
             existing_pages = (
                 {rec["Id"]: rec for rec in self._db.read("Pages", existing_page_ids)}
                 if existing_page_ids else {}
@@ -708,6 +782,7 @@ class DatabaseUpdater:
 
         # Refresh once more if linked placeholders were inserted.
         if linked_records_changed:
+            _logger.info(f"Updater {tid}: refresh page ids {len(all_page_urls)}")
             page_id_by_url = self._db.lookup("Pages", all_page_urls)
 
         # Derive title -> page_id mapping explicitly for link operations.
@@ -717,31 +792,42 @@ class DatabaseUpdater:
         }
 
         links_changed = False
-        _logger.info("Updater: linking child pages")
+        _logger.info(f"Updater {tid}: linking child pages: child_link_updates: {len(child_link_updates)}, parent_link_updates: {len(parent_link_updates)}")
 
-        for parent_title, child_titles in child_link_updates.items():
-            parent_id = page_id_by_title.get(parent_title)
-            if not parent_id:
-                continue
+        try:
+            for parent_title, child_titles in child_link_updates.items():
+                parent_id = page_id_by_title.get(parent_title)
+                if not parent_id:
+                    continue
 
-            child_ids = [
-                page_id_by_title[child_title]
-                for child_title in child_titles
-                if page_id_by_title.get(child_title)
-            ]
-            if _replace_links(self._db, "Pages", "children", parent_id, child_ids):
-                _logger.info(f"Child links for {parent_title} updated ({len(child_ids)} children)")
-                links_changed = True
+                child_ids = [
+                    page_id_by_title[child_title]
+                    for child_title in child_titles
+                    if page_id_by_title.get(child_title)
+                ]
+                _logger.info(f"start _replace_links {tid}: {len(child_ids)}")
+                if _replace_links(self._db, "Pages", "children", parent_id, child_ids):
+                    #_logger.info(f"Child links for {parent_title} updated ({len(child_ids)} children)")
+                    links_changed = True
+                _logger.info(f"finish _replace_links {tid}")
 
-        for child_title, parent_title in parent_link_updates.items():
-            child_id = page_id_by_title.get(child_title)
-            parent_id = page_id_by_title.get(parent_title)
-            if not child_id or not parent_id:
-                continue
+            for child_title, parent_title in parent_link_updates.items():
+                child_id = page_id_by_title.get(child_title)
+                parent_id = page_id_by_title.get(parent_title)
+                if not child_id or not parent_id:
+                    continue
 
-            if _create_links(self._db, "Pages", "children", parent_id, child_id):
-                _logger.info(f"Parent link for {child_title} updated ({parent_title})")
-                links_changed = True
+                _logger.info(f"start _create_links {tid}")
+                if _create_links(self._db, "Pages", "children", parent_id, child_id):
+                    #_logger.info(f"Parent link for {child_title} updated ({parent_title})")
+                    links_changed = True
+                _logger.info(f"finish _create_links {tid}")
+
+        except Exception as e:
+            _logger.error(f"exception during page linking {tid}: {e}. Aborting.")
+            return False
+
+        _logger.info(f"Updater {tid}: finished linking child pages")
 
         doc_records_changed = False
         doc_links_changed = False
@@ -751,7 +837,7 @@ class DatabaseUpdater:
             # One lookup for all document IDs, then reuse locally.
             doc_id_map = self._db.lookup("Documents", doc_urls)
 
-            _logger.info("Updater: updating document links")
+            _logger.info(f"Updater {tid}: updating document links")
             for page_title, page_doc_urls in doc_link_updates.items():
                 page_id = page_id_by_title.get(page_title)
                 if not page_id:
@@ -763,6 +849,8 @@ class DatabaseUpdater:
                 if _replace_links(self._db, "Pages", "doc_links", page_id, doc_ids_for_page):
                     _logger.info(f"Doc links for {page_title} updated ({len(doc_ids_for_page)} docs)")
                     doc_links_changed = True
+
+        _logger.info(f"Updater {tid}: finished update")
 
         return any([
             updated_pages,
@@ -781,8 +869,10 @@ class DatabaseUpdater:
         if not isinstance(doc_urls, set):
             raise ValueError("doc_urls must be str, squence of str, or set of str")
 
+        tid = threading.get_ident()
+
         if doc_urls:
-            _logger.info(f"Updater.update_doc_records: accessing linked document metadata")
+            _logger.info(f"Updater.update_doc_records {tid}: accessing linked document metadata")
             doc_records = { url: form_document_record(url) for url in doc_urls}
 
             # collect meta data for known sources
@@ -828,6 +918,8 @@ class DatabaseUpdater:
 
             doc_ids = self._db.write("Documents", doc_update) if doc_update else []
             doc_records_changed = bool(doc_ids)
+            _logger.info(f"Updater.update_doc_records {tid}: finished")
+
         return doc_records_changed
 
     # -------------------------------------------------------------------------
@@ -878,117 +970,302 @@ _UPDATE_STATE_NS = "tasks"
 
 class DatabaseUpdateManager(TaskManager):
     _BATCH_SIZE = 20
+    _EXPAND_BATCH_SIZE = 500
+    _EXPAND_STATE_NS = "expand"
 
     def __init__(self, runtime, updater=None):
         self._updater = updater if updater else DatabaseUpdater(runtime)
         self._state_store = KeyValueStore(table_name="bd_db_update")
         self._state_lock = threading.Lock()
         super().__init__("DatabaseUpdateManager")
-        # adjust subtask timeout to allow for approx 10 sec per item in batch
+        # update subtasks: allow approx 10 sec per item in batch
         self._stale_subtask_threshold_ms = self._BATCH_SIZE * 10000
 
-    def execute_subtask(self, subtask):
-        batch = subtask["payload"]
+    # ------------------------------------------------------------------
+    # state helpers
+
+    def _get_state(self, namespace, key):
+        return json.loads(self._state_store.get(namespace, key))
+
+    def _put_state(self, namespace, key, value):
+        self._state_store.insert(namespace, key, json.dumps(value))
+
+    def _remove_state(self, namespace, key):
         try:
-            subtask["payload"] = {
-                "updated": self._updater.update_page_records(batch["titles"]),
-                "titles": batch["titles"],
-                "deep": batch["deep"]
-                }
-        except Exception as err:
-            _logger.error(f"DatabaseUpdateManager: exception during subtask execution: {err}, {batch}")
-            subtask["payload"] = {"error": str(err)}
-        task_id = subtask["task_id"]
-        n_titles = len(batch["titles"])
+            self._state_store.remove(namespace, key)
+        except KeyError:
+            pass
+
+    def _update_progress(self, task_id, increment):
+        _logger.info(f"update progress: {task_id}: {increment}")
         with self._state_lock:
             try:
                 task = self.lookup_task(task_id)
                 task_name = task["name"]
-                state = json.loads(self._state_store.get(_UPDATE_STATE_NS, task_name))
-                state["completed"] += n_titles
-                self._state_store.insert(_UPDATE_STATE_NS, task_name, json.dumps(state))
+                state = self._get_state(_UPDATE_STATE_NS, task_name)
+                state["completed"] += increment
+                self._put_state(_UPDATE_STATE_NS, task_name, state)
             except KeyError:
                 pass
+
+    # ------------------------------------------------------------------
+    # subtask execution
+
+    def execute_subtask(self, subtask):
+        payload = subtask["payload"]
+        kind = payload.get("kind", "update_titles")
+        if kind == "update_titles":
+            self._execute_update_subtask(subtask)
+        elif kind == "expand_children":
+            self._execute_expand_subtask(subtask)
+        else:
+            raise ValueError(f"DatabaseUpdateManager.execute_subtask: unknown kind: {kind}")
+
+    def _execute_update_subtask(self, subtask):
+        _logger.info(f"DatabaseUpdateManager: update subtask {subtask['task_id']}.{subtask['index']}")
+        batch = subtask["payload"]
+        titles = batch["titles"]
+        try:
+            updated = self._updater.update_page_records(titles)
+            subtask["payload"] = {
+                "kind": "update_titles",
+                "updated": updated,
+                "titles": titles,
+                "deep": batch["deep"],
+            }
+        except Exception as err:
+            _logger.error(
+                f"DatabaseUpdateManager: exception during update subtask execution: {err}, {batch}"
+            )
+            subtask["payload"] = {
+                "kind": "update_titles",
+                "titles": titles,
+                "deep": batch.get("deep", False),
+                "error": str(err),
+            }
+        self._update_progress(subtask["task_id"], len(titles))
+
+    def _execute_expand_subtask(self, subtask):
+        _logger.info(f"DatabaseUpdateManager: expand subtask {subtask['task_id']}.{subtask['index']}")
+        payload = subtask["payload"]
+        state_key = payload["state_key"]
+        try:
+            state = self._get_state(self._EXPAND_STATE_NS, state_key)
+            parent_ids = state["parent_ids"]
+            exclude_titles = set(state.get("exclude_titles", []))
+            cursor = state.get("cursor")
+
+            spawn_titles = []
+            while True:
+                page, cursor = scan_child_titles_by_id(
+                    self._updater._db,
+                    parent_ids,
+                    limit=self._EXPAND_BATCH_SIZE,
+                    cursor=cursor,
+                )
+                if page:
+                    spawn_titles.extend(page)
+                if cursor is None:
+                    break
+
+            # remove immediate self-respawn titles
+            if exclude_titles:
+                spawn_titles = [title for title in spawn_titles if title not in exclude_titles]
+
+            # dedupe once at the task boundary to avoid redundant updates
+            if spawn_titles:
+                spawn_titles = list(set(spawn_titles))
+
+            state["cursor"] = None
+            state["completed"] = True
+            state["spawn_count"] = len(spawn_titles)
+            self._put_state(self._EXPAND_STATE_NS, state_key, state)
+
+            subtask["payload"] = {
+                "kind": "expand_children",
+                "state_key": state_key,
+                "spawn_titles": spawn_titles,
+                "deep": True,
+            }
+
+        except Exception as err:
+            _logger.error(
+                f"DatabaseUpdateManager: exception during expand subtask execution: {err}, {payload}"
+            )
+            subtask["payload"] = {
+                "kind": "expand_children",
+                "state_key": state_key,
+                "error": str(err),
+            }
+
+    # ------------------------------------------------------------------
+    # task completion
 
     def complete_task(self, task_desc, subtasks, is_cancelled=False):
-        if not is_cancelled:
-            try:
-                _logger.info(f"updater.complete_task: {task_desc}, {subtasks}")
-                if any([subtask["payload"].get("updated") for subtask in subtasks]):
-                    _logger.info("Update task completed. Some records changed. Starting translations")
-                    # kick off translation on any new records
-                    self._updater.start_translation()
-                parent_titles = []
-                for subtask in subtasks:
-                    if subtask["payload"].get("deep"):
-                        #_logger.info(subtask["payload"])
-                        parent_titles.extend(subtask["payload"].get("titles", []))
-                if parent_titles:
-                    # this is a deep update, create new task with child titles
-                    _logger.info(f"updater.complete_task: checking for deep subtasks {parent_titles}")
-                    spawn = set(get_child_titles(self._updater._db, parent_titles))
-                    _logger.info(f"updater.complete_task: spawn={spawn}")
-                    spawn -= set(parent_titles)
-                    _logger.info(f"updater.complete_task: spawn={spawn}")
-                    if spawn:
-                        # remove duplicates
-                        spawn = list(spawn)
-                        _logger.info(f"DatabaseUpdateManager: deep update: spawning new update task: {len(spawn)} titles")
-                        self.start_update(spawn, deep=True)
+        _logger.info(f"DatabaseUpdateManager: complete task {task_desc['task_id']}")
+        try:
+            if is_cancelled:
+                return
 
-            except Exception as err:
-                _logger.error(f"DatabaseUpdateManager: exception during task completion: {err}")
-        with self._state_lock:
-            try:
-                self._state_store.remove(_UPDATE_STATE_NS, task_desc["name"])
-            except KeyError:
-                pass
+            if not subtasks:
+                return
+
+            payload0 = subtasks[0].get("payload", {})
+            kind = payload0.get("kind", "update_titles")
+
+            if kind == "update_titles":
+                self._complete_update_task(task_desc, subtasks)
+            elif kind == "expand_children":
+                self._complete_expand_task(task_desc, subtasks)
+            else:
+                _logger.error(
+                    f"DatabaseUpdateManager.complete_task: unknown task kind: {kind}, task={task_desc}"
+                )
+
+        except Exception as err:
+            _logger.error(f"DatabaseUpdateManager: exception during task completion: {err}")
+
+        finally:
+            # clean up update task progress state if present
+            with self._state_lock:
+                self._remove_state(_UPDATE_STATE_NS, task_desc["name"])
+
+    def _complete_update_task(self, task_desc, subtasks):
+        _logger.info(f"updater.complete_update_task: {task_desc['task_id']}")
+
+        parent_titles = []
+        for subtask in subtasks:
+            payload = subtask.get("payload", {})
+            if payload.get("kind", "update_titles") != "update_titles":
+                continue
+            if payload.get("deep"):
+                parent_titles.extend(payload.get("titles", []))
+
+        if not parent_titles:
+            return
+
+        _logger.info(f"DatabaseUpdateManager: deep update frontier completed: {parent_titles}")
+        self.start_expand(parent_titles)
+
+    def _complete_expand_task(self, task_desc, subtasks):
+        _logger.info(f"updater.complete_expand_task: {task_desc['task_id']}")
+
+        if not subtasks:
+            return
+
+        payload = subtasks[0].get("payload", {})
+        state_key = payload.get("state_key")
+        spawn_titles = payload.get("spawn_titles", [])
+
+        if spawn_titles:
+            _logger.info(
+                f"DatabaseUpdateManager: deep expansion spawned next update task: {len(spawn_titles)} titles"
+            )
+            self.start_update(spawn_titles, deep=True)
+
+        if state_key:
+            self._remove_state(self._EXPAND_STATE_NS, state_key)
+
+    # ------------------------------------------------------------------
+    # public API
 
     def complete_translation(self, task_name, translation_map):
         self._updater.complete_translation(task_name, translation_map)
 
     def start_update(self, page_titles, deep=False):
         if isinstance(page_titles, str):
-            page_titles = [ page_titles ]
-        if not isinstance(page_titles, (list, tuple)) or not all([isinstance(title, str) for title in page_titles]):
-            raise ValueError("DatabaseUpdateManager.start_update_task: page_titles must be str or sequence of str")
-        page_titles = [_normalize_title(title) for title in page_titles]
+            page_titles = [page_titles]
+        if not isinstance(page_titles, (list, tuple)) or not all(
+            [isinstance(title, str) for title in page_titles]
+        ):
+            raise ValueError(
+                "DatabaseUpdateManager.start_update: page_titles must be str or sequence of str"
+            )
 
-        #_logger.info(f"start_update: {page_titles}, deep={deep}")
+        page_titles = [_normalize_title(title) for title in page_titles]
         total = len(page_titles)
-        if total > 0:
-            task_name = f"DBU_{new_id()}"
-            batches = []
-            for i in range(0, total, self._BATCH_SIZE):
-                batches.append({
-                    "titles": page_titles[i:i+self._BATCH_SIZE],
+        if total <= 0:
+            return None
+
+        task_name = f"DBU_{new_id()}"
+        batches = []
+        for i in range(0, total, self._BATCH_SIZE):
+            batches.append(
+                {
+                    "kind": "update_titles",
+                    "titles": page_titles[i:i + self._BATCH_SIZE],
                     "deep": deep,
-                    })
-            preview = page_titles[:50]
-            titles_str = ", ".join(preview) + ("..." if total > 50 else "")
-            state = json.dumps({
-                "titles": titles_str,
-                "deep": deep,
-                "total": total,
-                "completed": 0,
-            })
-            self._state_store.insert(_UPDATE_STATE_NS, task_name, state)
-            self.create(task_name, batches)
-            return task_name
-            
+                }
+            )
+
+        preview = page_titles[:50]
+        titles_str = ", ".join(preview) + ("..." if total > 50 else "")
+        state = {
+            "kind": "update_titles",
+            "titles": titles_str,
+            "deep": deep,
+            "total": total,
+            "completed": 0,
+        }
+        self._put_state(_UPDATE_STATE_NS, task_name, state)
+        self.create(task_name, batches)
+        return task_name
+
+    def start_expand(self, parent_titles):
+        if isinstance(parent_titles, str):
+            parent_titles = [parent_titles]
+        if not isinstance(parent_titles, (list, tuple)) or not all(
+            [isinstance(title, str) for title in parent_titles]
+        ):
+            raise ValueError(
+                "DatabaseUpdateManager.start_expand: parent_titles must be str or sequence of str"
+            )
+
+        parent_titles = [_normalize_title(title) for title in parent_titles]
+        parent_ids = _lookup_pages(self._updater._db, parent_titles)
+        if not any(parent_ids):
+            _logger.info("DatabaseUpdateManager.start_expand: no valid parent ids found")
+            return None
+
+        task_name = f"DBX_{new_id()}"
+        state_key = task_name
+        state = {
+            "kind": "expand_children",
+            "parent_titles": parent_titles[:50],
+            "exclude_titles": parent_titles,
+            "parent_ids": parent_ids,
+            "cursor": None,
+            "completed": False,
+            "spawn_count": 0,
+        }
+        self._put_state(self._EXPAND_STATE_NS, state_key, state)
+        self.create(
+            task_name,
+            [
+                {
+                    "kind": "expand_children",
+                    "state_key": state_key,
+                }
+            ],
+        )
+        return task_name
+
     def status(self):
-        active_tasks = self._state_store.get_all(_UPDATE_STATE_NS)
-        return { item[0]: json.loads(item[1]) for item in active_tasks }
+        result = {}
+
+        for item in self._state_store.get_all(_UPDATE_STATE_NS):
+            result[item[0]] = json.loads(item[1])
+
+        #for item in self._state_store.get_all(self._EXPAND_STATE_NS):
+        #    result[item[0]] = json.loads(item[1])
+
+        return result
 
     def cancel(self, task_name):
         for task in self.active_tasks():
             if task.get("name") == task_name:
                 super().cancel(task.get("task_id"))
+                self._remove_state(_UPDATE_STATE_NS, task_name)
+                self._remove_state(self._EXPAND_STATE_NS, task_name)
                 return
         raise KeyError(task_name)
-
-
-
-
-
-
