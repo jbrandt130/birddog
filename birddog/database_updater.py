@@ -969,11 +969,10 @@ class DatabaseUpdater:
                 _logger.info(f"Updater: updating translations (length={len(update)})")
                 result = self._db.write("Pages", update)
 
-_UPDATE_STATE_NS = "tasks"
-
 class DatabaseUpdateManager(TaskManager):
     _BATCH_SIZE = 20
     _EXPAND_BATCH_SIZE = 500
+    _UPDATE_STATE_NS = "tasks"
     _EXPAND_STATE_NS = "expand"
 
     def __init__(self, runtime, updater=None):
@@ -1005,9 +1004,9 @@ class DatabaseUpdateManager(TaskManager):
             try:
                 task = self.lookup_task(task_id)
                 task_name = task["name"]
-                state = self._get_state(_UPDATE_STATE_NS, task_name)
+                state = self._get_state(self._UPDATE_STATE_NS, task_name)
                 state["completed"] += increment
-                self._put_state(_UPDATE_STATE_NS, task_name, state)
+                self._put_state(self._UPDATE_STATE_NS, task_name, state)
             except KeyError:
                 pass
 
@@ -1131,7 +1130,7 @@ class DatabaseUpdateManager(TaskManager):
         finally:
             # clean up update task progress state if present
             with self._state_lock:
-                self._remove_state(_UPDATE_STATE_NS, task_desc["name"])
+                self._remove_state(self._UPDATE_STATE_NS, task_desc["name"])
 
     def _complete_update_task(self, task_desc, subtasks):
         _logger.info(f"updater.complete_update_task: {task_desc['task_id']}")
@@ -1210,7 +1209,7 @@ class DatabaseUpdateManager(TaskManager):
             "total": total,
             "completed": 0,
         }
-        self._put_state(_UPDATE_STATE_NS, task_name, state)
+        self._put_state(self._UPDATE_STATE_NS, task_name, state)
         self.create(task_name, batches)
         return task_name
 
@@ -1256,7 +1255,7 @@ class DatabaseUpdateManager(TaskManager):
     def status(self):
         result = {}
 
-        for item in self._state_store.get_all(_UPDATE_STATE_NS):
+        for item in self._state_store.get_all(self._UPDATE_STATE_NS):
             result[item[0]] = json.loads(item[1])
 
         #for item in self._state_store.get_all(self._EXPAND_STATE_NS):
@@ -1265,10 +1264,11 @@ class DatabaseUpdateManager(TaskManager):
         return result
 
     def cancel(self, task_name):
+        _logger.info(f"DatabaseUpdateManager: cancel task {task_name}")
         for task in self.active_tasks():
             if task.get("name") == task_name:
+                _logger.info(f"DatabaseUpdateManager: cancel task {task_name} found!")
                 super().cancel(task.get("task_id"))
-                self._remove_state(_UPDATE_STATE_NS, task_name)
-                self._remove_state(self._EXPAND_STATE_NS, task_name)
-                return
-        raise KeyError(task_name)
+                break
+        self._remove_state(self._UPDATE_STATE_NS, task_name)
+        self._remove_state(self._EXPAND_STATE_NS, task_name)
