@@ -317,7 +317,7 @@ class ArchiveWatcher:
 
 class PageUpdateManager(HeartbeatManager):
     _PENDING_TITLE_UPDATES          = "pending_title_updates"
-    _HEARTBEAT_INTERVAL             = 60 * 5 # seconds
+    _HEARTBEAT_INTERVAL             = 60 * 2 # seconds
     _API_DELAY                      = 1 # seconds
     _TITLE_BATCH_SIZE               = max(int(_HEARTBEAT_INTERVAL / _API_DELAY + .5), 1)
 
@@ -350,9 +350,11 @@ class PageUpdateManager(HeartbeatManager):
         pending_updates = self._kv_store.get_all(self._PENDING_TITLE_UPDATES)
 
         # update database if updater is active
-        if pending_updates:
-            update_titles = [item[0] for item in pending_updates]
-            self._runtime.update_to_database(update_titles, deep=False)
+        if self._runtime.database_update_enabled:
+            if pending_updates:
+                update_titles = [item[0] for item in pending_updates]
+                self._runtime.update_to_database(update_titles, deep=False)
+            self._runtime.update_database_translations()
 
         error_count = 0
         for title, update in pending_updates:
@@ -595,6 +597,9 @@ class Runtime:
 
     def cancel_update(self, task_name):
         self._database_update_manager.cancel(task_name)
+
+    def update_database_translations(self):
+        self._database_updater.start_translation()
 
     @property
     def database(self):

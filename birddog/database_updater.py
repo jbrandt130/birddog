@@ -64,7 +64,7 @@ def _edit_links(db, table_name, link_field, source_record, target_records, repla
         target_records = [ target_records ]
     target_set = set(target_records)
     target_records = list(target_set)
-    _logger.info(f"_edit_links: {link_field}, {source_record}, target len={len(target_records)}, replace={replace}")
+    #_logger.info(f"_edit_links: {link_field}, {source_record}, target len={len(target_records)}, replace={replace}")
     existing_targets = db.get_links(table_name, link_field, source_record)
     existing_set = set(existing_targets)
     if existing_set == target_set or not replace and target_set.issubset(existing_set):
@@ -805,11 +805,11 @@ class DatabaseUpdater:
                     for child_title in child_titles
                     if page_id_by_title.get(child_title)
                 ]
-                _logger.info(f"start _replace_links {tid}: {len(child_ids)}")
+                #_logger.info(f"start _replace_links {tid}: {len(child_ids)}")
                 if _replace_links(self._db, "Pages", "children", parent_id, child_ids):
                     #_logger.info(f"Child links for {parent_title} updated ({len(child_ids)} children)")
                     links_changed = True
-                _logger.info(f"finish _replace_links {tid}")
+                #_logger.info(f"finish _replace_links {tid}")
 
             for child_title, parent_title in parent_link_updates.items():
                 child_id = page_id_by_title.get(child_title)
@@ -817,11 +817,11 @@ class DatabaseUpdater:
                 if not child_id or not parent_id:
                     continue
 
-                _logger.info(f"start _create_links {tid}")
+                #_logger.info(f"start _create_links {tid}")
                 if _create_links(self._db, "Pages", "children", parent_id, child_id):
                     #_logger.info(f"Parent link for {child_title} updated ({parent_title})")
                     links_changed = True
-                _logger.info(f"finish _create_links {tid}")
+                #_logger.info(f"finish _create_links {tid}")
 
         except Exception as e:
             _logger.error(f"exception during page linking {tid}: {e}. Aborting.")
@@ -847,7 +847,7 @@ class DatabaseUpdater:
                 doc_ids_for_page = [doc_id for doc_id in doc_ids_for_page if doc_id]
 
                 if _replace_links(self._db, "Pages", "doc_links", page_id, doc_ids_for_page):
-                    _logger.info(f"Doc links for {page_title} updated ({len(doc_ids_for_page)} docs)")
+                    #_logger.info(f"Doc links for {page_title} updated ({len(doc_ids_for_page)} docs)")
                     doc_links_changed = True
 
         _logger.info(f"Updater {tid}: finished update")
@@ -1144,7 +1144,7 @@ class DatabaseUpdateManager(TaskManager):
         if not parent_titles:
             return
 
-        _logger.info(f"DatabaseUpdateManager: deep update frontier completed: {parent_titles}")
+        _logger.info(f"DatabaseUpdateManager: deep update frontier completed: {len(parent_titles)} titles")
         self.start_expand(parent_titles)
 
     def _complete_expand_task(self, task_desc, subtasks):
