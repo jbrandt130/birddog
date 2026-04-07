@@ -313,7 +313,8 @@ def find_header_in_row(ws, row, start_col, end_col, header):
 
 def find_header_in_col(ws, start_row, end_row, col, headers):
     """Find a cell with one of the given headers in the given column of the given worksheet.
-    Returns the row if found, None otherwise."""
+    Returns 1) the row if found, None otherwise.
+            2) The header found """
     for header in headers:
         header = header.upper()
         for i in range(start_row, end_row + 1):
@@ -323,11 +324,11 @@ def find_header_in_col(ws, start_row, end_row, col, headers):
                 continue
             contents = contents.upper()
             if contents == header:
-                return i
+                return i, header
             if header == FIRST_OPUS_HDR4 and header in contents:
                 # it can be something like "NEW NUMBERING (listed here 06/2025)"
-                return i
-    return None
+                return i, header
+    return None, None
 
 def get_source_type(ws):
     #it is usually in C1, but it may occur also in E1
@@ -542,7 +543,7 @@ def process_fond_sheet(ws, wiki_spreadsheet, fund_name, change_date_col, ref_dat
     }, page_table)
 
     #the header row can be 5, 6 or 7
-    hdr_row = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, "A", [FIRST_FUND_HDR])
+    hdr_row, _ = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, "A", [FIRST_FUND_HDR])
     if hdr_row is None:
         raise ValueError(f"No '{FIRST_FUND_HDR}' header found in sheet {parent_name}")
 
@@ -604,14 +605,17 @@ def process_opus_sheet(ws, wiki_spreadsheet, opus_name, change_date_col, ref_dat
     }, page_table)
 
     #the header row can be 5, 6 or 7
-    headers = [FIRST_OPUS_HDR1, FIRST_OPUS_HDR2, FIRST_OPUS_HDR3, FIRST_OPUS_HDR4, FIRST_OPUS_HDR5]
+    headers = [FIRST_OPUS_HDR1, FIRST_OPUS_HDR2, FIRST_OPUS_HDR3, FIRST_OPUS_HDR4, FIRST_OPUS_HDR5, FIRST_FUND_HDR]
     case_num_col = "A"
-    hdr_row = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, case_num_col, headers)
+    hdr_row, header_found = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, case_num_col, headers)
+    import_message = ""
     if hdr_row is None:
         case_num_col = chr(ord(case_num_col) + 1)
-        hdr_row = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, case_num_col, headers)
+        hdr_row, header_found = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, case_num_col, headers)
         if hdr_row is None:
             raise ValueError(f"No '{FIRST_OPUS_HDR1}' header found in sheet {parent_name}")
+    if header_found == FIRST_FUND_HDR.upper():
+        import_message = "Volume inside the opus"
 
     #there are sometimes columns inserted between "process" and "Comments",
     #so we need to find the exact position of the latter one
@@ -654,12 +658,14 @@ def process_opus_sheet(ws, wiki_spreadsheet, opus_name, change_date_col, ref_dat
             #title sanity check
             identical, modified_title = title_cell_val_identical(title, str(case_num_cell.value))
             if identical:
-                import_message = ""
+                curr_import_message = import_message
             else:
                 case_id = get_case_id(case_num_cell.value)
-                import_message = f"Case {case_id} links to {title}"
+                curr_import_message = f"Case {case_id} links to {title}"
+                if import_message != "":
+                    curr_import_message =f"{import_message}; {curr_import_message}"
                 title = modified_title
-                _logger.warning(f"Opus {parent_name}: {import_message}")
+                _logger.warning(f"Opus {parent_name}: {curr_import_message}")
 
             add_page({
                 "title": title,
@@ -676,7 +682,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, opus_name, change_date_col, ref_dat
                 "content_code": get_cell_value(ws[f"{chr(ord(case_num_col) + 4)}{r}"]),#E
                 "process_code": get_cell_value(ws[f"{chr(ord(case_num_col) + 5)}{r}"]),#F
                 "availability": "linked" if get_cell_link(ws[f"A{r}"]) is not None else "unlinked",
-                "import_message": import_message,
+                "import_message": curr_import_message,
                 #the columns for the following cells are not fixed
                 "comments": get_cell_value(ws[comments_cell_addr]),
                 "processor": combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2]),
@@ -917,7 +923,7 @@ def process_dir(dir_path):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHEO-D-archive-202501009.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/ImportProblems/DAVIO-D-wiki+other-20260213.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DADNO-R-wiki-20260213.xlsx"
     import_spreadsheet(filepath)
 #    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
 #    process_dir(dir_path)
