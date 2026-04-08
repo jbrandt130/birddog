@@ -229,9 +229,13 @@ def _allowed_doc_link(link):
     return all([item not in link for item in _DOC_LINK_BLOCKLIST])
 
 def _form_simple_page_record(title):
+    title = _normalize_title(title)
+    label = page_label(title)
     return {
         "title": title,
         "url": page_url_from_title(title),
+        "label": label,
+        "seq_label": sequential_page_label(label),
         "source_type": "wiki",
         "availability": "linked",
     }
