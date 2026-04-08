@@ -235,6 +235,7 @@ def _form_simple_page_record(title):
         "title": title,
         "url": page_url_from_title(title),
         "label": label,
+        "level": page_kind(title),
         "seq_label": sequential_page_label(label),
         "source_type": "wiki",
         "availability": "linked",
