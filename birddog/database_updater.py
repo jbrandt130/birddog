@@ -281,7 +281,7 @@ def _parse_wiki_templates(parse):
                 dates = template.get("рік").value.strip_code().strip()
             break
     return {
-        "description_uk": desc.strip(),
+        "native_description": desc.strip(),
         "years": dates.strip(),
     }
 
@@ -660,7 +660,7 @@ class DatabaseUpdater:
 
         if update:
             for i, changed_fields in enumerate(update_fields):
-                if "description_uk" in changed_fields:
+                if "native_description" in changed_fields:
                     update[i]["description"] = ""
             if set_alert:
                 for rec in update:
@@ -935,18 +935,18 @@ class DatabaseUpdater:
         table_name = "Pages"
         view_name = "Untranslated Pages"
         key_field = self._db.key_field_name(table_name)
-        fields = [key_field, "description", "description_uk"]
+        fields = [key_field, "description", "native_description"]
         translations = []
         cursor = None
         while True:
             batch, cursor = self._db.scan(table_name, cursor=cursor, fields=fields, view_name=view_name)
             _logger.info(f"collect translation batch: {len(batch)}")
             for record in batch:
-                ukrainian_description = record.get("description_uk")
+                ukrainian_description = record.get("native_description")
                 if ukrainian_description and not record.get("description"):
                     translations.append({
                         key_field: record[key_field],
-                        "description_uk": ukrainian_description,
+                        "native_description": ukrainian_description,
                     })
             if not cursor:
                 break
@@ -957,7 +957,7 @@ class DatabaseUpdater:
         _logger.info(f"Updater: collecting needed translations (length={len(translations)})")
         if translations:
             task_name = f"DBT_{new_id()}"
-            translation_items = [t["description_uk"] for t in translations]
+            translation_items = [t["native_description"] for t in translations]
             _logger.info(f"Updater: starting translation task (length={len(translation_items)})")
             self._runtime.start_translation(task_name=task_name, items=translation_items)
 
@@ -966,7 +966,7 @@ class DatabaseUpdater:
         if translations:
             update = []
             for record in translations:
-                translation = translation_map.get(record["description_uk"])
+                translation = translation_map.get(record["native_description"])
                 if translation:
                     record["description"] = translation
                     update.append(record)
