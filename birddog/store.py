@@ -87,6 +87,8 @@ class SQLiteStringQueue(AbstractStringQueue):
     def append(self, queue_name: str, strings: list[str]):
         if not strings:
             return
+        if any(s == "" for s in strings):
+            raise ValueError("empty string cannot be appended to a queue")
         with LogService("StringQueue", "append", path=queue_name, size=json_size(strings)):
             with sqlite3.connect(self._db_path) as conn:
                 conn.executemany(
@@ -299,8 +301,8 @@ class DynamoDBStringQueue(AbstractStringQueue):
     def append(self, queue_name: str, strings: list[str]):
         if not strings:
             return
-        if any([not s for s in strings]):
-            _logger.warning("DynamoDBStringQueue: inserting empty string")
+        if any(s == "" for s in strings):
+            raise ValueError("empty string cannot be appended to a queue")
         now = Decimal(str(time.time()))
         with LogService("StringQueue", "append", path=queue_name, size=json_size(strings)):
             with self._table.batch_writer() as batch:
