@@ -610,6 +610,59 @@ def process_fond_sheet(ws, wiki_spreadsheet, fund_name, change_date_col, ref_dat
             }, page_table)
     return page_table
 
+def add_doc(doc_url, opus_page, vol_title, opus_title):
+    #add a document link
+    if "doc_links" in opus_page:
+        docs = opus_page["doc_links"]
+        if isinstance(docs, str):
+            docs = [docs, doc_url]
+        else:
+            docs.append(doc_url)
+    else:
+        docs = [doc_url]
+    opus_page["doc_links"] = docs
+
+    #add an import message
+    if "import_message" in opus_page:
+        import_message = opus_page["import_message"]
+        if import_message != "":
+            import_message = import_message +"; "
+    else:
+        import_message = ""
+    import_message = f"{import_message}Volume {vol_title} in opus {opus_title}"
+    opus_page["import_message"] = import_message
+
+def process_volumes_sheet(ws, wiki_spreadsheet, opus_name, fund_name, page_table):
+    """It is like an opus sheet, but instead of cases, there are volumes.
+    We add these volumes as documents to the opus entry in the page table."""
+    #the header row can be 5, 6 or 7
+    headers = [FIRST_FUND_HDR]
+    case_num_col = "A"
+    hdr_row, header_found = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, case_num_col, headers)
+    if hdr_row is None:
+        case_num_col = chr(ord(case_num_col) + 1)
+        hdr_row, header_found = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, case_num_col, headers)
+        if hdr_row is None:
+            raise ValueError(f"No '{FIRST_OPUS_HDR1}' header found in sheet {opus_name}")
+
+    #look for a record in page_table for this opus
+    if opus_name not in page_table:
+        raise ValueError(f"Page entry {opus_name} not found")
+    opus_page = page_table[opus_name]
+
+    for r in range(hdr_row + 1, ws.max_row + 1):
+        cell = ws[f"A{r}"]
+        if str(cell.value).startswith("="):
+            break
+        if cell.value:
+            vol_title = get_page_title_from_link(cell, wiki_spreadsheet, fund_name)
+            if not vol_title:
+                _logger.warning(f"cannot determine page title: sheet='{ws.title}', row={r} (skipping)")
+                continue
+            raw_url = get_cell_link(cell)
+            doc_url = get_page_url(vol_title, raw_url, wiki_spreadsheet)
+            add_doc(doc_url, opus_page, vol_title, opus_name)
+    return page_table
 
 def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                        change_date_col, ref_date_col, page_table=None):
@@ -627,23 +680,8 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
         if "Unrecognized archive root" in str(err):
             source_type = "other"
 
-    add_page({
-        "title": parent_name,
-        "url": url,
-        "label": label,
-        "seq_label": sequential_page_label(label),
-        "level": "opus",
-        "description": get_cell_value(ws["A2"]),
-        "availability": "linked",
-        "change_date": change_date,
-        "timestamp": timestamp,
-        "doc_links": get_cell_link_or_str(ws["B4"]),
-        "parent": curr_parent_title,
-        "source_type": source_type,
-    }, page_table)
-
     #the header row can be 5, 6 or 7
-    headers = [FIRST_OPUS_HDR1, FIRST_OPUS_HDR2, FIRST_OPUS_HDR3, FIRST_OPUS_HDR4, FIRST_OPUS_HDR5, FIRST_FUND_HDR]
+    headers = [FIRST_OPUS_HDR1, FIRST_OPUS_HDR2, FIRST_OPUS_HDR3, FIRST_OPUS_HDR4, FIRST_OPUS_HDR5]
     case_num_col = "A"
     hdr_row, header_found = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, case_num_col, headers)
     import_message = ""
@@ -655,7 +693,9 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
         case_amount_column = case_num_col
         hdr_row, header_found = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, case_num_col, headers)
         if hdr_row is None:
-            raise ValueError(f"No '{FIRST_OPUS_HDR1}' header found in sheet {parent_name}")
+            #could it be a sheet with volumes and not cases?
+            return process_volumes_sheet(ws, wiki_spreadsheet, parent_name, curr_parent_title, page_table)
+
     if header_found == FIRST_FUND_HDR.upper():
         import_message = "Volume inside the opus"
     elif header_found == FIRST_OPUS_HDR4.upper():
@@ -669,6 +709,22 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
     comments_col = find_header_in_row(ws, hdr_row, "G", "Z", "Comments")
     if comments_col is None:
         raise ValueError(f"No 'Comments' column found in sheet {parent_name}")
+    description = get_cell_value(ws["A2"])
+
+    add_page({
+        "title": parent_name,
+        "url": url,
+        "label": label,
+        "seq_label": sequential_page_label(label),
+        "level": "opus",
+        "description": description,
+        "availability": "linked",
+        "change_date": change_date,
+        "timestamp": timestamp,
+        "doc_links": get_cell_link_or_str(ws["B4"]),
+        "parent": curr_parent_title,
+        "source_type": source_type,
+    }, page_table)
 
     for r in range(hdr_row + 1, ws.max_row + 1):
         curr_source_type = source_type
