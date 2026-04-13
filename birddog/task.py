@@ -454,7 +454,7 @@ class TaskManager(HeartbeatManager):
         try:
             self._unmark_subtask_in_process(subtask)
         except Exception:
-            pass
+            _logger.warning(f"exception during _unmark_subtask_in_process: {subtask_id}")
 
         task_id = subtask["task_id"]
 

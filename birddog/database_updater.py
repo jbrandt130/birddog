@@ -1117,16 +1117,13 @@ class DatabaseUpdateManager(TaskManager):
             if not subtasks:
                 return
 
-            payload0 = subtasks[0].get("payload", {})
-            kind = payload0.get("kind", "update_titles")
-
-            if kind == "update_titles":
+            if task_desc["name"].startswith("DBU_"):
                 self._complete_update_task(task_desc, subtasks)
-            elif kind == "expand_children":
+            elif task_desc["name"].startswith("DBX_"):
                 self._complete_expand_task(task_desc, subtasks)
             else:
                 _logger.error(
-                    f"DatabaseUpdateManager.complete_task: unknown task kind: {kind}, task={task_desc}"
+                    f"DatabaseUpdateManager.complete_task: unknown task kind: task={task_desc}"
                 )
 
         except Exception as err:
@@ -1145,7 +1142,7 @@ class DatabaseUpdateManager(TaskManager):
             payload = subtask.get("payload", {})
             if payload.get("kind", "update_titles") != "update_titles":
                 continue
-            if payload.get("deep"):
+            if payload.get("deep") and not payload.get("error"):
                 parent_titles.extend(payload.get("titles", []))
 
         if not parent_titles:
