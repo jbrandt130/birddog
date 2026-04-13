@@ -50,7 +50,8 @@
         const deep = t.deep ? 'Yes' : 'No';
         return `
           <tr>
-            <td>${escapeHtml(t.titles ?? '')}</td>
+            <td>${t.kind ?? ''}</td>
+            <td>${escapeHtml(t.description ?? '')}</td>
             <td>${t.total ?? ''}</td>
             <td>${t.completed ?? ''}</td>
             <td>${deep}</td>
@@ -66,7 +67,8 @@
         <table class="table table-striped table-bordered">
           <thead>
             <tr>
-              <th>Titles</th>
+              <th>Kind</th>
+              <th>Description</th>
               <th>Length</th>
               <th>Completed</th>
               <th>Deep</th>

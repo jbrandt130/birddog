@@ -28,12 +28,19 @@ _QUEUE_TABLE_NAME       = "bd_task_queue"
 _KV_STORE_TABLE_NAME    = "bd_task_kv_store"
 
 _TASK_MANAGER_HEARTBEAT_INTERVAL    = 15.0 # seconds
-_DEFAULT_STALE_SUBTASK_THRESHOLD_MS = 10000 # msec
 _IN_PROCESS_SUBTASK_LIMIT           = 5
 
-# Queue-lease defaults (tune as desired)
-_DEFAULT_QUEUE_LEASE_MS = 120 * 1000           # 2 minutes
-_DEFAULT_QUEUE_TOUCH_MS = 30 * 1000           # 30 seconds
+# Queue-lease extension times. The lease toucher extends the item
+# lease every _QUEUE_TOUCH_INTERVAL_MS as long as the worker thread
+# is alive, preventing lease expiry during normal execution. If a
+# worker dies, the lease expires after _QUEUE_LEASE_MS and the item
+# becomes visible for re-claim. The heartbeat independently detects
+# stale in_process entries after _STALE_SUBTASK_THRESHOLD_MS and
+# removes them so the worker slot is not permanently occupied.
+  
+_QUEUE_LEASE_MS             = 30 * 1000   # 30 seconds
+_QUEUE_TOUCH_INTERVAL_MS    = 10 * 1000   # 10 seconds
+_STALE_SUBTASK_THRESHOLD_MS = 30 * 1000   # 30 seconds
 
 # Retry defaults
 _DEFAULT_MAX_ATTEMPTS = 5
@@ -151,15 +158,6 @@ class TaskManager(HeartbeatManager):
         # Identify this manager instance for queue lease ownership
         self._consumer_id = f"{self._name}:{new_id()}"
 
-        # ---- Tunable timeouts
-
-        # Used ONLY to prune dead in_process KV entries (no requeue storm behavior).
-        self._stale_subtask_threshold_ms = _DEFAULT_STALE_SUBTASK_THRESHOLD_MS
-
-        # Queue lease settings
-        self._queue_lease_ms = _DEFAULT_QUEUE_LEASE_MS
-        self._queue_touch_interval_ms = _DEFAULT_QUEUE_TOUCH_MS
-
         # Retry cap
         self._max_attempts = _DEFAULT_MAX_ATTEMPTS
 
@@ -272,7 +270,7 @@ class TaskManager(HeartbeatManager):
                 claimed = self._queue_store.claim(
                     queue_id,
                     n=1,
-                    lease_ms=self._queue_lease_ms,
+                    lease_ms=_QUEUE_LEASE_MS,
                     consumer_id=self._consumer_id,
                 )
             if not claimed:
@@ -524,16 +522,16 @@ class TaskManager(HeartbeatManager):
         if not receipt:
             return
 
-        interval_ms = max(1, int(self._queue_touch_interval_ms))
-        while not stop_event.wait(interval_ms / 1000.0):
+        interval_sec = max(1, int(_QUEUE_TOUCH_INTERVAL_MS)) * 0.001
+        while True:
             try:
-                #_logger.info(f"_lease_toucher: extending lease: {self._subtask_id(subtask)}")
+                # touch immediately on entry
                 queue_id = self._pending_queue_id(subtask["task_id"])
                 with QueueGuard(self, "_lease_toucher"):
                     self._queue_store.extend(
                         queue_id,
                         [receipt],
-                        lease_ms=self._queue_lease_ms,
+                        lease_ms=_QUEUE_LEASE_MS,
                         consumer_id=self._consumer_id,
                     )
             except Exception as e:
@@ -543,6 +541,10 @@ class TaskManager(HeartbeatManager):
                 self._touch_subtask_in_process(subtask)
             except Exception as e:
                 _logger.warning(f"TaskManager: in_process touch failed for {self._subtask_id(subtask)}: {e}")
+
+            # wait for heartbeat interval
+            if stop_event.wait(interval_sec):
+                break
 
     def _run_worker(self):
         #_logger.info(f"{self._name}: starting new worker")
@@ -674,8 +676,8 @@ class TaskManager(HeartbeatManager):
             _logger.warning("TaskManager: failed to list active tasks for reap: %s", e)
             return
 
-        if active:
-            _logger.info(f"TaskManager reap: checking {len(active)} active task(s)")
+        #if active:
+        #    _logger.info(f"TaskManager reap: checking {len(active)} active task(s)")
 
         for _, v in active[:max_tasks]:
             try:
@@ -703,9 +705,10 @@ class TaskManager(HeartbeatManager):
 
         for subtask in in_process:
             last = subtask.get("last_touch_ms") or subtask.get("start_ms") or 0
-            if last and (now - last) >= self._stale_subtask_threshold_ms:
+            _logger.info(f"TaskManager checking for stale in_process entry: {self._subtask_id(subtask)}, now-last={now-last}, thresh={_STALE_SUBTASK_THRESHOLD_MS}")
+            if last and (now - last) >= _STALE_SUBTASK_THRESHOLD_MS:
                 try:
-                    _logger.info(f"TaskManager pruning stale in_process entry: {self._subtask_id(subtask)}")
+                    _logger.info(f"TaskManager pruning stale in_process entry")
                     self._unmark_subtask_in_process(subtask)
                 except Exception:
                     pass
