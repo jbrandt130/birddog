@@ -719,8 +719,8 @@ class NocoDBDatabase(Database):
         url = self._records_url(table_id)
 
         # batch size is limited by nocodb api limits
-        _BATCH_SIZE_LIMIT = 2000
-        _BATCH_COUNT_LIMIT = 1000
+        _BATCH_SIZE_LIMIT = 1000
+        _BATCH_COUNT_LIMIT = 500
 
         if key_list:
             # build all batches first
@@ -772,8 +772,8 @@ class NocoDBDatabase(Database):
                     params["offset"] += len(records)
 
             with LogService("NocoDB", "lookup", size=json_size(list(key_set))):
-                _DB_CONNECTION_POOL_MAX = 8
-                _max_workers = min(len(batches), _DB_CONNECTION_POOL_MAX)
+                _MAX_WORKERS = 5
+                _max_workers = min(len(batches), _MAX_WORKERS)
                 if len(batches) == 1:
                     _do_batch(batches[0])
                 else:

@@ -37,7 +37,7 @@ _IN_PROCESS_SUBTASK_LIMIT           = 5
 # becomes visible for re-claim. The heartbeat independently detects
 # stale in_process entries after _STALE_SUBTASK_THRESHOLD_MS and
 # removes them so the worker slot is not permanently occupied.
-  
+
 _QUEUE_LEASE_MS             = 30 * 1000   # 30 seconds
 _QUEUE_TOUCH_INTERVAL_MS    = 10 * 1000   # 10 seconds
 _STALE_SUBTASK_THRESHOLD_MS = 30 * 1000   # 30 seconds
@@ -705,7 +705,7 @@ class TaskManager(HeartbeatManager):
 
         for subtask in in_process:
             last = subtask.get("last_touch_ms") or subtask.get("start_ms") or 0
-            _logger.info(f"TaskManager checking for stale in_process entry: {self._subtask_id(subtask)}, now-last={now-last}, thresh={_STALE_SUBTASK_THRESHOLD_MS}")
+            _logger.info(f"TaskManager checking for stale in process subtask: {self._subtask_id(subtask)}, now-last={now-last}, thresh={_STALE_SUBTASK_THRESHOLD_MS}")
             if last and (now - last) >= _STALE_SUBTASK_THRESHOLD_MS:
                 try:
                     _logger.info(f"TaskManager pruning stale in_process entry")
