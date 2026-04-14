@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 import json
 import threading
 import mwparserfromhell
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from birddog.database import Database
 from birddog.wiki import (
@@ -606,6 +607,22 @@ def _fetch_mediawiki_file_metadata(titles, source, thumbnails=False, thumbnail_w
             _logger.info(f"_fetch_mediawiki_file_metadata: missing title: {title}")
     return result
 
+def _run_concurrent(tasks, max_workers=4):
+    """
+    Run a list of zero-argument callables concurrently.
+    Returns a list of booleans (one per task). Propagates the first exception.
+    """
+    if not tasks:
+        return []
+    if len(tasks) == 1:
+        return [tasks[0]()]
+    results = [False] * len(tasks)
+    with ThreadPoolExecutor(max_workers=min(len(tasks), max_workers)) as executor:
+        futures = {executor.submit(task): i for i, task in enumerate(tasks)}
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+    return results
+
 # ----------------------------------------------------------------------
 # DATABASE UPDATER
 
@@ -807,38 +824,33 @@ class DatabaseUpdater:
             for title in all_page_titles
         }
 
-        links_changed = False
         _logger.info(f"Updater {tid}: linking child pages: child_link_updates: {len(child_link_updates)}, parent_link_updates: {len(parent_link_updates)}")
 
+        # child and parent link updates -- run concurrently
+        tasks = []
+        for p_title, c_titles in child_link_updates.items():
+            parent_id = page_id_by_title.get(p_title)
+            if not parent_id:
+                continue
+            child_ids = [
+                page_id_by_title[c_title]
+                for c_title in c_titles
+                if page_id_by_title.get(c_title)
+            ]
+            tasks.append(lambda pid=parent_id, cids=child_ids:
+                _replace_links(self._db, "Pages", "children", pid, cids))
+
+        for c_title, p_title in parent_link_updates.items():
+            child_id = page_id_by_title.get(c_title)
+            parent_id = page_id_by_title.get(p_title)
+            if not child_id or not parent_id:
+                continue
+            tasks.append(lambda pid=parent_id, cid=child_id:
+                _create_links(self._db, "Pages", "children", pid, cid))
+
         try:
-            for parent_title, child_titles in child_link_updates.items():
-                parent_id = page_id_by_title.get(parent_title)
-                if not parent_id:
-                    continue
-
-                child_ids = [
-                    page_id_by_title[child_title]
-                    for child_title in child_titles
-                    if page_id_by_title.get(child_title)
-                ]
-                #_logger.info(f"start _replace_links {tid}: {len(child_ids)}")
-                if _replace_links(self._db, "Pages", "children", parent_id, child_ids):
-                    #_logger.info(f"Child links for {parent_title} updated ({len(child_ids)} children)")
-                    links_changed = True
-                #_logger.info(f"finish _replace_links {tid}")
-
-            for child_title, parent_title in parent_link_updates.items():
-                child_id = page_id_by_title.get(child_title)
-                parent_id = page_id_by_title.get(parent_title)
-                if not child_id or not parent_id:
-                    continue
-
-                #_logger.info(f"start _create_links {tid}")
-                if _create_links(self._db, "Pages", "children", parent_id, child_id):
-                    #_logger.info(f"Parent link for {child_title} updated ({parent_title})")
-                    links_changed = True
-                #_logger.info(f"finish _create_links {tid}")
-
+            link_results = _run_concurrent(tasks, max_workers=4)
+            links_changed = any(link_results)
         except Exception as e:
             _logger.error(f"exception during page linking {tid}: {e}. Aborting.")
             return False
@@ -854,17 +866,18 @@ class DatabaseUpdater:
             doc_id_map = self._db.lookup("Documents", doc_urls)
 
             _logger.info(f"Updater {tid}: updating document links")
+            tasks = []
             for page_title, page_doc_urls in doc_link_updates.items():
                 page_id = page_id_by_title.get(page_title)
                 if not page_id:
                     continue
-
                 doc_ids_for_page = [doc_id_map.get(url) for url in page_doc_urls]
-                doc_ids_for_page = [doc_id for doc_id in doc_ids_for_page if doc_id]
+                doc_ids_for_page = [did for did in doc_ids_for_page if did]
+                tasks.append(lambda pid=page_id, dids=doc_ids_for_page:
+                    _replace_links(self._db, "Pages", "doc_links", pid, dids))
 
-                if _replace_links(self._db, "Pages", "doc_links", page_id, doc_ids_for_page):
-                    #_logger.info(f"Doc links for {page_title} updated ({len(doc_ids_for_page)} docs)")
-                    doc_links_changed = True
+            doc_link_results = _run_concurrent(tasks, max_workers=4)
+            doc_links_changed = any(doc_link_results)
 
         _logger.info(f"Updater {tid}: finished update")
 
@@ -1123,11 +1136,12 @@ class DatabaseUpdateManager(TaskManager):
                 self.start_update(child_titles, deep=True)
 
     def _update_doc_metadata(self, titles):
+        update_doc_urls = []
         for title in titles:
             try:
                 doc_urls = _get_linked_doc_urls(self._updater._db, title)
                 if len(doc_urls) <= self._BATCHED_DOC_UPDATE_THRESHOLD:
-                    self._updater.update_doc_records(doc_urls, update_doc_metadata=True)
+                    update_doc_urls.extend(doc_urls)
                 else:
                     task_name = f"DBD_{new_id()}"
                     batches = [
@@ -1138,6 +1152,11 @@ class DatabaseUpdateManager(TaskManager):
                     self.create(task_name, batches)
             except Exception as err:
                 _logger.error(f"DatabaseUpdateManager: exception during doc metadata update for {title}: {err}")
+        if update_doc_urls:
+            try:
+                self._updater.update_doc_records(update_doc_urls, update_doc_metadata=True)
+            except Exception as err:
+                _logger.error(f"DatabaseUpdateManager: exception during doc metadata update for {update_doc_urls}: {err}")
 
     def _execute_doc_update_subtask(self, subtask):
         _logger.info(f"DatabaseUpdateManager: doc update subtask {subtask['task_id']}.{subtask['index']}")
