@@ -2,6 +2,7 @@
 # Licensed under the MIT License. See LICENSE file in the project root.
 
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import mimetypes
 import os
@@ -659,7 +660,7 @@ class NocoDBDatabase(Database):
             return records, next_cursor
 
     @timer.timed
-    def lookup(self, table_name, key_set):
+    def lookup(self, table_name, key_set, use_in_clause=True):
         """
         Look up record_id(s) by the table’s key field.
 
@@ -717,53 +718,71 @@ class NocoDBDatabase(Database):
         key_list = list(key_set)
         url = self._records_url(table_id)
 
-        def _do_batch(batch):
-            #_logger.info(f"_do_batch: {batch}")
-            clauses = [
-                f"({key_field_id},eq,{key})"
-                for key in batch
-            ]
+        # batch size is limited by nocodb api limits
+        _BATCH_SIZE_LIMIT = 2000
+        _BATCH_COUNT_LIMIT = 1000
 
-            params = {
-                "fields": f"{id_field_id},{key_field_id}",
-                "where": "~or".join(clauses),
-                "offset": 0,
-            }
-
-            while True:
-                data = self._fetch(url, params=params)
-                records = data.get("list", [])
-                for item in records:
-                    record_id = item["Id"]
-                    key_value = item[key_field_name]
-                    result[key_value] = record_id
-
-                page_info = data.get("pageInfo", {})
-                if page_info.get("isLastPage") or not records:
-                    return
-                params["offset"] += len(records)
-
-        _BATCH_SIZE_LIMIT = 1000
-        _BATCH_COUNT_LIMIT = 100
-
-        #_logger.info(f"lookup: {key_list}")
         if key_list:
+            # build all batches first
+            batches = []
+            pos = 0
+            batch = []
+            batch_size = 0
+            while pos < len(key_list):
+                item = key_list[pos]
+                batch.append(item)
+                pos += 1
+                batch_size += len(item)
+                if batch_size >= _BATCH_SIZE_LIMIT or len(batch) >= _BATCH_COUNT_LIMIT:
+                    batches.append({"batch": batch, "result": {}})
+                    batch = []
+                    batch_size = 0
+            if batch:
+                batches.append({"batch": batch, "result": {}})
+
+            def _do_batch(entry):
+                batch = entry["batch"]
+                # split batch into keys with commas and those without. Use 'in'
+                # clause for all those without since it is faster than 'or'
+                # if both, then join them together with 'or'
+                if use_in_clause:
+                    comma_keys = [k for k in batch if ',' in k]
+                    plain_keys  = [k for k in batch if ',' not in k]
+                else:
+                    comma_keys = batch
+                    plain_keys = []
+                clauses = []
+                if plain_keys:
+                    clauses.append(f"({key_field_id},in,{','.join(plain_keys)})")
+                if comma_keys:
+                    clauses.extend(f"({key_field_id},eq,{k})" for k in comma_keys)
+                params = {
+                    "fields": f"{id_field_id},{key_field_id}",
+                    "where": "~or".join(clauses) if len(clauses) > 1 else clauses[0],
+                    "offset": 0,
+                }
+                while True:
+                    data = self._fetch(url, params=params)
+                    records = data.get("list", [])
+                    for item in records:
+                        entry["result"][item[key_field_name]] = item["Id"]
+                    page_info = data.get("pageInfo", {})
+                    if page_info.get("isLastPage") or not records:
+                        return
+                    params["offset"] += len(records)
+
             with LogService("NocoDB", "lookup", size=json_size(list(key_set))):
-                pos = 0
-                batch = []
-                batch_size = 0
-                while pos < len(key_list):
-                    item = key_list[pos]
-                    batch.append(item)
-                    pos += 1
-                    batch_size += len(item)
-                    #batch_size += len(quote(item, safe=""))
-                    if batch_size >= _BATCH_SIZE_LIMIT or len(batch) >= _BATCH_COUNT_LIMIT:
-                        _do_batch(batch)
-                        batch = []
-                        batch_size = 0
-                if batch:
-                    _do_batch(batch)
+                _DB_CONNECTION_POOL_MAX = 8
+                _max_workers = min(len(batches), _DB_CONNECTION_POOL_MAX)
+                if len(batches) == 1:
+                    _do_batch(batches[0])
+                else:
+                    with ThreadPoolExecutor(max_workers=_max_workers) as executor:
+                        futures = [executor.submit(_do_batch, entry) for entry in batches]
+                        for future in as_completed(futures):
+                            future.result()  # propagate exceptions
+                for entry in batches:
+                    result.update(entry["result"])
 
         if singleton:
             return list(result.values())[0] if result else None
