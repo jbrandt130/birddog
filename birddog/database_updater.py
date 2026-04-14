@@ -154,12 +154,11 @@ def scan_child_titles_by_id(db, parent_ids, limit=100, cursor=None):
             link_cursor = None
             continue
 
-        remaining = limit - len(child_ids)
         page_ids, next_link_cursor = db.scan_links(
             "Pages",
             "children",
             parent_id,
-            limit=remaining,
+            limit=limit,
             cursor=link_cursor,
         )
         child_ids.extend(page_ids)
@@ -1051,7 +1050,6 @@ class DatabaseUpdateManager(TaskManager):
             "total": total,
             "completed": 0,
         }
-        _logger.info(f"_create_state: {state}")
         self._put_state(self._UPDATE_STATE_NS, task_name, state)
 
     # ------------------------------------------------------------------

@@ -705,10 +705,10 @@ class TaskManager(HeartbeatManager):
 
         for subtask in in_process:
             last = subtask.get("last_touch_ms") or subtask.get("start_ms") or 0
-            _logger.info(f"TaskManager checking for stale in process subtask: {self._subtask_id(subtask)}, now-last={now-last}, thresh={_STALE_SUBTASK_THRESHOLD_MS}")
+            #_logger.info(f"TaskManager checking for stale in process subtask: {self._subtask_id(subtask)}, now-last={now-last}, thresh={_STALE_SUBTASK_THRESHOLD_MS}")
             if last and (now - last) >= _STALE_SUBTASK_THRESHOLD_MS:
                 try:
-                    _logger.info(f"TaskManager pruning stale in_process entry")
+                    _logger.info(f"TaskManager pruning stale in_process entry: {self._subtask_id(subtask)}")
                     self._unmark_subtask_in_process(subtask)
                 except Exception:
                     pass

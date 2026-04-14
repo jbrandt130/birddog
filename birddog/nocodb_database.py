@@ -23,7 +23,7 @@ from birddog.abstract_database import (
     InvalidViewName,
     MissingKey,
     )
-from birddog.fetch import fetch_url
+from birddog.fetch import fetch_url, make_session
 from birddog.utility import json_size
 from birddog.timer import FunctionTimer
 
@@ -293,7 +293,7 @@ class NocoDBDatabase(Database):
         self._base_id = base_id
         self._api_token = api_token
 
-        self._session = requests.Session()
+        self._session = make_session(host)
         self._session.headers.update(
             {
                 "xc-token": api_token,

@@ -9,6 +9,7 @@ import re
 import threading
 import time
 import requests
+from requests.adapters import HTTPAdapter
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Mapping, Tuple
 from urllib.parse import urlparse
@@ -513,7 +514,7 @@ class AdaptiveThrottle:
         with self._lock:
             now = _now()
             if not self._hosts:
-                return "AdaptiveThrottle report: (no hosts seen yet)"
+                return "service throttle report: (no hosts seen yet)"
 
             rows = []
             for hk in sorted(self._hosts.keys()):
@@ -531,7 +532,7 @@ class AdaptiveThrottle:
                 st.completed = 0
                 st.completed_since = now
 
-        lines = ["AdaptiveThrottle report:"]
+        lines = ["service throttle report:"]
         lines.append(
             "  {:<34} {:>8} {:>8} {:>8} {:>10} {:>12}".format(
                 "host_key", "cfg_rps", "act_rps", "tokens", "blocked_s", "max_in_flight"
@@ -626,6 +627,29 @@ THROTTLE = AdaptiveThrottle(
     default_profile=DEFAULT_PROFILE,
     resolver=RESOLVER,
 )
+
+# ---------------------------------------------------------------------------
+# session factory
+# ---------------------------------------------------------------------------
+
+def make_session(url_or_key: str) -> requests.Session:
+    """
+    Create a requests.Session whose connection pool is sized to match the
+    max_in_flight concurrency allowed by the throttle profile for the given
+    host.  Pass a URL or host key (e.g. ``"nocodb.internal:api"``).
+    """
+    host_key = THROTTLE.key_from(url_or_key)
+    try:
+        profile = THROTTLE._get_profile(host_key)
+        pool_size = max(profile.max_in_flight, 10)
+    except KeyError:
+        pool_size = 10
+
+    session = requests.Session()
+    adapter = HTTPAdapter(pool_connections=1, pool_maxsize=pool_size)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
 
 # ---------------------------------------------------------------------------
 # page loading
