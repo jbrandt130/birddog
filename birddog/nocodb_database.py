@@ -282,6 +282,154 @@ def rename_field(db, field_id, new_name):
     payload = { "title": new_name }
     db._fetch(url, json=payload, method="PATCH")
 
+def copy_formula_field(db1, table1, field1, db2, table2, field2):
+    """
+    Copy a Formula field from one table to another, rewriting all field ID
+    references in the compiled formula to match the destination table's field IDs.
+
+    The destination table must already exist and have fields with names matching
+    every field referenced by the source formula.
+
+    Args:
+        db1:    Source NocoDBDatabase instance.
+        table1: Name of the source table.
+        field1: Name of the formula field to copy from the source table.
+        db2:    Destination NocoDBDatabase instance (may be the same as db1).
+        table2: Name of the destination table.
+        field2: Name to give the new formula field on the destination table.
+
+    Returns:
+        The NocoDB API response dict for the newly created column.
+
+    Raises:
+        InvalidTableName:  If table1 or table2 does not exist.
+        InvalidFieldName:  If field1 is not found or is not a Formula field, or if
+                           a referenced field name is missing from the destination table.
+        FailedIO:          On any API communication failure.
+    """
+    # --- 1. Locate the formula field in the source table info ---
+    src_info = db1._get_table_info(table1)
+    src_col = next(
+        (c for c in src_info["columns"] if c["title"] == field1 and c["uidt"] == "Formula"),
+        None,
+    )
+    if src_col is None:
+        formula_names = [c["title"] for c in src_info["columns"] if c["uidt"] == "Formula"]
+        raise InvalidFieldName(
+            f"{table1}.{field1} (not found or not a Formula; "
+            f"available formula fields: {formula_names})"
+        )
+
+    col_options = src_col.get("colOptions") or {}
+    formula_compiled = col_options.get("formula", "")
+    formula_raw = (col_options.get("formula_raw") or "").strip()
+
+    # --- 2. Build a reverse map: source field id -> field title ---
+    src_id_to_title = {c["id"]: c["title"] for c in src_info["columns"]}
+
+    # --- 3. Build a forward map: field title -> destination field id ---
+    dest_info = db2._get_table_info(table2)
+    dest_title_to_id = {c["title"]: c["id"] for c in dest_info["columns"]}
+
+    # --- 4. Rewrite {{src_field_id}} -> {{dest_field_id}} in the compiled formula ---
+    def _replace_ref(match):
+        src_id = match.group(1)
+        title = src_id_to_title.get(src_id)
+        if title is None:
+            raise InvalidFieldName(
+                f"Formula in {table1}.{field1} references unknown source field id '{src_id}'"
+            )
+        dest_id = dest_title_to_id.get(title)
+        if dest_id is None:
+            raise InvalidFieldName(
+                f"Destination table '{table2}' has no field named '{title}' "
+                f"(required by formula in {table1}.{field1})"
+            )
+        return f"{{{{{dest_id}}}}}"
+
+    rewritten_formula = re.sub(r"\{\{([^}]+)\}\}", _replace_ref, formula_compiled)
+
+    # --- 5. POST the new column to the destination table ---
+    dest_table_id = db2._table_id(table2)
+    url = f"{db2._host}/api/v2/meta/tables/{dest_table_id}/columns"
+    payload = {
+        "title": field2,
+        "uidt": "Formula",
+        "formula_raw": formula_raw,   # human-readable expression, re-resolved by NocoDB
+        "colOptions": {
+            "formula": rewritten_formula,
+        },
+    }
+    if src_col.get("description"):
+        payload["description"] = src_col["description"]
+
+    # invalidate the dest table info so it gets updated next time
+    db2._field_id_map.pop(table2, None)
+
+    return db2._fetch(url, json=payload, method="POST")
+
+def list_formula_fields(db, table):
+    """
+    Return a list of column metadata dicts for all Formula fields in the given table.
+
+    Args:
+        db:    A NocoDBDatabase instance.
+        table: Name of the table to inspect.
+
+    Returns:
+        List of column dicts (as returned by the table info API) where uidt == 'Formula'.
+
+    Raises:
+        InvalidTableName: If the table does not exist.
+    """
+    info = db._get_table_info(table)
+    return [c["title"] for c in info["columns"] if c["uidt"] == "Formula"]
+
+def list_lookup_fields(db, table):
+    """
+    Return a list of titles of all Lookup fields in the given table.
+
+    Raises:
+        InvalidTableName: If the table does not exist.
+    """
+    info = db._get_table_info(table)
+    return [c["title"] for c in info["columns"] if c["uidt"] == "Lookup"]
+
+def create_lookup_field(db, table_name, field_name, related_column_name, linked_table_name, linked_field_name):
+    """
+    Create a Lookup field on a table.
+
+    Args:
+        db:                   NocoDBDatabase instance.
+        table_name:           Name of the table to add the Lookup field to.
+        field_name:           Name to give the new Lookup field.
+        related_column_name:  Name of the Links field on table_name that defines the relation.
+        linked_table_name:    Name of the table the relation points to.
+        linked_field_name:    Name of the field on the linked table to look up.
+
+    Returns:
+        The NocoDB API response dict for the newly created column.
+
+    Raises:
+        InvalidTableName: If any referenced table does not exist.
+        InvalidFieldName: If any referenced field cannot be resolved.
+        FailedIO:         On any API communication failure.
+    """
+    relation_col_id = db._field_id(table_name, related_column_name)
+    lookup_col_id   = db._field_id(linked_table_name, linked_field_name)
+
+    table_id = db._table_id(table_name)
+    url = f"{db._host}/api/v2/meta/tables/{table_id}/columns"
+    payload = {
+        "title": field_name,
+        "uidt": "Lookup",
+        "fk_relation_column_id": relation_col_id,
+        "fk_lookup_column_id": lookup_col_id,
+    }
+
+    db._field_id_map.pop(table_name, None)
+    return db._fetch(url, json=payload, method="POST")
+
 # ----------------------------------------------------------------------
 
 class NocoDBDatabase(Database):
