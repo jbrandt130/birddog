@@ -997,6 +997,12 @@ def _parse_wiki_text(wikitext, page_title, title, revid=None):
     - `title`: display title (usually without namespace, or whatever you want to show).
     - `revid`: optional, stored in the page dict if provided.
     """
+    # Close any unclosed wikitables so mwparserfromhell can parse them as tags.
+    # A page saved mid-edit (or with a formatting bug) may omit the closing |}.
+    open_count = wikitext.count("{|") - wikitext.count("|}")
+    if open_count > 0:
+        wikitext = wikitext.rstrip() + ("\n|}" * open_count)
+
     wikicode = mwparserfromhell.parse(wikitext)
 
     # get and organize all the links on the page
