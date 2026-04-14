@@ -90,6 +90,17 @@ def _page_urls_from_titles(titles):
         return page_url_from_title(titles)
     raise TypeError(f"_page_urls_from_titles: invalid type: {type(titles)}")
 
+def _get_linked_doc_urls(db, title):
+    page_id = db.lookup("Pages", page_url_from_title(title))
+    if not page_id:
+        raise ValueError(f"_get_linked_doc_urls: unknown title: {title}")
+    doc_ids = db.get_links("Pages", "doc_links", page_id)
+    if not doc_ids:
+        return []
+    doc_recs = db.read("Documents", doc_ids, fields="link")
+    result = [rec.get("link") for rec in doc_recs if rec]
+    return [r for r in result if r]
+
 def _lookup_pages(db, titles):
     return db.lookup("Pages", _page_urls_from_titles(titles))
 
@@ -670,7 +681,7 @@ class DatabaseUpdater:
 
         return None
 
-    def update_page_records(self, page_titles):
+    def update_page_records(self, page_titles, update_doc_metadata=True):
         if isinstance(page_titles, str):
             page_titles = [page_titles]
         if not all(isinstance(title, str) for title in page_titles):
@@ -837,7 +848,7 @@ class DatabaseUpdater:
         doc_records_changed = False
         doc_links_changed = False
         if doc_urls:
-            doc_records_changed = self.update_doc_records(doc_urls)
+            doc_records_changed = self.update_doc_records(doc_urls, update_doc_metadata)
 
             # One lookup for all document IDs, then reuse locally.
             doc_id_map = self._db.lookup("Documents", doc_urls)
@@ -865,7 +876,7 @@ class DatabaseUpdater:
             doc_links_changed,
         ])
 
-    def update_doc_records(self, doc_urls):
+    def update_doc_records(self, doc_urls, update_doc_metadata=True):
         doc_records_changed = False
         if isinstance(doc_urls, str):
             doc_urls = { doc_urls }
@@ -877,24 +888,25 @@ class DatabaseUpdater:
         tid = threading.get_ident()
 
         if doc_urls:
-            _logger.info(f"Updater.update_doc_records {tid}: accessing linked document metadata")
+            _logger.info(f"Updater.update_doc_records {tid}: #docs={len(doc_urls)}, metadata update={update_doc_metadata}")
             doc_records = { url: form_document_record(url) for url in doc_urls}
 
             # collect meta data for known sources
-            _KNOWN_SOURCES = ("commons", "wikisource")
-            for source in _KNOWN_SOURCES:
-                subset = [record for record in doc_records.values() if record["source"] == source]
-                subset_titles = [rec["title"] for rec in subset]
-                if subset_titles:
-                    metadata_records = _fetch_mediawiki_file_metadata(subset_titles, source)
-                    for record in subset:
-                        metadata_record = metadata_records.get(record["title"])
-                        if metadata_record:
-                            record.update(metadata_record)
-                            record["availability"] = "linked"
-                        else:
-                            _logger.info(f"marking doc url as unlinked: {record['title']}")
-                            record["availability"] = "unlinked"
+            if update_doc_metadata:
+                _KNOWN_SOURCES = ("commons", "wikisource")
+                for source in _KNOWN_SOURCES:
+                    subset = [record for record in doc_records.values() if record["source"] == source]
+                    subset_titles = [rec["title"] for rec in subset]
+                    if subset_titles:
+                        metadata_records = _fetch_mediawiki_file_metadata(subset_titles, source)
+                        for record in subset:
+                            metadata_record = metadata_records.get(record["title"])
+                            if metadata_record:
+                                record.update(metadata_record)
+                                record["availability"] = "linked"
+                            else:
+                                _logger.info(f"marking doc url as unlinked: {record['title']}")
+                                record["availability"] = "unlinked"
 
             # Single lookup for all document URLs
             doc_id_map = self._db.lookup("Documents", doc_urls)
@@ -976,18 +988,17 @@ class DatabaseUpdater:
 
 class DatabaseUpdateManager(TaskManager):
     _BATCH_SIZE = 20
-    _EXPAND_BATCH_SIZE = 500
-    _UPDATE_STATE_NS = "tasks"
-    _EXPAND_STATE_NS = "expand"
+    _BATCHED_DOC_UPDATE_THRESHOLD = 5
+    _UPDATE_STATE_NS = "db_update"
+    _PAGE_UPDATE_KIND = "update_pages"
+    _DOC_UPDATE_KIND = "update_docs"
 
     def __init__(self, runtime, updater=None):
         self._updater = updater if updater else DatabaseUpdater(runtime)
         self._state_store = KeyValueStore(table_name="bd_db_update")
-        self._state_lock = threading.Lock()
+        self._state_lock = threading.RLock()
         super().__init__("DatabaseUpdateManager")
-        # update subtasks: allow approx 10 sec per item in batch
-        self._stale_subtask_threshold_ms = self._BATCH_SIZE * 10000
-
+        
     # ------------------------------------------------------------------
     # state helpers
 
@@ -995,13 +1006,15 @@ class DatabaseUpdateManager(TaskManager):
         return json.loads(self._state_store.get(namespace, key))
 
     def _put_state(self, namespace, key, value):
-        self._state_store.insert(namespace, key, json.dumps(value))
+        with self._state_lock:
+            self._state_store.insert(namespace, key, json.dumps(value))
 
     def _remove_state(self, namespace, key):
-        try:
-            self._state_store.remove(namespace, key)
-        except KeyError:
-            pass
+        with self._state_lock:
+            try:
+                self._state_store.remove(namespace, key)
+            except KeyError:
+                pass
 
     def _update_progress(self, task_id, increment):
         _logger.info(f"update progress: {task_id}: {increment}")
@@ -1013,162 +1026,140 @@ class DatabaseUpdateManager(TaskManager):
                 state["completed"] += increment
                 self._put_state(self._UPDATE_STATE_NS, task_name, state)
             except KeyError:
+                # task is already completed - ignore
                 pass
+
+
+    def _create_state(self, task_name, kind, description, total, deep=False):
+        state = {
+            "kind": kind,
+            "description": description,
+            "deep": deep,
+            "total": total,
+            "completed": 0,
+        }
+        _logger.info(f"_create_state: {state}")
+        self._put_state(self._UPDATE_STATE_NS, task_name, state)
 
     # ------------------------------------------------------------------
     # subtask execution
 
     def execute_subtask(self, subtask):
         payload = subtask["payload"]
-        kind = payload.get("kind", "update_titles")
-        if kind == "update_titles":
-            self._execute_update_subtask(subtask)
-        elif kind == "expand_children":
-            self._execute_expand_subtask(subtask)
+        kind = payload.get("kind")
+        if kind == self._PAGE_UPDATE_KIND:
+            self._execute_page_update_subtask(subtask)
+        elif kind == self._DOC_UPDATE_KIND:
+            self._execute_doc_update_subtask(subtask)
         else:
             raise ValueError(f"DatabaseUpdateManager.execute_subtask: unknown kind: {kind}")
-
-    def _execute_update_subtask(self, subtask):
-        _logger.info(f"DatabaseUpdateManager: update subtask {subtask['task_id']}.{subtask['index']}")
-        batch = subtask["payload"]
-        titles = batch["titles"]
-        try:
-            updated = self._updater.update_page_records(titles)
-            subtask["payload"] = {
-                "kind": "update_titles",
-                "updated": updated,
-                "titles": titles,
-                "deep": batch["deep"],
-            }
-        except Exception as err:
-            _logger.error(
-                f"DatabaseUpdateManager: exception during update subtask execution: {err}, {batch}"
-            )
-            subtask["payload"] = {
-                "kind": "update_titles",
-                "titles": titles,
-                "deep": batch.get("deep", False),
-                "error": str(err),
-            }
-        self._update_progress(subtask["task_id"], len(titles))
-
-    def _execute_expand_subtask(self, subtask):
-        _logger.info(f"DatabaseUpdateManager: expand subtask {subtask['task_id']}.{subtask['index']}")
-        payload = subtask["payload"]
-        state_key = payload["state_key"]
-        try:
-            state = self._get_state(self._EXPAND_STATE_NS, state_key)
-            parent_ids = state["parent_ids"]
-            exclude_titles = set(state.get("exclude_titles", []))
-            cursor = state.get("cursor")
-
-            spawn_titles = []
-            while True:
-                page, cursor = scan_child_titles_by_id(
-                    self._updater._db,
-                    parent_ids,
-                    limit=self._EXPAND_BATCH_SIZE,
-                    cursor=cursor,
-                )
-                if page:
-                    spawn_titles.extend(page)
-                if cursor is None:
-                    break
-
-            # remove immediate self-respawn titles
-            if exclude_titles:
-                spawn_titles = [title for title in spawn_titles if title not in exclude_titles]
-
-            # dedupe once at the task boundary to avoid redundant updates
-            if spawn_titles:
-                spawn_titles = list(set(spawn_titles))
-
-            state["cursor"] = None
-            state["completed"] = True
-            state["spawn_count"] = len(spawn_titles)
-            self._put_state(self._EXPAND_STATE_NS, state_key, state)
-
-            subtask["payload"] = {
-                "kind": "expand_children",
-                "state_key": state_key,
-                "spawn_titles": spawn_titles,
-                "deep": True,
-            }
-
-        except Exception as err:
-            _logger.error(
-                f"DatabaseUpdateManager: exception during expand subtask execution: {err}, {payload}"
-            )
-            subtask["payload"] = {
-                "kind": "expand_children",
-                "state_key": state_key,
-                "error": str(err),
-            }
 
     # ------------------------------------------------------------------
     # task completion
 
     def complete_task(self, task_desc, subtasks, is_cancelled=False):
         _logger.info(f"DatabaseUpdateManager: complete task {task_desc['task_id']}")
+        # clean up update task progress state if present
+        self._remove_state(self._UPDATE_STATE_NS, task_desc["name"])
+
+    # ------------------------------------------------------------------
+    # update tasks
+
+    def _execute_page_update_subtask(self, subtask):
+        _logger.info(f"DatabaseUpdateManager: page update subtask {subtask['task_id']}.{subtask['index']}")
+        batch = subtask["payload"]
+        titles = batch.get("titles", [])
+        updated = False
+        error = None
+
         try:
-            if is_cancelled:
-                return
+            updated = self._updater.update_page_records(titles, update_doc_metadata=False)
+        except Exception as err:
+            _logger.error(
+                f"DatabaseUpdateManager: exception during page record update: {err}, {batch}"
+            )
+            error = str(err)
 
-            if not subtasks:
-                return
-
-            if task_desc["name"].startswith("DBU_"):
-                self._complete_update_task(task_desc, subtasks)
-            elif task_desc["name"].startswith("DBX_"):
-                self._complete_expand_task(task_desc, subtasks)
-            else:
+        if not error:
+            try:
+                self._update_doc_metadata(titles)
+            except Exception as err:
                 _logger.error(
-                    f"DatabaseUpdateManager.complete_task: unknown task kind: task={task_desc}"
+                    f"DatabaseUpdateManager: exception during doc metadata update: {err}, {batch}"
                 )
 
-        except Exception as err:
-            _logger.error(f"DatabaseUpdateManager: exception during task completion: {err}")
+            if batch.get("deep"):
+                try:
+                    self._start_child_page_update_task(titles)
+                except Exception as err:
+                    _logger.error(
+                        f"DatabaseUpdateManager: exception during child page update task: {err}, {batch}"
+                    )
 
-        finally:
-            # clean up update task progress state if present
-            with self._state_lock:
-                self._remove_state(self._UPDATE_STATE_NS, task_desc["name"])
+        subtask["payload"] = {
+            "kind": batch.get("kind"),
+            "updated": updated,
+            "titles": titles,
+            "deep": batch.get("deep", False),
+        }
+        if error:
+            subtask["payload"]["error"] = error
 
-    def _complete_update_task(self, task_desc, subtasks):
-        _logger.info(f"updater.complete_update_task: {task_desc['task_id']}")
+        self._update_progress(subtask["task_id"], len(titles))
 
-        parent_titles = []
-        for subtask in subtasks:
-            payload = subtask.get("payload", {})
-            if payload.get("kind", "update_titles") != "update_titles":
-                continue
-            if payload.get("deep") and not payload.get("error"):
-                parent_titles.extend(payload.get("titles", []))
-
-        if not parent_titles:
-            return
-
-        _logger.info(f"DatabaseUpdateManager: deep update frontier completed: {len(parent_titles)} titles")
-        self.start_expand(parent_titles)
-
-    def _complete_expand_task(self, task_desc, subtasks):
-        _logger.info(f"updater.complete_expand_task: {task_desc['task_id']}")
-
-        if not subtasks:
-            return
-
-        payload = subtasks[0].get("payload", {})
-        state_key = payload.get("state_key")
-        spawn_titles = payload.get("spawn_titles", [])
-
-        if spawn_titles:
-            _logger.info(
-                f"DatabaseUpdateManager: deep expansion spawned next update task: {len(spawn_titles)} titles"
+    def _start_child_page_update_task(self, parent_titles):
+        if not isinstance(parent_titles, (list, tuple)) or not all(
+            [isinstance(title, str) for title in parent_titles]
+        ):
+            raise ValueError(
+                "DatabaseUpdateManager._start_child_page_update_task: parent_titles must be str or sequence of str"
             )
-            self.start_update(spawn_titles, deep=True)
 
-        if state_key:
-            self._remove_state(self._EXPAND_STATE_NS, state_key)
+        parent_titles = [_normalize_title(title) for title in parent_titles]
+        if parent_titles:
+            child_titles = get_child_titles(self._updater._db, parent_titles)
+            child_titles = list(set(child_titles))
+            if child_titles:
+                self.start_update(child_titles, deep=True)
+
+    def _update_doc_metadata(self, titles):
+        for title in titles:
+            try:
+                doc_urls = _get_linked_doc_urls(self._updater._db, title)
+                if len(doc_urls) <= self._BATCHED_DOC_UPDATE_THRESHOLD:
+                    self._updater.update_doc_records(doc_urls, update_doc_metadata=True)
+                else:
+                    task_name = f"DBD_{new_id()}"
+                    batches = [
+                        {"kind": self._DOC_UPDATE_KIND, "urls": doc_urls[i:i + self._BATCH_SIZE]}
+                        for i in range(0, len(doc_urls), self._BATCH_SIZE)
+                    ]
+                    self._create_state(task_name, self._DOC_UPDATE_KIND, title, len(doc_urls), deep=False)
+                    self.create(task_name, batches)
+            except Exception as err:
+                _logger.error(f"DatabaseUpdateManager: exception during doc metadata update for {title}: {err}")
+
+    def _execute_doc_update_subtask(self, subtask):
+        _logger.info(f"DatabaseUpdateManager: doc update subtask {subtask['task_id']}.{subtask['index']}")
+        batch = subtask["payload"]
+        urls = batch.get("urls", [])
+        try:
+            updated = self._updater.update_doc_records(urls, update_doc_metadata=True)
+            subtask["payload"] = {
+                "kind": batch.get("kind"),
+                "updated": updated,
+                "urls": urls,
+            }
+        except Exception as err:
+            _logger.error(
+                f"DatabaseUpdateManager: exception during doc update subtask execution: {err}, {batch}"
+            )
+            subtask["payload"] = {
+                "kind": batch.get("kind"),
+                "urls": urls,
+                "error": str(err),
+            }
+        self._update_progress(subtask["task_id"], len(urls))
 
     # ------------------------------------------------------------------
     # public API
@@ -1192,66 +1183,14 @@ class DatabaseUpdateManager(TaskManager):
             return None
 
         task_name = f"DBU_{new_id()}"
-        batches = []
-        for i in range(0, total, self._BATCH_SIZE):
-            batches.append(
-                {
-                    "kind": "update_titles",
-                    "titles": page_titles[i:i + self._BATCH_SIZE],
-                    "deep": deep,
-                }
-            )
-
-        preview = page_titles[:50]
-        titles_str = ", ".join(preview) + ("..." if total > 50 else "")
-        state = {
-            "kind": "update_titles",
-            "titles": titles_str,
+        batches = [ {
+            "kind": self._PAGE_UPDATE_KIND,
+            "titles": page_titles[i:i + self._BATCH_SIZE],
             "deep": deep,
-            "total": total,
-            "completed": 0,
-        }
-        self._put_state(self._UPDATE_STATE_NS, task_name, state)
+            } for i in range(0, total, self._BATCH_SIZE)]
+        titles_str = ", ".join(page_titles[:50]) + ("..." if total > 50 else "")
+        self._create_state(task_name, self._PAGE_UPDATE_KIND, titles_str, total, deep=deep)
         self.create(task_name, batches)
-        return task_name
-
-    def start_expand(self, parent_titles):
-        if isinstance(parent_titles, str):
-            parent_titles = [parent_titles]
-        if not isinstance(parent_titles, (list, tuple)) or not all(
-            [isinstance(title, str) for title in parent_titles]
-        ):
-            raise ValueError(
-                "DatabaseUpdateManager.start_expand: parent_titles must be str or sequence of str"
-            )
-
-        parent_titles = [_normalize_title(title) for title in parent_titles]
-        parent_ids = _lookup_pages(self._updater._db, parent_titles)
-        if not any(parent_ids):
-            _logger.info("DatabaseUpdateManager.start_expand: no valid parent ids found")
-            return None
-
-        task_name = f"DBX_{new_id()}"
-        state_key = task_name
-        state = {
-            "kind": "expand_children",
-            "parent_titles": parent_titles[:50],
-            "exclude_titles": parent_titles,
-            "parent_ids": parent_ids,
-            "cursor": None,
-            "completed": False,
-            "spawn_count": 0,
-        }
-        self._put_state(self._EXPAND_STATE_NS, state_key, state)
-        self.create(
-            task_name,
-            [
-                {
-                    "kind": "expand_children",
-                    "state_key": state_key,
-                }
-            ],
-        )
         return task_name
 
     def status(self):
@@ -1259,9 +1198,6 @@ class DatabaseUpdateManager(TaskManager):
 
         for item in self._state_store.get_all(self._UPDATE_STATE_NS):
             result[item[0]] = json.loads(item[1])
-
-        #for item in self._state_store.get_all(self._EXPAND_STATE_NS):
-        #    result[item[0]] = json.loads(item[1])
 
         return result
 
@@ -1273,4 +1209,3 @@ class DatabaseUpdateManager(TaskManager):
                 super().cancel(task.get("task_id"))
                 break
         self._remove_state(self._UPDATE_STATE_NS, task_name)
-        self._remove_state(self._EXPAND_STATE_NS, task_name)
