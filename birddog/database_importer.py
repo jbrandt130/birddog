@@ -623,13 +623,15 @@ def add_doc(doc_url, opus_page, vol_title, opus_title):
     opus_page["doc_links"] = docs
 
     #add an import message
+    addition = f"Volume {vol_title} in opus {opus_title}"
     if "import_message" in opus_page:
         import_message = opus_page["import_message"]
         if import_message != "":
             import_message = import_message +"; "
     else:
         import_message = ""
-    import_message = f"{import_message}Volume {vol_title} in opus {opus_title}"
+    import_message = import_message + addition
+    _logger.warning(addition)
     opus_page["import_message"] = import_message
 
 def process_volumes_sheet(ws, wiki_spreadsheet, opus_name, fund_name, page_table):
@@ -1057,7 +1059,7 @@ def process_dir(dir_path):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/ImportProblems/DAHMO-K-wiki-20250820.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/CDIAK-wiki-20260409.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DAHMO-R-wiki-20260412.xlsx"
     import_spreadsheet(filepath)
 #   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
 #    process_dir(dir_path)
