@@ -1014,17 +1014,17 @@ class DatabaseUpdateManager(TaskManager):
     # ------------------------------------------------------------------
     # state helpers
 
-    def _get_state(self, namespace, key):
-        return json.loads(self._state_store.get(namespace, key))
+    def _get_state(self, task_name):
+        return json.loads(self._state_store.get(self._UPDATE_STATE_NS, task_name))
 
-    def _put_state(self, namespace, key, value):
+    def _put_state(self, task_name, value):
         with self._state_lock:
-            self._state_store.insert(namespace, key, json.dumps(value))
+            self._state_store.insert(self._UPDATE_STATE_NS, task_name, json.dumps(value))
 
-    def _remove_state(self, namespace, key):
+    def _remove_state(self, task_name):
         with self._state_lock:
             try:
-                self._state_store.remove(namespace, key)
+                self._state_store.remove(self._UPDATE_STATE_NS, task_name)
             except KeyError:
                 pass
 
@@ -1034,13 +1034,12 @@ class DatabaseUpdateManager(TaskManager):
             try:
                 task = self.lookup_task(task_id)
                 task_name = task["name"]
-                state = self._get_state(self._UPDATE_STATE_NS, task_name)
+                state = self._get_state(task_name)
                 state["completed"] += increment
-                self._put_state(self._UPDATE_STATE_NS, task_name, state)
+                self._put_state(task_name, state)
             except KeyError:
                 # task is already completed - ignore
                 pass
-
 
     def _create_state(self, task_name, kind, description, total, deep=False):
         state = {
@@ -1050,7 +1049,11 @@ class DatabaseUpdateManager(TaskManager):
             "total": total,
             "completed": 0,
         }
-        self._put_state(self._UPDATE_STATE_NS, task_name, state)
+        self._put_state(task_name, state)
+
+    def _create_task(self, task_name, kind, description, total, batches, deep=False):
+        self._create_state(task_name, kind, description, total, deep)
+        self.create(task_name, batches)
 
     # ------------------------------------------------------------------
     # subtask execution
@@ -1071,7 +1074,7 @@ class DatabaseUpdateManager(TaskManager):
     def complete_task(self, task_desc, subtasks, is_cancelled=False):
         _logger.info(f"DatabaseUpdateManager: complete task {task_desc['task_id']}")
         # clean up update task progress state if present
-        self._remove_state(self._UPDATE_STATE_NS, task_desc["name"])
+        self._remove_state(task_desc["name"])
 
     # ------------------------------------------------------------------
     # update tasks
@@ -1146,8 +1149,7 @@ class DatabaseUpdateManager(TaskManager):
                         {"kind": self._DOC_UPDATE_KIND, "urls": doc_urls[i:i + self._BATCH_SIZE]}
                         for i in range(0, len(doc_urls), self._BATCH_SIZE)
                     ]
-                    self._create_state(task_name, self._DOC_UPDATE_KIND, title, len(doc_urls), deep=False)
-                    self.create(task_name, batches)
+                    self._create_task(task_name, self._DOC_UPDATE_KIND, title, len(doc_urls), batches, deep=False)
             except Exception as err:
                 _logger.error(f"DatabaseUpdateManager: exception during doc metadata update for {title}: {err}")
         if update_doc_urls:
@@ -1184,6 +1186,29 @@ class DatabaseUpdateManager(TaskManager):
     def complete_translation(self, task_name, translation_map):
         self._updater.complete_translation(task_name, translation_map)
 
+    def start_document_update(self, doc_urls):
+        if isinstance(doc_urls, str):
+            doc_urls = [doc_urls]
+        if not isinstance(doc_urls, (list, tuple)) or not all(
+            [isinstance(url, str) for url in doc_urls]
+        ):
+            raise ValueError(
+                "DatabaseUpdateManager.start_document_update: doc_urls must be str or sequence of str"
+            )
+
+        total = len(doc_urls)
+        if total <= 0:
+            return None
+
+        task_name = f"DBD_{new_id()}"
+        batches = [
+            {"kind": self._DOC_UPDATE_KIND, "urls": doc_urls[i:i + self._BATCH_SIZE]}
+            for i in range(0, total, self._BATCH_SIZE)
+        ]
+        urls_str = ", ".join(doc_urls[:50]) + ("..." if total > 50 else "")
+        self._create_task(task_name, self._DOC_UPDATE_KIND, urls_str, total, batches, deep=False)
+        return task_name
+
     def start_update(self, page_titles, deep=False):
         if isinstance(page_titles, str):
             page_titles = [page_titles]
@@ -1206,8 +1231,7 @@ class DatabaseUpdateManager(TaskManager):
             "deep": deep,
             } for i in range(0, total, self._BATCH_SIZE)]
         titles_str = ", ".join(page_titles[:50]) + ("..." if total > 50 else "")
-        self._create_state(task_name, self._PAGE_UPDATE_KIND, titles_str, total, deep=deep)
-        self.create(task_name, batches)
+        self._create_task(task_name, self._PAGE_UPDATE_KIND, titles_str, total, batches, deep=deep)
         return task_name
 
     def status(self):
@@ -1225,4 +1249,4 @@ class DatabaseUpdateManager(TaskManager):
                 _logger.info(f"DatabaseUpdateManager: cancel task {task_name} found!")
                 super().cancel(task.get("task_id"))
                 break
-        self._remove_state(self._UPDATE_STATE_NS, task_name)
+        self._remove_state(task_name)

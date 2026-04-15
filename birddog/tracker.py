@@ -3,6 +3,7 @@
 
 import json
 import os
+from urllib.parse import unquote
 
 from datetime import datetime, timedelta, timezone
 import time
@@ -180,27 +181,38 @@ def offset_utc(ts, seconds):
     dt = _parse_utc(ts)
     return _format_utc_z(dt + timedelta(seconds=seconds))
 
-_WIKIMEDIA_COMMONS = "https://commons.wikimedia.org"
-_UK_WIKISOURCE = "https://uk.wikisource.org"
-_UK_WIKISOURCE_NS = "Файл"
-_WIKI_DOC_TRACKER_KV_TABLE = "doc_tracker"
+_WIKI_DOC_TRACKER_KV_TABLE = "bd_doc_tracker"
 _WIKI_DOC_TRACKER_HEARTBEAT_INTERVAL = 15  # seconds
 _WIKI_SENTINEL = "WIKI_SENTINEL"
 _WIKI_CHANGE_EVENT_WINDOW = 300  # seconds
 _DOC_TABLE_SENTINEL = "DOC_SENTINEL"
 
+WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC = {
+    "base_url": "https://commons.wikimedia.org",
+    "namespace": "File",
+    "table_view": "WikiDocTracker: commons.wikimedia.org",
+}
+
+UK_WIKISOURCE_DOC_TRACKER_SPEC = {
+    "base_url": "https://uk.wikisource.org",
+    "namespace": "Файл",
+    "table_view": "WikiDocTracker: uk.wikisource.org",
+}
+
 class WikiDocTracker(HeartbeatManager):
     def __init__(
         self,
         runtime,
+        spec=None,
         cutoff_time=None,
-        base_url=_WIKIMEDIA_COMMONS,
-        namespace="File",
         change_window_s=_WIKI_CHANGE_EVENT_WINDOW,
     ):
+        if spec is None:
+            spec = WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC
         self._runtime = runtime
-        self._base_url = base_url
-        self._namespace = namespace
+        self._base_url = spec["base_url"]
+        self._namespace = spec["namespace"]
+        self._table_view = spec["table_view"]
         self._db = self._runtime.database
 
         self._namespace_id = lookup_namespace_id(self._namespace)
@@ -213,7 +225,7 @@ class WikiDocTracker(HeartbeatManager):
         self._change_window_s = int(change_window_s)
 
         # In-memory doc index (normalized titles). None means "not loaded yet".
-        self._doc_map = None  # dict[str, str] normalized_title -> link
+        self._doc_map = None  # set[str] of normalized titles
 
         _logger.info(
             f"WikiDocTracker: base={self._base_url}, "
@@ -228,14 +240,14 @@ class WikiDocTracker(HeartbeatManager):
         self._doc_map = None
 
     def _normalize_title(self, title):
-        return title.replace(" ", "_")
+        return unquote(title).replace(" ", "_")
+
+    def _link_from_title(self, normalized_title):
+        return f"{self._base_url}/wiki/{normalized_title}"
 
     def _ensure_doc_map(self):
         if self._doc_map is None:
-            self._doc_map = {}
-            for k, v in self._kv.get_all(self._doc_kv_namespace):  # iterable of (key, value)
-                self._doc_map[k] = v
-    
+            self._doc_map = {k for k, _ in self._kv.get_all(self._doc_kv_namespace)}
             _logger.info(f"WikiDocTracker: loaded {len(self._doc_map)} doc titles into memory")
 
     def _store_relevant_titles(self, records):
@@ -257,8 +269,8 @@ class WikiDocTracker(HeartbeatManager):
             if nt in self._doc_map:
                 continue
 
-            self._kv.insert(self._doc_kv_namespace, nt, link)
-            self._doc_map[nt] = link
+            self._kv.insert(self._doc_kv_namespace, nt, "")
+            self._doc_map.add(nt)
             inserts += 1
 
         if inserts:
@@ -274,13 +286,14 @@ class WikiDocTracker(HeartbeatManager):
         except KeyError:
             doc_sentinel = None
 
-        # Sort by descending CreatedAt (newest first).
-        sort_spec = ("CreatedAt", False)
-
         newest_creation_date = None
         cursor = None
         while True:
-            batch, cursor = self._db.scan("Documents", cursor=cursor, sort=sort_spec)
+            batch, cursor = self._db.scan(
+                "Documents", 
+                cursor=cursor, 
+                view_name=self._table_view, 
+                fields=["title", "link", "CreatedAt"])
             if not batch:
                 break
 
@@ -335,53 +348,54 @@ class WikiDocTracker(HeartbeatManager):
         )
 
         if changes:
-            _logger.info(f"found {len(changes)} changes")
+            _logger.info(f"WikiDocTracker ({self._base_url}): found {len(changes)} changes")
             newest_seen = max(v["timestamp"] for v in changes.values())
-            hits = { title: changes[title] for title in changes if title in self._doc_map }
+            hits = {
+            self._normalize_title(title): changes[title]
+            for title in changes
+            if self._normalize_title(title) in self._doc_map
+        }
             return hits, newest_seen
         return None, utc_end_z
 
     def _update_doc_records(self, doc_updates):
-        """
-        doc_updates: list[{"title": <normalized_title>, "link": <link>, "timestamp": <utc>, "user": <user>}]
-        Placeholder for the DB update step.
-        """
-        if not self._runtime.database_updater:
-            _logger.warning(f"WikiDocTracker: database updater unavailable - skipping document updates")
-            return
         doc_links = [update["link"] for update in doc_updates]
-        _logger.info(f"WikiDocTracker: updating {len(doc_links)} document record(s)")
-        self._runtime.database_updater.update_doc_records(doc_links)
+        _logger.info(f"WikiDocTracker ({self._base_url}): updating {len(doc_links)} document record(s)")
+        self._runtime.update_documents_to_database(doc_links)
 
     def heartbeat(self):
-        if not self._db:
-            _logger.warning(f"WikiDocTracker: database unavailable - skipping heartbeat processing")
+        if not self._db or not self._runtime.database_update_enabled:
+            _logger.warning(f"WikiDocTracker ({self._base_url}): database unavailable - skipping heartbeat processing")
             return
 
         # Incremental doc discovery (slow-changing)
         self._refresh_doc_titles()
 
         # Scan wiki changes window and collect hits
-        last_sentinel = self._get_wiki_sentinel()
-        _logger.info(
-            f"WikiDocTracker: heartbeat start: wiki sentinel={last_sentinel}, "
-            f"docs={len(self._doc_map) if self._doc_map is not None else 0}"
-        )
+        try:
+            last_sentinel = self._get_wiki_sentinel()
+        except ValueError:
+            # No sentinel set yet — start from now and track forward only.
+            last_sentinel = offset_utc(_utc_now_dt(), -self._change_window_s)
+            self._set_wiki_sentinel(last_sentinel)
+            _logger.info(f"WikiDocTracker: initialized wiki sentinel to {last_sentinel}")
+        #_logger.info(
+        #    f"WikiDocTracker: heartbeat start: wiki sentinel={last_sentinel}, "
+        #    f"docs={len(self._doc_map) if self._doc_map is not None else 0}"
+        #)
         hits, next_sentinel = self._get_wiki_changes(last_sentinel)
 
         # Process hits -> update doc records
         if hits:
             doc_updates = []
             for nt, info in hits.items():
-                link = self._doc_map.get(nt)
-                if link:
-                    doc_updates.append({ 
-                        "title": nt, 
-                        "link": link, 
-                        "timestamp": info.get("timestamp"), 
-                        "user":info.get("user") 
-                    })
-                    _logger.info(f"doc changed: {nt} timestamp={info['timestamp']} user={info.get('user')}")
+                doc_updates.append({
+                    "title": nt,
+                    "link": self._link_from_title(nt),
+                    "timestamp": info.get("timestamp"),
+                    "user": info.get("user"),
+                })
+                _logger.info(f"WikiDocTracker ({self._base_url}): doc changed: {nt} timestamp={info['timestamp']} user={info.get('user')}")
 
             if doc_updates:
                 self._update_doc_records(doc_updates)
@@ -389,8 +403,7 @@ class WikiDocTracker(HeartbeatManager):
         # Advance wiki sentinel (monotonic)
         if next_sentinel:
             self._set_wiki_sentinel(next_sentinel)
-            _logger.info(f"WikiDocTracker: scanned window to {next_sentinel}, hits={len(hits) if hits else 0}")
-        else:
-            _logger.info(f"WikiDocTracker: no changes found.")
-        _logger.info("WikiDocTracker: heartbeat finish")
-
+            #_logger.info(f"WikiDocTracker: scanned window to {next_sentinel}, hits={len(hits) if hits else 0}")
+        #else:
+        #    _logger.info(f"WikiDocTracker: no changes found.")
+        #_logger.info("WikiDocTracker: heartbeat finish")

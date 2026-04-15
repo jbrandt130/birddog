@@ -27,7 +27,12 @@ from birddog.wiki import (
     page_title_from_address,
     parent_title,
     )
-from birddog.tracker import PageTracker
+from birddog.tracker import (
+    PageTracker,
+    WikiDocTracker,
+    WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC,
+    UK_WIKISOURCE_DOC_TRACKER_SPEC,
+    )
 from birddog.translate import TranslationManager
 from birddog.excel import ExportManager
 from birddog.store import KeyValueStore
@@ -472,6 +477,13 @@ class Runtime:
             self._database_updater = None
             self._database_update_manager = None
 
+        if _ENABLE_DB_SYNC:
+            self._commons_doc_tracker = WikiDocTracker(self, spec=WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC)
+            self._wikisource_doc_tracker = WikiDocTracker(self, spec=UK_WIKISOURCE_DOC_TRACKER_SPEC)
+        else:
+            self._commons_doc_tracker = None
+            self._wikisource_doc_tracker = None
+
         self._killswitch = KillSwitch(self)
         self.trim_logs()
         self._state = "ready"
@@ -506,6 +518,10 @@ class Runtime:
                 self._database_update_manager.start()
             if self.translation_enabled:
                 self._translation_manager.start()
+            if self._commons_doc_tracker:
+                self._commons_doc_tracker.start()
+            if self._wikisource_doc_tracker:
+                self._wikisource_doc_tracker.start()
             self._killswitch.start()
             self._state = "running"
 
@@ -517,6 +533,10 @@ class Runtime:
             if self._database_update_manager:
                 self._database_update_manager.hold()
             self._translation_manager.hold()
+            if self._commons_doc_tracker:
+                self._commons_doc_tracker.hold()
+            if self._wikisource_doc_tracker:
+                self._wikisource_doc_tracker.hold()
             self._state = "paused"
 
     def unpause(self):
@@ -527,6 +547,10 @@ class Runtime:
             if self._database_update_manager:
                 self._database_update_manager.release()
             self._translation_manager.release()
+            if self._commons_doc_tracker:
+                self._commons_doc_tracker.release()
+            if self._wikisource_doc_tracker:
+                self._wikisource_doc_tracker.release()
             self._state = "running"
 
     def lookup_address(self, title):
@@ -590,6 +614,10 @@ class Runtime:
     def update_to_database(self, titles, deep=False):
         if self.database_update_enabled:
             self._database_update_manager.start_update(titles, deep)
+
+    def update_documents_to_database(self, doc_urls):
+        if self.database_update_enabled:
+            self._database_update_manager.start_document_update(doc_urls)
 
     @property
     def active_database_updates(self):
