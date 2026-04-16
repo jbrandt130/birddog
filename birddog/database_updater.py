@@ -850,10 +850,17 @@ class DatabaseUpdater:
         doc_records_changed = False
         doc_links_changed = False
         if doc_urls:
-            doc_records_changed = self.update_doc_records(doc_urls, update_doc_metadata)
+            doc_records = { url: form_document_record(url) for url in doc_urls }
+            doc_records_changed = self._update_doc_records_from_records(
+                doc_records, 
+                update_doc_metadata)
 
             # One lookup for all document IDs, then reuse locally.
-            doc_id_map = self._db.lookup("Documents", doc_urls)
+            # Documents are keyed by canonical link, so canonicalize before lookup
+            # and build a raw-url -> record_id map for use in the loop below.
+            canonical_url_map = {url: record["link"] for url, record in doc_records.items()}
+            canonical_id_map = self._db.lookup("Documents", set(canonical_url_map.values()))
+            doc_id_map = {url: canonical_id_map.get(canonical) for url, canonical in canonical_url_map.items()}
 
             _logger.info(f"Updater {tid}: updating document links")
             tasks = []
@@ -887,61 +894,66 @@ class DatabaseUpdater:
             doc_urls = set(doc_urls)
         if not isinstance(doc_urls, set):
             raise ValueError("doc_urls must be str, squence of str, or set of str")
+        if not doc_urls:
+            return False
 
         tid = threading.get_ident()
 
-        if doc_urls:
-            _logger.info(f"Updater.update_doc_records {tid}: #docs={len(doc_urls)}, metadata update={update_doc_metadata}")
-            doc_records = { url: form_document_record(url) for url in doc_urls}
+        _logger.info(f"Updater.update_doc_records {tid}: #docs={len(doc_urls)}, metadata update={update_doc_metadata}")
+        doc_records = { url: form_document_record(url) for url in doc_urls}
 
-            # collect meta data for known sources
-            if update_doc_metadata:
-                _KNOWN_SOURCES = ("commons", "wikisource")
-                for source in _KNOWN_SOURCES:
-                    subset = [record for record in doc_records.values() if record["source"] == source]
-                    subset_titles = [rec["title"] for rec in subset]
-                    if subset_titles:
-                        metadata_records = _fetch_mediawiki_file_metadata(subset_titles, source)
-                        for record in subset:
-                            metadata_record = metadata_records.get(record["title"])
-                            if metadata_record:
-                                record.update(metadata_record)
-                                record["availability"] = "linked"
-                            else:
-                                _logger.info(f"marking doc url as unlinked: {record['title']}")
-                                record["availability"] = "unlinked"
+        return self._update_doc_records_from_records(
+            doc_records, update_doc_metadata=update_doc_metadata)
 
-            # Single lookup for all document URLs using canonical links
-            canonical_links = {record["link"] for record in doc_records.values()}
-            doc_id_map = self._db.lookup("Documents", canonical_links)
-            existing_doc_ids = [did for did in doc_id_map.values() if did]
-            existing_docs = {
-                rec["Id"]: rec
-                for rec in self._db.read("Documents", existing_doc_ids)
-            } if existing_doc_ids else {}
+    def _update_doc_records_from_records(self, doc_records, update_doc_metadata=True):
+        tid = threading.get_ident()
+        # collect meta data for known sources
+        if update_doc_metadata:
+            _KNOWN_SOURCES = ("commons", "wikisource")
+            for source in _KNOWN_SOURCES:
+                subset = [record for record in doc_records.values() if record["source"] == source]
+                subset_titles = [rec["title"] for rec in subset]
+                if subset_titles:
+                    metadata_records = _fetch_mediawiki_file_metadata(subset_titles, source)
+                    for record in subset:
+                        metadata_record = metadata_records.get(record["title"])
+                        if metadata_record:
+                            record.update(metadata_record)
+                            record["availability"] = "linked"
+                        else:
+                            _logger.info(f"marking doc url as unlinked: {record['title']}")
+                            record["availability"] = "unlinked"
 
-            # Detect changes using pre-fetched data
-            doc_update = []
-            timestamp = str(utc_now_dt().replace(microsecond=0))
-            for record in doc_records.values():
-                rec_id = doc_id_map.get(record["link"])
-                if rec_id:
-                    current_rec = existing_docs[rec_id]
-                    changed = any(
-                        k not in current_rec or current_rec[k] != v
-                        for k, v in record.items()
-                    )
-                    if changed:
-                        record["last_birddog_update"] = timestamp
-                        doc_update.append(record)
-                else:
+        # Single lookup for all document URLs using canonical links
+        canonical_links = {record["link"] for record in doc_records.values()}
+        doc_id_map = self._db.lookup("Documents", canonical_links)
+        existing_doc_ids = [did for did in doc_id_map.values() if did]
+        existing_docs = {
+            rec["Id"]: rec
+            for rec in self._db.read("Documents", existing_doc_ids)
+        } if existing_doc_ids else {}
+
+        # Detect changes using pre-fetched data
+        doc_update = []
+        timestamp = str(utc_now_dt().replace(microsecond=0))
+        for record in doc_records.values():
+            rec_id = doc_id_map.get(record["link"])
+            if rec_id:
+                current_rec = existing_docs[rec_id]
+                changed = any(
+                    k not in current_rec or current_rec[k] != v
+                    for k, v in record.items()
+                )
+                if changed:
                     record["last_birddog_update"] = timestamp
                     doc_update.append(record)
+            else:
+                record["last_birddog_update"] = timestamp
+                doc_update.append(record)
 
-            doc_ids = self._db.write("Documents", doc_update) if doc_update else []
-            doc_records_changed = bool(doc_ids)
-            _logger.info(f"Updater.update_doc_records {tid}: finished")
-
+        doc_ids = self._db.write("Documents", doc_update) if doc_update else []
+        doc_records_changed = bool(doc_ids)
+        _logger.info(f"Updater.update_doc_records {tid}: finished")
         return doc_records_changed
 
     # -------------------------------------------------------------------------
