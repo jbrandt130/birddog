@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, urlunparse, unquote, quote
 from pathlib import PurePosixPath
 import json
+import re
 import threading
 import mwparserfromhell
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -23,6 +24,7 @@ from birddog.wiki import (
     )
 from birddog.utility import (
     new_id,
+    utc_now_dt,
     )
 from birddog.task import TaskManager
 from birddog.fetch import fetch_url
@@ -33,25 +35,6 @@ _logger = get_logger()
 
 # ----------------------------------------------------------------------
 # UTILITY FUNCTIONS
-
-# clear all birddog alerts from given table
-def _clear_alerts(db, table_name, alert = "birddog_alert"):
-    key_field = db.key_field_name(table_name)
-    where = (alert, "is", True)
-    update = []
-    cursor = None
-    while True:
-        batch, cursor = db.scan(table_name, cursor=cursor, where=where)
-        for record in batch:
-            if record.get(alert):
-                update.append({
-                    key_field: record[key_field],
-                    alert: False,
-                })
-        if not cursor:
-            break
-    if update:
-        db.write(table_name, update)
 
 def _normalize_date_string(s):
     return str(datetime.fromisoformat(s.replace("Z", "+00:00")))
@@ -244,7 +227,7 @@ def _form_simple_page_record(title):
     label = page_label(title)
     return {
         "title": title,
-        "url": page_url_from_title(title),
+        "url": normalize_url(page_url_from_title(title)),
         "label": label,
         "level": page_kind(title),
         "seq_label": sequential_page_label(label),
@@ -367,7 +350,7 @@ def _form_page_info_from_title(title):
     }
     record = info["record"]
     record["title"] = _normalize_title(title)
-    record["url"] = page_url_from_title(title)
+    record["url"] = normalize_url(page_url_from_title(title))
     error = raw.get("error")
     if error:
         if error.get("code") == "missingtitle":
@@ -386,6 +369,20 @@ def _form_page_info_from_title(title):
 # ----------------------------------------------------------------------
 # DOCUMENT RECORD UPDATES
 
+_URL_PATH_UNSAFE = re.compile(r'[\x00-\x20\x7f#?]')
+
+def normalize_url(url):
+    """Return a canonical form of a URL suitable for use as a unique identifier.
+
+    - Lowercases scheme and host
+    - Fully decodes percent-encoded path characters (Unicode becomes literal)
+    - Re-encodes only characters that are unsafe in a URL path (control chars, space, # ?)
+    """
+    url = url.strip()
+    parsed = urlparse(url)
+    path = _URL_PATH_UNSAFE.sub(lambda m: quote(m.group(0)), unquote(parsed.path))
+    return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), path, parsed.params, parsed.query, ''))
+
 def form_document_record(url):
     """
     Parse a MediaWiki file URL and return:
@@ -397,9 +394,9 @@ def form_document_record(url):
 
     If source == "other", title will be None and link is the original URL.
     """
-    url = url.strip()
+    url = normalize_url(url)
     parsed = urlparse(url)
-    host = parsed.netloc.lower()
+    host = parsed.netloc
     path = parsed.path
 
     # Must be a /wiki/ URL to extract a title
@@ -414,16 +411,16 @@ def form_document_record(url):
             "link": url,
         }
 
-    # Extract and decode title
-    quoted_title = path[len("/wiki/"):]
-    title = unquote(quoted_title)
+    # Extract and decode title; normalize spaces to underscores for the canonical link
+    title = unquote(path[len("/wiki/"):])
+    canonical_title = title.replace(" ", "_")
 
     # Wikimedia Commons
     if host == "commons.wikimedia.org":
         return {
             "title": title,
             "source": "commons",
-            "link": f"https://commons.wikimedia.org/wiki/{quoted_title}",
+            "link": f"https://commons.wikimedia.org/wiki/{canonical_title}",
         }
 
     # Wikisource (any language subdomain)
@@ -431,7 +428,7 @@ def form_document_record(url):
         return {
             "title": title,
             "source": "wikisource",
-            "link": f"https://{host}/wiki/{quoted_title}",
+            "link": f"https://{host}/wiki/{canonical_title}",
         }
 
     # Anything else
@@ -631,13 +628,6 @@ class DatabaseUpdater:
         self._db = db if db else Database()
 
     # -------------------------------------------------------------------------
-    # UTILITY
-
-    def clear_alerts(self):
-        _clear_alerts(self._db, "Pages")
-        _clear_alerts(self._db, "Documents")
-
-    # -------------------------------------------------------------------------
     # PAGE AND DOCUMENT TABLE UPDATES
 
     def _get_page_info(self, page_titles):
@@ -690,8 +680,9 @@ class DatabaseUpdater:
                 if "native_description" in changed_fields:
                     update[i]["description"] = ""
             if set_alert:
+                timestamp = str(utc_now_dt().replace(microsecond=0))
                 for rec in update:
-                    rec["birddog_alert"] = True
+                    rec["last_birddog_update"] = timestamp
             _logger.info(f"_update_page_records_with_cache: write {len(update)} records")
             return self._db.write("Pages", update)
 
@@ -920,8 +911,9 @@ class DatabaseUpdater:
                                 _logger.info(f"marking doc url as unlinked: {record['title']}")
                                 record["availability"] = "unlinked"
 
-            # Single lookup for all document URLs
-            doc_id_map = self._db.lookup("Documents", doc_urls)
+            # Single lookup for all document URLs using canonical links
+            canonical_links = {record["link"] for record in doc_records.values()}
+            doc_id_map = self._db.lookup("Documents", canonical_links)
             existing_doc_ids = [did for did in doc_id_map.values() if did]
             existing_docs = {
                 rec["Id"]: rec
@@ -930,6 +922,7 @@ class DatabaseUpdater:
 
             # Detect changes using pre-fetched data
             doc_update = []
+            timestamp = str(utc_now_dt().replace(microsecond=0))
             for record in doc_records.values():
                 rec_id = doc_id_map.get(record["link"])
                 if rec_id:
@@ -939,10 +932,10 @@ class DatabaseUpdater:
                         for k, v in record.items()
                     )
                     if changed:
-                        record["birddog_alert"] = True
+                        record["last_birddog_update"] = timestamp
                         doc_update.append(record)
                 else:
-                    record["birddog_alert"] = True
+                    record["last_birddog_update"] = timestamp
                     doc_update.append(record)
 
             doc_ids = self._db.write("Documents", doc_update) if doc_update else []

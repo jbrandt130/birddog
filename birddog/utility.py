@@ -18,6 +18,9 @@ from datetime import datetime, timezone
 from birddog.log import get_logger
 _logger = get_logger()
 
+def utc_now_dt():
+    return datetime.now(timezone.utc)
+
 # INITIALIZATION --------------------------------------------------------------
 
 # global constants

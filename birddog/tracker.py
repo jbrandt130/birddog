@@ -18,7 +18,7 @@ from birddog.wiki import (
     get_recent_changes_v2,
     )
 from birddog.store import KeyValueStore
-from birddog.utility import json_size, HeartbeatManager
+from birddog.utility import json_size, HeartbeatManager, utc_now_dt
 from birddog.log import get_logger, LogService
 _logger = get_logger()
 
@@ -174,8 +174,6 @@ def _format_utc_z(dt):
     dt = _parse_utc(dt)
     return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
-def _utc_now_dt():
-    return datetime.now(timezone.utc)
 
 def offset_utc(ts, seconds):
     dt = _parse_utc(ts)
@@ -336,7 +334,7 @@ class WikiDocTracker(HeartbeatManager):
         self._ensure_doc_map()
 
         start_dt = _parse_utc(utc_start)
-        end_dt = min(start_dt + timedelta(seconds=self._change_window_s), _utc_now_dt())
+        end_dt = min(start_dt + timedelta(seconds=self._change_window_s), utc_now_dt())
         utc_start_z = _format_utc_z(start_dt)
         utc_end_z = _format_utc_z(end_dt)
 
@@ -376,7 +374,7 @@ class WikiDocTracker(HeartbeatManager):
             last_sentinel = self._get_wiki_sentinel()
         except ValueError:
             # No sentinel set yet — start from now and track forward only.
-            last_sentinel = offset_utc(_utc_now_dt(), -self._change_window_s)
+            last_sentinel = offset_utc(utc_now_dt(), -self._change_window_s)
             self._set_wiki_sentinel(last_sentinel)
             _logger.info(f"WikiDocTracker: initialized wiki sentinel to {last_sentinel}")
         #_logger.info(
