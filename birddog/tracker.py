@@ -254,7 +254,7 @@ class WikiDocTracker(HeartbeatManager):
         """
         inserts = 0
         for rec in records:
-            link = rec.get("link", "")
+            link = rec.get("url", "")
             if not link.startswith(self._base_url):
                 continue
 
@@ -291,7 +291,7 @@ class WikiDocTracker(HeartbeatManager):
                 "Documents", 
                 cursor=cursor, 
                 view_name=self._table_view, 
-                fields=["title", "link", "CreatedAt"])
+                fields=["title", "url", "CreatedAt"])
             if not batch:
                 break
 
@@ -357,7 +357,7 @@ class WikiDocTracker(HeartbeatManager):
         return None, utc_end_z
 
     def _update_doc_records(self, doc_updates):
-        doc_links = [update["link"] for update in doc_updates]
+        doc_links = [update["url"] for update in doc_updates]
         _logger.info(f"WikiDocTracker ({self._base_url}): updating {len(doc_links)} document record(s)")
         self._runtime.update_documents_to_database(doc_links)
 
@@ -389,7 +389,7 @@ class WikiDocTracker(HeartbeatManager):
             for nt, info in hits.items():
                 doc_updates.append({
                     "title": nt,
-                    "link": self._link_from_title(nt),
+                    "url": self._link_from_title(nt),
                     "timestamp": info.get("timestamp"),
                     "user": info.get("user"),
                 })

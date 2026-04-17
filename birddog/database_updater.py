@@ -81,8 +81,8 @@ def _get_linked_doc_urls(db, title):
     doc_ids = db.get_links("Pages", "doc_links", page_id)
     if not doc_ids:
         return []
-    doc_recs = db.read("Documents", doc_ids, fields="link")
-    result = [rec.get("link") for rec in doc_recs if rec]
+    doc_recs = db.read("Documents", doc_ids, fields="url")
+    result = [rec.get("url") for rec in doc_recs if rec]
     return [r for r in result if r]
 
 def _lookup_pages(db, titles):
@@ -389,7 +389,7 @@ def form_document_record(url):
       {
         "title": "File:...",
         "source": "commons" | "wikisource" | "other",
-        "link": canonical_link_or_original
+        "url": canonical_link_or_original
       }
 
     If source == "other", title will be None and link is the original URL.
@@ -408,7 +408,7 @@ def form_document_record(url):
         return {
             "title": title,
             "source": "other",
-            "link": url,
+            "url": url,
         }
 
     # Extract and decode title; normalize spaces to underscores for the canonical link
@@ -420,7 +420,7 @@ def form_document_record(url):
         return {
             "title": title,
             "source": "commons",
-            "link": f"https://commons.wikimedia.org/wiki/{canonical_title}",
+            "url": f"https://commons.wikimedia.org/wiki/{canonical_title}",
         }
 
     # Wikisource (any language subdomain)
@@ -428,14 +428,14 @@ def form_document_record(url):
         return {
             "title": title,
             "source": "wikisource",
-            "link": f"https://{host}/wiki/{canonical_title}",
+            "url": f"https://{host}/wiki/{canonical_title}",
         }
 
     # Anything else
     return {
         "title": title,
         "source": "other",
-        "link": url,
+        "url": url,
     }
 
 def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumbnail_width=300):
@@ -858,7 +858,7 @@ class DatabaseUpdater:
             # One lookup for all document IDs, then reuse locally.
             # Documents are keyed by canonical link, so canonicalize before lookup
             # and build a raw-url -> record_id map for use in the loop below.
-            canonical_url_map = {url: record["link"] for url, record in doc_records.items()}
+            canonical_url_map = {url: record["url"] for url, record in doc_records.items()}
             canonical_id_map = self._db.lookup("Documents", set(canonical_url_map.values()))
             doc_id_map = {url: canonical_id_map.get(canonical) for url, canonical in canonical_url_map.items()}
 
@@ -925,7 +925,7 @@ class DatabaseUpdater:
                             record["availability"] = "unlinked"
 
         # Single lookup for all document URLs using canonical links
-        canonical_links = {record["link"] for record in doc_records.values()}
+        canonical_links = {record["url"] for record in doc_records.values()}
         doc_id_map = self._db.lookup("Documents", canonical_links)
         existing_doc_ids = [did for did in doc_id_map.values() if did]
         existing_docs = {
@@ -937,7 +937,7 @@ class DatabaseUpdater:
         doc_update = []
         timestamp = str(utc_now_dt().replace(microsecond=0))
         for record in doc_records.values():
-            rec_id = doc_id_map.get(record["link"])
+            rec_id = doc_id_map.get(record["url"])
             if rec_id:
                 current_rec = existing_docs[rec_id]
                 changed = any(
