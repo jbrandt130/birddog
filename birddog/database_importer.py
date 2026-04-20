@@ -526,11 +526,18 @@ def general_page_label(title, wiki_spreadsheet):
     else:
         return title
 
-def get_page_url(title, url, wiki_spreadsheet):
-    if wiki_spreadsheet:
-        return page_url_from_title(title)
+def get_page_url(title: str, url: str, change_url: bool, import_message: str = "")->tuple[str,str]:
+    if change_url:
+        changed_url = page_url_from_title(title)
+        if changed_url != url:
+            mess = f"URL changed from {url} to {changed_url}"
+            if import_message == "":
+                import_message = mess
+            else:
+                import_message = import_message + "; " + mess
+        return changed_url, import_message
     else:
-        return url
+        return url, import_message
 
 
 def count_fund_opus_attributes(sheet, end_col):
@@ -649,9 +656,10 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, title, url,
         return
 
     label = general_page_label(title, wiki_spreadsheet)
+    url, import_message = get_page_url(title, url, wiki_spreadsheet)
     add_page({
         "title": title,
-        "url": get_page_url(title, url, wiki_spreadsheet),
+        "url": url,
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "fond",
@@ -662,6 +670,7 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, title, url,
         "availability": availability,
         "source_type": source_type,
         "parent": archive_title,
+        "import_message": import_message,
         "comments": comments,
     }, page_table)
 
@@ -745,23 +754,32 @@ def process_fond_sheet(ws, wiki_spreadsheet, fund_name, change_date_col, ref_dat
         raise ValueError(f"No '{FIRST_FUND_HDR}' header found in sheet {parent_name}")
 
     for r in range(hdr_row + 1, ws.max_row + 1):
-        cell = ws[f"A{r}"]
-        if str(cell.value).startswith("="):
+        opus_num_cell = ws[f"A{r}"]
+        opus_descr_cell = ws[f"B{r}"]
+        if str(opus_num_cell.value).startswith("="):
             break
-        if cell.value:
-            title = get_page_title_from_link(cell, wiki_spreadsheet, fund_name)
-            if not title:
-                _logger.warning(f"cannot determine page title: sheet='{ws.title}', row={r} (skipping)")
+        if opus_num_cell.value:
+            curr_import_message = ""
+            availability = "linked" #default
+            raw_url, in_first_cell = get_url_from_2_cells(opus_num_cell, opus_descr_cell)
+            if raw_url == "":
+                # no link found - cannot proceed
+                _logger.warning(f"No link in sheet='{ws.title}', opus {get_cell_value(opus_num_cell)} - skipping")
                 continue
-            label = general_page_label(title, wiki_spreadsheet)
-            raw_url = get_cell_link(cell)
-            url = get_page_url(title, raw_url, wiki_spreadsheet)
-            if get_cell_link(ws[f"D{r}"]) is None:
+            if not in_first_cell:
                 availability = "unlinked"
-            else:
-                availability = "linked"
+                _logger.warning(f"Opus {get_cell_value(opus_num_cell)} in sheet='{ws.title}', "
+                                f"row={r} has no page but has a document")
+                curr_import_message = "Document without a page"
+            title = get_page_title_from_link(opus_num_cell, wiki_spreadsheet, fund_name)
+            if not title:
+                _logger.warning(f"cannot determine page title: sheet='{ws.title}', row={r}  - skipping")
+                continue
+
+            url, curr_import_message = get_page_url(title, raw_url, wiki_spreadsheet, curr_import_message)
+            label = general_page_label(title, wiki_spreadsheet)
             add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp,
-                          source_type, parent_name, "opus", availability)
+                          source_type, parent_name, "opus", availability, curr_import_message)
     return page_table
 
 def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
@@ -829,8 +847,19 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
         if raw_url == "":
             # no link found - cannot proceed
             continue
-        if not in_first_cell and additional_column:
-            curr_import_message = "Other case numbering"
+        if not in_first_cell and case_amount_column != case_num_col:
+            case_amount_cell = ws[f"{case_amount_column}{r}"]
+            if case_amount_cell.hyperlink is not None:
+                #CDIAK-wiki-20260409.xlsx sheet CDIAK 1164-1 contains old and new case numbering and the case link
+                # may be in both columns
+                hyperlink = case_amount_cell.hyperlink
+                raw_url = unquote(hyperlink.target)
+                in_first_cell = True
+        if not in_first_cell:
+            if additional_column:
+                curr_import_message = "Other case numbering"
+            else:
+                curr_import_message = "Document without a page"
 
         if case_num_cell.value:
             title = get_case_title(raw_url, curr_parent_title, opus_name, case_num_cell, wiki_spreadsheet,
@@ -864,7 +893,8 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                     title = modified_title
                 _logger.warning(f"{curr_import_message}")
 
-            url = get_page_url(title, raw_url, wiki_spreadsheet)
+            url, curr_import_message = get_page_url(title, raw_url,
+                                                    wiki_spreadsheet and not in_first_cell, curr_import_message)
             if level == "volume":
                 add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, source_type, opus_title,
                               level, get_cell_value(ws[f"D{r}"]), curr_import_message)
@@ -1155,7 +1185,7 @@ def process_dir(dir_path):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/ImportProblems/DAHMO-K-wiki-20250820.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/CDIAK-wiki-20260409.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DAOO-R-wiki-20260327.xlsx"
     import_spreadsheet(filepath)
 #   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
 #   process_dir(dir_path)
