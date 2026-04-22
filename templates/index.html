@@ -217,8 +217,11 @@
       <div class="mb-3">
         <input type="email" class="form-control" id="loginEmail" placeholder="Email" required>
       </div>
-      <div class="mb-3">
-        <input type="password" class="form-control" id="loginPassword" placeholder="Password" required>
+      <div class="mb-3 position-relative">
+        <input type="password" class="form-control pe-5" id="loginPassword" placeholder="Password" required>
+        <span id="toggleLoginPassword" style="position:absolute;top:50%;right:10px;transform:translateY(-50%);cursor:pointer;color:#6c757d;">
+          <i class="bi bi-eye" id="toggleLoginPasswordIcon"></i>
+        </span>
       </div>
       <button type="submit" class="btn btn-primary">Login</button>
       <div class="mt-2">

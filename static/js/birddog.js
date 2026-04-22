@@ -1582,6 +1582,15 @@ async function on_loaded() {
         });
     }
 
+    // show/hide login password toggle
+    document.getElementById('toggleLoginPassword')?.addEventListener('click', () => {
+        const input = document.getElementById('loginPassword');
+        const icon = document.getElementById('toggleLoginPasswordIcon');
+        const showing = input.type === 'text';
+        input.type = showing ? 'password' : 'text';
+        icon.className = showing ? 'bi bi-eye' : 'bi bi-eye-slash';
+    });
+
     // signup form submit button
     const signup = document.getElementById('signupForm');
     if (signup) {
