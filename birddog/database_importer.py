@@ -157,7 +157,7 @@ def get_case_title(url, curr_parent_title, opus_name, cell, wiki_spreadsheet,
 def get_cell_link(cell):
     return unquote(cell.hyperlink.target) if cell.hyperlink else ""
 
-def get_cell_value(cell):
+def get_cell_value(cell, capitalized=False):
     value = cell.value
     if value is None:
         return value
@@ -165,6 +165,10 @@ def get_cell_value(cell):
         value = int(value)
     if not isinstance(value, str):
         value = str(value)
+    value = value.strip()
+    if capitalized:
+        value = value.upper()
+
     return value
 
 def get_cell_link_or_str(cell):
@@ -338,7 +342,7 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str]
     return [], ""
 
 
-def is_series_of_case_numbers(s: str) -> tuple[bool, int, bool]:
+def is_series_of_case_numbers(s: str, ignore_parts: bool) -> tuple[bool, int, bool]:
     """Case number should include digits but may also include letters.
     Case numbers are separated by hyphens."""
     inconsistent_parts = False
@@ -363,6 +367,10 @@ def is_series_of_case_numbers(s: str) -> tuple[bool, int, bool]:
             integers_and_letters_found = True
             continue
         return False, num_parts, inconsistent_parts
+
+    if ignore_parts:
+        return True, 1, False
+
     inconsistent_parts = only_integers_found and integers_and_letters_found
     if inconsistent_parts:
         #DAOO-D-wiki-20260413 sheet DAOO 1-191 contains case number 1-T2
@@ -377,10 +385,9 @@ def find_header_in_row(ws, row, start_col, end_col, header):
     end_ord = ord(end_col)
     for i in range(start_ord, end_ord + 1):
         cell_addr = f"{chr(i)}{row}"
-        contents = get_cell_value(ws[cell_addr])
+        contents = get_cell_value(ws[cell_addr], True)
         if contents is None:
             continue
-        contents = contents.upper()
         if contents == header:
             return i
     return None
@@ -392,10 +399,9 @@ def find_header_in_col(ws, start_row, end_row, col, headers):
     for header in headers:
         for i in range(start_row, end_row + 1):
             cell_addr = f"{col}{i}"
-            contents = get_cell_value(ws[cell_addr])
+            contents = get_cell_value(ws[cell_addr], True)
             if contents is None:
                 continue
-            contents = contents.upper()
             if contents == header:
                 return i, header
             if header == FIRST_OPUS_HDR4 and header in contents:
@@ -552,10 +558,11 @@ def count_fund_opus_attributes(sheet, end_col):
     for i in range(start_ord, end_col):
         cell_addr = f"{chr(i)}{row}"
         contents = get_cell_value(sheet[cell_addr])
-        if contents is None:
-            continue
-        num_nonempty_cells += 1
-        fund_opus_attributes.append(str(contents))
+        if contents is not None and any(ch.isdigit() for ch in contents):
+            #in DAHO-D-wiki-20260324.xlsx sheet "DAHO D wiki fund list" we have text
+            # "to be updated when BirdDog not adding incorect links"
+            num_nonempty_cells += 1
+            fund_opus_attributes.append(str(contents))
     return num_nonempty_cells, fund_opus_attributes
 
 def sheet_contains_volumes(ws):
@@ -617,7 +624,7 @@ def case_like_headers_in_row(ws, opus_title, opus_name):
     if header_found == FIRST_OPUS_HDR3:
         #in DAHMO-R-wiki-20260415.xlsx sheet R-6193-12 cases 5341-10422 there is an extra column "Other case #"
         cell_addr = f"{"B"}{hdr_row}"
-        contents = get_cell_value(ws[cell_addr]).upper()
+        contents = get_cell_value(ws[cell_addr], True)
         if SECOND_VOLUME_HDR == contents:
             additional_column = True
 
@@ -823,6 +830,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
         "source_type": source_type,
     }, page_table)
 
+    usual_case_number_found = False
     for r in range(hdr_row + 1, ws.max_row + 1):
         curr_source_type = source_type
         case_num_cell = ws[f"{case_num_col}{r}"]
@@ -831,17 +839,21 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
         if str(case_amount_cell.value).startswith("="):
             break
         curr_import_message = ""
-        case_number_series, num_parts, inconsistent_parts = is_series_of_case_numbers(str(case_num_cell.value))
+        ignore_parts = usual_case_number_found and not possible_hyphen_in_case_num
+        case_number_series, num_parts, inconsistent_parts = is_series_of_case_numbers(str(case_num_cell.value), ignore_parts)
         if not case_number_series:
             if possible_hyphen_in_case_num:
                 curr_import_message = "Old case numbering"
                 case_num_cell = ws[f"{old_numbering_column}{r}"]
-                case_number_series, num_parts, inconsistent_parts = is_series_of_case_numbers(str(case_num_cell.value))
+                case_number_series, num_parts, inconsistent_parts = is_series_of_case_numbers(str(case_num_cell.value),
+                                                                                              ignore_parts)
             if not case_number_series:
                 # sometimes there is some text in the A column, like "INFORMATION AND INSTRUCTIONAL DEPARTMENT" -
                 # we skip such lines
                 continue
         level = "volume" if contains_volumes or num_parts == 2 else "case"
+        if num_parts == 1:
+            usual_case_number_found = True
 
         raw_url, in_first_cell = get_url_from_2_cells(case_num_cell, case_descr_cell)
         if raw_url == "":
@@ -896,8 +908,14 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
             url, curr_import_message = get_page_url(title, raw_url,
                                                     wiki_spreadsheet and not in_first_cell, curr_import_message)
             if level == "volume":
+                if possible_hyphen_in_case_num:
+                    availability = get_cell_value(ws[f"D{r}"])
+                else:
+                    availability = "linked"
+                if "" == curr_import_message:
+                    curr_import_message = f"Volume in {title}"
                 add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, source_type, opus_title,
-                              level, get_cell_value(ws[f"D{r}"]), curr_import_message)
+                              level, availability, curr_import_message)
             else:
                 comments_cell_addr = f"{chr(comments_col)}{r}" #default f"G{r}"
                 processor_cell_addr1 = f"{chr(comments_col+ 2)}{r}" #default f"I{r}"
@@ -917,10 +935,11 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                     content_code_col_offs = content_code_col_offs + 1
                     process_code_col_offs = process_code_col_offs + 1
 
-                process_code = get_cell_value(ws[f"{chr(ord(case_num_col) + process_code_col_offs)}{r}"])  # F
+                process_code = get_cell_value(ws[f"{chr(ord(case_num_col) + process_code_col_offs)}{r}"], True)  # F
                 # Remove trailing tab ('\\t') from the given string if present.
-                if process_code is not None and process_code.endswith('\t'):
-                    process_code = process_code[:-1]
+                if process_code is not None:
+                    if process_code.endswith('\t'):
+                        process_code = process_code[:-1]
 
                 add_page({
                     "title": title,
@@ -935,8 +954,8 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                     "source_type": curr_source_type,
                     "parent": opus_title,
                     "doc_links": get_cell_link(ws[f"{chr(ord(case_num_col) + 1)}{r}"]),#B
-                    "doc_type": get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"]),#D
-                    "content_code": get_cell_value(ws[f"{chr(ord(case_num_col) + content_code_col_offs)}{r}"]),#E
+                    "doc_type": get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True),#D
+                    "content_code": get_cell_value(ws[f"{chr(ord(case_num_col) + content_code_col_offs)}{r}"], True),#E
                     "process_code": process_code,
                     "import_message": curr_import_message,
                     #the columns for the following cells are not fixed
@@ -1054,7 +1073,7 @@ def import_spreadsheet(sw_filepath):
                 db.encode_records("Pages", [ page_payload ])
                 break
             except InvalidFieldValue as err:
-                _logger.error(f"malformed value: {err}")
+                _logger.error(f"malformed value: {err}, title: {page_payload["title"]}")
                 if not err.value:
                     abort_page = True
                     break
@@ -1122,7 +1141,7 @@ def import_spreadsheet(sw_filepath):
                 doc_payload = {}
                 for doc_field in doc_only_fields_all_caps:
                     if doc_field in doc_payload and doc_payload[doc_field] is not None:
-                        doc_payload[doc_field] = doc_payload[doc_field].rstrip().upper()
+                        doc_payload[doc_field] = doc_payload[doc_field].strip().upper()
                 for joint_field in doc_and_page_fields:
                     if joint_field in page:
                         doc_payload[joint_field] = page[joint_field]
@@ -1185,7 +1204,7 @@ def process_dir(dir_path):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/ImportProblems/DAHMO-K-wiki-20250820.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DAOO-R-wiki-20260327.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DAKO-D-general-wiki-20260417.xlsx"
     import_spreadsheet(filepath)
 #   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
 #   process_dir(dir_path)
