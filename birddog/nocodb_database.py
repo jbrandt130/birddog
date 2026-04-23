@@ -218,7 +218,10 @@ def _encode_record(table_schema, record):
                 if not validator:
                     raise SchemaError(f"Unsupported type '{field_type}' for field '{field_name}'")
                 if value is not None and not validator(value, field_spec):
-                    raise InvalidFieldValue(field_name, value)
+                    name = field_name
+                    if "title" in record and record["title"]:
+                        name = f"{field_name} in {record['title']}"
+                    raise InvalidFieldValue(name, value)
                 encode = _field_encoder.get(field_type)
                 if encode:
                     value = encode(value)
