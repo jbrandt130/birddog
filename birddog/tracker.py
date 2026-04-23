@@ -1,6 +1,7 @@
 # (c) 2025 Jonathan Brandt
 # Licensed under the MIT License. See LICENSE file in the project root.
 
+import hashlib
 import json
 import os
 from urllib.parse import unquote
@@ -240,6 +241,10 @@ class WikiDocTracker(HeartbeatManager):
     def _normalize_title(self, title):
         return unquote(title).replace(" ", "_")
 
+    def _kv_key(self, normalized_title):
+        # form a fixed length key from the title, since raw title can exceed DDB key length limit
+        return hashlib.sha256(normalized_title.encode("utf-8")).hexdigest()
+
     def _link_from_title(self, normalized_title):
         return f"{self._base_url}/wiki/{normalized_title}"
 
@@ -263,12 +268,13 @@ class WikiDocTracker(HeartbeatManager):
                 continue
 
             nt = self._normalize_title(title)
+            kv_key = self._kv_key(nt)
 
-            if nt in self._doc_map:
+            if kv_key in self._doc_map:
                 continue
 
-            self._kv.insert(self._doc_kv_namespace, nt, "")
-            self._doc_map.add(nt)
+            self._kv.insert(self._doc_kv_namespace, kv_key, "")
+            self._doc_map.add(kv_key)
             inserts += 1
 
         if inserts:
@@ -349,10 +355,10 @@ class WikiDocTracker(HeartbeatManager):
             _logger.info(f"WikiDocTracker ({self._base_url}): found {len(changes)} changes")
             newest_seen = max(v["timestamp"] for v in changes.values())
             hits = {
-            self._normalize_title(title): changes[title]
-            for title in changes
-            if self._normalize_title(title) in self._doc_map
-        }
+                self._normalize_title(title): changes[title]
+                for title in changes
+                if self._kv_key(self._normalize_title(title)) in self._doc_map
+            }
             return hits, newest_seen
         return None, utc_end_z
 
