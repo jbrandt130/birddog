@@ -975,6 +975,7 @@ def normalize_process_code(process_code: str | None, import_message: str) -> tup
         error_code = "E"
         if process_code not in valid_options:
             message = f"{process_code} is not a valid process code, changed to {error_code}"
+            _logger.warning(message)
             if import_message is not None and import_message.strip() != "":
                 import_message = f"{import_message}; {message}"
             else:
@@ -1220,8 +1221,8 @@ def process_dir(dir_path):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/ImportProblems/DAHMO-K-wiki-20250820.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DAVIO-D-wiki+other-20260422.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/ImportProblems/DAVO-archives+AK-20260213.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAHMO-K-wiki-20250820.xlsx"
     import_spreadsheet(filepath)
-#   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
+#   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
 #   process_dir(dir_path)
