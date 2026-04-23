@@ -936,10 +936,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                     process_code_col_offs = process_code_col_offs + 1
 
                 process_code = get_cell_value(ws[f"{chr(ord(case_num_col) + process_code_col_offs)}{r}"], True)  # F
-                # Remove trailing tab ('\\t') from the given string if present.
-                if process_code is not None:
-                    if process_code.endswith('\t'):
-                        process_code = process_code[:-1]
+                process_code, curr_import_message = normalize_process_code(process_code, curr_import_message)
 
                 add_page({
                     "title": title,
@@ -966,6 +963,26 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                 }, page_table)
 
     return page_table
+
+
+def normalize_process_code(process_code: str | None, import_message: str) -> tuple[str, str]:
+    # Remove trailing tab ('\\t') from the given string if present.
+    if process_code is not None:
+        if process_code.endswith('\t'):
+            process_code = process_code[:-1]
+
+        valid_options = ["C1", "C2", "C3", "DP", "FX", "NO", "P1", "P2"]
+        error_code = "E"
+        if process_code not in valid_options:
+            message = f"{process_code} is not a valid process code, changed to {error_code}"
+            if import_message is not None and import_message.strip() != "":
+                import_message = f"{import_message}; {message}"
+            else:
+                import_message = message
+            process_code = error_code
+
+    return process_code, import_message
+
 
 def process_worksheets(worksheets, wiki_spreadsheet, archive_name, page_table=None):
     if not page_table:
@@ -1204,7 +1221,7 @@ def process_dir(dir_path):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/ImportProblems/DAHMO-K-wiki-20250820.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DAKO-D-general-wiki-20260417.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki/DAVIO-D-wiki+other-20260422.xlsx"
     import_spreadsheet(filepath)
 #   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/wiki"
 #   process_dir(dir_path)
