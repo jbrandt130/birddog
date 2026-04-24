@@ -189,13 +189,13 @@ _DOC_TABLE_SENTINEL = "DOC_SENTINEL"
 WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC = {
     "base_url": "https://commons.wikimedia.org",
     "namespace": "File",
-    "table_view": "WikiDocTracker: commons.wikimedia.org",
+    "table_view": "BD:WDT:commons.wikimedia.org",
 }
 
 UK_WIKISOURCE_DOC_TRACKER_SPEC = {
     "base_url": "https://uk.wikisource.org",
     "namespace": "Файл",
-    "table_view": "WikiDocTracker: uk.wikisource.org",
+    "table_view": "BD:WDT:uk.wikisource.org",
 }
 
 class WikiDocTracker(HeartbeatManager):
@@ -302,8 +302,11 @@ class WikiDocTracker(HeartbeatManager):
                 break
 
             if newest_creation_date is None:
-                newest_creation_date = max(rec["CreatedAt"] for rec in batch if rec.get("CreatedAt"))
-
+                try:
+                    newest_creation_date = max(rec["CreatedAt"] for rec in batch if rec.get("CreatedAt"))
+                except ValueError:
+                    # if no new creation date, then just leave the value as None
+                    pass
             self._store_relevant_titles(batch)
 
             # Stop when we reach records older than previously-seen newest doc.

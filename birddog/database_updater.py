@@ -959,10 +959,10 @@ class DatabaseUpdater:
     # -------------------------------------------------------------------------
     # TRANSLATION SUPPORT
 
-    # collect all untranslated descriptions from Pages table. Depends on predefined view "Untranslated Pages"
+    # collect all untranslated descriptions from Pages table. Depends on predefined view "BD:Untranslated"
     def _collect_translations(self):
         table_name = "Pages"
-        view_name = "Untranslated Pages"
+        view_name = "BD:Untranslated"
         key_field = self._db.key_field_name(table_name)
         fields = [key_field, "description", "native_description"]
         translations = []
