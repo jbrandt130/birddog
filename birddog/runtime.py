@@ -110,6 +110,12 @@ class PageLRU:
             self._lru[title] = page
             return page
 
+    def evict(self, title):
+        title = canonicalize_title(title)
+        page = self._lru.pop(title, None)
+        if page:
+            page.evict_from_cache()
+
 # ----------------------------------------------------------------------------
 # Update watcher
 
@@ -363,24 +369,34 @@ class PageUpdateManager(HeartbeatManager):
 
         error_count = 0
         for title, update in pending_updates:
-            # This page may have just been created.
-            # If so, the parent's link status to this page needs to be
-            # changed to indicate that the this page now exists.
             try:
+                update = json.loads(update)
                 try:
                     parent_page_title = parent_title(title)
                 except ValueError as err:
                     _logger.error(f"PageUpdateManager: unable to find parent of {title}. Skipping.")
                     parent_page_title = None
-                if parent_page_title:
-                    parent = self._runtime.lookup_by_title(parent_page_title)
-                    update = json.loads(update)
-                    if parent and parent.lastmod and parent.lastmod < update["timestamp"]:
-                        # child has been updated - update child link status
-                        try:
-                            parent.set_child_link_status(title, True)
-                        except ValueError:
-                            _logger.error(f"Unable to update child link status for child {title}. Skipping...")
+
+                if update.get("action") == "delete":
+                    _logger.info(f"PageUpdateManager: page deleted: {title}")
+                    page_lru = self._runtime.page_lru
+                    page_lru.evict(title)
+                    if parent_page_title:
+                        _logger.info(f"PageUpdateManager: evicting parent after deletion: {parent_page_title}")
+                        page_lru.evict(parent_page_title)
+                else:
+                    # This page may have just been created or edited.
+                    # If so, the parent's link status to this page needs to be
+                    # changed to indicate that the this page now exists.
+                    if parent_page_title:
+                        parent = self._runtime.lookup_by_title(parent_page_title)
+                        if parent and parent.lastmod and parent.lastmod < update["timestamp"]:
+                            # child has been updated - update child link status
+                            try:
+                                parent.set_child_link_status(title, True)
+                            except ValueError:
+                                _logger.error(f"Unable to update child link status for child {title}. Skipping...")
+
                 # finished with this title
                 self._kv_store.remove(self._PENDING_TITLE_UPDATES, title)
             except (ValueError,  FetchUrlFailError) as err:

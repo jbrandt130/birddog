@@ -15,7 +15,7 @@ from birddog.utility import (
     form_text_item,
     is_linked
     )
-from birddog.cache import load_cached_object, save_cached_object, CacheMissError
+from birddog.cache import load_cached_object, save_cached_object, remove_cached_object, CacheMissError
 from birddog.wiki import (
     ARCHIVE_BASE,
     SUBARCHIVES,
@@ -131,6 +131,10 @@ class Page:
             path = f'{self._cache_path}/{self.lastmod}.json'
             #_logger.info(f"Saving page to cache: {self.name}[{self.lastmod}]")
             save_cached_object(self._page, path)
+
+    def evict_from_cache(self):
+        if self.lastmod:
+            remove_cached_object(f'{self._cache_path}/{self.lastmod}.json')
 
     def history(self, limit=None, cutoff_date=None):
         # needs to work if self._page is None

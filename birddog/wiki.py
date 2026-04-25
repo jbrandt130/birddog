@@ -1289,7 +1289,7 @@ def check_page_updates(archive, cutoff_date):
     batch_size = 50
     offset = 0
     while True:
-        _logger.info(f'check_page_updates: {archive.name}, {batch_size}, {offset}')
+        #_logger.info(f'check_page_updates: {archive.name}, {batch_size}, {offset}')
         changes = archive.latest_changes(limit=batch_size, offset=offset)
         change_list += changes
         if not changes or changes[-1]["lastmod"] < cutoff_date:
@@ -1303,63 +1303,7 @@ def check_page_updates(archive, cutoff_date):
 # -------------------------------------------------------------------------------
 # Get most recent page modification dates within given namespace
 
-def get_recent_changes(namespace=WIKI_NAMESPACE_ID, cutoff_date=None, utc_cutoff=None, limit=500, sleep_time=0.1, base=ARCHIVE_BASE):
-    """
-    Collects the latest modification timestamp for each page in a given namespace,
-    going back to the specified cutoff date.
-
-    Args:
-        namespace (int): Namespace number (e.g. 0 = main, 6 = file, etc.)
-        cutoff_date (str): timestamp
-        limit (int): Max results per request (max is 500 for users, 5000 for bots)
-        sleep_time (float): Seconds to sleep between requests to avoid throttling
-
-    Returns:
-        dict: Mapping from page title to latest modification timestamp (ISO8601)
-    """
-    if not cutoff_date:
-        cutoff_date = "2025"
-
-    if cutoff_date and not utc_cutoff:
-        utc_cutoff = to_utc_format(cutoff_date)
-
-    latest_mods = {}
-    params = {
-        "action": "query",
-        "format": "json",
-        "list": "recentchanges",
-        "rcnamespace": namespace,
-        "rcprop": "title|timestamp|user",
-        "rclimit": limit,
-        "rcend": utc_cutoff,
-        "rcdir": "older",  # go backward in time
-        "rcshow": "!redirect",
-    }
-
-    seen_pages = set()
-    cont = {}
-
-    while True:
-        if cont:
-            params.update(cont)
-        data = fetch_url(_api_url(base), params=params, return_json=True)
-        for rc in data.get("query", {}).get("recentchanges", []):
-            title = rc["title"]
-            timestamp = rc["timestamp"]
-            user = rc["user"]
-            if title not in seen_pages:
-                seen_pages.add(title)
-                latest_mods[title] = { "timestamp": from_utc_format(timestamp), "user": user }
-
-        if "continue" in data:
-            cont = data["continue"]
-            time.sleep(sleep_time)
-        else:
-            break
-
-    return latest_mods
-
-def get_recent_changes_v2(
+def get_recent_changes(
     base=ARCHIVE_BASE,
     namespace=WIKI_NAMESPACE_ID,
     utc_start=None,
@@ -1378,9 +1322,8 @@ def get_recent_changes_v2(
       - False: bias toward least-recently changed titles (scan oldest→newer)
 
     Returns:
-        dict: {title: {"timestamp": <utc>, "user": <user>}}
+        dict: {title: {"timestamp": <utc>, "user": <user>, "action": <edit|new|delete|restore>}}
     """
-    _FETCH_DELAY = 0.1   # seconds
     _FETCH_LIMIT = 500   # max results per query (non-bot)
 
     # MediaWiki recentchanges:
@@ -1393,7 +1336,8 @@ def get_recent_changes_v2(
         "format": "json",
         "list": "recentchanges",
         "rcnamespace": namespace,
-        "rcprop": "title|timestamp|user",
+        "rcprop": "title|timestamp|user|loginfo",
+        "rctype": "edit|new|log",
         "rclimit": _FETCH_LIMIT,
         "rcshow": "!redirect",
         "rcdir": "older" if prefer_newer else "newer",
@@ -1427,19 +1371,19 @@ def get_recent_changes_v2(
             title = rc["title"]
             timestamp = rc["timestamp"]  # MW UTC ISO8601, lex-order == time-order
             user = rc.get("user")
+            rc_type = rc.get("type")
+            action = rc.get("logaction") if rc_type == "log" else rc_type
 
             entry = latest_mods.get(title)
             if not entry or timestamp > entry["timestamp"]:
-                latest_mods[title] = {"timestamp": timestamp, "user": user}
+                latest_mods[title] = {"timestamp": timestamp, "user": user, "action": action}
 
         # Stop early if we've collected enough unique titles (your intended "limit")
         if limit and len(latest_mods) >= limit:
             break
 
         cont = data.get("continue")
-        if cont:
-            time.sleep(_FETCH_DELAY)
-        else:
+        if not cont:
             break
 
     return latest_mods

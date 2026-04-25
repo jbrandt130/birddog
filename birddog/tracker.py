@@ -16,10 +16,9 @@ from birddog.wiki import (
     get_last_mod,
     canonicalize_title,
     lookup_namespace_id,
-    get_recent_changes_v2,
     )
 from birddog.store import KeyValueStore
-from birddog.utility import json_size, HeartbeatManager, utc_now_dt
+from birddog.utility import json_size, HeartbeatManager, utc_now_dt, to_utc_format, from_utc_format
 from birddog.log import get_logger, LogService
 _logger = get_logger()
 
@@ -51,7 +50,8 @@ class PageChangeLog:
 
     def refresh(self):
         cutoff_date = self.newest() if self._changes else None
-        updates = get_recent_changes(cutoff_date=cutoff_date)
+        utc_start = to_utc_format(cutoff_date) if cutoff_date else None
+        updates = get_recent_changes(utc_start=utc_start)
         if updates:
             _logger.info(f"PageChangeLog: recording {len(updates)} new page changes")
             updates = {
@@ -59,7 +59,11 @@ class PageChangeLog:
                 for title, update in updates.items()
             }
             for title, update in updates.items():
-                entry = {"timestamp": update["timestamp"], "user": update["user"]}
+                entry = {
+                    "timestamp": from_utc_format(update["timestamp"]),
+                    "user": update["user"],
+                    "action": update.get("action"),
+                }
                 self._kv.insert(_TRACKER_KV_NS_CHANGE_LOG, title, json.dumps(entry))
                 self._changes[title] = entry
 
@@ -347,7 +351,7 @@ class WikiDocTracker(HeartbeatManager):
         utc_start_z = _format_utc_z(start_dt)
         utc_end_z = _format_utc_z(end_dt)
 
-        changes = get_recent_changes_v2(
+        changes = get_recent_changes(
             base=self._base_url,
             namespace=self._namespace_id,
             utc_start=utc_start_z,
