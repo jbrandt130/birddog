@@ -632,16 +632,18 @@ class DatabaseUpdater:
 
     def _get_page_info(self, page_titles):
         result = []
+        missing = []
         _logger.info(f"Updater: accessing wiki page info for {len(page_titles)} pages")
         for title in page_titles:
             info = _form_page_info_from_title(title)
             if info.get("missing"):
-                _logger.error(f"Wiki page missing: {title}")
+                _logger.error(f"Wiki page missing (deleted?): {title}")
+                missing.append(title)
             elif info.get("error"):
                 _logger.error(f"Error loading Wiki page {title}: {info.get('error')}")
             else:
                 result.append(info)
-        return result
+        return result, missing
 
     def _update_page_records_with_cache(self, page_records, id_map, existing_records, set_alert=True):
         """Update page records using pre-fetched lookup and existing records."""
@@ -696,7 +698,7 @@ class DatabaseUpdater:
 
         tid = threading.get_ident()
         _logger.info(f"Updater {tid}: starting update_page_records: {len(page_titles)} titles")
-        page_info = self._get_page_info(page_titles)
+        page_info, missing_titles = self._get_page_info(page_titles)
         #_logger.info(f"page_info: {page_info}")
 
         linked_page_updates = []
@@ -767,8 +769,9 @@ class DatabaseUpdater:
         # Build page lookup from the exact URLs used in page records, plus linked placeholder URLs.
         requested_page_urls = {record["url"] for record in page_records}
         linked_page_urls = {page_url_from_title(rec["title"]) for rec in linked_page_updates}
+        missing_page_urls = {normalize_url(page_url_from_title(t)) for t in missing_titles}
         all_page_titles = title_set | {record["title"] for record in page_records}
-        all_page_urls = requested_page_urls | linked_page_urls
+        all_page_urls = requested_page_urls | linked_page_urls | missing_page_urls
 
         _logger.info(f"Updater {tid}: looking up page ids {len(all_page_urls)}")
         page_id_by_url = self._db.lookup("Pages", all_page_urls)
@@ -785,6 +788,20 @@ class DatabaseUpdater:
                 page_records, page_id_by_url, existing_pages, set_alert=True
             )
         )
+
+        # For deleted pages, mark availability as "unlinked" only if a record already exists.
+        if missing_titles:
+            unlinked_records = []
+            for title in missing_titles:
+                record = _form_simple_page_record(title)
+                record["availability"] = "unlinked"
+                if page_id_by_url.get(record["url"]):
+                    unlinked_records.append(record)
+            if unlinked_records:
+                _logger.info(f"Updater {tid}: marking {len(unlinked_records)} deleted pages as unlinked")
+                self._update_page_records_with_cache(
+                    unlinked_records, page_id_by_url, existing_pages, set_alert=True
+                )
 
         # Refresh cache before linked placeholder updates so newly written pages
         # are not treated as missing.
