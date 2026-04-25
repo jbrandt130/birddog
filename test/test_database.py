@@ -22,14 +22,14 @@ class TestDatabase(unittest.TestCase):
 
     This test exercises:
       - scan (Pages, Documents)
-      - lookup (Pages.url, Documents.link)
+      - lookup (Pages.url, Documents.url)
       - read (single and batch by Id)
       - write (create + update; single + batch)
       - create_links / delete_links / get_links (Pages.parent, Pages.children, Documents.owning_pages)
 
     Cleanup:
       - Deletes any records created during the test (tracked by returned Ids).
-      - All created records contain "test" in title (and Documents.link / Pages.url).
+      - All created records contain "test" in title (and Documents.url / Pages.url).
     """
 
     def setUp(self):
@@ -164,7 +164,7 @@ class TestDatabase(unittest.TestCase):
         # -----------------------
         batch_docs = [
             {
-                "link": self._mk_doc_link(i),
+                "url": self._mk_doc_link(i),
                 "title": f"test {self._run_suffix} doc_{i}",
                 "doc_type": ["O", "C", "L", "V"],
             }
@@ -176,14 +176,14 @@ class TestDatabase(unittest.TestCase):
 
         self.created_doc_ids.extend(doc_ids)
 
-        # lookup Documents by link
+        # lookup Documents by url
         for i in range(5):
-            link = self._mk_doc_link(i)
-            did = self.db.lookup("Documents", link)
+            url = self._mk_doc_link(i)
+            did = self.db.lookup("Documents", url)
             self.assertTrue(did)
 
         # -----------------------
-        # 4b) lookup with sequences: Documents.link (order, duplicates, empty, missing)
+        # 4b) lookup with sequences: Documents.url (order, duplicates, empty, missing)
         # -----------------------
         self.assertEqual(self.db.lookup("Documents", []), [])
 

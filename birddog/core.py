@@ -241,6 +241,10 @@ class Page:
         return page_address(self._title)[1]
 
     @property
+    def exists(self):
+        return bool(self.lastmod)
+
+    @property
     def lastmod(self):
         return self._page.get('lastmod', '')
 

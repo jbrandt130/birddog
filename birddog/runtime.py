@@ -107,7 +107,18 @@ class PageLRU:
                 page = Archive(*ARCHIVE_BY_TITLE[title], runtime=runtime)
             else:
                 page = Page(title, runtime=runtime)
+            _logger.info(f"instantiating lru page: {page.title}, {page.exists}")
             self._lru[title] = page
+
+            if not page.exists:
+                try:
+                    p_title = parent_title(title)
+                except ValueError:
+                    p_title = None
+                if p_title:
+                    _logger.info(f"PageLRU: evicting parent {p_title} due to nonexistent child {title}")
+                    self.evict(p_title)
+
             return page
 
     def evict(self, title):
