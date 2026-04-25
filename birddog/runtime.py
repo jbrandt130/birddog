@@ -73,6 +73,13 @@ class PageLRU:
     def _child_key(self, page, child_id):
         return f"{self.key(page.title)}/{child_id}"
 
+    def _get_page(self, title, runtime):
+        # FIXME: Archive should not be a subclass
+        if title in ARCHIVE_BY_TITLE:
+            return Archive(*ARCHIVE_BY_TITLE[title], runtime=runtime)
+        else:
+            return Page(title, runtime=runtime)
+
     def lookup_child(self, page, child_id, runtime=None):
         return self.lookup_by_title(self._child_key(page, child_id), runtime=runtime)
 
@@ -102,11 +109,7 @@ class PageLRU:
             return page
         except KeyError:
             #_logger.info(f"{f'PageLRU.lookup({title}): miss'}")
-            # FIXME: Archive should not be a subclass
-            if title in ARCHIVE_BY_TITLE:
-                page = Archive(*ARCHIVE_BY_TITLE[title], runtime=runtime)
-            else:
-                page = Page(title, runtime=runtime)
+            page = self._get_page(title, runtime)
             _logger.info(f"instantiating lru page: {page.title}, {page.exists}")
             self._lru[title] = page
 
@@ -117,14 +120,17 @@ class PageLRU:
                     p_title = None
                 if p_title:
                     _logger.info(f"PageLRU: evicting parent {p_title} due to nonexistent child {title}")
-                    self.evict(p_title)
+                    self.evict(p_title, runtime)
 
             return page
 
-    def evict(self, title):
+    def evict(self, title, runtime):
         title = canonicalize_title(title)
         page = self._lru.pop(title, None)
+        if not page:
+            page = self._get_page(title, runtime)
         if page:
+            _logger.info(f"evicting {page.title} from cache")
             page.evict_from_cache()
 
 # ----------------------------------------------------------------------------
@@ -391,10 +397,10 @@ class PageUpdateManager(HeartbeatManager):
                 if update.get("action") == "delete":
                     _logger.info(f"PageUpdateManager: page deleted: {title}")
                     page_lru = self._runtime.page_lru
-                    page_lru.evict(title)
+                    page_lru.evict(title, self._runtime)
                     if parent_page_title:
                         _logger.info(f"PageUpdateManager: evicting parent after deletion: {parent_page_title}")
-                        page_lru.evict(parent_page_title)
+                        page_lru.evict(parent_page_title, self._runtime)
                 else:
                     # This page may have just been created or edited.
                     # If so, the parent's link status to this page needs to be
