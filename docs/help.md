@@ -88,6 +88,8 @@ If the page has not been translated, then the downloaded sheet will also not be 
 
 #### ![Resolve](images/check_button.png) Resolve the update for this page (and any subsidiaries).
 
+#### ![Upload](images/db_upload.png) Upload this page (and optionally any subsidiaries) to the database.
+
 ### Badges
 
 Several different badges can appear in the header section of the page to inform you of a particular condition for the current page. Their meanings are as follows.
