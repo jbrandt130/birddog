@@ -1684,7 +1684,7 @@ def batch_fetch_document_links(titles, map_to_url=True, chunk_size=20):
 
     # Pass 3: build final result
     return {
-        title: [{"link": url, "exists": existence.get(url, True)} for url in links]
+        canonicalize_title(title): [{"link": url, "exists": existence.get(url, True)} for url in links]
         for title, links in raw_links.items()
     }
 
