@@ -808,6 +808,7 @@ class NocoDBDatabase(Database):
                 self.normalize_records(table_name, records)
 
             log.size = json_size(records)
+            _logger.info(f"scan: {table_name}(view={view_name}), {log.size}")
             return records, next_cursor
 
     @timer.timed

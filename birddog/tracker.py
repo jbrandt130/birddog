@@ -185,7 +185,7 @@ def offset_utc(ts, seconds):
     return _format_utc_z(dt + timedelta(seconds=seconds))
 
 _WIKI_DOC_TRACKER_KV_TABLE = "bd_doc_tracker"
-_WIKI_DOC_TRACKER_HEARTBEAT_INTERVAL = 15  # seconds
+_WIKI_DOC_TRACKER_HEARTBEAT_INTERVAL = 30  # seconds
 _WIKI_SENTINEL = "WIKI_SENTINEL"
 _WIKI_CHANGE_EVENT_WINDOW = 300  # seconds
 _DOC_TABLE_SENTINEL = "DOC_SENTINEL"
@@ -301,6 +301,7 @@ class WikiDocTracker(HeartbeatManager):
                 "Documents", 
                 cursor=cursor, 
                 view_name=self._table_view, 
+                limit=10,
                 fields=["title", "url", "CreatedAt"])
             if not batch:
                 break
