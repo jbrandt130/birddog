@@ -147,7 +147,9 @@ def get_case_title(url, curr_parent_title, opus_name, cell, wiki_spreadsheet,
             value = cell.value
             if isinstance(value, float) and value.is_integer() or isinstance(value, int):
                 case_id = get_case_id(value)
-                title = f"{curr_parent_title}/{opus_name}/{case_id}"
+            else:
+                case_id = value
+            title = f"{curr_parent_title}/{opus_name}/{case_id}"
 
         return title
 
@@ -156,6 +158,44 @@ def get_case_title(url, curr_parent_title, opus_name, cell, wiki_spreadsheet,
 
 def get_cell_link(cell):
     return unquote(cell.hyperlink.target) if cell.hyperlink else ""
+
+def add_to_message(message, addition):
+    if message is None or message.strip() == "":
+        message = addition
+    else:
+        message = message + "; " + addition
+    return message
+
+def consistent_link(cell, cell_address, archive_unit_name):
+    """Checks whether the cell contents and the link coincide,
+    and that the address contains the fund and opus name when relevant"""
+    slash_post = archive_unit_name.find('/')
+    necessary_part = archive_unit_name[slash_post:] if slash_post != -1 else ''
+
+    import_message = "" #default
+    link = "" #default
+    if cell.hyperlink:
+        link = unquote(cell.hyperlink.target)
+        contents = cell.value.strip()
+        coincides = link == contents
+        if coincides:
+            #does the link contain the necessary part?
+            contains = necessary_part in contents
+            if not contains:
+                #try without letters
+                necessary_part1 = re.sub(r'[^0-9/]+', '', necessary_part)
+                contains = necessary_part1 in contents
+                if not contains:
+                    mess = f"cell {cell_address} contents {contents} was supposed to include {necessary_part}"
+                    _logger.warning(mess)
+                    import_message = add_to_message("", mess)
+        else:
+            #contents vs link
+            mess = f"cell {cell_address} contents {contents} differs from its link {link}"
+            _logger.warning(mess)
+            import_message = add_to_message("", mess)
+
+    return link, import_message
 
 def get_cell_value(cell, capitalized=False):
     value = cell.value
@@ -268,7 +308,7 @@ def get_url_from_2_cells(unit_num_cell, unit_descr_cell) -> tuple[str, bool]:
     return url, in_first_cell
 
 
-def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str]:
+def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str, bool]:
     """
     Parses an openpyxl cell value into a list of integers based on specific rules.
     If no link found in both fund_num_cell, fund_descr_cell, the resulting list is empty
@@ -291,23 +331,23 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str]
     """
     value = fund_num_cell.value
     if value is None:
-        return [], ""
+        return [], "", False
 
-    url, _ = get_url_from_2_cells(fund_num_cell, fund_descr_cell)
+    url, in_first_cell = get_url_from_2_cells(fund_num_cell, fund_descr_cell)
     if url == "":
-        return [], ""
+        return [], "", in_first_cell
 
     # Case 1: Float that is integer
     if isinstance(value, float) and value.is_integer():
-        return [str(int(value))], url
+        return [str(int(value))], url, in_first_cell
 
     # Case 1: integer
     if isinstance(value, int):
-        return [str(value)], url
+        return [str(value)], url, in_first_cell
 
     # Case 4: datetime -> [day, month]
     if isinstance(value, datetime):
-        return [str(value.day), str(value.month)], url
+        return [str(value.day), str(value.month)], url, in_first_cell
 
     # Case 2 & 4: Convert to string and parse
     s = str(value).strip()
@@ -317,13 +357,13 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str]
             # Case 4: Range like "10-13"
             try:
                 start, end = map(int, s.split('-'))
-                return [str(x) for x in list(range(start, end + 1))], url
+                return [str(x) for x in list(range(start, end + 1))], url, in_first_cell
             except ValueError:
                 pass
         pattern = r'^[A-Z]-[1-9]\d*$'
         is_prefixed_number = bool(re.match(pattern, s))
         if is_prefixed_number:
-            return [s], url
+            return [s], url, in_first_cell
 
     # Case 2: Comma-separated "41, 42"
     if ',' in s:
@@ -337,14 +377,15 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str]
             except ValueError:
                 pass
         if ints:
-            return ints, url
+            return ints, url, in_first_cell
 
-    return [], ""
+    return [], "", in_first_cell
 
 
 def is_series_of_case_numbers(s: str, ignore_parts: bool) -> tuple[bool, int, bool]:
     """Case number should include digits but may also include letters.
     Case numbers are separated by hyphens."""
+    s = s.strip()
     inconsistent_parts = False
     if not isinstance(s, str) or not s:
         return False, 0, inconsistent_parts
@@ -440,15 +481,17 @@ def get_dates(ws, archive_name, change_date_col, ref_date_col):
 
     return change_date, timestamp
 
-def get_parent_title(ws, wiki_spreadsheet, archive_unit_name):
+def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name):
+    row = 3
+    source_col = find_header_in_row(ws, row, "B", "Z", SRC_HDR)
+    cell_address = f"{chr(source_col + 1)}{row}"# default D3
+    parent_title_cell = ws[cell_address]
+    url, import_message = consistent_link(parent_title_cell, cell_address, archive_unit_name)
     if wiki_spreadsheet:
-        row = 3
-        source_col = find_header_in_row(ws, row, "B", "Z", SRC_HDR)
-        parent_title_cell = ws[f"{chr(source_col + 1)}{row}"] #default D3
         title = get_page_title_from_link(parent_title_cell, wiki_spreadsheet, archive_unit_name)
     else:
         title = archive_unit_name
-    return title
+    return title, url, import_message
 
 def to_positive_int_str(s: str) -> str:
     """
@@ -537,10 +580,7 @@ def get_page_url(title: str, url: str, change_url: bool, import_message: str = "
         changed_url = page_url_from_title(title)
         if changed_url != url:
             mess = f"URL changed from {url} to {changed_url}"
-            if import_message == "":
-                import_message = mess
-            else:
-                import_message = import_message + "; " + mess
+            add_to_message(import_message, mess)
         return changed_url, import_message
     else:
         return url, import_message
@@ -584,12 +624,11 @@ def sheet_contains_volumes(ws):
     return True, case_num_col, hdr_row
 
 
-def case_like_headers_in_row(ws, opus_title, opus_name):
+def case_like_headers_in_row(ws, opus_title, opus_name, import_message):
     #the header row can be 5, 6 or 7
     headers = [FIRST_OPUS_HDR1, FIRST_OPUS_HDR2, FIRST_OPUS_HDR3, FIRST_OPUS_HDR4, FIRST_OPUS_HDR5]
     case_num_col = "A"
     hdr_row, header_found = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, case_num_col, headers)
-    import_message = ""
     possible_hyphen_in_case_num = False
     old_numbering_column = "A"
     case_amount_column = case_num_col
@@ -603,8 +642,9 @@ def case_like_headers_in_row(ws, opus_title, opus_name):
             #could it be a sheet with volumes and not cases?
             contains_volumes, case_num_col, hdr_row = sheet_contains_volumes(ws)
             if contains_volumes:
-                import_message = f"Opus {opus_title} contains volumes"
-                _logger.warning(import_message)
+                message = f"Opus {opus_title} contains volumes"
+                import_message = add_to_message(import_message, message)
+                _logger.warning(message)
             else:
                 raise ValueError(f"No '{FIRST_OPUS_HDR1}' header found in sheet {opus_name}")
     elif header_found == FIRST_OPUS_HDR1:
@@ -619,7 +659,9 @@ def case_like_headers_in_row(ws, opus_title, opus_name):
         possible_hyphen_in_case_num = True
         old_numbering_column = chr(ord(case_num_col) - 1)
         case_amount_column = old_numbering_column
-        import_message = "New case numbering"
+        message = "New case numbering"
+        import_message = add_to_message(import_message, message)
+        _logger.warning(message)
 
     if header_found == FIRST_OPUS_HDR3:
         #in DAHMO-R-wiki-20260415.xlsx sheet R-6193-12 cases 5341-10422 there is an extra column "Other case #"
@@ -633,7 +675,7 @@ def case_like_headers_in_row(ws, opus_title, opus_name):
 
 
 def add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, source_type, parent_name,
-                  level, availability, import_message=""):
+                  level, availability, import_message):
     add_page({
         "title": title,
         "url": url,
@@ -685,14 +727,14 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, title, url,
 def process_archive_sheet(ws, wiki_spreadsheet, archive_name, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    archive_name = get_parent_title(ws, wiki_spreadsheet, archive_name)
+    archive_name, url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet, archive_name)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, archive_name, change_date_col, ref_date_col)
     label = general_page_label(archive_name, wiki_spreadsheet)
 
     add_page({
         "title": archive_name,
-        "url": get_cell_link(ws["D3"]),
+        "url": url,
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "archive",
@@ -702,6 +744,7 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_name, change_date_col, r
         "timestamp": timestamp,
         "doc_links": get_cell_link_or_str(ws["B4"]),
         "source_type": source_type,
+        "import_message": import_message,
         "parent": "",
     }, page_table)
 
@@ -710,8 +753,11 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_name, change_date_col, r
         fund_descr_cell = ws[f"B{r}"]
         if str(fund_num_cell.value).startswith("="):
             break
-        fund_ids, url = parse_cell_integers(fund_num_cell, fund_descr_cell)
+        fund_ids, url, in_first_cell = parse_cell_integers(fund_num_cell, fund_descr_cell)
         log_strange_parsing_result(ws, r, fund_num_cell, fund_ids)
+        cell_to_use = fund_num_cell
+        if not in_first_cell:
+            cell_to_use = fund_descr_cell
         num_results = len(fund_ids)
         match num_results:
             case 0:
@@ -720,7 +766,7 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_name, change_date_col, r
                 continue
             case 1:
                 # regular fund number
-                title = get_page_title_from_link(fund_num_cell, wiki_spreadsheet, archive_name)
+                title = get_page_title_from_link(cell_to_use, wiki_spreadsheet, archive_name)
                 add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, title, url, source_type, r,
                                            page_table, change_date, timestamp)
             case _:
@@ -735,14 +781,14 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_name, change_date_col, r
 def process_fond_sheet(ws, wiki_spreadsheet, fund_name, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    parent_name = get_parent_title(ws, wiki_spreadsheet, fund_name)
+    parent_name, url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet, fund_name)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, fund_name, change_date_col, ref_date_col)
     label = general_page_label(parent_name, wiki_spreadsheet)
 
     add_page({
         "title": parent_name,
-        "url": get_cell_link(ws["D3"]),
+        "url": url,
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "fond",
@@ -752,6 +798,7 @@ def process_fond_sheet(ws, wiki_spreadsheet, fund_name, change_date_col, ref_dat
         "timestamp": timestamp,
         "doc_links": get_cell_link_or_str(ws["B4"]),
         "source_type": source_type,
+        "import_message": import_message,
         "parent": parent_title_no_ns(parent_name, wiki_spreadsheet, fund_name),
     }, page_table)
 
@@ -773,12 +820,14 @@ def process_fond_sheet(ws, wiki_spreadsheet, fund_name, change_date_col, ref_dat
                 # no link found - cannot proceed
                 _logger.warning(f"No link in sheet='{ws.title}', opus {get_cell_value(opus_num_cell)} - skipping")
                 continue
+            cell_to_use = opus_num_cell
             if not in_first_cell:
+                cell_to_use = opus_descr_cell
                 availability = "unlinked"
                 _logger.warning(f"Opus {get_cell_value(opus_num_cell)} in sheet='{ws.title}', "
                                 f"row={r} has no page but has a document")
                 curr_import_message = "Document without a page"
-            title = get_page_title_from_link(opus_num_cell, wiki_spreadsheet, fund_name)
+            title = get_page_title_from_link(cell_to_use, wiki_spreadsheet, fund_name)
             if not title:
                 _logger.warning(f"cannot determine page title: sheet='{ws.title}', row={r}  - skipping")
                 continue
@@ -793,11 +842,10 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                        change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    opus_title = get_parent_title(ws, wiki_spreadsheet, fund_and_opus_name)
+    opus_title, url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet, fund_and_opus_name)
     label = general_page_label(opus_title, wiki_spreadsheet)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, fund_and_opus_name, change_date_col, ref_date_col)
-    url = get_cell_link(ws["D3"])
     curr_parent_title = opus_title
     try:
         curr_parent_title = parent_title_no_ns(opus_title, wiki_spreadsheet, fund_and_opus_name)
@@ -806,7 +854,8 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
             source_type = "other"
 
     (possible_hyphen_in_case_num, case_amount_column, case_num_col, hdr_row, import_message,
-     old_numbering_column, contains_volumes, additional_column) = case_like_headers_in_row(ws, opus_title, opus_name)
+     old_numbering_column, contains_volumes, additional_column) = case_like_headers_in_row(ws, opus_title,
+                                                                                           opus_name, import_message)
 
     #there are sometimes columns inserted between "process" and "Comments",
     #so we need to find the exact position of the latter one
@@ -828,6 +877,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
         "doc_links": get_cell_link_or_str(ws["B4"]),
         "parent": curr_parent_title,
         "source_type": source_type,
+        "import_message": import_message,
     }, page_table)
 
     usual_case_number_found = False
@@ -886,20 +936,12 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                 label = title
 
             #title sanity check
-            identical, modified_title = title_cell_val_identical(title, str(case_num_cell.value),
+            identical, modified_title = title_cell_val_identical(title, str(case_num_cell.value).strip(),
                                                                  num_parts, inconsistent_parts)
-            if identical:
-                if curr_import_message == "" and level == "case":
-                    curr_import_message = import_message
-            else:
+            if not identical:
                 case_id = get_case_id(case_num_cell.value)
                 new_message = f"{level} {case_id} links to {title}"
-                if curr_import_message == "":
-                    curr_import_message = new_message
-                    if import_message != "" and level == "case":
-                        curr_import_message = f"{import_message}; {curr_import_message}"
-                else:
-                    curr_import_message = curr_import_message + ": " + new_message
+                curr_import_message = add_to_message(curr_import_message, new_message)
 
                 if not possible_hyphen_in_case_num and level == "case":
                     title = modified_title
@@ -914,6 +956,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                     availability = "linked"
                 if "" == curr_import_message:
                     curr_import_message = f"Volume in {title}"
+                    _logger.warning(curr_import_message)
                 add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, source_type, opus_title,
                               level, availability, curr_import_message)
             else:
@@ -976,10 +1019,7 @@ def normalize_process_code(process_code: str | None, import_message: str) -> tup
         if process_code not in valid_options:
             message = f"{process_code} is not a valid process code, changed to {error_code}"
             _logger.warning(message)
-            if import_message is not None and import_message.strip() != "":
-                import_message = f"{import_message}; {message}"
-            else:
-                import_message = message
+            import_message = add_to_message(import_message, message)
             process_code = error_code
 
     return process_code, import_message
@@ -1033,19 +1073,21 @@ def import_spreadsheet(sw_filepath):
     db = Database()
     workbook = load_workbook(sw_filepath)
     wiki_spreadsheet = "-wiki" in sw_filepath.lower()
-    archive_name = "" # default for wiki, where we'll construct it later
-    if not wiki_spreadsheet:
-        last_slash_pos = max(sw_filepath.rfind('/'), sw_filepath.rfind('\\'))
-        if last_slash_pos != -1:
-            file_name = sw_filepath[last_slash_pos + 1:]
-        else:
-            file_name = sw_filepath
-        archive_substring_position = file_name.find("-archive")
-        if archive_substring_position != -1:
-            archive_name = file_name[0 : archive_substring_position]
-        else:
-            _logger.error(f"Spreadsheet file name {file_name} contains neither 'wiki' nor 'archive'")
-            return
+    substring = "-archive"
+    if wiki_spreadsheet:
+        substring = "-wiki"
+
+    last_slash_pos = max(sw_filepath.rfind('/'), sw_filepath.rfind('\\'))
+    if last_slash_pos != -1:
+        file_name = sw_filepath[last_slash_pos + 1:]
+    else:
+        file_name = sw_filepath
+    archive_substring_position = file_name.find(substring)
+    if archive_substring_position != -1:
+        archive_name = file_name[0 : archive_substring_position]
+    else:
+        _logger.error(f"Spreadsheet file name {file_name} contains neither 'wiki' nor 'archive'")
+        return
 
     inp_page_data = process_worksheets(workbook, wiki_spreadsheet, archive_name)
     if not isinstance(inp_page_data, dict):
@@ -1099,7 +1141,7 @@ def import_spreadsheet(sw_filepath):
                 page_payload[err.field] = ""
                 prior_msg = page_payload.get("import_message")
                 msg = f"malformed: {err.field}: {err.value}"
-                page_payload["import_message"] = f"{prior_msg}; {msg}" if prior_msg else msg
+                page_payload["import_message"] = add_to_message(prior_msg, msg)
                 # retry record normalization
 
         if abort_page:
@@ -1222,7 +1264,7 @@ def process_dir(dir_path):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/ImportProblems/DAVO-archives+AK-20260213.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAHMO-K-wiki-20250820.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAKO-R-wiki-20260426.xlsx"
     import_spreadsheet(filepath)
 #   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
 #   process_dir(dir_path)
