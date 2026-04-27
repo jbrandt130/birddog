@@ -1,13 +1,13 @@
-![Bird Dog](images/birddog.png)
+![Birddog](images/birddog.png)
 
-# Welcome to Bird Dog!
+# Welcome to Birddog!
 
-Bird Dog is a web-based navigator and translator for Ukrainian documents hosted on [WikiSource](https://uk.wikisource.org). It allows users to track and evaluate changes to Wiki page content and export spreadsheet updates for further downstream processing by the Ukranian Data Acquisition team at Jewish Gen.
+Birddog is a web-based navigator and translator for Ukrainian documents hosted on [WikiSource](https://uk.wikisource.org). It allows users to track and evaluate changes to Wiki page content and export spreadsheet updates for further downstream processing by the Ukranian Data Acquisition team at Jewish Gen.
 
 ### Getting Started
 
 1. [Create a profile or log in](#create-profile-or-login)
-3. [Add archives to your watchlist](#add-archives-to-your-watchlist) (Bird Dog will notify you of new documents as they appear.)
+3. [Add archives to your watchlist](#add-archives-to-your-watchlist) (Birddog will notify you of new documents as they appear.)
 5. [Explore page change notifications](#explore-unresolved-page-changes)
 6. [Examine page details through the Browse panel](#browse-archive-pages)
 
@@ -16,7 +16,7 @@ Bird Dog is a web-based navigator and translator for Ukrainian documents hosted 
 ![Login page screenshot](images/login.png)
 
 On your first visit, you need to create a profile by providing your name, email address, and password. 
-On future visits, you will need your email and password to login. Your email is your Bird Dog ID, and also will be needed if you ever forget your password.
+On future visits, you will need your email and password to login. Your email is your Birddog ID, and also will be needed if you ever forget your password.
 
 ## Add Archives to your Watchlist
 
@@ -24,7 +24,7 @@ On future visits, you will need your email and password to login. Your email is 
 ![Add Archive - Select Archive](images/add_archive_2.png)
 ![Add Archive - Select Cutoff Date](images/add_archive_3.png)
 
-Your first step is to let Bird Dog know which Archives you want to monitor. Simply select the archive from the drop down. You also need to provide a cutoff date. Bird Dog will report any ongoing changes to the selected archive on or after the cutoff date. Click "Add" when you're ready. Bird Dog will take a few seconds to collect the page updates for you to review.
+Your first step is to let Birddog know which Archives you want to monitor. Simply select the archive from the drop down. You also need to provide a cutoff date. Birddog will report any ongoing changes to the selected archive on or after the cutoff date. Click "Add" when you're ready. Birddog will take a few seconds to collect the page updates for you to review.
 
 ### Watch List Controls
 
@@ -46,13 +46,13 @@ Any page changes are organized into a tree navigator that enables you to travers
 
 #### ![Resolve](images/check_button.png) Resolve this change. (All unresolved changes in subsidiary pages are also resolved.)
 
-#### ![Reload](images/reload_button.png) Check all watch list archives for updates. (This is done automatically whenever you login or reload Bird Dog.)
+#### ![Reload](images/reload_button.png) Check all watch list archives for updates. (This is done automatically whenever you login or reload Birddog.)
 
 ## Browse Archive Pages
 
 ![Browse Page Header Section](images/browse_header_section.png)
 
-The Browse panel is your way to navigate all of the WikiData archives available to Bird Dog. A typical page (fond, opus, or case) consists of a header section followed by a table where each row of the table is a subsidiary page. You can click on any row of the table to visit the corresponding subsidiary. A row that is greyed out is unlinked and cannot be visited.
+The Browse panel is your way to navigate all of the WikiData archives available to Birddog. A typical page (fond, opus, or case) consists of a header section followed by a table where each row of the table is a subsidiary page. You can click on any row of the table to visit the corresponding subsidiary. A row that is greyed out is unlinked and cannot be visited.
 
 ### Page Header Controls
 
@@ -72,7 +72,7 @@ To stop comparing, open the dropdown and select "Stop Comparing".
 
 #### ![Breadcrumb](images/breadcrumb.png) The breadcrumb enables you to click on any of the parent page names to upward in the page hierarchy.
 
-Note that the web page "Back" button currently navigates away from Bird Dog.
+Note that the web page "Back" button currently navigates away from Birddog.
 
 #### ![Archive](images/select_archive.png) Select an archive to browse.
 
@@ -106,7 +106,7 @@ There is an updated for this page or one of its subsidiaries that needs to be re
 
 #### ![No Sub-Pages](images/no_children_badge.png) This page has no subsidiary pages. 
 
-Consequently, this page will have no table rows displayed. (Note that some pages have a table header even though there are no subsidiary pages. In this case, Bird Dog will show the table header only.)
+Consequently, this page will have no table rows displayed. (Note that some pages have a table header even though there are no subsidiary pages. In this case, Birddog will show the table header only.)
 
 #### ![Comparing](images/comparing_badge.png) You are viewing a comparison of the current version of this page with the prior version selected from the revision history.
 
@@ -114,9 +114,9 @@ Text changes are shown in yellow. Text additions are in green. If you see a yell
 
 #### ![No Differences](images/no_differences_badge.png) There is no significant difference between the current version and the prior version currently being compared.
 
-When comparing a page to a prior version, it is possible that there is no difference in the data that Bird Dog attends to. It could be that some other part of the page was changed, such as metadata. In this case, you will not see any highlighted changes on the page.
+When comparing a page to a prior version, it is possible that there is no difference in the data that Birddog attends to. It could be that some other part of the page was changed, such as metadata. In this case, you will not see any highlighted changes on the page.
 
 
 ## Questions?
 
-Contact the [Bird Dog Pound](mailto:birddogpound2025@gmail.com) or open an issue in [GitHub Issues](https://github.com/jbrandt130/birddog/issues).
+Contact the [Birddog Pound](mailto:birddogpound2025@gmail.com) or open an issue in [GitHub Issues](https://github.com/jbrandt130/birddog/issues).
