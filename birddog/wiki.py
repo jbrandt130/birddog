@@ -890,36 +890,45 @@ def _strip_category_namespace(title: str) -> str:
     return t
 
 def mw_page_doc_url(page):
-    # 1) Prefer explicit commons PDF links first (these are usually the actual “doc”)
-    links = page.get("notes", {}).get("commons_links", [])
-    links = [link for link in links if _included_link(link)]
-    if links:
-        return links[0]
-
-    # 2) Filter internal links that are really category targets
+    # Build filtered internal link list up front (exclude categories and images)
     category_links = page.get("other_links", {}).get("category_links", [])
     category_targets = {
         _strip_category_namespace(c) for c in category_links if c
     }
-
     internal = page.get("other_links", {}).get("internal_links", [])
     internal = [l for l in internal if _included_link(l)]
-
     internal = [
         l for l in internal
         if _normalize_link_title(l) not in category_targets
     ]
 
+    # 1) Prefer a Wikisource File: document link (e.g. File:foo.pdf) when present.
+    #    These are unambiguous document links on Wikisource and are preferred over
+    #    commons notes links, which may point to a file that only exists on Wikisource.
+    file_doc = next(
+        (l for l in internal if re.match(r'File:', l, re.IGNORECASE) and l.lower().endswith('.pdf')),
+        None
+    )
+    if file_doc:
+        return expand_link_target(file_doc, page["title"]["uk"])
+
+    # 2) Explicit commons links from template notes (e.g. [[c:File:...]])
+    links = page.get("notes", {}).get("commons_links", [])
+    links = [link for link in links if _included_link(link)]
+    if links:
+        return links[0]
+
+    # 3) Other internal links (non-File: or non-PDF)
     if internal:
         return expand_link_target(internal[0], page["title"]["uk"])
 
-    # 3) Then any “other” commons links if you have them (non-notes bucket)
+    # 4) Any "other" commons links (non-notes bucket)
     links = page.get("other_links", {}).get("commons_links", [])
     links = [link for link in links if _included_link(link)]
     if links:
         return links[0]
 
-    # 4) Finally external links
+    # 5) Finally external links
     links = page.get("other_links", {}).get("external_links", [])
     links = [link for link in links if _included_link(link)]
     if links:
