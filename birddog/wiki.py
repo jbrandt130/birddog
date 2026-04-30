@@ -906,7 +906,7 @@ def mw_page_doc_url(page):
     #    These are unambiguous document links on Wikisource and are preferred over
     #    commons notes links, which may point to a file that only exists on Wikisource.
     file_doc = next(
-        (l for l in internal if re.match(r'File:', l, re.IGNORECASE) and l.lower().endswith('.pdf')),
+        (l for l in internal if re.match(r'(?:File|Файл):', l, re.IGNORECASE) and l.lower().endswith('.pdf')),
         None
     )
     if file_doc:

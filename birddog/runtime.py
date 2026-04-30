@@ -85,7 +85,7 @@ class PageLRU:
 
     def lookup_by_address(self, archive, subarchive, fond=None, opus=None, case=None, runtime=None):
         archive_title = ARCHIVE_BY_ADDRESS[(archive, subarchive)]
-        _logger.info(f"PageLRU.lookup_by_address({archive}, {subarchive}, {fond}, {opus}, {case}), archive={archive_title}")
+        #_logger.info(f"PageLRU.lookup_by_address({archive}, {subarchive}, {fond}, {opus}, {case}), archive={archive_title}")
         page = self.lookup_by_title(archive_title, runtime=runtime)
         if fond:
             page = page[fond]
@@ -110,7 +110,7 @@ class PageLRU:
         except KeyError:
             #_logger.info(f"{f'PageLRU.lookup({title}): miss'}")
             page = self._get_page(title, runtime)
-            _logger.info(f"instantiating lru page: {page.title}, {page.exists}")
+            #_logger.info(f"instantiating lru page: {page.title}, {page.exists}")
             self._lru[title] = page
 
             if not page.exists:
