@@ -505,17 +505,15 @@ class Runtime:
             self._database_update_manager = DatabaseUpdateManager(
                 self, 
                 updater=self._database_updater)
+            self._commons_doc_tracker = WikiDocTracker(self, spec=WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC)
+            self._wikisource_doc_tracker = WikiDocTracker(self, spec=UK_WIKISOURCE_DOC_TRACKER_SPEC)
         else:
             self._database = None
             self._database_updater = None
             self._database_update_manager = None
-
-        if _ENABLE_DB_SYNC:
-            self._commons_doc_tracker = WikiDocTracker(self, spec=WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC)
-            self._wikisource_doc_tracker = WikiDocTracker(self, spec=UK_WIKISOURCE_DOC_TRACKER_SPEC)
-        else:
             self._commons_doc_tracker = None
             self._wikisource_doc_tracker = None
+
 
         self._killswitch = KillSwitch(self)
         self.trim_logs()

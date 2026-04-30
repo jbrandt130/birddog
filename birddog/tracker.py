@@ -193,13 +193,13 @@ _DOC_TABLE_SENTINEL = "DOC_SENTINEL"
 WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC = {
     "base_url": "https://commons.wikimedia.org",
     "namespace": "File",
-    "table_view": "BD:WDT:commons.wikimedia.org",
+    "table_view": "BD:WDT",
 }
 
 UK_WIKISOURCE_DOC_TRACKER_SPEC = {
     "base_url": "https://uk.wikisource.org",
     "namespace": "Файл",
-    "table_view": "BD:WDT:uk.wikisource.org",
+    "table_view": "BD:WDT",
 }
 
 class WikiDocTracker(HeartbeatManager):
