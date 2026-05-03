@@ -357,7 +357,7 @@ class Page:
                 need_save = False
                 _logger.info(f'load_child_document_links: fetching {len(titles)} links')
                 doc_links = batch_fetch_document_links(titles)
-                _logger.info(f'load_child_document_links: result {titles}, {doc_links}')
+                #_logger.info(f'load_child_document_links: result {titles}, {doc_links}')
                 #_logger.info(doc_links)
                 for i, title in zip(items, titles):
                     links = doc_links.get(title)

@@ -85,7 +85,7 @@ class PageLRU:
 
     def lookup_by_address(self, archive, subarchive, fond=None, opus=None, case=None, runtime=None):
         archive_title = ARCHIVE_BY_ADDRESS[(archive, subarchive)]
-        _logger.info(f"PageLRU.lookup_by_address({archive}, {subarchive}, {fond}, {opus}, {case}), archive={archive_title}")
+        #_logger.info(f"PageLRU.lookup_by_address({archive}, {subarchive}, {fond}, {opus}, {case}), archive={archive_title}")
         page = self.lookup_by_title(archive_title, runtime=runtime)
         if fond:
             page = page[fond]
@@ -110,7 +110,7 @@ class PageLRU:
         except KeyError:
             #_logger.info(f"{f'PageLRU.lookup({title}): miss'}")
             page = self._get_page(title, runtime)
-            _logger.info(f"instantiating lru page: {page.title}, {page.exists}")
+            #_logger.info(f"instantiating lru page: {page.title}, {page.exists}")
             self._lru[title] = page
 
             if not page.exists:
@@ -505,17 +505,15 @@ class Runtime:
             self._database_update_manager = DatabaseUpdateManager(
                 self, 
                 updater=self._database_updater)
+            self._commons_doc_tracker = WikiDocTracker(self, spec=WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC)
+            self._wikisource_doc_tracker = WikiDocTracker(self, spec=UK_WIKISOURCE_DOC_TRACKER_SPEC)
         else:
             self._database = None
             self._database_updater = None
             self._database_update_manager = None
-
-        if _ENABLE_DB_SYNC:
-            self._commons_doc_tracker = WikiDocTracker(self, spec=WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC)
-            self._wikisource_doc_tracker = WikiDocTracker(self, spec=UK_WIKISOURCE_DOC_TRACKER_SPEC)
-        else:
             self._commons_doc_tracker = None
             self._wikisource_doc_tracker = None
+
 
         self._killswitch = KillSwitch(self)
         self.trim_logs()

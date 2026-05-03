@@ -172,7 +172,7 @@ def scan_child_titles_by_id(db, parent_ids, limit=100, cursor=None):
 def _get_links(title):
     params = {
         "action": "parse",
-        "prop": "links|iwlinks|externallinks|wikitext|revid",
+        "prop": "links|iwlinks|externallinks|wikitext|revid|images",
         "format": "json",
         "page": canonicalize_title(title),
     }
@@ -213,6 +213,8 @@ def _sniff_suffix(url_or_title: str) -> str | None:
 
 def _is_category_link(title):
     return title.startswith("Категорія:")
+
+_FILE_NS_RE = re.compile(r'^(?:File|Файл):', re.IGNORECASE)
 
 _DOC_LINK_BLOCKLIST = [
     "FSMosaicTreeLogo",
@@ -310,6 +312,18 @@ def _extract_links_from_wiki_parse(title, parse):
             else:
                 item["doc_type"] = _sniff_suffix(canonical_title)
                 internal_links.append(item)
+
+    # Embedded File:/Файл: links (e.g. [[File:foo.pdf|thumb]]) appear in parse["images"],
+    # not parse["links"]. The API returns bare filenames (no namespace prefix).
+    # Collect document-type files (PDF, DjVu, etc.) from there.
+    for image_name in parse.get("images", []):
+        doc_type = _sniff_suffix(image_name)
+        if doc_type == "document":
+            title = image_name if _FILE_NS_RE.match(image_name) else f"File:{image_name}"
+            internal_links.append({
+                "title": title,
+                "doc_type": doc_type,
+            })
 
     interwiki_links = []
     commons_links = []
@@ -867,6 +881,7 @@ class DatabaseUpdater:
         doc_records_changed = False
         doc_links_changed = False
         if doc_urls:
+            #_logger.info(f"doc_urls: {doc_urls}")
             doc_records = { url: form_document_record(url) for url in doc_urls }
             doc_records_changed = self._update_doc_records_from_records(
                 doc_records, 
