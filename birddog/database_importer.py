@@ -345,10 +345,6 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str,
     if isinstance(value, int):
         return [str(value)], url, in_first_cell
 
-    # Case 4: datetime -> [day, month]
-    if isinstance(value, datetime):
-        return [str(value.day), str(value.month)], url, in_first_cell
-
     # Case 2 & 4: Convert to string and parse
     s = str(value).strip()
 
@@ -378,6 +374,10 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str,
                 pass
         if ints:
             return ints, url, in_first_cell
+
+    # Case 4: datetime -> [day, month]
+    if isinstance(value, datetime):
+        return [str(value.day), str(value.month)], url, in_first_cell
 
     return [], "", in_first_cell
 
@@ -965,6 +965,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                 processor_cell_addr2 = f"{chr(comments_col+ 5)}{r}" #default f"L{r}"
                 pages_processed_cell_addr1 = f"{chr(comments_col + 3)}{r}" #default f"J{r}"
                 pages_processed_cell_addr2 = f"{chr(comments_col + 6)}{r}"  # default f"M{r}"
+                when_transcribed_cell_addr = f"{chr(comments_col + 7)}{r}"  # default f"N{r}"
 
                 description_col_offs = DESCRIPTION_COL_OFFS
                 years_col_offs = YEARS_COL_OFFS
@@ -1003,6 +1004,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                     "processor": combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2]),
                     "pages_processed": get_cell_int_value(ws[pages_processed_cell_addr1]) +
                                        get_cell_int_value(ws[pages_processed_cell_addr2]),
+                    "when_transcribed": get_cell_value(ws[when_transcribed_cell_addr]),
                 }, page_table)
 
     return page_table
@@ -1102,6 +1104,7 @@ def import_spreadsheet(sw_filepath):
     doc_only_fields = doc_only_fields_all_caps | {
         "pages_processed",
         "processor",
+        "when_transcribed",
     }
 
     doc_and_page_fields = {
@@ -1263,8 +1266,7 @@ def process_dir(dir_path):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/ImportProblems/DAVO-archives+AK-20260213.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAKO-R-wiki-20260426.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/TSDAVO-wiki-20260412.xlsx"
     import_spreadsheet(filepath)
 #   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
 #   process_dir(dir_path)
