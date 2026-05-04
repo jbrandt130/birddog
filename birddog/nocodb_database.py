@@ -58,7 +58,7 @@ else:
     _NOCODB_API_TOKEN   = os.environ["BIRDDOG_AWS_NOCODB_API_TOKEN"]
     _NOCODB_HOST        = os.environ["BIRDDOG_AWS_NOCODB_HOST"]
     _NOCODB_API_DELAY   = .1
-    _NOCODB_BATCH_SIZE  = 10
+    _NOCODB_BATCH_SIZE  = 200
     _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
     _logger.info(f"Using aws nocodb api: {_NOCODB_HOST}")
 
@@ -618,7 +618,7 @@ class NocoDBDatabase(Database):
         field_name, operator, value = where_spec
         field_id = self._field_id(table_name, field_name)
         operator = operator.lower()
-        _VALID_OPS = ("eq", "neq", "is", "isnot", "lt", "le", "gt", "ge")
+        _VALID_OPS = ("eq", "neq", "is", "isnot", "lt", "le", "gt", "ge", "in")
         if operator not in _VALID_OPS:
             raise ValueError(f"unrecognized where operator: {operator}")
         if operator in ("is", "isnot"):
@@ -628,6 +628,10 @@ class NocoDBDatabase(Database):
                 value = "true"
             else:
                 value = "false"
+        elif operator == "in":
+            if not isinstance(value, (list,tuple)):
+                raise ValueError(f"operand for 'in' must be tuple or list")
+            value = ",".join(value)
         return f"({field_id},{operator},{value})"
 
     def _encode_sort_spec(self, table_name, sort_spec):
@@ -989,6 +993,7 @@ class NocoDBDatabase(Database):
 
                 params = {
                     "where": "~or".join(clauses),
+                    "limit": len(batch),
                 }
                 if fields:
                     params["fields"] = self._encode_field_spec(table_name, fields)

@@ -264,7 +264,7 @@ class WikiDocTracker(HeartbeatManager):
         inserts = 0
         for rec in records:
             link = rec.get("url", "")
-            if not link.startswith(self._base_url):
+            if not link or not link.startswith(self._base_url):
                 continue
 
             title = rec.get("title")
@@ -296,12 +296,15 @@ class WikiDocTracker(HeartbeatManager):
 
         newest_creation_date = None
         cursor = None
+        where_clause = ("CreatedAt", "gt", _format_utc_z(doc_sentinel)) if doc_sentinel else None
+        _logger.info(f"_refresh_doc_titles: where_clause={where_clause}")
         while True:
             batch, cursor = self._db.scan(
-                "Documents", 
-                cursor=cursor, 
-                view_name=self._table_view, 
-                limit=10,
+                "Documents",
+                cursor=cursor,
+                view_name=self._table_view,
+                limit=100,
+                where=where_clause,
                 fields=["title", "url", "CreatedAt"])
             if not batch:
                 break
@@ -314,17 +317,11 @@ class WikiDocTracker(HeartbeatManager):
                     pass
             self._store_relevant_titles(batch)
 
-            # Stop when we reach records older than previously-seen newest doc.
-            if doc_sentinel:
-                last_created = batch[-1].get("CreatedAt")
-                if last_created and last_created < doc_sentinel:
-                    break
-
             if not cursor:
                 break
 
         if newest_creation_date:
-            self._kv.insert(self._sentinel_kv_namespace, _DOC_TABLE_SENTINEL, str(newest_creation_date))
+            self._kv.insert(self._sentinel_kv_namespace, _DOC_TABLE_SENTINEL, _format_utc_z(newest_creation_date))
 
     def _get_wiki_sentinel(self):
         """
