@@ -166,17 +166,16 @@ def add_to_message(message, addition):
         message = message + "; " + addition
     return message
 
-def consistent_link(cell, cell_address, archive_unit_name):
+def consistent_link(cell, cell_address, archive_unit_name, sheet_title):
     """Checks whether the cell contents and the link coincide,
     and that the address contains the fund and opus name when relevant"""
     slash_post = archive_unit_name.find('/')
     necessary_part = archive_unit_name[slash_post:] if slash_post != -1 else ''
 
     import_message = "" #default
-    link = "" #default
+    contents = cell.value.strip()
     if cell.hyperlink:
         link = unquote(cell.hyperlink.target)
-        contents = cell.value.strip()
         coincides = link == contents
         if coincides:
             #does the link contain the necessary part?
@@ -194,6 +193,14 @@ def consistent_link(cell, cell_address, archive_unit_name):
             mess = f"cell {cell_address} contents {contents} differs from its link {link}"
             _logger.warning(mess)
             import_message = add_to_message("", mess)
+    elif contents != "":
+        link = contents
+        mess = f"cell {cell_address} in sheet {sheet_title} does not have a link, using instead its contents {contents}"
+        _logger.warning(mess)
+        import_message = add_to_message("", mess)
+    else:
+        mess = f"cell {cell_address} in sheet {sheet_title} does not have a link, using instead its contents {contents}"
+        raise TypeError(mess)
 
     return link, import_message
 
@@ -345,10 +352,6 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str,
     if isinstance(value, int):
         return [str(value)], url, in_first_cell
 
-    # Case 4: datetime -> [day, month]
-    if isinstance(value, datetime):
-        return [str(value.day), str(value.month)], url, in_first_cell
-
     # Case 2 & 4: Convert to string and parse
     s = str(value).strip()
 
@@ -379,8 +382,34 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str,
         if ints:
             return ints, url, in_first_cell
 
+    # Case 4: datetime -> [day, month]
+    if isinstance(value, datetime):
+        return [str(value.day), str(value.month)], url, in_first_cell
+
     return [], "", in_first_cell
 
+def str_to_timestamp(date_str, date_format):
+    try:
+        dt = datetime.strptime(date_str, date_format)
+        return str(dt) #str(dt.timestamp())
+    except ValueError:
+        return None
+
+def cell_to_timestamp(cell, import_message):
+    value = cell.value
+    if value is None:
+        return None, import_message
+
+    if isinstance(value, datetime):
+        return str(value), import_message
+
+    value = str(value)
+    date_format = '%d %b %Y'
+    when_transcribed = str_to_timestamp(value, date_format)
+    if when_transcribed is None:
+        import_message = add_to_message(import_message, "'When transcribed' original value was " + value)
+        return None, import_message
+    return when_transcribed, import_message
 
 def is_series_of_case_numbers(s: str, ignore_parts: bool) -> tuple[bool, int, bool]:
     """Case number should include digits but may also include letters.
@@ -486,7 +515,8 @@ def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name):
     source_col = find_header_in_row(ws, row, "B", "Z", SRC_HDR)
     cell_address = f"{chr(source_col + 1)}{row}"# default D3
     parent_title_cell = ws[cell_address]
-    url, import_message = consistent_link(parent_title_cell, cell_address, archive_unit_name)
+    sheet_title = ws.title
+    url, import_message = consistent_link(parent_title_cell, cell_address, archive_unit_name, sheet_title)
     if wiki_spreadsheet:
         title = get_page_title_from_link(parent_title_cell, wiki_spreadsheet, archive_unit_name)
     else:
@@ -511,6 +541,38 @@ def to_positive_int_str(s: str) -> str:
     except ValueError:
         return s
 
+def archive_name_to_cyrillic(latin_name: str) -> str:
+    match latin_name:
+        case "CDIAK":
+            return "ЦДІАК"
+        case "DADO":
+            return "ДАДО"
+        case "DAHEO-D":
+            return "ДАХЕО-Д"
+        case "DAHEO-R":
+            return "ДАХЕО-Р"
+        case "DAHO":
+            return "ДАХО"
+        case "DAK":
+            return "ДАК"
+        case "DAMO-A":
+            return "ДАМО-А"
+        case "DAMO-D":
+            return "ДАМО-Д"
+        case "DAMO-Soviet":
+            return "ДАМО"
+        case "DAOO":
+            return "ДАОО"
+        case "DAVO":
+            return "ДАВО"
+        case "TSDAHOU":
+            return "ЦДАГОУ"
+        case "TSDAVO":
+            return "ЦДАВО"
+        case _:
+            message = f"No Cyrillic equivalent for archive name {latin_name}"
+            _logger.error(message)
+            raise ValueError(message)
 
 def cyrillic_to_latin(s: str) -> str:
     """
@@ -965,6 +1027,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                 processor_cell_addr2 = f"{chr(comments_col+ 5)}{r}" #default f"L{r}"
                 pages_processed_cell_addr1 = f"{chr(comments_col + 3)}{r}" #default f"J{r}"
                 pages_processed_cell_addr2 = f"{chr(comments_col + 6)}{r}"  # default f"M{r}"
+                when_transcribed_cell_addr = f"{chr(comments_col + 7)}{r}"  # default f"N{r}"
 
                 description_col_offs = DESCRIPTION_COL_OFFS
                 years_col_offs = YEARS_COL_OFFS
@@ -980,6 +1043,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
 
                 process_code = get_cell_value(ws[f"{chr(ord(case_num_col) + process_code_col_offs)}{r}"], True)  # F
                 process_code, curr_import_message = normalize_process_code(process_code, curr_import_message)
+                when_transcribed, curr_import_message = cell_to_timestamp(ws[when_transcribed_cell_addr], curr_import_message)
 
                 add_page({
                     "title": title,
@@ -1003,6 +1067,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                     "processor": combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2]),
                     "pages_processed": get_cell_int_value(ws[pages_processed_cell_addr1]) +
                                        get_cell_int_value(ws[pages_processed_cell_addr2]),
+                    "when_transcribed": when_transcribed,
                 }, page_table)
 
     return page_table
@@ -1025,7 +1090,7 @@ def normalize_process_code(process_code: str | None, import_message: str) -> tup
     return process_code, import_message
 
 
-def process_worksheets(worksheets, wiki_spreadsheet, archive_name, page_table=None):
+def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyrillic_name, page_table=None):
     if not page_table:
         page_table = {}
     hdr_row = 1
@@ -1088,8 +1153,11 @@ def import_spreadsheet(sw_filepath):
     else:
         _logger.error(f"Spreadsheet file name {file_name} contains neither 'wiki' nor 'archive'")
         return
+    archive_cyrillic_name = "" # default for wiki
+    if not wiki_spreadsheet:
+        archive_cyrillic_name = archive_name_to_cyrillic(archive_name)
 
-    inp_page_data = process_worksheets(workbook, wiki_spreadsheet, archive_name)
+    inp_page_data = process_worksheets(workbook, wiki_spreadsheet, archive_name, archive_cyrillic_name)
     if not isinstance(inp_page_data, dict):
         raise TypeError("inp_page_data is not a dictionary")
     page_data = list(inp_page_data.values())
@@ -1102,6 +1170,7 @@ def import_spreadsheet(sw_filepath):
     doc_only_fields = doc_only_fields_all_caps | {
         "pages_processed",
         "processor",
+        "when_transcribed",
     }
 
     doc_and_page_fields = {
@@ -1263,8 +1332,8 @@ def process_dir(dir_path):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/ImportProblems/DAVO-archives+AK-20260213.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAKO-R-wiki-20260426.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/CDIAK-wiki-20260426.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/CDIAK-archive-20260213.xlsx"
     import_spreadsheet(filepath)
 #   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
 #   process_dir(dir_path)
