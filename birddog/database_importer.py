@@ -105,7 +105,7 @@ def cell_to_title(cell, archive_unit_name) -> str:
     return f"{archive_unit_name}/{subunit_name}"
 
 
-def get_page_title_from_link(cell, wiki_spreadsheet, archive_unit_name):
+def get_page_title_from_link(cell, wiki_spreadsheet, archive_unit_name, latin_archive_unit_name):
     if wiki_spreadsheet:
         if cell.hyperlink:
             url = cell.hyperlink.target
@@ -115,13 +115,27 @@ def get_page_title_from_link(cell, wiki_spreadsheet, archive_unit_name):
             else:
                 try:
                     url = str(int(float(cell.value)))
-                    return url
+                    return url, url
                 except ValueError:
-                    return None
+                    return None, None
+        latin_title = latin_archive_unit_name
+        if 'wiki' in url:
+            title = url_to_title(url)
+        else:
+            #for URLs like https://forum.j-roots.info/viewtopic.php?p=106843/5/1
+            title = archive_unit_name
+            try:
+                int_contents = str(int(float(cell.value)))
+                title = f"{title}/{int_contents}"
+                latin_title = f"{latin_archive_unit_name}/{int_contents}"
+            except ValueError:
+                pass
 
-        return url_to_title(url)
+        return title, latin_title
     else:
-        return cell_to_title(cell, archive_unit_name)
+        title = cell_to_title(cell, archive_unit_name)
+        latin_title = cell_to_title(cell, latin_archive_unit_name)
+        return title, latin_title
 
 def parse_hyphen_triplet(s: str):
     parts = s.split('-')
@@ -134,13 +148,14 @@ def parse_hyphen_triplet(s: str):
     return nums, True
 
 def get_case_title(url, curr_parent_title, opus_name, cell, wiki_spreadsheet,
-                   possible_hyphen_in_case_num, archive_unit_name):
+                   possible_hyphen_in_case_num, archive_unit_name, archive_unit_cyrillic_name):
     if wiki_spreadsheet:
         if possible_hyphen_in_case_num:
             # sometimes instead of a case number we have (fund)-(opus)-(case)
             three_numbers, is_triplet = parse_hyphen_triplet(cell.value)
             if is_triplet:
-                return f"{curr_parent_title}/{three_numbers[1]}/{three_numbers[2]}"
+                title = f"{curr_parent_title}/{three_numbers[1]}/{three_numbers[2]}"
+                return title, title
 
         title = url_to_title(url)
         if curr_parent_title not in title:
@@ -151,10 +166,12 @@ def get_case_title(url, curr_parent_title, opus_name, cell, wiki_spreadsheet,
                 case_id = value
             title = f"{curr_parent_title}/{opus_name}/{case_id}"
 
-        return title
+        return title, title
 
     else:
-        return cell_to_title(cell, archive_unit_name)
+        title = cell_to_title(cell, archive_unit_cyrillic_name)
+        latin_title = cell_to_title(cell, archive_unit_name)
+        return latin_title, title
 
 def get_cell_link(cell):
     return unquote(cell.hyperlink.target) if cell.hyperlink else ""
@@ -185,7 +202,7 @@ def consistent_link(cell, cell_address, archive_unit_name, sheet_title):
                 necessary_part1 = re.sub(r'[^0-9/]+', '', necessary_part)
                 contains = necessary_part1 in contents
                 if not contains:
-                    mess = f"cell {cell_address} contents {contents} was supposed to include {necessary_part}"
+                    mess = f"cell {cell_address} contents {contents} were supposed to include {necessary_part}"
                     _logger.warning(mess)
                     import_message = add_to_message("", mess)
         else:
@@ -510,7 +527,7 @@ def get_dates(ws, archive_name, change_date_col, ref_date_col):
 
     return change_date, timestamp
 
-def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name):
+def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cyrillic_unit_name):
     row = 3
     source_col = find_header_in_row(ws, row, "B", "Z", SRC_HDR)
     cell_address = f"{chr(source_col + 1)}{row}"# default D3
@@ -518,10 +535,12 @@ def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name):
     sheet_title = ws.title
     url, import_message = consistent_link(parent_title_cell, cell_address, archive_unit_name, sheet_title)
     if wiki_spreadsheet:
-        title = get_page_title_from_link(parent_title_cell, wiki_spreadsheet, archive_unit_name)
+        title, latin_title = get_page_title_from_link(parent_title_cell, wiki_spreadsheet,
+                                                      archive_cyrillic_unit_name, archive_unit_name)
     else:
-        title = archive_unit_name
-    return title, url, import_message
+        title = archive_cyrillic_unit_name
+        latin_title = archive_unit_name
+    return title, latin_title, url, import_message
 
 def to_positive_int_str(s: str) -> str:
     """
@@ -631,11 +650,11 @@ def title_cell_val_identical(title: str, cell_val: str, num_parts: int, inconsis
             else cell_val_posit_int_cyr
     return identical, modified_title
 
-def general_page_label(title, wiki_spreadsheet):
+def general_page_label(latin_title, cyrillic_title, wiki_spreadsheet):
     if wiki_spreadsheet:
-        return page_label(title)
+        return page_label(cyrillic_title)
     else:
-        return title
+        return latin_title
 
 def get_page_url(title: str, url: str, change_url: bool, import_message: str = "")->tuple[str,str]:
     if change_url:
@@ -756,7 +775,7 @@ def add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, 
     }, page_table)
 
 
-def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, title, url,
+def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, title, latin_title, url,
                                source_type, r, page_table, change_date, timestamp):
     """ We only add linked pages or pages with comments."""
     availability = get_cell_value(ws[f"D{r}"])
@@ -766,7 +785,7 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, title, url,
         # we do not add such pages
         return
 
-    label = general_page_label(title, wiki_spreadsheet)
+    label = general_page_label(latin_title, title, wiki_spreadsheet)
     url, import_message = get_page_url(title, url, wiki_spreadsheet)
     add_page({
         "title": title,
@@ -786,13 +805,16 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, title, url,
     }, page_table)
 
 
-def process_archive_sheet(ws, wiki_spreadsheet, archive_name, change_date_col, ref_date_col, page_table=None):
+def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyrillic_name,
+                          change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    archive_name, url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet, archive_name)
+    archive_name, _, url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet, archive_latin_name, archive_cyrillic_name)
+    if wiki_spreadsheet:
+        archive_cyrillic_name = archive_name
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, archive_name, change_date_col, ref_date_col)
-    label = general_page_label(archive_name, wiki_spreadsheet)
+    label = general_page_label(archive_latin_name, archive_name, wiki_spreadsheet)
 
     add_page({
         "title": archive_name,
@@ -828,25 +850,29 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_name, change_date_col, r
                 continue
             case 1:
                 # regular fund number
-                title = get_page_title_from_link(cell_to_use, wiki_spreadsheet, archive_name)
-                add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, title, url, source_type, r,
+                title, latin_title = get_page_title_from_link(cell_to_use, wiki_spreadsheet,
+                                                              archive_name, archive_latin_name)
+                add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, title, latin_title, url, source_type, r,
                                            page_table, change_date, timestamp)
             case _:
                 for fund_id in fund_ids:
-                    title = f"{archive_name}/{fund_id}"
-                    add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, title, url, source_type, r,
+                    title = f"{archive_cyrillic_name}/{fund_id}"
+                    latin_title = f"{archive_name}/{fund_id}"
+                    add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, title, latin_title, url, source_type, r,
                                                page_table, change_date, timestamp)
 
-    return page_table
+    return page_table, archive_cyrillic_name
 
 
-def process_fond_sheet(ws, wiki_spreadsheet, fund_name, change_date_col, ref_date_col, page_table=None):
+def process_fond_sheet(ws, wiki_spreadsheet, fund_name, fund_cyrillic_name,
+                       change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    parent_name, url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet, fund_name)
+    parent_name, parent_latin_name, url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet,
+                                                                                   fund_name, fund_cyrillic_name)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, fund_name, change_date_col, ref_date_col)
-    label = general_page_label(parent_name, wiki_spreadsheet)
+    label = general_page_label(parent_latin_name, parent_name, wiki_spreadsheet)
 
     add_page({
         "title": parent_name,
@@ -861,7 +887,7 @@ def process_fond_sheet(ws, wiki_spreadsheet, fund_name, change_date_col, ref_dat
         "doc_links": get_cell_link_or_str(ws["B4"]),
         "source_type": source_type,
         "import_message": import_message,
-        "parent": parent_title_no_ns(parent_name, wiki_spreadsheet, fund_name),
+        "parent": parent_title_no_ns(parent_name, wiki_spreadsheet, fund_cyrillic_name),
     }, page_table)
 
     #the header row can be 5, 6 or 7
@@ -889,28 +915,29 @@ def process_fond_sheet(ws, wiki_spreadsheet, fund_name, change_date_col, ref_dat
                 _logger.warning(f"Opus {get_cell_value(opus_num_cell)} in sheet='{ws.title}', "
                                 f"row={r} has no page but has a document")
                 curr_import_message = "Document without a page"
-            title = get_page_title_from_link(cell_to_use, wiki_spreadsheet, fund_name)
+            title, latin_title = get_page_title_from_link(cell_to_use, wiki_spreadsheet, fund_cyrillic_name, fund_name)
             if not title:
                 _logger.warning(f"cannot determine page title: sheet='{ws.title}', row={r}  - skipping")
                 continue
 
             url, curr_import_message = get_page_url(title, raw_url, wiki_spreadsheet, curr_import_message)
-            label = general_page_label(title, wiki_spreadsheet)
+            label = general_page_label(latin_title, title, wiki_spreadsheet)
             add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp,
                           source_type, parent_name, "opus", availability, curr_import_message)
     return page_table
 
-def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
+def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_cyrillic_name, opus_name,
                        change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    opus_title, url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet, fund_and_opus_name)
-    label = general_page_label(opus_title, wiki_spreadsheet)
+    opus_title, opus_latin_title, url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet,
+                                                               fund_and_opus_name, fund_and_opus_cyrillic_name)
+    label = general_page_label(opus_latin_title, opus_title, wiki_spreadsheet)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, fund_and_opus_name, change_date_col, ref_date_col)
     curr_parent_title = opus_title
     try:
-        curr_parent_title = parent_title_no_ns(opus_title, wiki_spreadsheet, fund_and_opus_name)
+        curr_parent_title = parent_title_no_ns(opus_title, wiki_spreadsheet, fund_and_opus_cyrillic_name)
     except ValueError as err:
         if "Unrecognized archive root" in str(err):
             source_type = "other"
@@ -986,16 +1013,16 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, opus_name,
                 curr_import_message = "Document without a page"
 
         if case_num_cell.value:
-            title = get_case_title(raw_url, curr_parent_title, opus_name, case_num_cell, wiki_spreadsheet,
-                                   possible_hyphen_in_case_num, fund_and_opus_name)
+            latin_title, title = get_case_title(raw_url, curr_parent_title, opus_name, case_num_cell, wiki_spreadsheet,
+                                   possible_hyphen_in_case_num, fund_and_opus_name, fund_and_opus_cyrillic_name)
             if title is None:
                 # If it is a comment, like "Index files linked at top of page" - skip this line
                 continue
 
-            label = general_page_label(title, wiki_spreadsheet)
+            label = general_page_label(latin_title, title, wiki_spreadsheet)
             if label is None:
                 curr_source_type = "other"
-                label = title
+                label = latin_title
 
             #title sanity check
             identical, modified_title = title_cell_val_identical(title, str(case_num_cell.value).strip(),
@@ -1111,20 +1138,22 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
 
             num_attributes, fund_opus_attributes = count_fund_opus_attributes(sheet, change_date_col)
             archive_unit_name = archive_name #unit is either archive, or fund, or opus
+            archive_unit_cyrillic_name = archive_cyrillic_name
             for attribute in fund_opus_attributes:
                 archive_unit_name = f"{archive_unit_name}/{attribute}"
+                archive_unit_cyrillic_name = f"{archive_unit_cyrillic_name}/{attribute}"
 
             match num_attributes:
                 case 2:
                     opus_name = fund_opus_attributes[-1]
-                    page_table = process_opus_sheet(sheet, wiki_spreadsheet, archive_unit_name, opus_name,
-                                                    change_date_col, ref_date_col, page_table)
+                    page_table = process_opus_sheet(sheet, wiki_spreadsheet, archive_unit_name,
+                                archive_unit_cyrillic_name, opus_name, change_date_col, ref_date_col, page_table)
                 case 1:
                     page_table = process_fond_sheet(sheet, wiki_spreadsheet, archive_unit_name,
-                                                    change_date_col, ref_date_col, page_table)
+                                archive_unit_cyrillic_name, change_date_col, ref_date_col, page_table)
                 case 0:
-                    page_table = process_archive_sheet(sheet, wiki_spreadsheet, archive_unit_name,
-                                                       change_date_col, ref_date_col, page_table)
+                    page_table, archive_cyrillic_name = process_archive_sheet(sheet, wiki_spreadsheet, archive_unit_name,
+                                archive_unit_cyrillic_name, change_date_col, ref_date_col, page_table)
                 case _:
                     raise ValueError(f"{num_attributes} for worksheet {sheet.title}")
 
@@ -1153,8 +1182,9 @@ def import_spreadsheet(sw_filepath):
     else:
         _logger.error(f"Spreadsheet file name {file_name} contains neither 'wiki' nor 'archive'")
         return
-    archive_cyrillic_name = "" # default for wiki
-    if not wiki_spreadsheet:
+    if wiki_spreadsheet:
+        archive_cyrillic_name = archive_name # default for wiki
+    else:
         archive_cyrillic_name = archive_name_to_cyrillic(archive_name)
 
     inp_page_data = process_worksheets(workbook, wiki_spreadsheet, archive_name, archive_cyrillic_name)
@@ -1332,7 +1362,7 @@ def process_dir(dir_path):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/CDIAK-wiki-20260426.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAVIO-R-wiki-20260325.xlsx"
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/CDIAK-archive-20260213.xlsx"
     import_spreadsheet(filepath)
 #   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
