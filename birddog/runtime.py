@@ -42,7 +42,7 @@ from birddog.fetch import FetchUrlFailError
 
 #_ENABLE_DB_SYNC = os.environ.get("BIRDDOG_ENABLE_DB_SYNC", False)
 _ENABLE_DB_SYNC = True
-_ENABLE_DOC_TRACKER = False
+_ENABLE_DOC_TRACKER = True
 if _ENABLE_DB_SYNC:
     from birddog.database_updater import DatabaseUpdater, DatabaseUpdateManager
     from birddog.database import Database
@@ -512,7 +512,7 @@ class Runtime:
             else:
                 self._commons_doc_tracker = None
                 self._wikisource_doc_tracker = None
-                
+
         else:
             self._database = None
             self._database_updater = None

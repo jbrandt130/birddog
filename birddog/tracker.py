@@ -185,9 +185,9 @@ def offset_utc(ts, seconds):
     return _format_utc_z(dt + timedelta(seconds=seconds))
 
 _WIKI_DOC_TRACKER_KV_TABLE = "bd_doc_tracker"
-_WIKI_DOC_TRACKER_HEARTBEAT_INTERVAL = 30  # seconds
+_WIKI_DOC_TRACKER_HEARTBEAT_INTERVAL = 300  # seconds
 _WIKI_SENTINEL = "WIKI_SENTINEL"
-_WIKI_CHANGE_EVENT_WINDOW = 300  # seconds
+_WIKI_CHANGE_EVENT_WINDOW = 1200  # seconds
 _DOC_TABLE_SENTINEL = "DOC_SENTINEL"
 
 WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC = {
@@ -289,39 +289,20 @@ class WikiDocTracker(HeartbeatManager):
             _logger.warning(f"WikiDocTracker: database unavailable - skipping document title refresh")
             return
         self._ensure_doc_map()
-        try:
-            doc_sentinel = self._kv.get(self._sentinel_kv_namespace, _DOC_TABLE_SENTINEL)
-        except KeyError:
-            doc_sentinel = None
 
-        newest_creation_date = None
         cursor = None
-        where_clause = ("CreatedAt", "gt", _format_utc_z(doc_sentinel)) if doc_sentinel else None
-        _logger.info(f"_refresh_doc_titles: where_clause={where_clause}")
         while True:
             batch, cursor = self._db.scan(
                 "Documents",
                 cursor=cursor,
-                view_name=self._table_view,
                 limit=100,
-                where=where_clause,
+                view_name=self._table_view,
                 fields=["title", "url", "CreatedAt"])
             if not batch:
                 break
-
-            if newest_creation_date is None:
-                try:
-                    newest_creation_date = max(rec["CreatedAt"] for rec in batch if rec.get("CreatedAt"))
-                except ValueError:
-                    # if no new creation date, then just leave the value as None
-                    pass
             self._store_relevant_titles(batch)
-
             if not cursor:
                 break
-
-        if newest_creation_date:
-            self._kv.insert(self._sentinel_kv_namespace, _DOC_TABLE_SENTINEL, _format_utc_z(newest_creation_date))
 
     def _get_wiki_sentinel(self):
         """
@@ -388,10 +369,10 @@ class WikiDocTracker(HeartbeatManager):
             last_sentinel = offset_utc(utc_now_dt(), -self._change_window_s)
             self._set_wiki_sentinel(last_sentinel)
             _logger.info(f"WikiDocTracker: initialized wiki sentinel to {last_sentinel}")
-        #_logger.info(
-        #    f"WikiDocTracker: heartbeat start: wiki sentinel={last_sentinel}, "
-        #    f"docs={len(self._doc_map) if self._doc_map is not None else 0}"
-        #)
+        _logger.info(
+            f"WikiDocTracker: heartbeat start: wiki sentinel={last_sentinel}, "
+            f"docs={len(self._doc_map) if self._doc_map is not None else 0}"
+        )
         hits, next_sentinel = self._get_wiki_changes(last_sentinel)
 
         # Process hits -> update doc records
