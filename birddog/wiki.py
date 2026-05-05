@@ -1377,7 +1377,9 @@ def get_recent_changes(
         rcs = data.get("query", {}).get("recentchanges", [])
 
         for rc in rcs:
-            title = rc["title"]
+            title = rc.get("title")
+            if not title:
+                continue
             timestamp = rc["timestamp"]  # MW UTC ISO8601, lex-order == time-order
             user = rc.get("user")
             rc_type = rc.get("type")
