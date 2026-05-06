@@ -47,10 +47,16 @@ _level_rank = {
 }
 
 def _page_entry(rec):
+    parent_list = rec["parent"]
+    if not parent_list:
+        parent_list = []
+    elif not isinstance(parent_list, list):
+        parent_list = [ parent_list ] 
     return {
         "level": rec["level"],
         "label": rec["label"],
-        "parent": [p["Id"] for p in rec["parent"]],
+        "url": rec["url"],
+        "parent": [p["Id"] for p in parent_list],
     }
 
 def _lowest_rank_page(page_tree, page_ids):
@@ -69,17 +75,19 @@ def _make_doc_map(db, doc_ids, doc_map=None):
     doc_records = db.read("Documents", doc_ids, fields="owning_pages")
     if not doc_map:
         doc_map = {}
-    doc_map.update({
-        rec["Id"]: {
-            "owning_pages": [ p["Id"] for p in rec["owning_pages"] ]
-        }
-        for rec in doc_records
-    })
+    for rec in doc_records:
+        owning_pages = rec["owning_pages"]
+        if not isinstance(owning_pages, list):
+            owning_pages = [ owning_pages ]
+        owning_page_ids = [p["Id"] for p in owning_pages ]
+        pid = rec["Id"]
+        doc_map[pid] = { "owning_pages" : owning_page_ids }
     return doc_map
 
 def _make_page_tree(db, page_ids):
     _logger.info(f"_make_page_tree: loading owning page records ({len(page_ids)})")
-    page_records = db.read("Pages", page_ids, fields=["parent", "level", "label"])
+    field_list = ["parent", "level", "label", "url"]
+    page_records = db.read("Pages", page_ids, fields=field_list)
     page_tree = {rec["Id"]: _page_entry(rec) for rec in page_records}
 
     # traverse the parent hierarchy of the owning pages
@@ -92,7 +100,7 @@ def _make_page_tree(db, page_ids):
             break
         _logger.info(f"_make_page_tree: loading parent page records ({len(page_ids)})")
         #_logger.info(f"{page_ids}")
-        page_records = db.read("Pages", page_ids, fields=["parent", "level", "label"])
+        page_records = db.read("Pages", page_ids, fields=field_list)
         #_logger.info(f"done read")
         page_tree.update({rec["Id"]: _page_entry(rec) for rec in page_records})
 

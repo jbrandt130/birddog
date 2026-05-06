@@ -40,7 +40,7 @@ if _NOCODB_RUN_LOCAL:
     _NOCODB_API_TOKEN   = os.environ["NOCODB_API_TOKEN_LOCAL"]
     _NOCODB_HOST        = "http://localhost:8080"
     _NOCODB_API_DELAY   = .01
-    _NOCODB_BATCH_SIZE  = 10
+    _NOCODB_BATCH_SIZE  = 100
     _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
     _logger.info(f"Using local nocodb api: {_NOCODB_HOST}")
 elif _NOCODB_RUN_HOSTED:
@@ -58,7 +58,7 @@ else:
     _NOCODB_API_TOKEN   = os.environ["BIRDDOG_AWS_NOCODB_API_TOKEN"]
     _NOCODB_HOST        = os.environ["BIRDDOG_AWS_NOCODB_HOST"]
     _NOCODB_API_DELAY   = .1
-    _NOCODB_BATCH_SIZE  = 200
+    _NOCODB_BATCH_SIZE  = 100
     _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
     _logger.info(f"Using aws nocodb api: {_NOCODB_HOST}")
 
@@ -235,6 +235,14 @@ def _encode_record(table_schema, record):
 # (db1 and db2 can be the same or different)
 # note that relational links are not created in the new table
 
+_UIDT_SKIP_LIST = (
+    "Links", 
+    "ForeignKey", 
+    "Formula", 
+    "Lookup", 
+    "LinkToAnotherRecord", 
+    "Rollup")
+
 def clone_table_schema(db1, table_name1, db2, table_name2):
     table_id1 = db1._table_id(table_name1)
     if db2._valid_table_name(table_name2):
@@ -242,7 +250,7 @@ def clone_table_schema(db1, table_name1, db2, table_name2):
     info = db1._fetch(db1._table_info_url(table_id1))
     columns = []
     for i, c in enumerate(info["columns"]):
-        if not c["system"] and c["uidt"] not in ("Links", "ForeignKey", "Formula", "Lookup"):
+        if not c["system"] and c["uidt"] not in _UIDT_SKIP_LIST:
             spec = {
                 "title": c["title"],
                 "description": c["description"],
@@ -262,6 +270,8 @@ def clone_table_schema(db1, table_name1, db2, table_name2):
         "description": info["description"],
         "columns": columns,
     }
+    #_logger.info(f"{create_spec}")
+    
     db2._fetch(db2._list_tables_url(), json=create_spec, method="POST")
     return create_spec
 
@@ -451,17 +461,20 @@ class NocoDBDatabase(Database):
                 "Content-Type": "application/json",
             }
         )
+        self.load_schema()
+
+    def load_schema(self):
         # load the ids for all the tables in the database
         self._table_id_map = self._get_table_id_map()
         # create placeholder for field ids and view ids that are loaded lazily as needed
         self._field_id_map = {}
         self._view_id_map = {}
-        # initialize _schema member so that _load_schema can do a scan()
+        # initialize _schema member so that _load_schema_spec can do a scan()
         self._schema = None
         # load the actual schema - requires that the tables
         # "Schema" and "Schema Values" exist
         try:
-            self._schema = self._load_schema()
+            self._schema = self._load_schema_spec()
         except SchemaError as err:
             _logger.warning("No schema found for database. Running schema-less.")
             self._schema = None
@@ -584,7 +597,7 @@ class NocoDBDatabase(Database):
     def _key_field_id(self, table_name):
         return self._field_id(table_name, self.key_field_name(table_name))
 
-    def _load_schema(self):
+    def _load_schema_spec(self):
         schema = dict()
         if "Schema" not in self._table_id_map:
             raise SchemaError("Missing Schema table")
