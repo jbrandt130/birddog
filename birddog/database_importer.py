@@ -275,9 +275,9 @@ def add_page(page: dict, page_table: dict) -> None:
     page["url"] = normalize_url(page["url"])
     page["last_imported"] = str(utc_now_dt().replace(microsecond=0))
 
-    title = page["title"]
-    # ensure an entry exists for this title
-    entry = page_table.setdefault(title, dict())
+    url = page["url"]
+    # ensure an entry exists for this URL
+    entry = page_table.setdefault(url, dict())
     # update/merge keys
     entry.update(page)
 
@@ -755,8 +755,8 @@ def case_like_headers_in_row(ws, opus_title, opus_name, import_message):
             old_numbering_column, contains_volumes, additional_column)
 
 
-def add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, source_type, parent_name,
-                  level, availability, import_message):
+def add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, source_type,
+                  parent_name, parent_url, level, availability, import_message):
     add_page({
         "title": title,
         "url": url,
@@ -770,21 +770,23 @@ def add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, 
         "availability": availability,
         "source_type": source_type,
         "parent": parent_name,
+        "parent_url": parent_url,
         "comments": get_cell_value(ws[f"O{r}"]),
         "import_message": import_message,
     }, page_table)
 
 
-def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, title, latin_title, url,
+def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url, title, latin_title, url,
                                source_type, r, page_table, change_date, timestamp):
-    """ We only add linked pages or pages with comments."""
+    """ We only add linked pages."""
     availability = get_cell_value(ws[f"D{r}"])
 
-    comments = get_cell_value(ws[f"O{r}"])
-    if availability != 'linked' and comments is None:
+    if availability != 'linked' and not url:
         # we do not add such pages
+        _logger.warning(f"No link in sheet='{ws.title}', fund {title} - skipping")
         return
 
+    comments = get_cell_value(ws[f"O{r}"])
     label = general_page_label(latin_title, title, wiki_spreadsheet)
     url, import_message = get_page_url(title, url, wiki_spreadsheet)
     add_page({
@@ -800,6 +802,7 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, title, latin
         "availability": availability,
         "source_type": source_type,
         "parent": archive_title,
+        "parent_url": archive_url,
         "import_message": import_message,
         "comments": comments,
     }, page_table)
@@ -809,7 +812,8 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
                           change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    archive_name, _, url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet, archive_latin_name, archive_cyrillic_name)
+    archive_name, _, archive_url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet,
+                                                                            archive_latin_name, archive_cyrillic_name)
     if wiki_spreadsheet:
         archive_cyrillic_name = archive_name
     source_type = get_source_type(ws)
@@ -818,7 +822,7 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
 
     add_page({
         "title": archive_name,
-        "url": url,
+        "url": archive_url,
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "archive",
@@ -830,6 +834,7 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
         "source_type": source_type,
         "import_message": import_message,
         "parent": "",
+        "parent_url": "",
     }, page_table)
 
     for r in range(7, ws.max_row + 1):
@@ -852,23 +857,23 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
                 # regular fund number
                 title, latin_title = get_page_title_from_link(cell_to_use, wiki_spreadsheet,
                                                               archive_name, archive_latin_name)
-                add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, title, latin_title, url, source_type, r,
-                                           page_table, change_date, timestamp)
+                add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, archive_url, title,
+                     latin_title, url, source_type, r, page_table, change_date, timestamp)
             case _:
                 for fund_id in fund_ids:
                     title = f"{archive_cyrillic_name}/{fund_id}"
                     latin_title = f"{archive_name}/{fund_id}"
-                    add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, title, latin_title, url, source_type, r,
-                                               page_table, change_date, timestamp)
+                    add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, archive_url, title,
+                        latin_title, url, source_type, r, page_table, change_date, timestamp)
 
-    return page_table, archive_cyrillic_name
+    return page_table, archive_cyrillic_name, archive_url
 
 
-def process_fond_sheet(ws, wiki_spreadsheet, fund_name, fund_cyrillic_name,
+def process_fund_sheet(ws, wiki_spreadsheet, archive_url, fund_name, fund_cyrillic_name,
                        change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    parent_name, parent_latin_name, url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet,
+    parent_name, parent_latin_name, fund_url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet,
                                                                                    fund_name, fund_cyrillic_name)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, fund_name, change_date_col, ref_date_col)
@@ -876,7 +881,7 @@ def process_fond_sheet(ws, wiki_spreadsheet, fund_name, fund_cyrillic_name,
 
     add_page({
         "title": parent_name,
-        "url": url,
+        "url": fund_url,
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "fond",
@@ -888,6 +893,7 @@ def process_fond_sheet(ws, wiki_spreadsheet, fund_name, fund_cyrillic_name,
         "source_type": source_type,
         "import_message": import_message,
         "parent": parent_title_no_ns(parent_name, wiki_spreadsheet, fund_cyrillic_name),
+        "parent_url": archive_url,
     }, page_table)
 
     #the header row can be 5, 6 or 7
@@ -923,14 +929,14 @@ def process_fond_sheet(ws, wiki_spreadsheet, fund_name, fund_cyrillic_name,
             url, curr_import_message = get_page_url(title, raw_url, wiki_spreadsheet, curr_import_message)
             label = general_page_label(latin_title, title, wiki_spreadsheet)
             add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp,
-                          source_type, parent_name, "opus", availability, curr_import_message)
-    return page_table
+                          source_type, parent_name, fund_url, "opus", availability, curr_import_message)
+    return page_table, fund_url
 
 def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_cyrillic_name, opus_name,
-                       change_date_col, ref_date_col, page_table=None):
+                       fund_url, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    opus_title, opus_latin_title, url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet,
+    opus_title, opus_latin_title, opus_url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet,
                                                                fund_and_opus_name, fund_and_opus_cyrillic_name)
     label = general_page_label(opus_latin_title, opus_title, wiki_spreadsheet)
     source_type = get_source_type(ws)
@@ -955,7 +961,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
 
     add_page({
         "title": opus_title,
-        "url": url,
+        "url": opus_url,
         "label": label,
         "seq_label": sequential_page_label(label),
         "level": "opus",
@@ -965,6 +971,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
         "timestamp": timestamp,
         "doc_links": get_cell_link_or_str(ws["B4"]),
         "parent": curr_parent_title,
+        "parent_url": fund_url,
         "source_type": source_type,
         "import_message": import_message,
     }, page_table)
@@ -1047,7 +1054,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                     curr_import_message = f"Volume in {title}"
                     _logger.warning(curr_import_message)
                 add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, source_type, opus_title,
-                              level, availability, curr_import_message)
+                              fund_url, level, availability, curr_import_message)
             else:
                 comments_cell_addr = f"{chr(comments_col)}{r}" #default f"G{r}"
                 processor_cell_addr1 = f"{chr(comments_col+ 2)}{r}" #default f"I{r}"
@@ -1084,6 +1091,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                     "years": get_cell_value(ws[f"{chr(ord(case_num_col) + years_col_offs)}{r}"]),
                     "source_type": curr_source_type,
                     "parent": opus_title,
+                    "parent_url": opus_url,
                     "doc_links": get_cell_link(ws[f"{chr(ord(case_num_col) + 1)}{r}"]),#B
                     "doc_type": get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True),#D
                     "content_code": get_cell_value(ws[f"{chr(ord(case_num_col) + content_code_col_offs)}{r}"], True),#E
@@ -1121,6 +1129,8 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
     if not page_table:
         page_table = {}
     hdr_row = 1
+    archive_url = '' #we assume the archive sheet is the first in the spreadshee
+    fund_url = ''#we assume the opus sheets come after the corresponding fund sheet
     for sheet in worksheets:
         try:
             _logger.info(f"processing worksheet: {sheet.title}")
@@ -1147,13 +1157,13 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
                 case 2:
                     opus_name = fund_opus_attributes[-1]
                     page_table = process_opus_sheet(sheet, wiki_spreadsheet, archive_unit_name,
-                                archive_unit_cyrillic_name, opus_name, change_date_col, ref_date_col, page_table)
+                                archive_unit_cyrillic_name, opus_name, fund_url, change_date_col, ref_date_col, page_table)
                 case 1:
-                    page_table = process_fond_sheet(sheet, wiki_spreadsheet, archive_unit_name,
-                                archive_unit_cyrillic_name, change_date_col, ref_date_col, page_table)
+                    page_table, fund_url = process_fund_sheet(sheet, wiki_spreadsheet, archive_url, archive_unit_name,
+                                                              archive_unit_cyrillic_name, change_date_col, ref_date_col, page_table)
                 case 0:
-                    page_table, archive_cyrillic_name = process_archive_sheet(sheet, wiki_spreadsheet, archive_unit_name,
-                                archive_unit_cyrillic_name, change_date_col, ref_date_col, page_table)
+                    page_table, archive_cyrillic_name, archive_url = process_archive_sheet(sheet, wiki_spreadsheet,
+                                archive_unit_name, archive_unit_cyrillic_name, change_date_col, ref_date_col, page_table)
                 case _:
                     raise ValueError(f"{num_attributes} for worksheet {sheet.title}")
 
@@ -1255,18 +1265,18 @@ def import_spreadsheet(sw_filepath):
         page["Id"] = record_id
 
     # Step 3: form dict by page title
-    page_dict = {page["title"]: page for page in output_pages}
+    page_dict = {page["url"]: page for page in output_pages}
 
     # Step 4: locate all parents and link to children
     parent_dict = {}
     for page in page_dict.values():
-        parent_name = page.get("parent")
-        if parent_name:
-            parent_page = parent_dict.get(parent_name)
+        parent_url = page.get("parent_url")
+        if parent_url:
+            parent_page = parent_dict.get(parent_url)
             if not parent_page:
-                parent_page = page_dict.get(parent_name)
+                parent_page = page_dict.get(parent_url)
             if parent_page:
-                parent_dict[parent_name] = parent_page
+                parent_dict[parent_url] = parent_page
                 child_ids = parent_page.get("child_ids", [])
                 child_ids.append(page["Id"])
                 parent_page["child_ids"] = child_ids
@@ -1309,15 +1319,15 @@ def import_spreadsheet(sw_filepath):
                 link = quoted_record["url"]
                 doc_payload["url"] = link
 
-                relevant_page_data = inp_page_data[page["title"]]
+                relevant_page_data = inp_page_data[page["url"]]
                 for k in doc_only_fields:
                     if k in relevant_page_data:
                         doc_payload[k] = relevant_page_data[k]
 
                 output_docs[link] = doc_payload
-                linked_docs = doc_link_dict.get(page["title"], [])
+                linked_docs = doc_link_dict.get(page["url"], [])
                 linked_docs.append(doc_payload)
-                doc_link_dict[page["title"]] = linked_docs
+                doc_link_dict[page["url"]] = linked_docs
 
     # Step 7: write doc records to db
     all_docs = list(output_docs.values())
@@ -1328,9 +1338,10 @@ def import_spreadsheet(sw_filepath):
         output_docs[doc["url"]]["Id"] = doc_id
 
     # Step 8: link pages to docs
-    for page_title, linked_docs in doc_link_dict.items():
-        page_id = page_dict[page_title]["Id"]
-        linked_ids = [output_docs[d["url"]]["Id"] for d in doc_link_dict[page_title]]
+    for page_url, linked_docs in doc_link_dict.items():
+        page_id = page_dict[page_url]["Id"]
+        page_title = page_dict[page_url]["title"]
+        linked_ids = [output_docs[d["url"]]["Id"] for d in doc_link_dict[page_url]]
         _logger.info(f"Adding doc links for {page_title} ({page_id}): {linked_ids}")
         db.create_links(
             "Pages",
@@ -1362,8 +1373,8 @@ def process_dir(dir_path):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAVIO-R-wiki-20260325.xlsx"
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/CDIAK-archive-20260213.xlsx"
+    #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAVO-D-wiki-20260125.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAK-archive-20250617.xlsx"
     import_spreadsheet(filepath)
 #   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
 #   process_dir(dir_path)
