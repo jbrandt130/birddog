@@ -40,6 +40,7 @@ _logger = get_logger()
 ARCHIVE_BASE    = 'https://uk.wikisource.org'
 WIKI_NAMESPACE  = "Архів"
 WIKI_NAMESPACE_ALIASES = ("Архів", "Архіви")  # add others if they exist
+WIKI_NAMESPACE_FULL_ALIASES = ("Архів:", "Архіви/")  # add others if they exist
 WIKI_NAMESPACE_ID = '116' # use lookup_namespace_id() to find this out
 ARCHIVES        = None
 API_URL         = f"{ARCHIVE_BASE}/w/api.php"
@@ -459,14 +460,13 @@ def get_title(url, include_namespace=True):
     result = result.replace('/wiki/', '')
     result = unquote(result)
 
-    ns_prefix = f"{WIKI_NAMESPACE}:"
-
-    if include_namespace:
-        if not result.startswith(ns_prefix):
-            result = ns_prefix + result
-    else:
-        if result.startswith(ns_prefix):
-            result = result[len(ns_prefix):]
+    for ns_prefix in WIKI_NAMESPACE_FULL_ALIASES:
+        if include_namespace:
+            if not result.startswith(ns_prefix):
+                result = ns_prefix + result
+        else:
+            if result.startswith(ns_prefix):
+                result = result[len(ns_prefix):]
 
     return result
 
