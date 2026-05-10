@@ -460,13 +460,14 @@ def get_title(url, include_namespace=True):
     result = result.replace('/wiki/', '')
     result = unquote(result)
 
-    for ns_prefix in WIKI_NAMESPACE_FULL_ALIASES:
-        if include_namespace:
-            if not result.startswith(ns_prefix):
-                result = ns_prefix + result
-        else:
+    if include_namespace:
+        if not any(result.startswith(p) for p in WIKI_NAMESPACE_FULL_ALIASES):
+            result = WIKI_NAMESPACE_FULL_ALIASES[0] + result
+    else:
+        for ns_prefix in WIKI_NAMESPACE_FULL_ALIASES:
             if result.startswith(ns_prefix):
                 result = result[len(ns_prefix):]
+                break
 
     return result
 
