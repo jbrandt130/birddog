@@ -1271,15 +1271,15 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
             _logger.info(f"processing worksheet: {sheet.title}")
             change_date_col = find_header_in_row(sheet, hdr_row, "I", "Z", CHANGE_DATE_HDR)
             if change_date_col is None:
-                raise ValueError(f"No 'change date:' column, cannot proceed")
+                raise ValueError("No 'change date:' column, cannot proceed")
             ref_date_col = find_header_in_row(sheet, hdr_row, chr(change_date_col + 2), "Z", REF_DATE_HDR)
             if ref_date_col is None:
                 if archive_name == "DAHO" or archive_name == "DAOO":
                     # Juliana's recommendation for these specific spreadsheets
                     ref_date_col = change_date_col + 3
-                    _logger.warning(f"No 'change date:' column, proceeding anyway with date")
+                    _logger.warning("No 'change date:' column, proceeding anyway with date")
                 else:
-                    raise ValueError(f"No 'reference date:' column")
+                    raise ValueError("No 'reference date:' column")
 
             num_attributes, fund_opus_attributes = count_fund_opus_attributes(sheet, change_date_col)
             archive_unit_name = archive_name  #unit is either archive, or fund, or opus
