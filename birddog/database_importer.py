@@ -33,6 +33,7 @@ FIRST_FUND_HDR = "Opus #, link".upper()
 SECOND_VOLUME_HDR = "Other case #".upper()
 AVAILABILITY_HDR = "Availability".upper()
 SRC_HDR = "source:".upper()
+SRC_NO_COLON_HDR = "source".upper()
 COMMENTS_HDR = "Comments".upper()
 CHANGE_DATE_HDR = "change date:".upper()
 REF_DATE_HDR = "reference date:".upper()
@@ -214,47 +215,48 @@ def string_contains_part(link, necessary_part, strict_equality):
     return contains
 
 
-def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spreadsheet):
+def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spreadsheet, import_message):
     """Checks whether the cell contents and the link coincide,
     and that the address contains the fund and opus name when relevant"""
     slash_post = archive_unit_name.find('/')
     necessary_part = archive_unit_name[slash_post + 1:] if slash_post != -1 else ''
 
-    import_message = ""  #default
     contents = cell.value.strip()
+    mess = ""
     if cell.hyperlink:
         link = unquote(cell.hyperlink.target)
         coincides = link == contents
         link_contains_necessary_part = string_contains_part(link, necessary_part, wiki_spreadsheet)
         if coincides:
             if not link_contains_necessary_part:
-                import_message = (f"cell {cell_address} in worksheet {sheet_title} contents and link '{contents}'"
+                mess = (f"cell {cell_address} in worksheet {sheet_title} contents and link '{contents}'"
                                   f" were supposed to include '{necessary_part}'")
         else:
             #contents vs link
             if '/forum.j-roots.info' in link:
-                import_message = (f"the link '{link}' in cell {cell_address}, sheet {sheet_title},"
+                mess = (f"the link '{link}' in cell {cell_address}, sheet {sheet_title},"
                                   f" differs from its contents '{contents}'")
             elif link_contains_necessary_part:
-                import_message = (f"using the link '{link}' in cell {cell_address}, sheet {sheet_title},"
+                mess = (f"using the link '{link}' in cell {cell_address}, sheet {sheet_title},"
                                   f" that differs from its contents '{contents}'")
             elif string_contains_part(contents, necessary_part, wiki_spreadsheet):
-                import_message = (f"using the contents '{contents}' in cell {cell_address}, sheet {sheet_title},"
+                mess = (f"using the contents '{contents}' in cell {cell_address}, sheet {sheet_title},"
                                   f" instead of the apparently wrong link '{link}'")
                 link = contents
             else:
-                import_message = f"the link '{link}' in cell {cell_address} in sheet {sheet_title} is apparently wrong"
+                mess = f"the link '{link}' in cell {cell_address} in sheet {sheet_title} is apparently wrong"
                 if wiki_spreadsheet:
-                    raise TypeError(import_message)
+                    raise TypeError(mess)
     elif contents != "":
         link = contents
-        import_message = f"cell {cell_address} in sheet {sheet_title} does not have a link, using instead its contents '{contents}'"
+        mess = f"cell {cell_address} in sheet {sheet_title} does not have a link, using instead its contents '{contents}'"
     else:
         mess = f"cell {cell_address} in sheet {sheet_title} does not have a link"
         raise TypeError(mess)
 
-    if import_message != "":
-        _logger.warning(import_message)
+    if mess != "":
+        _logger.warning(mess)
+    import_message = add_to_message(import_message, mess)
     return link, import_message
 
 
@@ -523,7 +525,7 @@ def find_header_in_row(ws, row, start_col, end_col, header):
         contents = get_cell_value(ws[cell_addr], True)
         if contents is None:
             continue
-        if contents == header:
+        if header in contents:
             return i
     return None
 
@@ -580,19 +582,54 @@ def get_dates(ws, archive_name, change_date_col, ref_date_col):
 
 
 def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cyrillic_unit_name):
+    sheet_title = ws.title
+    import_message = ""
     row = 3
     source_col = find_header_in_row(ws, row, "B", "Z", SRC_HDR)
+    daho_fund_list = False
+    if source_col is None:# and 'DAHO' in archive_unit_name and not wiki_spreadsheet:
+        # try SRC_NO_COLON_HDR
+        source_col = find_header_in_row(ws, row, "B", "Z", SRC_NO_COLON_HDR)
+        if source_col is None:
+            # non-standard spreadsheet 'DAHO'
+            daho_fund_list = True
+            row = 4
+            source_col = ord('A')
+        else:
+            cell_address = f"{chr(source_col)}{row}"  # A4
+            mess = ws[cell_address].value.strip()
+            import_message = add_to_message(import_message, mess[:len(mess) - 1]) # deleting the confusing colon in the end
+
     cell_address = f"{chr(source_col + 1)}{row}"  # default D3
     parent_title_cell = ws[cell_address]
-    sheet_title = ws.title
     url, import_message = consistent_link(parent_title_cell, cell_address, archive_unit_name,
-                                          sheet_title, wiki_spreadsheet)
+                                          sheet_title, wiki_spreadsheet, import_message)
+    if daho_fund_list:
+        # additional links
+        cell_address = f"{chr(source_col)}{row}"  # A4
+        descr_cell = ws[cell_address]
+        import_message = add_to_message(import_message, f"The main link is marked as {descr_cell.value.strip()}")
+        cell_address = f"{chr(source_col)}{row + 1}"  # A5
+        descr_cell = ws[cell_address]
+        cell_address = f"{chr(source_col + 1)}{row + 1}"  # B5
+        link_cell = ws[cell_address]
+        import_message = add_to_message(import_message, f"there is also a {descr_cell.value.strip()} link "
+                                       f"{unquote(link_cell.hyperlink.target)}")
+        descr_cell = ws["C3"]
+        link_cell = ws["D3"]
+        import_message = add_to_message(import_message, f"and a {descr_cell.value.strip()} link "
+                                       f"{unquote(link_cell.hyperlink.target)}")
+
     if wiki_spreadsheet:
         title, latin_title = get_page_title_from_link(parent_title_cell, wiki_spreadsheet,
                                                       archive_cyrillic_unit_name, archive_unit_name)
     else:
         title = archive_cyrillic_unit_name
         latin_title = archive_unit_name
+
+    if import_message != "":
+        _logger.warning(import_message)
+
     return title, latin_title, url, import_message
 
 
@@ -722,7 +759,7 @@ def get_page_url(title: str, url: str, check_url: bool, import_message: str = ""
             if is_redlinked and changed_url != naked_url:
                 mess = f"suspicious URL {url} for title {title}"
                 _logger.warning(mess)
-                add_to_message(import_message, mess)
+                import_message = add_to_message(import_message, mess)
 
     return url, import_message
 
@@ -745,7 +782,7 @@ def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, she
                 break
 
     if mess != "":
-        add_to_message(import_message, mess)
+        import_message = add_to_message(import_message, mess)
     return import_message
 
 
@@ -1482,7 +1519,7 @@ def process_dir(dir_path, actually_write=True):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/TSDAVO-wiki-20260506.xlsx"
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAMO-D-archives-20260119.xlsx"
-#    import_spreadsheet(filepath, False)
-   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki"
-   process_dir(dir_path)
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAOO-archives-20250523.xlsx"
+    import_spreadsheet(filepath)
+#   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
+#   process_dir(dir_path)
