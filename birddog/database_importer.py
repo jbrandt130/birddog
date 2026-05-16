@@ -1237,7 +1237,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                     "processor": combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2]),
                     "pages_processed": get_cell_int_value(ws[pages_processed_cell_addr1]) +
                                        get_cell_int_value(ws[pages_processed_cell_addr2]),
-#                    "when_transcribed": when_transcribed,
+                    "when_transcribed": when_transcribed,
                 }, page_table)
 
     return page_table
@@ -1518,8 +1518,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/TSDAVO-wiki-20260506.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAOO-archives-20250523.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/TSDAVO-wiki-20260506.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAOO-archives-20250523.xlsx"
     import_spreadsheet(filepath)
 #   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
 #   process_dir(dir_path)
