@@ -197,6 +197,11 @@ def add_to_message(message, addition):
 def string_contains_part(link, necessary_part, strict_equality):
     # does the link contain the necessary part?
     contains = necessary_part in link
+    if not contains and not strict_equality:
+        #replaces all the hyphens and all the underscores in the link with a slash
+        modified_link = link.replace('-', '/').replace('_', '/')
+        contains = necessary_part in modified_link
+
     if not contains:
         # try without letters
         necessary_part1 = re.sub(r'[^0-9/]+', '', necessary_part)
@@ -1212,7 +1217,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
 
                 process_code = get_cell_value(ws[f"{chr(ord(case_num_col) + process_code_col_offs)}{r}"], True)  # F
                 process_code, curr_import_message = normalize_process_code(process_code, curr_import_message)
-                when_transcribed = ws[when_transcribed_cell_addr].value or ''
+                when_transcribed = str(ws[when_transcribed_cell_addr].value) or ''
 
                 add_page({
                     "title": title,
@@ -1518,8 +1523,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/TSDAVO-wiki-20260506.xlsx"
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAOO-archives-20250523.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DACHKO-D-wiki-20260501.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAVO-archives+AK-20260415.xlsx"
     import_spreadsheet(filepath)
 #   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
 #   process_dir(dir_path)
