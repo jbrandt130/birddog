@@ -226,7 +226,7 @@ def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spr
     slash_post = archive_unit_name.find('/')
     necessary_part = archive_unit_name[slash_post + 1:] if slash_post != -1 else ''
 
-    contents = cell.value.strip()
+    contents = unquote(cell.value.strip())
     mess = ""
     if cell.hyperlink:
         link = unquote(cell.hyperlink.target)
@@ -259,8 +259,6 @@ def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spr
         mess = f"cell {cell_address} in sheet {sheet_title} does not have a link"
         raise TypeError(mess)
 
-    if mess != "":
-        _logger.warning(mess)
     import_message = add_to_message(import_message, mess)
     return link, import_message
 
@@ -1523,8 +1521,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DACHKO-D-wiki-20260501.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAVO-archives+AK-20260415.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/TSDAVO-wiki-20260506.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/TSDAVO-archive-20260504.xlsx"
     import_spreadsheet(filepath)
 #   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
 #   process_dir(dir_path)
