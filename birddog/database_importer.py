@@ -235,7 +235,7 @@ def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spr
         coincides = link == contents
         link_contains_necessary_part = string_contains_part(link, necessary_part, wiki_spreadsheet)
         if coincides:
-            if not link_contains_necessary_part:
+            if not link_contains_necessary_part and wiki_spreadsheet:
                 mess = (f"cell {cell_address} in worksheet {sheet_title} contents and link '{contents}'"
                         f" were supposed to include '{necessary_part}'")
         else:
@@ -400,14 +400,14 @@ def log_strange_parsing_result(ws, r, cell, subunits: List[str], url: str, wiki_
             if wiki_spreadsheet and normalized_val not in url:
                 no_letters = re.sub(r"[A-Z-]", "", normalized_val)
                 if no_letters not in url:
-                    _logger.warning(f"In sheet='{ws.title}', row={r}, the URl {url} was supposed to include"
+                    _logger.warning(f"In sheet='{ws.title}', row={r}, the URL {url} was supposed to include"
                                     f" the fund number '{normalized_val}'")
             return
         case 0:
             if cell.value is None or len(str(cell.value)) == 0:
                 #empty cell - do nothing
                 return
-            _logger.warning(f"No URl found for the fund '{normalized_val}', sheet='{ws.title}', row={r} - skipping")
+            _logger.warning(f"No URL found for the fund '{normalized_val}', sheet='{ws.title}', row={r} - skipping")
         case _:
             _logger.warning(f"Irregular fund number '{normalized_val}', sheet='{ws.title}', "
                             f"row={r} - splitting to {subunits}")
@@ -652,8 +652,16 @@ def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cy
                                                         f"{unquote(link_cell.hyperlink.target)}")
         descr_cell = ws["C3"]
         link_cell = ws["D3"]
-        import_message = add_to_message(import_message, f"and a {descr_cell.value.strip()} link "
+        import_message = add_to_message(import_message, f", a {descr_cell.value.strip()} link "
                                                         f"{unquote(link_cell.hyperlink.target)}")
+        descr_cell = ws["C4"]
+        link_cell = ws["D4"]
+        import_message = add_to_message(import_message, f", a {descr_cell.value.strip()} link "
+                                                        f"{unquote(link_cell.hyperlink.target)}")
+        descr_cell = ws["C3"]
+        link_cell = ws["D3"]
+        import_message = add_to_message(import_message, f", and a {descr_cell.value.strip()} link "
+                                                        f"{link_cell.value}")
 
     if wiki_spreadsheet:
         title, latin_title = get_page_title_from_link(parent_title_cell, wiki_spreadsheet,
@@ -1326,7 +1334,9 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
                 if archive_name == "DAHO" or archive_name == "DAOO":
                     # Juliana's recommendation for these specific spreadsheets
                     ref_date_col = change_date_col + 3
-                    _logger.warning("No 'change date:' column, proceeding anyway with date")
+                    cell_addr = f"{chr(ref_date_col + 1)}1"
+                    date = get_cell_value(sheet[cell_addr])
+                    _logger.warning(f"No 'change date:' column, proceeding anyway with date {date}")
                 else:
                     raise ValueError("No 'reference date:' column")
 
@@ -1366,7 +1376,7 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
 
 def import_spreadsheet(sw_filepath, actually_write=True):
     db = Database()
-    workbook = load_workbook(sw_filepath, data_only=True)
+    workbook = load_workbook(sw_filepath)
     wiki_spreadsheet = "-wiki" in sw_filepath.lower()
     substring = "-archive"
     if wiki_spreadsheet:
@@ -1569,8 +1579,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAOO-D-wiki-20260427.xlsx"
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHEO-D-archive-20260321.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DACHGO-R-wiki-20260203.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHO-archive-20260213.xlsx"
 #    import_spreadsheet(filepath, False)
-   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
-   process_dir(dir_path, False)
+    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
+    process_dir(dir_path)
