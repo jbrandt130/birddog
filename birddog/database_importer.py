@@ -228,7 +228,8 @@ def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spr
     necessary_part = archive_unit_name[slash_post + 1:] if slash_post != -1 else ''
 
     contents = unquote(cell.value.strip())
-    mess = ""
+    mess = ""  # default
+    link = ""  # default
     if cell.hyperlink:
         link = unquote(cell.hyperlink.target)
         coincides = link == contents
@@ -254,8 +255,11 @@ def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spr
                 if wiki_spreadsheet:
                     raise TypeError(mess)
     elif contents != "":
-        link = contents
-        mess = f"cell {cell_address} in sheet {sheet_title} does not have a link, using instead its contents '{contents}'"
+        if contents.startswith('http'):
+            link = contents
+            mess = f"cell {cell_address} in sheet {sheet_title} does not have a link, using instead its contents '{contents}'"
+        else:
+            mess = f"cell {cell_address} in sheet {sheet_title} does not have a link and contains text '{contents}'"
     else:
         mess = f"cell {cell_address} in sheet {sheet_title} does not have a link"
         raise TypeError(mess)
@@ -1189,6 +1193,10 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                 curr_import_message = "Document without a page"
 
         if case_num_cell.value:
+            if case_num_cell.hyperlink and case_num_cell.hyperlink.target == case_num_cell.value:
+                _logger.warning(f"Apparently cells in row {r} are empty but have link {case_num_cell.value} - skipping")
+                continue
+
             latin_title, title = get_case_title(raw_url, curr_parent_title, opus_name, case_num_cell, wiki_spreadsheet,
                                                 possible_hyphen_in_case_num, fund_and_opus_name,
                                                 fund_and_opus_cyrillic_name)
@@ -1358,7 +1366,7 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
 
 def import_spreadsheet(sw_filepath, actually_write=True):
     db = Database()
-    workbook = load_workbook(sw_filepath)
+    workbook = load_workbook(sw_filepath, data_only=True)
     wiki_spreadsheet = "-wiki" in sw_filepath.lower()
     substring = "-archive"
     if wiki_spreadsheet:
@@ -1561,8 +1569,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAOO-D-wiki-20260427.xlsx"
-    #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAK-archive-20250617.xlsx"
-    import_spreadsheet(filepath)
-#   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
-#   process_dir(dir_path)
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAOO-D-wiki-20260427.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHEO-D-archive-20260321.xlsx"
+#    import_spreadsheet(filepath, False)
+   dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
+   process_dir(dir_path, False)
