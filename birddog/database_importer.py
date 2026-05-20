@@ -8,7 +8,6 @@ from birddog.wiki import (
     get_title,
     parent_title,
     page_label,
-    page_url_from_title,
     sequential_page_label,
 )
 
@@ -38,7 +37,7 @@ SRC_NO_COLON_HDR = "source".upper()
 COMMENTS_HDR = "Comments".upper()
 CHANGE_DATE_HDR = "change date:".upper()
 REF_DATE_HDR = "reference date:".upper()
-RED_SUBSTRING = "?action=edit&redlink=1"
+RED_SUBSTRING = "action=edit&redlink=1"  # it can be either &action=edit&redlink=1 or ?action=edit&redlink=1 in the end
 _NS_PREFIX = f"{WIKI_NAMESPACE}:"
 
 DESCRIPTION_COL_OFFS = 1
@@ -108,14 +107,14 @@ def cell_to_title(cell, archive_unit_name) -> str:
     if isinstance(val, float):
         subunit_name = str(int(val))
     else:
-        subunit_name = str(val)
+        subunit_name = str(val).strip()
     return f"{archive_unit_name}/{subunit_name}"
 
 
 def get_page_title_from_link(cell, wiki_spreadsheet, archive_unit_name, latin_archive_unit_name):
     if wiki_spreadsheet:
         if cell.hyperlink:
-            url = cell.hyperlink.target
+            url = cell.hyperlink.target.strip()
         else:
             if isinstance(cell.value, str):
                 url = cell.value
@@ -184,7 +183,7 @@ def get_case_title(url, curr_parent_title, opus_name, cell, wiki_spreadsheet,
 
 
 def get_cell_link(cell):
-    return unquote(cell.hyperlink.target) if cell.hyperlink else ""
+    return unquote(cell.hyperlink.target.strip()) if cell.hyperlink else ""
 
 
 def add_to_message(message, addition):
@@ -231,7 +230,7 @@ def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spr
     mess = ""  # default
     link = ""  # default
     if cell.hyperlink:
-        link = unquote(cell.hyperlink.target)
+        link = unquote(cell.hyperlink.target.strip())
         coincides = link == contents
         link_contains_necessary_part = string_contains_part(link, necessary_part, wiki_spreadsheet)
         if coincides:
@@ -308,6 +307,7 @@ def get_cell_link_or_str(ws, cell_addr: str, import_message: str, check_contents
                     mess = f"no document link in cell {cell_addr}, using the cell contents '{result[0]}'"
                 else:
                     mess = f"no document link for this page, cell {cell_addr} contains text '{result[0]}'"
+                    result = ""
             elif not result[0].startswith('http'):
                 mess = f"suspicious document link '{result[0]}'"
     if mess:
@@ -338,7 +338,8 @@ def is_url_redlinked(url):
     index = url.find(RED_SUBSTRING)
     if index != -1:
         is_redlinked = True
-        naked_url = url[:index]
+        # it can be either &action=edit&redlink=1 or ?action=edit&redlink=1 in the end
+        naked_url = url[:index - 1]
 
     return is_redlinked, naked_url
 
@@ -423,7 +424,7 @@ def get_url_from_2_cells(unit_num_cell, unit_descr_cell) -> tuple[str, bool]:
         return "", in_first_cell
 
     hyperlink = cell_to_use.hyperlink
-    url = unquote(hyperlink.target)
+    url = unquote(hyperlink.target.strip())
 #    if hyperlink.location is not None:
 #        url = f"{url}#{hyperlink.location}"
     return url, in_first_cell
@@ -649,15 +650,15 @@ def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cy
         cell_address = f"{chr(source_col + 1)}{row + 1}"  # B5
         link_cell = ws[cell_address]
         import_message = add_to_message(import_message, f"there is also a {descr_cell.value.strip()} link "
-                                                        f"{unquote(link_cell.hyperlink.target)}")
+                                                        f"{unquote(link_cell.hyperlink.target.strip())}")
         descr_cell = ws["C3"]
         link_cell = ws["D3"]
         import_message = add_to_message(import_message, f", a {descr_cell.value.strip()} link "
-                                                        f"{unquote(link_cell.hyperlink.target)}")
+                                                        f"{unquote(link_cell.hyperlink.target.strip())}")
         descr_cell = ws["C4"]
         link_cell = ws["D4"]
         import_message = add_to_message(import_message, f", a {descr_cell.value.strip()} link "
-                                                        f"{unquote(link_cell.hyperlink.target)}")
+                                                        f"{unquote(link_cell.hyperlink.target.strip())}")
         descr_cell = ws["C3"]
         link_cell = ws["D3"]
         import_message = add_to_message(import_message, f", and a {descr_cell.value.strip()} link "
@@ -769,6 +770,9 @@ def title_cell_val_identical(title: str, cell_val: str, num_parts: int, inconsis
     cell_val_posit_int_cyr = to_positive_int_str(cell_val)
     cell_val_posit_int_lat = cyrillic_to_latin(cell_val_posit_int_cyr)
     identical = title_after_last_slash == cell_val_posit_int_lat
+    if not identical:
+        # try deleting the trailing non-digits
+        identical = re.sub(r'\D*$', '', title_after_last_slash) == re.sub(r'\D*$', '', cell_val_posit_int_lat)
     if not identical and num_parts == 3:
         #maybe it is of format fund-opus-case
         parts = cell_val.split('-')
@@ -794,19 +798,6 @@ def general_page_label(latin_title, cyrillic_title, wiki_spreadsheet):
         return latin_title
 
 
-def get_page_url(title: str, url: str, check_url: bool, import_message: str = "") -> tuple[str, str]:
-    if check_url:
-        changed_url = page_url_from_title(title)
-        if changed_url != url:
-            is_redlinked, naked_url = is_url_redlinked(url)
-            if is_redlinked and changed_url != naked_url:
-                mess = f"suspicious URL {url} for title {title}"
-                _logger.warning(mess)
-                import_message = add_to_message(import_message, mess)
-
-    return url, import_message
-
-
 def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, sheet_title, cell_address):
     mess = ""
     if wiki_spreadsheet:
@@ -814,6 +805,7 @@ def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, she
             sequence = ""
             for part in necessary_parts:
                 sequence = f"{sequence}/{part}"
+            sequence = re.sub(r'^\D*', '', sequence)
             if not string_contains_part(url, sequence, wiki_spreadsheet):
                 mess = (f"url {url} in cell {cell_address} in worksheet '{sheet_title}'"
                         f" was supposed to include '{sequence}'")
@@ -843,7 +835,7 @@ def count_fund_opus_attributes(sheet, end_col):
         contents = get_cell_value(sheet[cell_addr])
         if contents is not None and any(ch.isdigit() for ch in contents):
             #in DAHO-D-wiki-20260324.xlsx sheet "DAHO D wiki fund list" we have text
-            # "to be updated when BirdDog not adding incorect links"
+            # "to be updated when BirdDog not adding incorrect links"
             num_nonempty_cells += 1
             fund_opus_attributes.append(str(contents))
     return num_nonempty_cells, fund_opus_attributes
@@ -957,7 +949,6 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url,
 
     comments = get_cell_value(ws[f"O{r}"])
     label = general_page_label(latin_title, title, wiki_spreadsheet)
-    url, import_message = get_page_url(title, url, wiki_spreadsheet)
     add_page({
         "title": title,
         "url": url,
@@ -972,7 +963,6 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url,
         "source_type": source_type,
         "parent": archive_title,
         "parent_url": archive_url,
-        "import_message": import_message,
         "comments": comments,
     }, page_table)
 
@@ -1099,12 +1089,11 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
                 _logger.warning(f"cannot determine page title: sheet='{ws.title}', row={r}  - skipping")
                 continue
 
-            url, curr_import_message = get_page_url(title, raw_url, wiki_spreadsheet, curr_import_message)
             necessary_parts = [fund_id, normalize_to_int_str(str(opus_num_cell.value))]
-            curr_import_message = check_url_sanity(url, curr_import_message, wiki_spreadsheet,
+            curr_import_message = check_url_sanity(raw_url, curr_import_message, wiki_spreadsheet,
                                                    necessary_parts, ws.title, opus_num_cell_addr)
             label = general_page_label(latin_title, title, wiki_spreadsheet)
-            add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp,
+            add_opus_page(page_table, ws, r, title, raw_url, label, change_date, timestamp,
                           source_type, parent_name, fund_url, "opus", availability, curr_import_message)
     return page_table, fund_url
 
@@ -1192,7 +1181,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                 #CDIAK-wiki-20260409.xlsx sheet CDIAK 1164-1 contains old and new case numbering and the case link
                 # may be in both columns
                 hyperlink = case_amount_cell.hyperlink
-                raw_url = unquote(hyperlink.target)
+                raw_url = unquote(hyperlink.target.strip())
                 in_first_cell = True
         if not in_first_cell:
             if additional_column:
@@ -1201,7 +1190,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                 curr_import_message = "Document without a page"
 
         if case_num_cell.value:
-            if case_num_cell.hyperlink and case_num_cell.hyperlink.target == case_num_cell.value:
+            if case_num_cell.hyperlink and case_num_cell.hyperlink.target.strip() == case_num_cell.value:
                 _logger.warning(f"Apparently cells in row {r} are empty but have link {case_num_cell.value} - skipping")
                 continue
 
@@ -1229,8 +1218,6 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                     title = modified_title
                 _logger.warning(f"{curr_import_message}")
 
-            url, curr_import_message = get_page_url(title, raw_url,
-                                                    wiki_spreadsheet and in_first_cell, curr_import_message)
             if level == "volume":
                 if possible_hyphen_in_case_num:
                     availability = get_cell_value(ws[f"D{r}"])
@@ -1239,11 +1226,11 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                 if "" == curr_import_message:
                     curr_import_message = f"Volume in {title}"
                     _logger.warning(curr_import_message)
-                add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, source_type, opus_title,
+                add_opus_page(page_table, ws, r, title, raw_url, label, change_date, timestamp, source_type, opus_title,
                               fund_url, level, availability, curr_import_message)
             else:
                 necessary_parts = [fund_name, opus_name, normalize_to_int_str(str(case_num_cell.value))]
-                curr_import_message = check_url_sanity(url, curr_import_message, wiki_spreadsheet,
+                curr_import_message = check_url_sanity(raw_url, curr_import_message, wiki_spreadsheet,
                                                        necessary_parts, ws.title, case_num_cell_addr)
 
                 comments_cell_addr = f"{chr(comments_col)}{r}"  #default f"G{r}"
@@ -1273,7 +1260,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
 
                 add_page({
                     "title": title,
-                    "url": url,
+                    "url": raw_url,
                     "label": label,
                     "seq_label": sequential_page_label(label),
                     "level": level,
@@ -1579,7 +1566,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DACHGO-R-wiki-20260203.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAHO-R-wiki-20260213.xlsx"
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHO-archive-20260213.xlsx"
 #    import_spreadsheet(filepath, False)
     dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
