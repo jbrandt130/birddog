@@ -416,7 +416,7 @@ def form_document_record(url):
     # Must be a /wiki/ URL to extract a title
     if not path.startswith("/wiki/"):
         if _sniff_suffix(url):
-            title = path.rsplit("/", 1)[-1]
+            title = unquote(path.rsplit("/", 1)[-1])
         else:
             title = url
         return {

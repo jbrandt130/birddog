@@ -22,7 +22,6 @@ def get_doc_id_by_process_code(db, process_code, limit=None):
     while True:
         records, cursor = db.scan("Documents", where=where_clause, limit=1000, fields=["Id", "process_code"], cursor=cursor)
         result.extend(records)
-        print(len(result))
         if not records or not cursor:
             break
         if limit and len(result) > limit:
@@ -72,7 +71,8 @@ def _lowest_rank_page(page_tree, page_ids):
 def _make_doc_map(db, doc_ids, doc_map=None):
     # construct doc map of record id to owning page record ids
     _logger.info(f"_make_doc_map: loading doc records ({len(doc_ids)})")
-    doc_records = db.read("Documents", doc_ids, fields="owning_pages")
+    fields = ["owning_pages", "processed", "pages_processed", "transcribed", "process_code"]
+    doc_records = db.read("Documents", doc_ids, fields=fields)
     if not doc_map:
         doc_map = {}
     for rec in doc_records:
@@ -81,7 +81,13 @@ def _make_doc_map(db, doc_ids, doc_map=None):
             owning_pages = [ owning_pages ]
         owning_page_ids = [p["Id"] for p in owning_pages ]
         pid = rec["Id"]
-        doc_map[pid] = { "owning_pages" : owning_page_ids }
+        doc_map[pid] = { 
+            "owning_pages" : owning_page_ids,
+            "process_code": rec.get("process_code"),
+            "processed": rec.get("processed"),
+            "pages_processed": rec.get("pages_processed"),
+            "transcribed": rec.get("transcribed"),
+        }
     return doc_map
 
 def _make_page_tree(db, page_ids):
@@ -131,6 +137,7 @@ def assign_docs_to_pages(db, doc_ids):
         assigned_docs = page_tree[assigned_page].get("assigned_docs", [])
         assigned_docs.append(doc_id)
         page_tree[assigned_page]["assigned_docs"] = assigned_docs
+        doc_rec["assigned_page"] = assigned_page
         frontier.append(assigned_page)
 
     # iteratively propagate assigned docs to parent
@@ -166,3 +173,111 @@ def split_doc_list_by_code(doc_list, doc_code_map):
         code = doc_code_map.get(did, "?")
         result[code].append(did)
     return result
+
+def _scan_opus_summary(db, codes):
+    fields = codes + ["page", "label", "url"]
+    cursor = None
+    result = []
+    while True:
+        records, cursor = db.scan("OpusSummary", cursor=cursor, limit=500, fields=fields)
+        result.extend(records)
+        if not records or not cursor:
+            break
+
+    for rec in result:
+        for code in codes:
+            doc_ids = rec[code]
+            if not isinstance(doc_ids, list):
+                rec[code] = db.get_links("OpusSummary", code, rec["Id"])
+            else:
+                rec[code] = [ d["Id"] for d in doc_ids ]
+        page_id = rec["page"]
+        if isinstance(page_id, dict):
+            rec["page"] = page_id["Id"]
+    return result
+
+def update_opus_summary(db, page_map, doc_code_map):
+    codes = list({ code for code in doc_code_map.values() })
+
+    opus_summary_map = {}
+    records_to_delete = []
+    for rec in _scan_opus_summary(db, codes):
+        linked_page_id = rec.get("page")
+        # each summary record must uniquely link to a valid page
+        if linked_page_id and linked_page_id not in opus_summary_map:
+            opus_summary_map[linked_page_id] = rec
+        else:
+            records_to_delete.append(rec["Id"])
+
+    records_to_create = set()
+    records_to_update = set()
+
+    for page_id, page in page_map.items():
+        # include all pages with 'opus' level that does not have a parent 
+        # that is also 'opus' level
+        if page['level'] == 'opus':
+            parent_id = page.get("assigned_parent")
+            if not parent_id or page_map[parent_id].get("level") != "opus":
+                summary_record = opus_summary_map.get(page_id)            
+                if summary_record:
+                    # known opus page - check if update needed
+                    assigned_docs = split_doc_list_by_code(
+                        page.get('assigned_docs', []), doc_code_map)
+                    for doc_link_field in codes:
+                        doc_list = assigned_docs.get(doc_link_field, [])
+                        summary_doc_list = summary_record.get(doc_link_field, [])
+                        if set(doc_list) != set(summary_doc_list):
+                            _logger.info(
+                                "update_opus_summary: update needed:"
+                                f" {page_id}, {doc_link_field}, {doc_list}")
+                            records_to_update.add(page_id)
+                else:
+                    # new page to be added
+                    records_to_create.add(page_id)
+
+    if records_to_create:
+        records = [{ 
+            "url": page_map[page_id]["url"], 
+            "label": page_map[page_id]["label"]
+        } for page_id in records_to_create]
+        _logger.info(f"update_opus_summary: create: {len(records)} records")
+        record_ids = db.write("OpusSummary", records)
+        for rec_id, page_id in zip(record_ids, records_to_create):
+            assigned_docs = split_doc_list_by_code(
+                page_map[page_id].get('assigned_docs', []), doc_code_map)
+            db.create_links("OpusSummary", "page", rec_id, page_id)
+            for code, doc_ids in assigned_docs.items():
+                if doc_ids:
+                    doc_link_field = code
+                    _logger.info("update_opus_summary: "
+                        f"{page_id}: {page_map[page_id]['label']},"
+                        f" create doc links: {code}, {len(doc_ids)}")
+                    db.create_links("OpusSummary", doc_link_field, rec_id, doc_ids)
+
+    if records_to_update:
+        for page_id in records_to_update:
+            page = page_map[page_id]
+            assigned_docs = split_doc_list_by_code(
+                page.get('assigned_docs', []), doc_code_map)
+            summary_record = opus_summary_map[page_id]
+            rec_id = summary_record["Id"]
+            for doc_link_field in codes:
+                new_docs = set(assigned_docs.get(doc_link_field, []))
+                cur_docs = set(summary_record.get(doc_link_field, []))
+                _logger.info(f"{page_id}({doc_link_field}): {cur_docs} -> {new_docs}")
+                added_docs = new_docs - cur_docs
+                if added_docs:
+                    _logger.info("update_opus_summary: "
+                        f"{page_id} ({doc_link_field}): adding links: {added_docs}")
+                    db.create_links("OpusSummary", doc_link_field, rec_id, list(added_docs))
+                removed_docs = cur_docs - new_docs
+                if removed_docs:
+                    _logger.info("update_opus_summary: "
+                        f"{page_id} ({doc_link_field}): removing links: {removed_docs}")
+                    db.delete_links("OpusSummary", doc_link_field, rec_id, list(removed_docs))
+          
+    if records_to_delete:
+        _logger.info(f"update_opus_summary: records to delete: {records_to_delete}")
+        db.delete("OpusSummary", records_to_delete)
+
+    return opus_summary_map, records_to_create, records_to_update, records_to_delete 
