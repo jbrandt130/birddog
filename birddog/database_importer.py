@@ -674,7 +674,11 @@ def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cy
     if import_message != "":
         _logger.warning(import_message)
 
-    return title, latin_title, url, import_message
+    comments = get_cell_value(ws[f"I{row}"])
+    if comments:
+        _logger.info(f"There is a comment: {comments}")
+
+    return title, latin_title, url, import_message, comments
 
 
 def to_positive_int_str(s: str) -> str:
@@ -971,7 +975,7 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
                           change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    archive_name, _, archive_url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet,
+    archive_name, _, archive_url, import_message, comments = get_url_and_parent_title(ws, wiki_spreadsheet,
                                                                             archive_latin_name, archive_cyrillic_name)
     if wiki_spreadsheet:
         archive_cyrillic_name = archive_name
@@ -995,6 +999,7 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
         "import_message": import_message,
         "parent": "",
         "parent_url": "",
+        "comments": comments,
     }, page_table)
 
     for r in range(7, ws.max_row + 1):
@@ -1034,29 +1039,33 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
     fund_name = f"{archive_name}/{fund_id}"
     if not page_table:
         page_table = {}
-    parent_name, parent_latin_name, fund_url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet,
+    parent_name, parent_latin_name, fund_url, import_message, comments = get_url_and_parent_title(ws, wiki_spreadsheet,
                                                                                         fund_name, fund_cyrillic_name)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, fund_name, change_date_col, ref_date_col)
     label = general_page_label(parent_latin_name, parent_name, wiki_spreadsheet)
     import_message, doc_links = get_cell_link_or_str(ws, "B4", import_message)
 
-    add_page({
-        "title": parent_name,
-        "url": fund_url,
-        "label": label,
-        "seq_label": sequential_page_label(label),
-        "level": "fond",
-        "description": get_cell_value(ws["A2"]),
-        "availability": "linked",
-        "change_date": change_date,
-        "timestamp": timestamp,
-        "doc_links": doc_links,
-        "source_type": source_type,
-        "import_message": import_message,
-        "parent": parent_title_no_ns(parent_name, wiki_spreadsheet, fund_cyrillic_name),
-        "parent_url": archive_url,
-    }, page_table)
+    add_page(
+        {
+            "title": parent_name,
+            "url": fund_url,
+            "label": label,
+            "seq_label": sequential_page_label(label),
+            "level": "fond",
+            "description": get_cell_value(ws["A2"]),
+            "availability": "linked",
+            "change_date": change_date,
+            "timestamp": timestamp,
+            "doc_links": doc_links,
+            "source_type": source_type,
+            "import_message": import_message,
+            "parent": parent_title_no_ns(parent_name, wiki_spreadsheet, fund_cyrillic_name),
+            "parent_url": archive_url,
+            "comments": comments,
+        },
+        page_table,
+    )
 
     #the header row can be 5, 6 or 7
     hdr_row, _ = find_header_in_col(ws, START_HDR_ROW, END_HDR_ROW, "A", [FIRST_FUND_HDR])
@@ -1102,7 +1111,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                        fund_url, change_date_col, ref_date_col, page_table=None):
     if not page_table:
         page_table = {}
-    opus_title, opus_latin_title, opus_url, import_message = get_url_and_parent_title(ws, wiki_spreadsheet,
+    opus_title, opus_latin_title, opus_url, import_message, comments = get_url_and_parent_title(ws, wiki_spreadsheet,
                                                                                       fund_and_opus_name,
                                                                                       fund_and_opus_cyrillic_name)
     label = general_page_label(opus_latin_title, opus_title, wiki_spreadsheet)
@@ -1127,22 +1136,26 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
     description = get_cell_value(ws["A2"])
     import_message, doc_links = get_cell_link_or_str(ws, "B4", import_message)
 
-    add_page({
-        "title": opus_title,
-        "url": opus_url,
-        "label": label,
-        "seq_label": sequential_page_label(label),
-        "level": "opus",
-        "description": description,
-        "availability": "linked",
-        "change_date": change_date,
-        "timestamp": timestamp,
-        "doc_links": doc_links,
-        "parent": curr_parent_title,
-        "parent_url": fund_url,
-        "source_type": source_type,
-        "import_message": import_message,
-    }, page_table)
+    add_page(
+        {
+            "title": opus_title,
+            "url": opus_url,
+            "label": label,
+            "seq_label": sequential_page_label(label),
+            "level": "opus",
+            "description": description,
+            "availability": "linked",
+            "change_date": change_date,
+            "timestamp": timestamp,
+            "doc_links": doc_links,
+            "parent": curr_parent_title,
+            "parent_url": fund_url,
+            "source_type": source_type,
+            "import_message": import_message,
+            "comments": comments,
+        },
+        page_table,
+    )
 
     usual_case_number_found = False
     for r in range(hdr_row + 1, ws.max_row + 1):
@@ -1566,8 +1579,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAHO-R-wiki-20260213.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAHEO-P-wiki-20250708.xlsx"
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHO-archive-20260213.xlsx"
-#    import_spreadsheet(filepath, False)
-    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
-    process_dir(dir_path)
+    import_spreadsheet(filepath)
+#    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki"
+#    process_dir(dir_path, False)
