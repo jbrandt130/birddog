@@ -435,7 +435,8 @@ def normalize_to_int_str(s: str) -> str:
 def irregular_url(url: str) -> bool:
     # URLs in these domains do not contain fond number etc
     return ('drive.google.com' in url or 'alexkrakovsky.direct.quickconnect.to' in url or
-            'gov.ua/files/' in url or 'forum.j-roots.info' in url or '.gov.ua/inventories/' in url)
+            'gov.ua/files/' in url or 'forum.j-roots.info' in url or '.gov.ua/inventories/' in url or
+            'gov.ua/?page_id=' in url)
 
 
 def log_strange_parsing_result(ws, r, cell, subunits: List[str], url: str, wiki_spreadsheet: bool, level: str):
@@ -1700,5 +1701,5 @@ if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/CDIAK-wiki-20260510.xlsx"
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/CDIAK-archive-20260213.xlsx"
 #    import_spreadsheet(filepath, False)
-    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki"
+    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
     process_dir(dir_path, False)
