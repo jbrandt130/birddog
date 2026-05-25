@@ -457,17 +457,29 @@ def page_exists(title):
 def get_title(url, include_namespace=True):
     """Extract title from a wiki URL. Optionally include or strip the namespace."""
     result = url.replace(ARCHIVE_BASE, '')
-    result = result.replace('/wiki/', '')
+
+    if result.startswith('http'):
+        parsed = urlparse(result)
+        path = parsed.path
+        result = path.split('/wiki/', 1)[1] if '/wiki/' in path else path
+    else:
+        result = result.replace('/wiki/', '')
+
     result = unquote(result)
 
     if include_namespace:
-        if not any(result.startswith(p) for p in WIKI_NAMESPACE_FULL_ALIASES):
+        if not any(result.startswith(p) for p in WIKI_NAMESPACE_FULL_ALIASES) \
+                and not re.match(r'(?:File|Файл):', result, re.IGNORECASE):
             result = WIKI_NAMESPACE_FULL_ALIASES[0] + result
     else:
-        for ns_prefix in WIKI_NAMESPACE_FULL_ALIASES:
-            if result.startswith(ns_prefix):
-                result = result[len(ns_prefix):]
-                break
+        m = re.match(r'(?:File|Файл):', result, re.IGNORECASE)
+        if m:
+            result = result[m.end():]
+        else:
+            for ns_prefix in WIKI_NAMESPACE_FULL_ALIASES:
+                if result.startswith(ns_prefix):
+                    result = result[len(ns_prefix):]
+                    break
 
     return result
 

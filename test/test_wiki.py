@@ -132,6 +132,36 @@ class TestGetTitle(unittest.TestCase):
         t = get_title(url)
         self.assertEqual(t, "Архів:ДАЖО")
 
+    # File: / Файл: namespace cases ----------------------------------------
+
+    def test_commons_file_url_returns_file_title(self):
+        # Bug fix: domain was not stripped for non-archive wikis, producing
+        # "https://commons.wikimedia.orgFile:..." instead of "File:..."
+        url = "https://commons.wikimedia.org/wiki/File:scan.pdf"
+        self.assertEqual(get_title(url), "File:scan.pdf")
+
+    def test_commons_file_url_percent_encoded(self):
+        url = "https://commons.wikimedia.org/wiki/File:%D0%90%D0%BB%D1%84%D0%B0%D0%B2%D1%96%D1%82.pdf"
+        self.assertEqual(get_title(url), "File:Алфавіт.pdf")
+
+    def test_commons_file_url_no_archive_namespace_prepended(self):
+        # File: titles must NOT have Архів: added even with include_namespace=True
+        url = "https://commons.wikimedia.org/wiki/File:scan.pdf"
+        self.assertFalse(get_title(url, include_namespace=True).startswith("Архів:"))
+
+    def test_commons_file_url_strip_namespace(self):
+        url = "https://commons.wikimedia.org/wiki/File:scan.pdf"
+        self.assertEqual(get_title(url, include_namespace=False), "scan.pdf")
+
+    def test_strip_latin_file_namespace(self):
+        self.assertEqual(get_title("File:doc.pdf", include_namespace=False), "doc.pdf")
+
+    def test_strip_cyrillic_file_namespace(self):
+        self.assertEqual(get_title("Файл:doc.pdf", include_namespace=False), "doc.pdf")
+
+    def test_cyrillic_file_namespace_not_overwritten(self):
+        self.assertFalse(get_title("Файл:doc.pdf", include_namespace=True).startswith("Архів:"))
+
 
 # ── expand_link_target ────────────────────────────────────────────────────────
 
