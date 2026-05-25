@@ -14,7 +14,7 @@ from birddog.wiki import (
 from datetime import datetime
 from openpyxl import load_workbook
 from pathlib import Path
-from typing import List, Any
+from typing import List, Any, Literal
 from urllib.parse import unquote, urlparse, parse_qs
 import os
 import re
@@ -316,6 +316,38 @@ def get_cell_link_or_str(ws, cell_addr: str, import_message: str, check_contents
     return import_message, result
 
 
+def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: str, issue_warning: bool):
+    modified_import_message, cell_links = get_cell_link_or_str(ws, cell_addr, import_message, False)
+    if not cell_links:
+        return import_message, ""
+    ar1 = 'Архіви/'
+    ar2 = 'Архів:'
+    # we compare the strings up to replacement oar1 with ar2
+    archive_unit_link_replaced = archive_unit_link.rstrip(" /").replace(ar1, ar2)
+    if isinstance(cell_links, str) and cell_links.replace(ar1, ar2) == archive_unit_link_replaced:
+        return import_message, ""
+
+    real_doc = True
+    if isinstance(cell_links, list) and len(cell_links) == 1:
+        cell_link_replaced = cell_links[0].rstrip(" /").replace(ar1, ar2)
+        if cell_link_replaced in archive_unit_link_replaced or archive_unit_link_replaced in cell_link_replaced:
+            return import_message, ""
+        real_doc = '.pdf' in cell_link_replaced
+
+    if real_doc:
+        mess = f"Adding document links {cell_links} found in cell '{cell_addr}', sheet '{ws.title}'"
+    else:
+        mess = (f" Link {cell_links} in cell '{cell_addr}', sheet '{ws.title}' "
+                f"differs from the page url {archive_unit_link}")
+        cell_links = ""
+    modified_import_message = add_to_message(modified_import_message, mess)
+
+    if issue_warning:
+        _logger.warning(mess)
+
+    return modified_import_message, cell_links
+
+
 def get_cell_int_value(cell):
     value = get_cell_value(cell)
     if value is None:
@@ -392,9 +424,19 @@ def normalize_to_int_str(s: str) -> str:
     return s
 
 
-def log_strange_parsing_result(ws, r, cell, subunits: List[str], url: str, wiki_spreadsheet: bool):
+def log_strange_parsing_result(ws, r, cell, subunits: List[str], url: str, wiki_spreadsheet: bool, level: str):
     num_results = len(subunits)
     normalized_val = normalize_to_int_str(str(cell.value))
+    match level:
+        case "opus":
+            lower_level = "case"
+        case "archive":
+            lower_level = "fund"
+        case _:
+            message = f"Illegal level {level}"
+            _logger.error(message)
+            raise ValueError(message)
+
     match num_results:
         case 1:
             #default result - check url sanity
@@ -402,16 +444,17 @@ def log_strange_parsing_result(ws, r, cell, subunits: List[str], url: str, wiki_
                 no_letters = re.sub(r"[A-Z-]", "", normalized_val)
                 if no_letters not in url:
                     _logger.warning(f"In sheet='{ws.title}', row={r}, the URL {url} was supposed to include"
-                                    f" the fund number '{normalized_val}'")
-            return
+                                    f" the {lower_level} number '{normalized_val}'")
+            return lower_level
         case 0:
             if cell.value is None or len(str(cell.value)) == 0:
                 #empty cell - do nothing
-                return
-            _logger.warning(f"No URL found for the fund '{normalized_val}', sheet='{ws.title}', row={r} - skipping")
+                return lower_level
+            _logger.warning(f"No URL found for the {lower_level} '{normalized_val}', sheet='{ws.title}', row={r} - skipping")
         case _:
-            _logger.warning(f"Irregular fund number '{normalized_val}', sheet='{ws.title}', "
+            _logger.warning(f"Irregular {lower_level} number '{normalized_val}', sheet='{ws.title}', "
                             f"row={r} - splitting to {subunits}")
+            return lower_level
 
 
 def get_url_from_2_cells(unit_num_cell, unit_descr_cell) -> tuple[str, bool]:
@@ -430,10 +473,11 @@ def get_url_from_2_cells(unit_num_cell, unit_descr_cell) -> tuple[str, bool]:
     return url, in_first_cell
 
 
-def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str, bool]:
+def parse_cell_integers(fund_num_cell, fund_descr_cell, archive_latin_name) -> tuple[list[Any], str, bool]:
     """
     Parses an openpyxl cell value into a list of integers based on specific rules.
     If no link found in both fund_num_cell, fund_descr_cell, the resulting list is empty
+
 
     Rules:
     1. Float that is integer (e.g., 41.0) -> [41]; integer -> integer
@@ -442,6 +486,7 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str,
     4. String range "10-13" -> [10, 11, 12, 13]
     5. Otherwise -> []
     All the integers are converted to strings.
+    For IMFE archive, the fund ID includes hyphens, like 14-8.
 
     Args:
         fund_num_cell: openpyxl.cell.cell.Cell object
@@ -471,6 +516,9 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str,
     s = str(value).strip()
 
     if '-' in s:
+        if archive_latin_name == 'IMFE':
+            return [s], url, in_first_cell
+
         if re.match(r'^\d+-\d+$', s):
             # Case 4: Range like "10-13"
             try:
@@ -500,6 +548,9 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell) -> tuple[list[Any], str,
     # Case 4: datetime -> [day, month]
     if isinstance(value, datetime):
         return [str(value.day), str(value.month)], url, in_first_cell
+
+    if not in_first_cell:
+        return [s], url, in_first_cell
 
     return [], "", in_first_cell
 
@@ -674,7 +725,10 @@ def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cy
     if import_message != "":
         _logger.warning(import_message)
 
-    comments = get_cell_value(ws[f"I{row}"])
+    #comments can be either in cell I2 or I3
+    comments = get_cell_value(ws["I2"])
+    if not comments:
+        comments = get_cell_value(ws["I3"])
     if comments:
         _logger.info(f"There is a comment: {comments}")
 
@@ -808,7 +862,8 @@ def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, she
         if 'forum.j-roots.info' not in url:
             sequence = ""
             for part in necessary_parts:
-                sequence = f"{sequence}/{part}"
+                if part:
+                    sequence = f"{sequence}/{part}"
             sequence = re.sub(r'^\D*', '', sequence)
             if not string_contains_part(url, sequence, wiki_spreadsheet):
                 mess = (f"url {url} in cell {cell_address} in worksheet '{sheet_title}'"
@@ -821,7 +876,9 @@ def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, she
                 break
 
     if mess != "":
+        _logger.warning(mess)
         import_message = add_to_message(import_message, mess)
+
     return import_message
 
 
@@ -864,7 +921,7 @@ def sheet_contains_volumes(ws):
     return True, case_num_col, hdr_row
 
 
-def case_like_headers_in_row(ws, opus_title, opus_name, import_message):
+def case_like_headers_in_row(ws, import_message, header_must_appear):
     #the header row can be 5, 6 or 7
     headers = [FIRST_OPUS_HDR1, FIRST_OPUS_HDR2, FIRST_OPUS_HDR3, FIRST_OPUS_HDR4, FIRST_OPUS_HDR5]
     case_num_col = "A"
@@ -887,11 +944,11 @@ def case_like_headers_in_row(ws, opus_title, opus_name, import_message):
             #could it be a sheet with volumes and not cases?
             contains_volumes, case_num_col, hdr_row = sheet_contains_volumes(ws)
             if contains_volumes:
-                message = f"Opus {opus_title} contains volumes"
+                message = f"Sheet {ws.title} contains volumes"
                 import_message = add_to_message(import_message, message)
                 _logger.warning(message)
-            else:
-                raise ValueError(f"No '{FIRST_OPUS_HDR1}' header found in sheet {opus_name}")
+            elif header_must_appear:
+                raise ValueError(f"No '{FIRST_OPUS_HDR1}' header found in sheet {ws.title}")
     elif header_found == FIRST_OPUS_HDR1:
         # in DAHMO-R-wiki-20260415.xlsx sheet DAHMO R-6193-12 summary the headers are "Case #, link" in column A
         # and then "Availability" in column D
@@ -917,11 +974,17 @@ def case_like_headers_in_row(ws, opus_title, opus_name, import_message):
             additional_column = True
 
     return (possible_hyphen_in_case_num, case_amount_column, case_num_col, hdr_row, import_message,
-            old_numbering_column, contains_volumes, additional_column)
+            old_numbering_column, contains_volumes, additional_column, header_found)
+
+
+def opus_like_sheet(ws):
+    (_, _, _, _, _, _, _, _, header_found) = case_like_headers_in_row(ws, '', False)
+    return header_found == FIRST_OPUS_HDR1
 
 
 def add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, source_type,
                   parent_name, parent_url, level, availability, import_message):
+    import_message, doc_links = get_doc_links(ws, f"B{r}", import_message, url, True)
     add_page({
         "title": title,
         "url": url,
@@ -933,6 +996,7 @@ def add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, 
         "description": get_cell_value(ws[f"B{r}"]),
         "years": get_cell_value(ws[f"C{r}"]),
         "availability": availability,
+        "doc_links": doc_links,
         "source_type": source_type,
         "parent": parent_name,
         "parent_url": parent_url,
@@ -953,6 +1017,7 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url,
 
     comments = get_cell_value(ws[f"O{r}"])
     label = general_page_label(latin_title, title, wiki_spreadsheet)
+    import_message, doc_links = get_doc_links(ws, f"B{r}", "", url, True)
     add_page({
         "title": title,
         "url": url,
@@ -964,7 +1029,9 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url,
         "description": get_cell_value(ws[f"B{r}"]),
         "years": get_cell_value(ws[f"C{r}"]),
         "availability": availability,
+        "doc_links": doc_links,
         "source_type": source_type,
+        "import_message": import_message,
         "parent": archive_title,
         "parent_url": archive_url,
         "comments": comments,
@@ -983,13 +1050,17 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
     change_date, timestamp = get_dates(ws, archive_name, change_date_col, ref_date_col)
     label = general_page_label(archive_latin_name, archive_name, wiki_spreadsheet)
     import_message, doc_links = get_cell_link_or_str(ws, "B4", import_message)
+    level = "archive"
+    if opus_like_sheet(ws):
+        level = "opus"
+        import_message = add_to_message(import_message, f"sheet '{ws.title}' describes an opus not an archive")
 
     add_page({
         "title": archive_name,
         "url": archive_url,
         "label": label,
         "seq_label": sequential_page_label(label),
-        "level": "archive",
+        "level": level,
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
         "change_date": change_date,
@@ -1003,12 +1074,13 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
     }, page_table)
 
     for r in range(7, ws.max_row + 1):
-        fund_num_cell = ws[f"A{r}"]
+        fund_num_cell_addr = f"A{r}"
+        fund_num_cell = ws[fund_num_cell_addr]
         fund_descr_cell = ws[f"B{r}"]
         if str(fund_num_cell.value).startswith("="):
             break
-        fund_ids, url, in_first_cell = parse_cell_integers(fund_num_cell, fund_descr_cell)
-        log_strange_parsing_result(ws, r, fund_num_cell, fund_ids, url, wiki_spreadsheet)
+        fund_ids, url, in_first_cell = parse_cell_integers(fund_num_cell, fund_descr_cell, archive_latin_name)
+        lower_level = log_strange_parsing_result(ws, r, fund_num_cell, fund_ids, url, wiki_spreadsheet, level)
         cell_to_use = fund_num_cell
         if not in_first_cell:
             cell_to_use = fund_descr_cell
@@ -1022,8 +1094,14 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
                 # regular fund number
                 title, latin_title = get_page_title_from_link(cell_to_use, wiki_spreadsheet,
                                                               archive_name, archive_latin_name)
-                add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, archive_url, title,
+                if "archive" == level:
+                    add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, archive_url, title,
                                            latin_title, url, source_type, r, page_table, change_date, timestamp)
+                else:
+                    curr_source_type, label = get_label_source_type(latin_title, source_type, title, wiki_spreadsheet)
+                    add_case_page(False, fund_num_cell, fund_num_cell_addr, "A", change_date, ord("G"), '',
+                        curr_source_type, '', label, lower_level, '',
+                        archive_name, archive_url, page_table, r, url, timestamp, title, wiki_spreadsheet, ws)
             case _:
                 for fund_id in fund_ids:
                     title = f"{archive_cyrillic_name}/{fund_id}"
@@ -1125,8 +1203,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
             source_type = "other"
 
     (possible_hyphen_in_case_num, case_amount_column, case_num_col, hdr_row, import_message,
-     old_numbering_column, contains_volumes, additional_column) = case_like_headers_in_row(ws, opus_title,
-                                                                                           opus_name, import_message)
+     old_numbering_column, contains_volumes, additional_column, _) = case_like_headers_in_row(ws, import_message, True)
 
     #there are sometimes columns inserted between "process" and "Comments",
     #so we need to find the exact position of the latter one
@@ -1159,7 +1236,6 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
 
     usual_case_number_found = False
     for r in range(hdr_row + 1, ws.max_row + 1):
-        curr_source_type = source_type
         case_num_cell_addr = f"{case_num_col}{r}"
         case_num_cell = ws[case_num_cell_addr]
         case_descr_cell = ws[f"{chr(ord(case_num_col) + 1)}{r}"]
@@ -1214,10 +1290,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                 # If it is a comment, like "Index files linked at top of page" - skip this line
                 continue
 
-            label = general_page_label(latin_title, title, wiki_spreadsheet)
-            if label is None:
-                curr_source_type = "other"
-                label = latin_title
+            curr_source_type, label = get_label_source_type(latin_title, source_type, title, wiki_spreadsheet)
 
             #title sanity check
             identical, modified_title = title_cell_val_identical(title, str(case_num_cell.value).strip(),
@@ -1242,62 +1315,82 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                 add_opus_page(page_table, ws, r, title, raw_url, label, change_date, timestamp, source_type, opus_title,
                               fund_url, level, availability, curr_import_message)
             else:
-                necessary_parts = [fund_name, opus_name, normalize_to_int_str(str(case_num_cell.value))]
-                curr_import_message = check_url_sanity(raw_url, curr_import_message, wiki_spreadsheet,
-                                                       necessary_parts, ws.title, case_num_cell_addr)
-
-                comments_cell_addr = f"{chr(comments_col)}{r}"  #default f"G{r}"
-                processor_cell_addr1 = f"{chr(comments_col + 2)}{r}"  #default f"I{r}"
-                processor_cell_addr2 = f"{chr(comments_col + 5)}{r}"  #default f"L{r}"
-                pages_processed_cell_addr1 = f"{chr(comments_col + 3)}{r}"  #default f"J{r}"
-                pages_processed_cell_addr2 = f"{chr(comments_col + 6)}{r}"  # default f"M{r}"
-                when_transcribed_cell_addr = f"{chr(comments_col + 7)}{r}"  # default f"N{r}"
-
-                description_col_offs = DESCRIPTION_COL_OFFS
-                years_col_offs = YEARS_COL_OFFS
-                doc_type_col_offs = DOC_TYPE_COL_OFFS
-                content_code_col_offs = CONTENT_CODE_COL_OFFS
-                process_code_col_offs = PROCESS_CODE_COL_OFFS
-                if additional_column:
-                    description_col_offs = description_col_offs + 1
-                    years_col_offs = years_col_offs + 1
-                    doc_type_col_offs = doc_type_col_offs + 1
-                    content_code_col_offs = content_code_col_offs + 1
-                    process_code_col_offs = process_code_col_offs + 1
-
-                process_code = get_cell_value(ws[f"{chr(ord(case_num_col) + process_code_col_offs)}{r}"], True)  # F
-                process_code, curr_import_message = normalize_process_code(process_code, curr_import_message)
-                when_transcribed = str(ws[when_transcribed_cell_addr].value) or ''
-                curr_import_message, doc_links = get_cell_link_or_str(
-                    ws, f"{chr(ord(case_num_col) + description_col_offs)}{r}", curr_import_message, False)
-
-                add_page({
-                    "title": title,
-                    "url": raw_url,
-                    "label": label,
-                    "seq_label": sequential_page_label(label),
-                    "level": level,
-                    "change_date": change_date,
-                    "timestamp": timestamp,
-                    "description": get_cell_value(ws[f"{chr(ord(case_num_col) + description_col_offs)}{r}"]),
-                    "years": get_cell_value(ws[f"{chr(ord(case_num_col) + years_col_offs)}{r}"]),
-                    "source_type": curr_source_type,
-                    "parent": opus_title,
-                    "parent_url": opus_url,
-                    "doc_links": doc_links,  #B
-                    "doc_type": get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True),  #D
-                    "content_code": get_cell_value(ws[f"{chr(ord(case_num_col) + content_code_col_offs)}{r}"], True), #E
-                    "process_code": process_code,
-                    "import_message": curr_import_message,
-                    #the columns for the following cells are not fixed
-                    "comments": get_cell_value(ws[comments_cell_addr]),
-                    "processor": combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2]),
-                    "pages_processed": get_cell_int_value(ws[pages_processed_cell_addr1]) +
-                                       get_cell_int_value(ws[pages_processed_cell_addr2]),
-                    "when_transcribed": when_transcribed,
-                }, page_table)
+                add_case_page(additional_column, case_num_cell, case_num_cell_addr, case_num_col, change_date,
+                              comments_col, curr_import_message, curr_source_type, fund_name, label, level, opus_name,
+                              opus_title, opus_url, page_table, r, raw_url, timestamp, title, wiki_spreadsheet, ws)
 
     return page_table
+
+
+def get_label_source_type(latin_title, source_type, title, wiki_spreadsheet):
+    curr_source_type = source_type
+    label = general_page_label(latin_title, title, wiki_spreadsheet)
+    if label is None:
+        curr_source_type = "other"
+        label = latin_title
+    return curr_source_type, label
+
+
+def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: str, case_num_col: str,
+                  change_date: str | None, comments_col: int, curr_import_message: Literal[
+                                                                                       '', 'Document without a page', 'Old case numbering', 'Other case numbering'] | Any,
+                  curr_source_type, fund_name, label: str | Any, level, opus_name,
+                  opus_title: str | None | Any, opus_url: str, page_table: dict[Any, Any] | Any, r: int, raw_url: str,
+                  timestamp: str | None, title, wiki_spreadsheet, ws):
+    necessary_parts = [fund_name, opus_name, normalize_to_int_str(str(case_num_cell.value))]
+    curr_import_message = check_url_sanity(raw_url, curr_import_message, wiki_spreadsheet,
+                                           necessary_parts, ws.title, case_num_cell_addr)
+
+    comments_cell_addr = f"{chr(comments_col)}{r}"  # default f"G{r}"
+    processor_cell_addr1 = f"{chr(comments_col + 2)}{r}"  # default f"I{r}"
+    processor_cell_addr2 = f"{chr(comments_col + 5)}{r}"  # default f"L{r}"
+    pages_processed_cell_addr1 = f"{chr(comments_col + 3)}{r}"  # default f"J{r}"
+    pages_processed_cell_addr2 = f"{chr(comments_col + 6)}{r}"  # default f"M{r}"
+    when_transcribed_cell_addr = f"{chr(comments_col + 7)}{r}"  # default f"N{r}"
+
+    description_col_offs = DESCRIPTION_COL_OFFS
+    years_col_offs = YEARS_COL_OFFS
+    doc_type_col_offs = DOC_TYPE_COL_OFFS
+    content_code_col_offs = CONTENT_CODE_COL_OFFS
+    process_code_col_offs = PROCESS_CODE_COL_OFFS
+    if additional_column:
+        description_col_offs = description_col_offs + 1
+        years_col_offs = years_col_offs + 1
+        doc_type_col_offs = doc_type_col_offs + 1
+        content_code_col_offs = content_code_col_offs + 1
+        process_code_col_offs = process_code_col_offs + 1
+
+    process_code = get_cell_value(ws[f"{chr(ord(case_num_col) + process_code_col_offs)}{r}"], True)  # F
+    process_code, curr_import_message = normalize_process_code(process_code, curr_import_message)
+    when_transcribed = str(ws[when_transcribed_cell_addr].value) or ''
+    curr_import_message, doc_links = get_doc_links(
+        ws, f"{chr(ord(case_num_col) + description_col_offs)}{r}", curr_import_message, raw_url, False)
+
+    add_page({
+        "title": title,
+        "url": raw_url,
+        "label": label,
+        "seq_label": sequential_page_label(label),
+        "level": level,
+        "change_date": change_date,
+        "timestamp": timestamp,
+        "description": get_cell_value(ws[f"{chr(ord(case_num_col) + description_col_offs)}{r}"]),
+        "years": get_cell_value(ws[f"{chr(ord(case_num_col) + years_col_offs)}{r}"]),
+        "source_type": curr_source_type,
+        "parent": opus_title,
+        "parent_url": opus_url,
+        "doc_links": doc_links,  # B
+        "doc_type": get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True),  # D
+        "content_code": get_cell_value(ws[f"{chr(ord(case_num_col) + content_code_col_offs)}{r}"], True),  # E
+        "process_code": process_code,
+        "import_message": curr_import_message,
+        # the columns for the following cells are not fixed
+        "comments": get_cell_value(ws[comments_cell_addr]),
+        "processor": combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2]),
+        "pages_processed": get_cell_int_value(ws[pages_processed_cell_addr1]) +
+                           get_cell_int_value(ws[pages_processed_cell_addr2]),
+        "when_transcribed": when_transcribed,
+    }, page_table)
 
 
 def normalize_process_code(process_code: str | None, import_message: str) -> tuple[str | None, str]:
@@ -1579,8 +1672,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAHEO-P-wiki-20250708.xlsx"
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHO-archive-20260213.xlsx"
-    import_spreadsheet(filepath)
-#    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAKIRO-D-wiki-20260413.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAOO-archives-20250523.xlsx"
+    import_spreadsheet(filepath, False)
+#    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
 #    process_dir(dir_path, False)
