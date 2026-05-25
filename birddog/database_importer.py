@@ -197,26 +197,35 @@ def add_to_message(message, addition):
 def string_contains_part(link, necessary_part, strict_equality):
     # does the link contain the necessary part?
     contains = necessary_part in link
-    if not contains and not strict_equality:
+    if not contains:
         #replaces all the hyphens and all the underscores in the link with a slash
         modified_link = link.replace('-', '/').replace('_', '/')
         contains = necessary_part in modified_link
 
+    necessary_part1 = re.sub(r"[^0-9/]+", "", necessary_part)
     if not contains:
         # try without letters
-        necessary_part1 = re.sub(r'[^0-9/]+', '', necessary_part)
         contains = necessary_part1 in link
-        if not contains and not strict_equality:
-            #try without zeros
-            link_no_zeros = link.replace('0', '')  # Removes all '0's
+        
+    if not contains:
+        # try space and slash separated substrings
+        subparts = re.split(r"[ /-]+", necessary_part)
+        contains = True
+        for subpart in subparts:
+            contains = contains and re.sub(r'[^0-9/]+', '', subpart) in link
+
+    if not contains and not strict_equality:
+        #try without zeros
+        link_no_zeros = link.replace('0', '')  # Removes all '0's
+        contains = necessary_part1 in link_no_zeros
+        if not contains:
+            necessary_part1 = necessary_part1.replace('0', '')  # Removes all '0's
             contains = necessary_part1 in link_no_zeros
             if not contains:
-                necessary_part1 = necessary_part1.replace('0', '')  # Removes all '0's
+                #try replacing '-' with slash
+                link_no_zeros = link_no_zeros.replace('-', '/')
                 contains = necessary_part1 in link_no_zeros
-                if not contains:
-                    #try replacing '-' with slash
-                    link_no_zeros = link_no_zeros.replace('-', '/')
-                    contains = necessary_part1 in link_no_zeros
+
     return contains
 
 
@@ -423,10 +432,13 @@ def normalize_to_int_str(s: str) -> str:
 
     return s
 
+def irregular_url(url: str) -> bool:
+    # URLs in these domains do not contain fond number etc
+    return ('drive.google.com' in url or 'alexkrakovsky.direct.quickconnect.to' in url or
+            'gov.ua/files/' in url or 'forum.j-roots.info' in url or '.gov.ua/inventories/' in url)
+
 
 def log_strange_parsing_result(ws, r, cell, subunits: List[str], url: str, wiki_spreadsheet: bool, level: str):
-    num_results = len(subunits)
-    normalized_val = normalize_to_int_str(str(cell.value))
     match level:
         case "opus":
             lower_level = "case"
@@ -437,24 +449,34 @@ def log_strange_parsing_result(ws, r, cell, subunits: List[str], url: str, wiki_
             _logger.error(message)
             raise ValueError(message)
 
+    if irregular_url(url):
+        # URLs in these domains do not contain fond number etc
+        return lower_level
+
+    num_results = len(subunits)
+    normalized_val = normalize_to_int_str(str(cell.value))
+
     match num_results:
         case 1:
             #default result - check url sanity
             if wiki_spreadsheet and normalized_val not in url:
+                return lower_level
                 no_letters = re.sub(r"[A-Z-]", "", normalized_val)
                 if no_letters not in url:
                     _logger.warning(f"In sheet='{ws.title}', row={r}, the URL {url} was supposed to include"
                                     f" the {lower_level} number '{normalized_val}'")
-            return lower_level
+
         case 0:
-            if cell.value is None or len(str(cell.value)) == 0:
-                #empty cell - do nothing
-                return lower_level
-            _logger.warning(f"No URL found for the {lower_level} '{normalized_val}', sheet='{ws.title}', row={r} - skipping")
+            if cell.value and len(str(cell.value)) > 0:
+                #otherwise, it is an empty cell - do nothing
+                _logger.warning(
+                    f"No URL found for the {lower_level} '{normalized_val}', sheet='{ws.title}', row={r} - skipping")
+
         case _:
             _logger.warning(f"Irregular {lower_level} number '{normalized_val}', sheet='{ws.title}', "
-                            f"row={r} - splitting to {subunits}")
-            return lower_level
+                     f"row={r} - splitting to {subunits}")
+
+    return lower_level
 
 
 def get_url_from_2_cells(unit_num_cell, unit_descr_cell) -> tuple[str, bool]:
@@ -857,17 +879,20 @@ def general_page_label(latin_title, cyrillic_title, wiki_spreadsheet):
 
 
 def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, sheet_title, cell_address):
+    if irregular_url(url):
+        # URLs in some domains do not contain fond number etc
+        return import_message
+
     mess = ""
     if wiki_spreadsheet:
-        if 'forum.j-roots.info' not in url:
-            sequence = ""
-            for part in necessary_parts:
-                if part:
-                    sequence = f"{sequence}/{part}"
-            sequence = re.sub(r'^\D*', '', sequence)
-            if not string_contains_part(url, sequence, wiki_spreadsheet):
-                mess = (f"url {url} in cell {cell_address} in worksheet '{sheet_title}'"
-                        f" was supposed to include '{sequence}'")
+        sequence = ""
+        for part in necessary_parts:
+            if part:
+                sequence = f"{sequence}/{part}"
+        sequence = re.sub(r'^\D*', '', sequence)
+        if not string_contains_part(url, sequence, wiki_spreadsheet):
+            mess = (f"url {url} in cell {cell_address} in worksheet '{sheet_title}'"
+                    f" was supposed to include '{sequence}'")
     else:
         for part in necessary_parts:
             if not string_contains_part(url, part, wiki_spreadsheet):
@@ -1672,8 +1697,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAKIRO-D-wiki-20260413.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAOO-archives-20250523.xlsx"
-    import_spreadsheet(filepath, False)
-#    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
-#    process_dir(dir_path, False)
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/CDIAK-wiki-20260510.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/CDIAK-archive-20260213.xlsx"
+#    import_spreadsheet(filepath, False)
+    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki"
+    process_dir(dir_path, False)
