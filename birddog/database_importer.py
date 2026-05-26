@@ -15,7 +15,7 @@ from datetime import datetime
 from openpyxl import load_workbook
 from pathlib import Path
 from typing import List, Any, Literal
-from urllib.parse import unquote, urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, urlunparse, unquote, quote
 import os
 import re
 import time
@@ -85,6 +85,32 @@ def get_case_id(cell_contents) -> str:
         return case_id
     except ValueError:
         return cell_contents
+
+
+def canonical_wiki_url(url: str) -> str:
+    """Convert a MediaWiki index.php?title= URL to /wiki/Title style."""
+    parsed = urlparse(url)
+    if parsed.path != "/w/index.php" and not parsed.path.endswith("/w/index.php"):
+        return url  # leave non‑index.php URLs unchanged
+
+    qs = parse_qs(parsed.query)
+    if not qs.get("title"):
+        return url
+
+    title = qs["title"][0]
+    # For wikisource‑style /wiki/… paths (not /w/…)
+    nice_path = f"/wiki/{title}"
+    # quote path component if needed (e.g. non‑ASCII)
+    nice_path = "/".join(quote(p, safe="") for p in nice_path.split("/"))
+
+    return urlunparse((
+        parsed.scheme,
+        parsed.netloc,
+        nice_path,
+        parsed.params,
+        "",  # no query
+        parsed.fragment,
+    ))
 
 
 def url_to_title(url: str) -> str:
@@ -292,10 +318,10 @@ def get_cell_value(cell, capitalized=False):
 
 
 def parse_http_list(s: str):
-    parts = [p.strip() for p in s.split(',')]
+    parts = [normalize_url(p.strip()) for p in s.split(',')]
     if len(parts) > 1 and all(part.startswith('http') for part in parts):
         return parts
-    return [s]
+    return [normalize_url(s)]
 
 
 def get_cell_link_or_str(ws, cell_addr: str, import_message: str, check_contents: bool = True):
@@ -331,7 +357,7 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
         return import_message, ""
     ar1 = 'Архіви/'
     ar2 = 'Архів:'
-    # we compare the strings up to replacement oar1 with ar2
+    # we compare the strings up to replacement of ar1 with ar2
     archive_unit_link_replaced = archive_unit_link.rstrip(" /").replace(ar1, ar2)
     if isinstance(cell_links, str) and cell_links.replace(ar1, ar2) == archive_unit_link_replaced:
         return import_message, ""
@@ -343,16 +369,17 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
             return import_message, ""
         real_doc = '.pdf' in cell_link_replaced
 
-    if real_doc:
-        mess = f"Adding document links {cell_links} found in cell '{cell_addr}', sheet '{ws.title}'"
-    else:
+    mess = ''
+    if not real_doc:
         mess = (f" Link {cell_links} in cell '{cell_addr}', sheet '{ws.title}' "
                 f"differs from the page url {archive_unit_link}")
         cell_links = ""
-    modified_import_message = add_to_message(modified_import_message, mess)
 
-    if issue_warning:
+    if len(mess) > 0:
+        modified_import_message = add_to_message(modified_import_message, mess)
         _logger.warning(mess)
+    if real_doc and issue_warning:
+        _logger.warning(f"Adding document links {cell_links} found in cell '{cell_addr}', sheet '{ws.title}'")
 
     return modified_import_message, cell_links
 
@@ -403,10 +430,12 @@ def add_page(page: dict, page_table: dict) -> None:
     """Merge a page entry into the page_table by title."""
     #(re)set some fields
     page = check_redlink(page)
-    page["url"] = normalize_url(page["url"])
+    url = page["url"]
+    url = canonical_wiki_url(url)
+    url = normalize_url(url)
+    page["url"] = url
     page["last_imported"] = str(utc_now_dt().replace(microsecond=0))
 
-    url = page["url"]
     # ensure an entry exists for this URL
     entry = page_table.setdefault(url, dict())
     # update/merge keys
@@ -1698,8 +1727,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/CDIAK-wiki-20260510.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAOO-D-wiki-20260427.xlsx"
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/CDIAK-archive-20260213.xlsx"
-#    import_spreadsheet(filepath, False)
-    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
-    process_dir(dir_path, False)
+    import_spreadsheet(filepath)
+#    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
+#    process_dir(dir_path, False)
