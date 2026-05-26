@@ -103,7 +103,7 @@ def canonical_wiki_url(url: str) -> str:
     # quote path component if needed (e.g. non‑ASCII)
     nice_path = "/".join(quote(p, safe="") for p in nice_path.split("/"))
 
-    return urlunparse((
+    url = urlunparse((
         parsed.scheme,
         parsed.netloc,
         nice_path,
@@ -111,6 +111,8 @@ def canonical_wiki_url(url: str) -> str:
         "",  # no query
         parsed.fragment,
     ))
+    url = normalize_url(url)
+    return url
 
 
 def url_to_title(url: str) -> str:
@@ -318,10 +320,10 @@ def get_cell_value(cell, capitalized=False):
 
 
 def parse_http_list(s: str):
-    parts = [normalize_url(p.strip()) for p in s.split(',')]
+    parts = [canonical_wiki_url(p.strip()) for p in s.split(',')]
     if len(parts) > 1 and all(part.startswith('http') for part in parts):
         return parts
-    return [normalize_url(s)]
+    return [canonical_wiki_url(s)]
 
 
 def get_cell_link_or_str(ws, cell_addr: str, import_message: str, check_contents: bool = True):
@@ -358,7 +360,7 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     ar1 = 'Архіви/'
     ar2 = 'Архів:'
     # we compare the strings up to replacement of ar1 with ar2
-    archive_unit_link_replaced = archive_unit_link.rstrip(" /").replace(ar1, ar2)
+    archive_unit_link_replaced = canonical_wiki_url(archive_unit_link.rstrip(" /").replace(ar1, ar2))
     if isinstance(cell_links, str) and cell_links.replace(ar1, ar2) == archive_unit_link_replaced:
         return import_message, ""
 
@@ -367,7 +369,7 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
         cell_link_replaced = cell_links[0].rstrip(" /").replace(ar1, ar2)
         if cell_link_replaced in archive_unit_link_replaced or archive_unit_link_replaced in cell_link_replaced:
             return import_message, ""
-        real_doc = '.pdf' in cell_link_replaced
+        real_doc = '.pdf' in cell_link_replaced or '.djvu' in cell_link_replaced or '.zip' in cell_link_replaced
 
     mess = ''
     if not real_doc:
@@ -432,7 +434,6 @@ def add_page(page: dict, page_table: dict) -> None:
     page = check_redlink(page)
     url = page["url"]
     url = canonical_wiki_url(url)
-    url = normalize_url(url)
     page["url"] = url
     page["last_imported"] = str(utc_now_dt().replace(microsecond=0))
 
@@ -520,6 +521,8 @@ def get_url_from_2_cells(unit_num_cell, unit_descr_cell) -> tuple[str, bool]:
 
     hyperlink = cell_to_use.hyperlink
     url = unquote(hyperlink.target.strip())
+    url = canonical_wiki_url(url)
+
 #    if hyperlink.location is not None:
 #        url = f"{url}#{hyperlink.location}"
     return url, in_first_cell
@@ -1727,8 +1730,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAOO-D-wiki-20260427.xlsx"
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/CDIAK-archive-20260213.xlsx"
-    import_spreadsheet(filepath)
-#    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
-#    process_dir(dir_path, False)
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAOO-D-wiki-20260427.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAOO-archives-20250523.xlsx"
+#    import_spreadsheet(filepath)
+    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
+    process_dir(dir_path, False)
