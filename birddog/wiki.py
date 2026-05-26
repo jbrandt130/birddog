@@ -74,7 +74,7 @@ def canonicalize_title(title: str, include_namespace: bool = True) -> str | None
     if not title:
         return None
 
-    t = title.strip().replace(" ", "_")
+    t = title.rstrip("/").strip().replace(" ", "_")
 
     # Step 1: normalize namespace aliases and separator variants independently.
     # Recognize either "Ns:Rest" (true MW title form) or "Ns/Rest" (path form).
@@ -131,7 +131,32 @@ def _archives_init():
                 archives_by_root[root] = [address]
     return archives_by_root, archive_by_title, archive_by_address
 
+def _labels_init():
+    archive_list = []
+    for root, archives in ARCHIVES_BY_ROOT.items():
+        for a in archives:
+            archive_list.append([ root, f"{a[0]}", f"{a[0]}-{a[1]}" ])
+
+    labels = {}
+    for prefix, archive, subarchive in archive_list:
+        item = labels.get(archive, [])
+        item.append((prefix, subarchive))
+        labels[archive] = item
+
+    prefix_map = {}
+    for label, entry in labels.items():
+        prefixes = { e[0] for e in entry }
+        if len(prefixes) == 1:
+            prefix_map[entry[0][0]] = label
+        else:
+            for e in entry:
+                prefix_map[e[0]] = e[1]
+
+    return prefix_map
+
 ARCHIVES_BY_ROOT, ARCHIVE_BY_TITLE, ARCHIVE_BY_ADDRESS = _archives_init()
+
+LABELS_BY_PREFIX = _labels_init()
 
 def archive_root(archive, subarchive):
     return ARCHIVE_BY_ADDRESS[(archive, subarchive)].split("/", 1)[0]
@@ -209,10 +234,13 @@ def page_name(title):
     return f"{address[0]}-{address[1]}/{'/'.join(address[2:])}".rstrip("/")
 
 def page_label(title):
-    try:
-        return transliterate(page_name(title))
-    except ValueError as err:
-        return None
+    title = canonicalize_title(title)
+    split_title = title.split("/", 1)
+    label_root = LABELS_BY_PREFIX.get(split_title[0])
+    if not label_root:
+        return title.removeprefix(f"{WIKI_NAMESPACE}:")
+    tail = [transliterate(t) for t in split_title[1:]]
+    return "/".join([label_root] + tail)
 
 def is_archive(title):
     return canonicalize_title(title) in ARCHIVE_BY_TITLE

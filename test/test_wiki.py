@@ -10,6 +10,7 @@ from birddog.wiki import (
     WIKI_NAMESPACE,
     ARCHIVE_BY_TITLE,
     ARCHIVE_BY_ADDRESS,
+    LABELS_BY_PREFIX,
     canonicalize_title,
     get_title,
     expand_link_target,
@@ -17,6 +18,7 @@ from birddog.wiki import (
     classify_page,
     is_archive,
     page_kind,
+    page_label,
     mw_page_doc_url,
     mw_read_page,
     check_page_updates,
@@ -959,6 +961,70 @@ class TestMwReadPage(unittest.TestCase):
         ):
             page = mw_read_page(full_url)
         self.assertIn("title", page)
+
+
+# ── LABELS_BY_PREFIX (archive label lookup table) ─────────────────────────────
+
+class TestLabelsByPrefix(unittest.TestCase):
+    """LABELS_BY_PREFIX maps wiki title roots to short archive labels."""
+
+    def test_single_subarchive_maps_to_archive_key(self):
+        # DAARK has only one subarchive; its prefix maps to just "DAARK" (no suffix)
+        self.assertEqual(LABELS_BY_PREFIX.get("Архів:ДААРК"), "DAARK")
+
+    def test_shared_prefix_multi_sub_maps_to_archive_key(self):
+        # DACHGO has Д and Р subarchives, both under Архів:ДАЧгО — no suffix needed
+        self.assertEqual(LABELS_BY_PREFIX.get("Архів:ДАЧгО"), "DACHGO")
+
+    def test_distinct_prefix_maps_to_subarchive_label(self):
+        # Decerkva subarchives have unique wiki roots; label retains the suffix
+        self.assertEqual(LABELS_BY_PREFIX.get("Архів:Лука_Мала"), "Decerkva-MalaLuka")
+
+    def test_unknown_prefix_returns_none(self):
+        self.assertIsNone(LABELS_BY_PREFIX.get("Архів:НевідомийАрхів"))
+
+
+# ── page_label ────────────────────────────────────────────────────────────────
+
+class TestPageLabel(unittest.TestCase):
+    """page_label returns a short transliterated label for a wiki page title."""
+
+    def test_fond_level(self):
+        self.assertEqual(page_label("Архів:ДААРК/Д/П-1"), "DAARK/D/P-1")
+
+    def test_opus_level(self):
+        self.assertEqual(page_label("Архів:ДААРК/Д/П-1/1"), "DAARK/D/P-1/1")
+
+    def test_case_level(self):
+        self.assertEqual(page_label("Архів:ДААРК/Д/П-1/1/1"), "DAARK/D/P-1/1/1")
+
+    def test_multi_sub_shared_prefix_root_has_no_hyphen_suffix(self):
+        # DACHGO-D and DACHGO-R share the same wiki root → label root is "DACHGO"
+        self.assertTrue(page_label("Архів:ДАЧгО/Д/П-1").startswith("DACHGO/"))
+        self.assertFalse(page_label("Архів:ДАЧгО/Д/П-1").startswith("DACHGO-"))
+
+    def test_multi_sub_subarchives_produce_distinct_labels(self):
+        # D and R fonds under the same archive still produce different labels
+        self.assertNotEqual(
+            page_label("Архів:ДАЧгО/Д/П-1"),
+            page_label("Архів:ДАЧгО/Р/П-1"),
+        )
+
+    def test_distinct_prefix_keeps_subarchive_suffix(self):
+        # Decerkva/MalaLuka has a unique wiki root; label retains the full suffix
+        self.assertEqual(page_label("Архів:Лука_Мала/П-1/1/1"), "Decerkva-MalaLuka/P-1/1/1")
+
+    def test_archive_root_page_returns_label_only(self):
+        # A page at the archive root (no path tail) returns just the label root
+        self.assertEqual(page_label("Архів:ДААРК"), "DAARK")
+
+    def test_fallback_strips_namespace_prefix(self):
+        # Unknown wiki root → fallback strips "Архів:" and returns the rest as-is
+        self.assertEqual(page_label("Архів:НевідомийАрхів/П-1"), "НевідомийАрхів/П-1")
+
+    def test_bare_title_normalised_same_as_explicit_namespace(self):
+        # canonicalize_title adds the namespace; result must match the explicit form
+        self.assertEqual(page_label("ДААРК/Д/П-1"), page_label("Архів:ДААРК/Д/П-1"))
 
 
 # ── Live network tests (skipped in offline environments) ──────────────────────
