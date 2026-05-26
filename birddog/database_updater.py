@@ -397,16 +397,22 @@ def normalize_url(url):
     path = _URL_PATH_UNSAFE.sub(lambda m: quote(m.group(0)), unquote(parsed.path))
     return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), path, parsed.params, parsed.query, ''))
 
+def _source_from_url(url):
+    """Return "commons", "wikisource", or None based on the URL's domain."""
+    host = urlparse(url).netloc.lower()
+    if host == "commons.wikimedia.org":
+        return "commons"
+    if host.endswith(".wikisource.org") or host == "wikisource.org":
+        return "wikisource"
+    return None
+
 def form_document_record(url):
     """
     Parse a MediaWiki file URL and return:
       {
         "title": "File:...",
-        "source": "commons" | "wikisource" | "other",
         "url": canonical_link_or_original
       }
-
-    If source == "other", title will be None and link is the original URL.
     """
     url = normalize_url(url)
     parsed = urlparse(url)
@@ -421,7 +427,6 @@ def form_document_record(url):
             title = url
         return {
             "title": title,
-            "source": "other",
             "url": url,
         }
 
@@ -433,7 +438,6 @@ def form_document_record(url):
     if host == "commons.wikimedia.org":
         return {
             "title": title,
-            "source": "commons",
             "url": f"https://commons.wikimedia.org/wiki/{canonical_title}",
         }
 
@@ -441,14 +445,12 @@ def form_document_record(url):
     if host.endswith(".wikisource.org"):
         return {
             "title": title,
-            "source": "wikisource",
             "url": f"https://{host}/wiki/{canonical_title}",
         }
 
     # Anything else
     return {
         "title": title,
-        "source": "other",
         "url": url,
     }
 
@@ -523,7 +525,6 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumb
         ii = page["imageinfo"][0]
         record = {
             "title": page.get("title"),
-            "source": source,
             "timestamp": _normalize_date_string(ii.get("timestamp")),
             "byte_size": ii.get("size"),
             "mimetype": ii.get("mime"),
@@ -943,7 +944,7 @@ class DatabaseUpdater:
         if update_doc_metadata:
             _KNOWN_SOURCES = ("commons", "wikisource")
             for source in _KNOWN_SOURCES:
-                subset = [record for record in doc_records.values() if record["source"] == source]
+                subset = [record for record in doc_records.values() if _source_from_url(record["url"]) == source]
                 subset_titles = [rec["title"] for rec in subset]
                 if subset_titles:
                     metadata_records = _fetch_mediawiki_file_metadata(subset_titles, source)
