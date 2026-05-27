@@ -1724,7 +1724,8 @@ def batch_fetch_document_links(titles, map_to_url=True, chunk_size=20):
             parsed_url = urlparse(url)
             base = _WIKI_EXISTENCE_CHECK_BASES.get(parsed_url.netloc)
             if base and parsed_url.path.startswith("/wiki/"):
-                wiki_title = unquote(parsed_url.path[6:]).replace(" ", "_")
+                full_path = parsed_url.path + (";" + parsed_url.params if parsed_url.params else "")
+                wiki_title = unquote(full_path[6:]).replace(" ", "_")
                 wiki_titles.setdefault(base, {})[wiki_title] = url
 
     # url -> bool (only populated for checked URLs)

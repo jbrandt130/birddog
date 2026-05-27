@@ -21,6 +21,7 @@ from birddog.wiki import (
     page_label,
     mw_page_doc_url,
     mw_read_page,
+    batch_fetch_document_links,
     check_page_updates,
     check_page_changes,
     report_page_changes,
@@ -1025,6 +1026,66 @@ class TestPageLabel(unittest.TestCase):
     def test_bare_title_normalised_same_as_explicit_namespace(self):
         # canonicalize_title adds the namespace; result must match the explicit form
         self.assertEqual(page_label("ДААРК/Д/П-1"), page_label("Архів:ДААРК/Д/П-1"))
+
+
+# ── batch_fetch_document_links ────────────────────────────────────────────────
+
+class TestBatchFetchDocumentLinks(unittest.TestCase):
+    TITLE = "Архів:ДАСО/993/1/15"
+    COMMONS_PLAIN = "https://commons.wikimedia.org/wiki/File:Simple.pdf"
+    EXTERNAL_URL = "https://example.com/doc.pdf"
+
+    def _content_response(self, title, has_revision=True):
+        page = {"title": title}
+        if has_revision:
+            page["revisions"] = [{"slots": {"main": {"*": ""}}}]
+        return {"query": {"pages": {"1": page}}}
+
+    def _run(self, urls, bpe_return=None, has_revision=True):
+        with (
+            patch("birddog.wiki.fetch_url",
+                  return_value=self._content_response(self.TITLE, has_revision)),
+            patch("birddog.wiki._check_page_existence_chunked", return_value={}),
+            patch("birddog.wiki._collect_doc_links_from_page", return_value=urls),
+            patch("birddog.wiki.batch_page_exists",
+                  return_value=bpe_return or {}) as mock_bpe,
+        ):
+            result = batch_fetch_document_links([self.TITLE])
+        return result, mock_bpe
+
+    def test_confirmed_present_commons_url_returns_exists_true(self):
+        result, _ = self._run(
+            [self.COMMONS_PLAIN],
+            bpe_return={"File:Simple.pdf": True},
+        )
+        entries = result[canonicalize_title(self.TITLE)]
+        self.assertEqual(entries, [{"link": self.COMMONS_PLAIN, "exists": True}])
+
+    def test_confirmed_missing_commons_url_returns_exists_false(self):
+        result, _ = self._run(
+            [self.COMMONS_PLAIN],
+            bpe_return={"File:Simple.pdf": False},
+        )
+        entries = result[canonicalize_title(self.TITLE)]
+        self.assertFalse(entries[0]["exists"])
+
+    def test_non_wiki_url_skips_api_and_defaults_to_exists_true(self):
+        result, mock_bpe = self._run([self.EXTERNAL_URL])
+        mock_bpe.assert_not_called()
+        entries = result[canonicalize_title(self.TITLE)]
+        self.assertEqual(entries, [{"link": self.EXTERNAL_URL, "exists": True}])
+
+    def test_semicolon_in_filename_sends_full_title_to_api(self):
+        # urlparse splits paths at ';' — the fix reconstructs the full title.
+        url = "https://commons.wikimedia.org/wiki/File:A;B.pdf"
+        result, mock_bpe = self._run([url], bpe_return={"File:A;B.pdf": True})
+        called_titles = mock_bpe.call_args[0][0]
+        self.assertIn("File:A;B.pdf", called_titles)
+        self.assertNotIn("File:A", called_titles)
+
+    def test_page_missing_from_content_api_returns_empty_links(self):
+        result, _ = self._run([], has_revision=False)
+        self.assertEqual(result[canonicalize_title(self.TITLE)], [])
 
 
 # ── Live network tests (skipped in offline environments) ──────────────────────
