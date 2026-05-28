@@ -291,7 +291,7 @@ def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spr
                 if wiki_spreadsheet:
                     raise TypeError(mess)
     elif contents != "":
-        if contents.startswith('http'):
+        if contents.upper().startswith('HTTP'):
             link = contents
             mess = f"cell {cell_address} in sheet {sheet_title} does not have a link, using instead its contents '{contents}'"
         else:
@@ -320,8 +320,20 @@ def get_cell_value(cell, capitalized=False):
 
 
 def parse_http_list(s: str):
-    parts = [canonical_wiki_url(p.strip()) for p in s.split(',')]
-    if len(parts) > 1 and all(part.startswith('http') for part in parts):
+    # separators - comma, semicolon, and "and" with optional spaces before/after
+    # we exclude commas that are followed by an underscore, because that is what we have in cell 'B4', sheet 'fund 315',
+    # spreadsheet DAHMO-D-wiki-20260415.xlsx
+    # we also exclude commas followed by optional spaces and a Cyrillic character,
+    # because that is what we have in cell 'B4', sheet 'fund 1517', spreadsheet DAKO-D-general-wiki-20260417.xlsx
+    parts = re.split(r"\s*and\s*|,(?!_|[\t ]*[\u0400-\u04FF])|;", s)
+    #parts = re.split(r"\s*and\s*|,\s+(?=http)|;", s, flags=re.IGNORECASE)
+    #parts = re.split(r"\s*and\s*|,(?![\t ]*_)|;", s)
+    #parts = re.split(r"\s*and\s*|,(?![\t ]*[\u0400-\u04FF])|;", s)
+    #parts = re.split(r"\s*and\s*|,(?!_)|;", s)
+    # Filter out empty strings (from consecutive separators)
+    parts = [p.strip() for p in parts if p.strip()]
+    parts = [canonical_wiki_url(p.strip()) for p in parts]
+    if len(parts) > 1 and all(part.upper().startswith('HTTP') for part in parts):
         return parts
     return [canonical_wiki_url(s)]
 
@@ -337,23 +349,20 @@ def get_cell_link_or_str(ws, cell_addr: str, import_message: str, check_contents
     if result:
         result = parse_http_list(result)
         if len(result) > 1:
-            mess = f"{len(result)} links in cell {cell_addr}"
-        elif result[0]:
-            if used_contents:
-                if result[0].startswith('http'):
-                    mess = f"no document link in cell {cell_addr}, using the cell contents '{result[0]}'"
-                else:
-                    mess = f"no document link for this page, cell {cell_addr} contains text '{result[0]}'"
-                    result = ""
-            elif not result[0].startswith('http'):
-                mess = f"suspicious document link '{result[0]}'"
+            _logger.warning(f"{len(result)} links in cell {cell_addr}")
+        elif result[0] and used_contents and result[0].upper().startswith('HTTP'):
+            mess = f"no document link in cell {cell_addr}, using the cell contents '{result[0]}'"
+
+        for res in result:
+            if not res.upper().startswith('HTTP') or ' ' in res:
+                mess = f"Document link '{res}' in cell '{cell_addr}', sheet '{ws.title}' may contain comments"
     if mess:
         _logger.warning(mess)
         import_message = add_to_message(import_message, mess)
     return import_message, result
 
 
-def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: str, issue_warning: bool):
+def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: str, only_check_link: bool):
     modified_import_message, cell_links = get_cell_link_or_str(ws, cell_addr, import_message, False)
     if not cell_links:
         return import_message, ""
@@ -362,17 +371,21 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     # we compare the strings up to replacement of ar1 with ar2
     archive_unit_link_replaced = canonical_wiki_url(archive_unit_link.rstrip(" /").replace(ar1, ar2))
     if isinstance(cell_links, str) and cell_links.replace(ar1, ar2) == archive_unit_link_replaced:
-        return import_message, ""
+        if only_check_link:
+            cell_links = ""
+        return import_message, cell_links
 
     real_doc = True
     if isinstance(cell_links, list) and len(cell_links) == 1:
         cell_link_replaced = cell_links[0].rstrip(" /").replace(ar1, ar2)
         if cell_link_replaced in archive_unit_link_replaced or archive_unit_link_replaced in cell_link_replaced:
-            return import_message, ""
+            if only_check_link:
+                cell_links = ""
+            return import_message, cell_links
         real_doc = '.pdf' in cell_link_replaced or '.djvu' in cell_link_replaced or '.zip' in cell_link_replaced
 
     mess = ''
-    if not real_doc:
+    if not real_doc and only_check_link:
         mess = (f" Link {cell_links} in cell '{cell_addr}', sheet '{ws.title}' "
                 f"differs from the page url {archive_unit_link}")
         cell_links = ""
@@ -380,7 +393,7 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     if len(mess) > 0:
         modified_import_message = add_to_message(modified_import_message, mess)
         _logger.warning(mess)
-    if real_doc and issue_warning:
+    if real_doc and only_check_link:
         _logger.warning(f"Adding document links {cell_links} found in cell '{cell_addr}', sheet '{ws.title}'")
 
     return modified_import_message, cell_links
@@ -390,9 +403,7 @@ def get_cell_int_value(cell):
     value = get_cell_value(cell)
     if value is None:
         return 0
-    if isinstance(value, (str, int, float)):
-        return int(value)
-    raise TypeError(f"get_cell_int_value: unrecognized type: {type(value)}")
+    return int(value)
 
 
 def combine_cell_value(cell1, cell2):
@@ -428,6 +439,25 @@ def check_redlink(page: dict) -> dict:
     return page
 
 
+def delete_part_between_hyphen_and_slash(s: str) -> str:
+    # Get part before first slash
+    if "/" not in s:
+        part_before_slash = s
+        part_after_slash = ''
+    else:
+        part_before_slash = s.split("/", 1)[0]
+        part_after_slash = '/' + s.split("/", 1)[1]
+
+    # Get part before first hyphen from the part before the slash
+    if "-" not in part_before_slash:
+        result = s
+    else:
+        part_before_hyphen = part_before_slash.split("-", 1)[0]
+        result = part_before_hyphen + part_after_slash
+
+    return result
+
+
 def add_page(page: dict, page_table: dict) -> None:
     """Merge a page entry into the page_table by title."""
     #(re)set some fields
@@ -436,6 +466,7 @@ def add_page(page: dict, page_table: dict) -> None:
     url = canonical_wiki_url(url)
     page["url"] = url
     page["last_imported"] = str(utc_now_dt().replace(microsecond=0))
+    page["label"] = delete_part_between_hyphen_and_slash(page["label"])
 
     # ensure an entry exists for this URL
     entry = page_table.setdefault(url, dict())
@@ -546,6 +577,7 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell, archive_latin_name) -> t
     Args:
         fund_num_cell: openpyxl.cell.cell.Cell object
         fund_descr_cell: openpyxl.cell.cell.Cell object
+        archive_latin_name: Archive name in Latin letters, used for archive-specific parsing rules.
 
     Returns:
         1) List[str]: List of parsed integers converted to strings
@@ -784,8 +816,8 @@ def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cy
     comments = get_cell_value(ws["I2"])
     if not comments:
         comments = get_cell_value(ws["I3"])
-    if comments:
-        _logger.info(f"There is a comment: {comments}")
+#    if comments:
+#        _logger.info(f"There is a comment: {comments}")
 
     return title, latin_title, url, import_message, comments
 
@@ -940,6 +972,14 @@ def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, she
     return import_message
 
 
+def get_language(ws, cell_address):
+    language = get_cell_value(ws[cell_address], False)
+    if language:
+        language = re.split(r"[;, ]+", language)
+        _logger.warning(f"Found language {language}")
+    return language
+
+
 def count_fund_opus_attributes(sheet, end_col):
     """Fund name and opus name appear in the first row,
     typically but not always in cells G1 and H1. We count the number of nonempty cells.
@@ -956,7 +996,7 @@ def count_fund_opus_attributes(sheet, end_col):
             #in DAHO-D-wiki-20260324.xlsx sheet "DAHO D wiki fund list" we have text
             # "to be updated when BirdDog not adding incorrect links"
             num_nonempty_cells += 1
-            fund_opus_attributes.append(str(contents))
+            fund_opus_attributes.append(contents)
     return num_nonempty_cells, fund_opus_attributes
 
 
@@ -1157,9 +1197,10 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
                                            latin_title, url, source_type, r, page_table, change_date, timestamp)
                 else:
                     curr_source_type, label = get_label_source_type(latin_title, source_type, title, wiki_spreadsheet)
+                    language = get_language(ws, f"O{r}")
                     add_case_page(False, fund_num_cell, fund_num_cell_addr, "A", change_date, ord("G"), '',
                         curr_source_type, '', label, lower_level, '',
-                        archive_name, archive_url, page_table, r, url, timestamp, title, wiki_spreadsheet, ws)
+                        archive_name, archive_url, page_table, r, url, timestamp, title, wiki_spreadsheet, ws, language)
             case _:
                 for fund_id in fund_ids:
                     title = f"{archive_cyrillic_name}/{fund_id}"
@@ -1373,9 +1414,10 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                 add_opus_page(page_table, ws, r, title, raw_url, label, change_date, timestamp, source_type, opus_title,
                               fund_url, level, availability, curr_import_message)
             else:
+                language = get_language(ws, f"{chr(comments_col + 8)}{r}")
                 add_case_page(additional_column, case_num_cell, case_num_cell_addr, case_num_col, change_date,
-                              comments_col, curr_import_message, curr_source_type, fund_name, label, level, opus_name,
-                              opus_title, opus_url, page_table, r, raw_url, timestamp, title, wiki_spreadsheet, ws)
+                    comments_col, curr_import_message, curr_source_type, fund_name, label, level, opus_name,
+                    opus_title, opus_url, page_table, r, raw_url, timestamp, title, wiki_spreadsheet, ws, language)
 
     return page_table
 
@@ -1394,7 +1436,7 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
                                                                                        '', 'Document without a page', 'Old case numbering', 'Other case numbering'] | Any,
                   curr_source_type, fund_name, label: str | Any, level, opus_name,
                   opus_title: str | None | Any, opus_url: str, page_table: dict[Any, Any] | Any, r: int, raw_url: str,
-                  timestamp: str | None, title, wiki_spreadsheet, ws):
+                  timestamp: str | None, title, wiki_spreadsheet, ws, language):
     necessary_parts = [fund_name, opus_name, normalize_to_int_str(str(case_num_cell.value))]
     curr_import_message = check_url_sanity(raw_url, curr_import_message, wiki_spreadsheet,
                                            necessary_parts, ws.title, case_num_cell_addr)
@@ -1448,6 +1490,7 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
         "pages_processed": get_cell_int_value(ws[pages_processed_cell_addr1]) +
                            get_cell_int_value(ws[pages_processed_cell_addr2]),
         "when_transcribed": when_transcribed,
+        "language": language,
     }, page_table)
 
 
@@ -1567,6 +1610,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         "pages_processed",
         "processor",
         "when_transcribed",
+        "language",
     }
 
     doc_and_page_fields = {
@@ -1730,8 +1774,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAOO-D-wiki-20260427.xlsx"
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAOO-archives-20250523.xlsx"
-#    import_spreadsheet(filepath)
-    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives"
-    process_dir(dir_path, False)
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAZHO-D-wiki-20260416.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHEO-R-archive-20260408.xlsx"
+    import_spreadsheet(filepath, False)
+#    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki"
+#    process_dir(dir_path, False)
