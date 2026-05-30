@@ -383,7 +383,7 @@ class PageUpdateManager(HeartbeatManager):
             if pending_updates:
                 update_titles = [item[0] for item in pending_updates]
                 self._runtime.update_to_database(update_titles, deep=False)
-            self._runtime.update_database_translations()
+            self._runtime.run_database_housekeeping()
 
         error_count = 0
         for title, update in pending_updates:
@@ -666,9 +666,10 @@ class Runtime:
         if self.database_update_enabled:
             self._database_update_manager.cancel(task_name)
 
-    def update_database_translations(self):
+    def run_database_housekeeping(self):
         if self.database_update_enabled:
             self._database_updater.start_translation()
+            self._database_update_manager.update_document_metadata()
 
     @property
     def database(self):

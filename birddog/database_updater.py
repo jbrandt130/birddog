@@ -400,7 +400,7 @@ def normalize_url(url):
 def _source_from_url(url):
     """Return "commons", "wikisource", or None based on the URL's domain."""
     host = urlparse(url).netloc.lower()
-    if host == "commons.wikimedia.org":
+    if host.endswith(".wikimedia.org") or host == "wikimedia.org":
         return "commons"
     if host.endswith(".wikisource.org") or host == "wikisource.org":
         return "wikisource"
@@ -408,9 +408,11 @@ def _source_from_url(url):
 
 def form_document_record(url):
     """
-    Parse a MediaWiki file URL and return:
+    Parse a document file URL and return:
       {
-        "title": "File:...",
+        "title": wiki_title (if wiki) 
+            OR path tail if it's a recognized document file
+            OR the url
         "url": canonical_link_or_original
       }
     """
@@ -420,7 +422,17 @@ def form_document_record(url):
     path = parsed.path
 
     # Must be a /wiki/ URL to extract a title
-    if not path.startswith("/wiki/"):
+    if path.startswith("/wiki/"):
+        # Extract and decode title; normalize spaces to underscores for the canonical link.
+        # A "?" in a wiki filename is not a query separator; urlparse splits on it regardless,
+        # so re-join with the query string when the query contains no "=" (i.e. it's not a
+        # real key=value query string, just a filename fragment like "?).pdf").
+        raw_title = path[len("/wiki/"):]
+        if parsed.query and "=" not in parsed.query:
+            raw_title = raw_title + "?" + parsed.query
+        title = unquote(raw_title)
+        canonical_title = title.replace(" ", "_").replace("?", "%3F")
+    else:
         if _sniff_suffix(url):
             title = unquote(path.rsplit("/", 1)[-1])
         else:
@@ -428,30 +440,22 @@ def form_document_record(url):
         return {
             "title": title,
             "url": url,
+            "wiki": False,
         }
 
-    # Extract and decode title; normalize spaces to underscores for the canonical link
-    title = unquote(path[len("/wiki/"):])
-    canonical_title = title.replace(" ", "_")
-
-    # Wikimedia Commons
-    if host == "commons.wikimedia.org":
-        return {
-            "title": title,
-            "url": f"https://commons.wikimedia.org/wiki/{canonical_title}",
-        }
-
-    # Wikisource (any language subdomain)
-    if host.endswith(".wikisource.org"):
+    # wikisource or wikimedia
+    if host.endswith(".wikisource.org") or host.endswith(".wikimedia.org"):
         return {
             "title": title,
             "url": f"https://{host}/wiki/{canonical_title}",
+            "wiki": True,
         }
 
-    # Anything else
+    # anything else
     return {
         "title": title,
         "url": url,
+        "wiki": False,
     }
 
 def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumbnail_width=300):
@@ -517,9 +521,16 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumb
         page = pages_by_title.get(api_lookup_title)
 
         # page may be missing even if present in pages dict
-        if not page or page.get("missing") or not page.get("imageinfo"):
+        if page and "invalid" in page:
+            _logger.info(f"invalid title: {req_title}, {api_lookup_title}, {page}")
+            results[req_title] = {"title": req_title, "availability": "error"}
+            continue
+        if not page or not page.get("imageinfo"):
             _logger.info(f"missing title: {req_title}, {api_lookup_title}, {page}")
-            results[req_title] = None
+            if page and "pageid" in page:
+                results[req_title] = {"title": req_title, "availability": "error"}
+            else:
+                results[req_title] = None
             continue
 
         ii = page["imageinfo"][0]
@@ -939,6 +950,8 @@ class DatabaseUpdater:
             doc_records, update_doc_metadata=update_doc_metadata)
 
     def _update_doc_records_from_records(self, doc_records, update_doc_metadata=True):
+        #_logger.info(f"### 1. {doc_records}\n\n")
+
         tid = threading.get_ident()
         # collect meta data for known sources
         if update_doc_metadata:
@@ -952,10 +965,13 @@ class DatabaseUpdater:
                         metadata_record = metadata_records.get(record["title"])
                         if metadata_record:
                             record.update(metadata_record)
-                            record["availability"] = "linked"
+                            if "availability" not in metadata_record:
+                                record["availability"] = "linked"
                         else:
                             _logger.info(f"marking doc url as unlinked: {record['title']}")
                             record["availability"] = "unlinked"
+
+        #_logger.info(f"### 2. {doc_records}\n\n")
 
         # Single lookup for all document URLs using canonical links
         canonical_links = {record["url"] for record in doc_records.values()}
@@ -966,13 +982,18 @@ class DatabaseUpdater:
             for rec in self._db.read("Documents", existing_doc_ids)
         } if existing_doc_ids else {}
 
+        #_logger.info(f"### 3. {doc_id_map}\n\n")
+
         # Detect changes using pre-fetched data
         doc_update = []
         timestamp = str(utc_now_dt().replace(microsecond=0))
         for record in doc_records.values():
             rec_id = doc_id_map.get(record["url"])
+            #_logger.info(f"### 4. {rec_id}\n\n")
             if rec_id:
                 current_rec = existing_docs[rec_id]
+                #_logger.info(f"### 5. {current_rec}\n\n")
+
                 changed = any(
                     k not in current_rec or current_rec[k] != v
                     for k, v in record.items()
@@ -988,6 +1009,10 @@ class DatabaseUpdater:
         doc_records_changed = bool(doc_ids)
         _logger.info(f"Updater.update_doc_records {tid}: finished")
         return doc_records_changed
+
+    def get_docs_with_missing_metadata(self, limit=100):
+        rec, _ = self._db.scan("Documents", view_name="BD:Missing Metadata", fields="url", limit=limit)
+        return [r["url"] for r in rec]
 
     # -------------------------------------------------------------------------
     # TRANSLATION SUPPORT
@@ -1288,3 +1313,11 @@ class DatabaseUpdateManager(TaskManager):
                 super().cancel(task.get("task_id"))
                 break
         self._remove_state(task_name)
+
+    def update_document_metadata(self):
+        doc_urls = self._updater.get_docs_with_missing_metadata(limit=500)
+        if doc_urls:
+            _logger.info(f"DatabaseUpdateManager: fetching document metadata (len={len(doc_urls)})")
+            self.start_document_update(doc_urls)
+
+            
