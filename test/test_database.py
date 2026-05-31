@@ -1,6 +1,7 @@
 import os
 import time
 import unittest
+from unittest.mock import patch
 
 from birddog.abstract_database import (
     FailedIO,
@@ -263,6 +264,121 @@ class TestDatabase(unittest.TestCase):
         owning_links2 = self.db.get_links("Documents", "owning_pages", first_doc_id)
         self.assertNotIn(parent_id, owning_links2)
 
+
+    def test_parallel_read_correctness(self):
+        """
+        Verifies parallelized read preserves input order, maps missing IDs to {},
+        handles duplicates, and returns the right shape for singleton vs sequence input.
+
+        _NOCODB_BATCH_SIZE is patched to 3 so that 7 IDs produce three batches
+        and trigger the ThreadPoolExecutor path without creating hundreds of records.
+        """
+        import birddog.nocodb_database as ndb_mod
+
+        n = 7
+        pages = [
+            {"title": self._mk_page_title(f"rd_{i}"),
+             "url":   self._mk_page_url(f"rd_{i}")}
+            for i in range(n)
+        ]
+        ids = self.db.write("Pages", pages)
+        self.created_page_ids.extend(ids)
+
+        # singleton input must return a plain dict, not a list
+        single = self.db.read("Pages", ids[0])
+        self.assertIsInstance(single, dict)
+        self.assertEqual(single.get("title"), self._mk_page_title("rd_0"))
+
+        # sequence read with batch_size=3 → 3 batches → parallel execution
+        # includes a duplicate, a missing ID, and non-sequential ordering
+        _MISSING = 999_999_999
+        read_order = [ids[4], ids[1], ids[6], _MISSING, ids[1], ids[0], ids[3]]
+        expected = [
+            self._mk_page_title("rd_4"),
+            self._mk_page_title("rd_1"),
+            self._mk_page_title("rd_6"),
+            None,                            # missing -> {}
+            self._mk_page_title("rd_1"),     # duplicate
+            self._mk_page_title("rd_0"),
+            self._mk_page_title("rd_3"),
+        ]
+
+        with patch.object(ndb_mod, "_NOCODB_BATCH_SIZE", 3):
+            result = self.db.read("Pages", read_order)
+
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), len(read_order))
+        for pos, (rec, title) in enumerate(zip(result, expected)):
+            if title is None:
+                self.assertEqual(rec, {}, f"position {pos}: expected {{}} for missing ID")
+            else:
+                self.assertIsInstance(rec, dict, f"position {pos}: expected dict")
+                self.assertEqual(rec.get("title"), title, f"position {pos}: wrong title")
+
+    def test_parallel_write_correctness(self):
+        """
+        Verifies correctness of the parallelized write path.
+
+        A mixed batch of existing (PATCH) and new (POST) records produces two
+        independent tasks that run concurrently via ThreadPoolExecutor.  The
+        critical invariant is that each POST response ID is assigned to the
+        correct record dict so that the final result list is aligned to the
+        input order.
+        """
+        n_exist = 6
+        n_new = 6
+
+        # --- create initial records ---
+        initial = [
+            {"title": self._mk_page_title(f"pw_exist_{i}"),
+             "url":   self._mk_page_url(f"pw_exist_{i}")}
+            for i in range(n_exist)
+        ]
+        initial_ids = self.db.write("Pages", initial)
+        self.created_page_ids.extend(initial_ids)
+
+        # --- mixed batch: updates to all existing + all-new creates ---
+        # This yields 1 PATCH task + 1 POST task => parallel execution.
+        updates = [
+            {"title":    self._mk_page_title(f"pw_exist_{i}"),
+             "url":      self._mk_page_url(f"pw_exist_{i}"),
+             "comments": f"updated_{i}"}
+            for i in range(n_exist)
+        ]
+        creates = [
+            {"title": self._mk_page_title(f"pw_new_{i}"),
+             "url":   self._mk_page_url(f"pw_new_{i}")}
+            for i in range(n_new)
+        ]
+        mixed = updates + creates
+        result_ids = self.db.write("Pages", mixed)
+        new_ids = result_ids[n_exist:]
+        self.created_page_ids.extend(new_ids)
+
+        # result must be aligned to input order
+        self.assertEqual(len(result_ids), len(mixed))
+
+        # existing records must keep their original IDs
+        self.assertEqual(result_ids[:n_exist], initial_ids)
+
+        # new IDs must be non-null and distinct
+        self.assertEqual(len(new_ids), n_new)
+        self.assertTrue(all(new_ids), "some new IDs are falsy")
+        self.assertEqual(len(set(new_ids)), n_new, "new IDs are not all distinct")
+
+        # PATCH path: updates must have been applied
+        updated_recs = self.db.read("Pages", initial_ids)
+        for i, rec in enumerate(updated_recs):
+            self.assertEqual(rec.get("comments"), f"updated_{i}",
+                             f"update not applied for pw_exist_{i}")
+
+        # POST path: each new ID must resolve to the correct record
+        # (verifies batch[j]["Id"] = item["Id"] assigned the right ID to the
+        # right dict, regardless of which parallel worker handled it)
+        new_recs = self.db.read("Pages", new_ids)
+        for i, rec in enumerate(new_recs):
+            self.assertEqual(rec.get("title"), self._mk_page_title(f"pw_new_{i}"),
+                             f"wrong record at new_ids[{i}]")
 
     def test_scan_with_view_name(self):
         # -----------------------

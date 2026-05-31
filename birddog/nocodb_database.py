@@ -505,7 +505,6 @@ class NocoDBDatabase(Database):
         """
         if self._verbose:
             _logger.info(f"{method}: {url}, params={params}, json={json}")
-        time.sleep(_NOCODB_API_DELAY)
 
         try:
             # Use the shared utility (session => connection pooling/keep-alive)
@@ -995,27 +994,30 @@ class NocoDBDatabase(Database):
             singleton = False
 
         with LogService("NocoDB", "read") as log:
-            result = dict()
-            for i in range(0, len(record_id), _NOCODB_BATCH_SIZE):
-                batch = record_id[i:i + _NOCODB_BATCH_SIZE]
+            batches = [
+                record_id[i:i + _NOCODB_BATCH_SIZE]
+                for i in range(0, len(record_id), _NOCODB_BATCH_SIZE)
+            ]
 
-                clauses = [
-                    f"({id_field_id},eq,{i})"
-                    for i in batch
-                ]
-
-                params = {
-                    "where": "~or".join(clauses),
-                    "limit": len(batch),
-                }
+            def _do_batch(batch):
+                clauses = [f"({id_field_id},eq,{rid})" for rid in batch]
+                params = {"where": "~or".join(clauses), "limit": len(batch)}
                 if fields:
                     params["fields"] = self._encode_field_spec(table_name, fields)
-                    
                 data = self._fetch(url, params=params)
+                return {item["Id"]: item for item in data.get("list", [])}
 
-                for item in data.get("list", []):
-                    result[item["Id"]] = item
-            result = [result.get(i, {}) for i in record_id]
+            result = {}
+            _MAX_WORKERS = 5
+            if len(batches) == 1:
+                result = _do_batch(batches[0])
+            elif batches:
+                with ThreadPoolExecutor(max_workers=min(len(batches), _MAX_WORKERS)) as executor:
+                    futures = [executor.submit(_do_batch, batch) for batch in batches]
+                    for future in as_completed(futures):
+                        result.update(future.result())
+
+            result = [result.get(rid, {}) for rid in record_id]
             self.normalize_records(table_name, result)
             log.size = json_size(result)
 
@@ -1105,14 +1107,30 @@ class NocoDBDatabase(Database):
 
         with LogService("NocoDB", "write", size=json_size(known_records) + json_size(unknown_records)):
             url = self._records_url(table_id)
-            for i in range(0, len(known_records), _NOCODB_BATCH_SIZE):
-                batch = known_records[i:i + _NOCODB_BATCH_SIZE]
+
+            def _do_patch(batch):
                 self._fetch(url, json=batch, method="PATCH")
-            for i in range(0, len(unknown_records), _NOCODB_BATCH_SIZE):
-                batch = unknown_records[i:i + _NOCODB_BATCH_SIZE]
+
+            def _do_post(batch):
                 data = self._fetch(url, json=batch, method="POST")
                 for j, item in enumerate(data):
-                    unknown_records[i+j]["Id"] = item["Id"]
+                    batch[j]["Id"] = item["Id"]
+
+            patch_batches = [known_records[i:i + _NOCODB_BATCH_SIZE]
+                             for i in range(0, len(known_records), _NOCODB_BATCH_SIZE)]
+            post_batches  = [unknown_records[i:i + _NOCODB_BATCH_SIZE]
+                             for i in range(0, len(unknown_records), _NOCODB_BATCH_SIZE)]
+            all_tasks = [(_do_patch, b) for b in patch_batches] + [(_do_post, b) for b in post_batches]
+
+            _MAX_WORKERS = 5
+            if len(all_tasks) == 1:
+                fn, b = all_tasks[0]
+                fn(b)
+            elif all_tasks:
+                with ThreadPoolExecutor(max_workers=min(len(all_tasks), _MAX_WORKERS)) as executor:
+                    futures = [executor.submit(fn, b) for fn, b in all_tasks]
+                    for future in as_completed(futures):
+                        future.result()
 
             if key_field_name:
                 result = [record_dict[record[key_field_name]]["Id"] for record in records]
