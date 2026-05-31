@@ -97,7 +97,7 @@ class GoogleCloudTranslator(Translator):
     """
     _V2_ENDPOINT = "https://translation.googleapis.com/language/translate/v2"
 
-    def __init__(self, source="uk", target="en", *, provider_name="gcloud", timeout=10, use_client=False):
+    def __init__(self, source=None, target="en", *, provider_name="gcloud", timeout=10, use_client=False):
         self._provider = provider_name
         self._source = source
         self._target = target
@@ -198,10 +198,11 @@ class GoogleCloudTranslator(Translator):
 
         params = {
             "key": self._api_key,
-            "source": self._source,
             "target": self._target,
             "format": "text",
         }
+        if self._source:
+            params["source"] = self._source
 
         # Google v2 REST expects repeated 'q' fields; preserve prior behavior.
         form_data = [("q", s) for s in q]
@@ -228,21 +229,14 @@ class GoogleCloudTranslator(Translator):
 
     # ----------- v2 via client (service account) ------------------------------
     def _translate_v2_client(self, text: TextLike) -> TextLike:
+        kwargs = {"target_language": self._target, "format_": "text"}
+        if self._source:
+            kwargs["source_language"] = self._source
         if isinstance(text, (list, tuple)):
-            result = self._client.translate(
-                text,
-                source_language=self._source,
-                target_language=self._target,
-                format_="text",
-            )
+            result = self._client.translate(text, **kwargs)
             return [html.unescape(r["translatedText"]) for r in result]
         else:
-            result = self._client.translate(
-                text,
-                source_language=self._source,
-                target_language=self._target,
-                format_="text",
-            )
+            result = self._client.translate(text, **kwargs)
             return html.unescape(result["translatedText"])
 
 # --- Configure Translator ---
@@ -250,7 +244,7 @@ class GoogleCloudTranslator(Translator):
 if _ENABLE_TRANSLATION:
     if _USE_GOOGLE_CLOUD_TRANSLATE:
         _logger.info('Using Google Cloud translation API')
-        _translator = GoogleCloudTranslator(source="uk", target="en")
+        _translator = GoogleCloudTranslator(target="en")
     else:
         _ENABLE_TRANSLATION = False
 
