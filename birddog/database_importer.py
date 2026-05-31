@@ -1462,7 +1462,9 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
 
     process_code = get_cell_value(ws[f"{chr(ord(case_num_col) + process_code_col_offs)}{r}"], True)  # F
     process_code, curr_import_message = normalize_process_code(process_code, curr_import_message)
-    when_transcribed = str(ws[when_transcribed_cell_addr].value) or ''
+    when_transcribed = ws[when_transcribed_cell_addr].value
+    when_transcribed = str(when_transcribed) if when_transcribed else ""
+
     curr_import_message, doc_links = get_doc_links(
         ws, f"{chr(ord(case_num_col) + description_col_offs)}{r}", curr_import_message, raw_url, False)
 
@@ -1707,9 +1709,6 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 quoted_record = form_document_record(doc_link)
 
                 doc_payload = {}
-                for doc_field in doc_only_fields_all_caps:
-                    if doc_field in doc_payload and doc_payload[doc_field] is not None:
-                        doc_payload[doc_field] = doc_payload[doc_field].strip().upper()
                 for joint_field in doc_and_page_fields:
                     if joint_field in page:
                         doc_payload[joint_field] = page[joint_field]
@@ -1722,6 +1721,10 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 for k in doc_only_fields:
                     if k in relevant_page_data:
                         doc_payload[k] = relevant_page_data[k]
+
+                for doc_field in doc_only_fields_all_caps:
+                    if doc_field in doc_payload and doc_payload[doc_field] is not None:
+                        doc_payload[doc_field] = doc_payload[doc_field].strip().upper()
 
                 output_docs[link] = doc_payload
                 linked_docs = doc_link_dict.get(page["url"], [])
@@ -1774,8 +1777,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAZHO-D-wiki-20260416.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAOO-D-wiki-20260427.xlsx"
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHEO-R-archive-20260408.xlsx"
-    import_spreadsheet(filepath, False)
+    import_spreadsheet(filepath)
 #    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki"
 #    process_dir(dir_path, False)
