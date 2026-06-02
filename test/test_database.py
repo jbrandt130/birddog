@@ -380,6 +380,108 @@ class TestDatabase(unittest.TestCase):
             self.assertEqual(rec.get("title"), self._mk_page_title(f"pw_new_{i}"),
                              f"wrong record at new_ids[{i}]")
 
+    def test_concurrent_write_no_duplication(self):
+        """
+        Two threads simultaneously write batches that share N_SHARED URLs, each
+        writing a different field on the shared records.  The batch size ensures
+        both threads are inside their NocoDB lookup calls at the same time,
+        creating a genuine concurrent check-then-create window.
+
+        Assertions:
+          - Each shared URL resolves to the same record ID in both threads
+            (a duplicate would yield two distinct IDs).
+          - Every shared record contains fields written by both threads,
+            confirming the losing thread completed as a PATCH not a POST.
+          - Thread-exclusive records are created independently without
+            interference (verifies the Reserver does not over-serialise).
+        """
+        import threading
+
+        N_SHARED    = 5
+        N_EXCLUSIVE = 4
+
+        shared_urls   = [self._mk_page_url(f"conc_sh_{i}")  for i in range(N_SHARED)]
+        shared_title  = self._mk_page_title("conc_shared")
+        a_urls        = [self._mk_page_url(f"conc_a_{i}")   for i in range(N_EXCLUSIVE)]
+        b_urls        = [self._mk_page_url(f"conc_b_{i}")   for i in range(N_EXCLUSIVE)]
+
+        # Thread A writes shared records with `comments`, plus A-exclusive records.
+        # Thread B writes shared records with `description`, plus B-exclusive records.
+        # Shared records are listed first so result slicing is straightforward.
+        a_records = (
+            [{"url": u, "title": shared_title, "comments": "from_a"}
+             for u in shared_urls] +
+            [{"url": u, "title": self._mk_page_title(f"conc_a_{i}")}
+             for i, u in enumerate(a_urls)]
+        )
+        b_records = (
+            [{"url": u, "title": shared_title, "description": "from_b"}
+             for u in shared_urls] +
+            [{"url": u, "title": self._mk_page_title(f"conc_b_{i}")}
+             for i, u in enumerate(b_urls)]
+        )
+
+        results = [None, None]
+        errors  = [None, None]
+        barrier = threading.Barrier(2)
+
+        def writer(idx, records):
+            try:
+                barrier.wait()
+                results[idx] = self.db.write("Pages", records)
+            except Exception as exc:
+                errors[idx] = exc
+
+        t0 = threading.Thread(target=writer, args=(0, a_records))
+        t1 = threading.Thread(target=writer, args=(1, b_records))
+        t0.start()
+        t1.start()
+        t0.join(timeout=120)
+        t1.join(timeout=120)
+
+        # Track all returned IDs for tearDown cleanup before any assertions.
+        # Collects both threads' IDs so duplicates are also cleaned up on failure.
+        seen = set()
+        for result in results:
+            if result:
+                for rid in result:
+                    if rid and rid not in seen:
+                        seen.add(rid)
+                        self.created_page_ids.append(rid)
+
+        self.assertIsNone(errors[0], f"Thread 0 raised: {errors[0]}")
+        self.assertIsNone(errors[1], f"Thread 1 raised: {errors[1]}")
+        self.assertIsNotNone(results[0], "Thread 0 returned no result")
+        self.assertIsNotNone(results[1], "Thread 1 returned no result")
+        self.assertEqual(len(results[0]), N_SHARED + N_EXCLUSIVE)
+        self.assertEqual(len(results[1]), N_SHARED + N_EXCLUSIVE)
+
+        a_shared_ids    = results[0][:N_SHARED]
+        b_shared_ids    = results[1][:N_SHARED]
+        a_exclusive_ids = results[0][N_SHARED:]
+        b_exclusive_ids = results[1][N_SHARED:]
+
+        # Shared URLs must map to identical record IDs in both threads —
+        # a mismatch means a duplicate record was created.
+        self.assertEqual(a_shared_ids, b_shared_ids,
+                         "Duplicate records created for shared URLs: "
+                         f"Thread 0 got {a_shared_ids}, Thread 1 got {b_shared_ids}")
+
+        # Every shared record must contain the field written by each thread,
+        # confirming the losing thread issued a PATCH rather than being dropped.
+        shared_recs = self.db.read("Pages", a_shared_ids)
+        for i, rec in enumerate(shared_recs):
+            self.assertEqual(rec.get("comments"), "from_a",
+                             f"shared_{i}: comments from Thread 0 missing or wrong")
+            self.assertEqual(rec.get("description"), "from_b",
+                             f"shared_{i}: description from Thread 1 missing or wrong")
+
+        # Exclusive records must all be present and non-overlapping.
+        self.assertTrue(all(a_exclusive_ids), "Thread 0 exclusive IDs contain falsy values")
+        self.assertTrue(all(b_exclusive_ids), "Thread 1 exclusive IDs contain falsy values")
+        self.assertEqual(len(set(a_exclusive_ids) & set(b_exclusive_ids)), 0,
+                         "Thread-exclusive IDs overlap — unexpected shared record")
+
     def test_scan_with_view_name(self):
         # -----------------------
         # Discover available views for the Pages table, then scan using one.

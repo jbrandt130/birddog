@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import mimetypes
 import os
 import re
+import threading
 import time
 import requests
 from copy import copy
@@ -61,6 +62,10 @@ else:
     _NOCODB_BATCH_SIZE  = 100
     _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
     _logger.info(f"Using aws nocodb api: {_NOCODB_HOST}")
+
+_WRITE_CHUNK_SIZE               = 500       # max records per reservation window
+_WRITE_RESERVATION_INTERVAL     = 30        # seconds a write reservation is held
+_WRITE_WAIT_SLEEP               = 0.1       # seconds to sleep before retrying rejected keys
 
 # ----------------------------------------------------------------------
 # Data normalization, and encoding
@@ -445,6 +450,55 @@ def create_lookup_field(db, table_name, field_name, related_column_name, linked_
 
 # ----------------------------------------------------------------------
 
+class Reserver:
+    """
+    Tracks timed reservations on arbitrary hashable keys.
+
+    reserve(keys, interval) attempts to reserve each key for `interval` seconds.
+    Keys that are already actively reserved are rejected and returned as a list;
+    the rest are reserved. Expired reservations are purged on every reserve() call.
+
+    release(keys) removes reservations early (silent for unknown or expired keys).
+
+    Thread-safe.
+    """
+
+    def __init__(self):
+        self._reservations = {}     # key -> expiry (time.monotonic())
+        self._lock = threading.Lock()
+
+    def reserve(self, keys, interval):
+        """
+        Reserve each key in `keys` for `interval` seconds.
+
+        Returns a list of rejected keys — those with an active reservation held
+        by another caller. All non-rejected keys are now reserved by the caller.
+        """
+        now = time.monotonic()
+        expiry = now + interval
+        rejected = []
+
+        with self._lock:
+            expired = [k for k, exp in self._reservations.items() if exp <= now]
+            for k in expired:
+                del self._reservations[k]
+
+            for key in keys:
+                if key in self._reservations:
+                    rejected.append(key)
+                else:
+                    self._reservations[key] = expiry
+
+        return rejected
+
+    def release(self, keys):
+        """Release reservations for the given keys (silent if not reserved)."""
+        with self._lock:
+            for key in keys:
+                self._reservations.pop(key, None)
+
+# ----------------------------------------------------------------------
+
 class NocoDBDatabase(Database):
     def __init__(self, host=_NOCODB_HOST, base_id=_NOCODB_BASE_ID, api_token=None):
         self._verbose = False
@@ -461,6 +515,8 @@ class NocoDBDatabase(Database):
                 "Content-Type": "application/json",
             }
         )
+        self._reservers = {}
+        self._reservers_lock = threading.Lock()
         self.load_schema()
 
     def load_schema(self):
@@ -478,6 +534,16 @@ class NocoDBDatabase(Database):
         except SchemaError as err:
             _logger.warning("No schema found for database. Running schema-less.")
             self._schema = None
+
+    def _get_reserver(self, table_name):
+        r = self._reservers.get(table_name)
+        if r is None:
+            with self._reservers_lock:
+                r = self._reservers.get(table_name)
+                if r is None:
+                    r = Reserver()
+                    self._reservers[table_name] = r
+        return r
 
     def _records_url(self, table_id):
         return f"{self._host}/api/v2/tables/{table_id}/records"
@@ -1025,6 +1091,87 @@ class NocoDBDatabase(Database):
             return result[0]
         return result
 
+    def _do_write_patch(self, url, batch):
+        self._fetch(url, json=batch, method="PATCH")
+
+    def _do_write_post(self, url, batch):
+        data = self._fetch(url, json=batch, method="POST")
+        for j, item in enumerate(data):
+            batch[j]["Id"] = item["Id"]
+
+    def _run_write_batched(self, fn, records):
+        batches = [records[i:i + _NOCODB_BATCH_SIZE]
+                   for i in range(0, len(records), _NOCODB_BATCH_SIZE)]
+        _MAX_WORKERS = 5
+        if len(batches) == 1:
+            fn(batches[0])
+        elif batches:
+            with ThreadPoolExecutor(max_workers=min(len(batches), _MAX_WORKERS)) as executor:
+                futures = [executor.submit(fn, b) for b in batches]
+                for future in as_completed(futures):
+                    future.result()
+
+    def _write_non_unique(self, table_id, records):
+        """POST all records without key-field dedup or reservation (no-key-field tables)."""
+        url = self._records_url(table_id)
+        with LogService("NocoDB", "write", size=json_size(records)):
+            self._run_write_batched(lambda batch: self._do_write_post(url, batch), records)
+        return [rec["Id"] for rec in records]
+
+    def _write_unique(self, table_name, table_id, record_dict):
+        """
+        Write records keyed by the table's key field, using per-key reservations to
+        prevent concurrent check-then-create races.
+
+        Processes records in chunks of _WRITE_CHUNK_SIZE. For each chunk, a while
+        loop retries any keys that were rejected (already reserved by another writer):
+          1. reserve all remaining keys
+          2. lookup to split existing (PATCH) vs new (POST)
+          3. release reservations for existing keys immediately
+          4. POST new records; release their reservations in a finally block
+          5. PATCH existing records (no reservation needed)
+          6. if rejected keys remain, sleep and repeat with them
+        """
+        url = self._records_url(table_id)
+        reserver = self._get_reserver(table_name)
+        all_keys = list(record_dict.keys())
+
+        for chunk_start in range(0, len(all_keys), _WRITE_CHUNK_SIZE):
+            chunk = all_keys[chunk_start:chunk_start + _WRITE_CHUNK_SIZE]
+            remaining = chunk
+
+            while remaining:
+                rejected = reserver.reserve(remaining, _WRITE_RESERVATION_INTERVAL)
+                reserved = [k for k in remaining if k not in set(rejected)]
+
+                if reserved:
+                    with LogService("NocoDB", "write", size=json_size([record_dict[k] for k in reserved])):
+                        known_key_map = self.lookup(table_name, set(reserved))
+
+                        existing_keys = list(known_key_map.keys())
+                        new_keys = [k for k in reserved if k not in known_key_map]
+
+                        for key, record_id in known_key_map.items():
+                            record_dict[key]["Id"] = record_id
+
+                        existing_records = [record_dict[k] for k in existing_keys]
+                        new_records = [record_dict[k] for k in new_keys]
+
+                        reserver.release(existing_keys)
+
+                        try:
+                            self._run_write_batched(lambda batch: self._do_write_post(url, batch), new_records)
+                        finally:
+                            reserver.release(new_keys)
+
+                        self._run_write_batched(lambda batch: self._do_write_patch(url, batch), existing_records)
+
+                remaining = rejected
+                if remaining:
+                    time.sleep(_WRITE_WAIT_SLEEP)
+
+        return [record_dict[key]["Id"] for key in all_keys]
+
     @timer.timed
     def write(self, table_name, records, raw=False):
         """
@@ -1091,51 +1238,9 @@ class NocoDBDatabase(Database):
             records = self.encode_records(table_name, records)
         if key_field_name:
             record_dict = {record[key_field_name]: copy(record) for record in records}
-            key_set = set(record_dict.keys())
-            known_key_map = self.lookup(table_name, key_set)
-            known_records = []
-            for key, record_id in known_key_map.items():
-                record = record_dict[key]
-                record["Id"] = record_id
-                known_records.append(record)
-            unknown_keys = key_set - set(known_key_map.keys())
-            unknown_records = [record_dict[key] for key in unknown_keys]
+            result = self._write_unique(table_name, table_id, record_dict)
         else:
-            # no check for existing records, just append
-            known_records = []
-            unknown_records = records
-
-        with LogService("NocoDB", "write", size=json_size(known_records) + json_size(unknown_records)):
-            url = self._records_url(table_id)
-
-            def _do_patch(batch):
-                self._fetch(url, json=batch, method="PATCH")
-
-            def _do_post(batch):
-                data = self._fetch(url, json=batch, method="POST")
-                for j, item in enumerate(data):
-                    batch[j]["Id"] = item["Id"]
-
-            patch_batches = [known_records[i:i + _NOCODB_BATCH_SIZE]
-                             for i in range(0, len(known_records), _NOCODB_BATCH_SIZE)]
-            post_batches  = [unknown_records[i:i + _NOCODB_BATCH_SIZE]
-                             for i in range(0, len(unknown_records), _NOCODB_BATCH_SIZE)]
-            all_tasks = [(_do_patch, b) for b in patch_batches] + [(_do_post, b) for b in post_batches]
-
-            _MAX_WORKERS = 5
-            if len(all_tasks) == 1:
-                fn, b = all_tasks[0]
-                fn(b)
-            elif all_tasks:
-                with ThreadPoolExecutor(max_workers=min(len(all_tasks), _MAX_WORKERS)) as executor:
-                    futures = [executor.submit(fn, b) for fn, b in all_tasks]
-                    for future in as_completed(futures):
-                        future.result()
-
-            if key_field_name:
-                result = [record_dict[record[key_field_name]]["Id"] for record in records]
-            else:
-                result = [rec["Id"] for rec in records]
+            result = self._write_non_unique(table_id, records)
         if singleton:
             return result[0]
         return result
