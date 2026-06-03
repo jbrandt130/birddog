@@ -535,7 +535,7 @@ def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumb
 
         ii = page["imageinfo"][0]
         record = {
-            "title": page.get("title"),
+            "title": (page.get("title") or "").replace(" ", "_"),
             "timestamp": _normalize_date_string(ii.get("timestamp")),
             "byte_size": ii.get("size"),
             "mimetype": ii.get("mime"),
