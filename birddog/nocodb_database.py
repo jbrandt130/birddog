@@ -501,6 +501,7 @@ class Reserver:
 
 class NocoDBDatabase(Database):
     def __init__(self, host=_NOCODB_HOST, base_id=_NOCODB_BASE_ID, api_token=None):
+        _logger.info(f"creating NocoDBDatabase(host={host}, base_id={base_id}) instance")
         self._verbose = False
         if not api_token:
             api_token = _NOCODB_API_TOKEN
@@ -541,6 +542,7 @@ class NocoDBDatabase(Database):
             with self._reservers_lock:
                 r = self._reservers.get(table_name)
                 if r is None:
+                    _logger.info(f"creating Reserver(table_name={table_name})")
                     r = Reserver()
                     self._reservers[table_name] = r
         return r
