@@ -562,7 +562,7 @@ class NocoDBDatabase(Database):
     def _view_info_url(self, table_id):
         return f"{self._host}/api/v2/meta/tables/{table_id}/views"
 
-    def _fetch(self, url, params=None, json=None, method="GET"):
+    def _fetch(self, url, params=None, json=None, method="GET", retry_read_timeout=True):
         """
         Centralized NocoDB fetch wrapper.
 
@@ -570,6 +570,10 @@ class NocoDBDatabase(Database):
         while preserving legacy behavior:
           - Log response text on 400 and 404
           - Raise FailedIO(...) on any communications / HTTP failure
+
+        Pass retry_read_timeout=False for non-idempotent operations (POST) where a read
+        timeout may mean the server already processed the request — retrying would create
+        duplicate records. Connection errors are still retried since the request never arrived.
         """
         if self._verbose:
             _logger.info(f"{method}: {url}, params={params}, json={json}")
@@ -584,6 +588,7 @@ class NocoDBDatabase(Database):
                 method=method,
                 session=self._session,
                 headers=getattr(self._session, "headers", None),
+                retry_read_timeout=retry_read_timeout,
             )
 
         except requests.exceptions.HTTPError as err:
@@ -1097,7 +1102,7 @@ class NocoDBDatabase(Database):
         self._fetch(url, json=batch, method="PATCH")
 
     def _do_write_post(self, url, batch):
-        data = self._fetch(url, json=batch, method="POST")
+        data = self._fetch(url, json=batch, method="POST", retry_read_timeout=False)
         for j, item in enumerate(data):
             batch[j]["Id"] = item["Id"]
 
@@ -1144,6 +1149,8 @@ class NocoDBDatabase(Database):
 
             while remaining:
                 rejected = reserver.reserve(remaining, _WRITE_RESERVATION_INTERVAL)
+                if rejected:
+                    _logger.info(f"_write_unique: key collision: {rejected}")
                 reserved = [k for k in remaining if k not in set(rejected)]
 
                 if reserved:

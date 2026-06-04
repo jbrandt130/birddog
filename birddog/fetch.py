@@ -742,6 +742,7 @@ def fetch_url(
     max_retries=MAX_RETRIES,
     base_backoff=BASE_BACKOFF,
     max_backoff=MAX_BACKOFF,
+    retry_read_timeout=True,
 ):
     """
     Fetch a URL using an adaptive, per-host throttled HTTP client.
@@ -913,6 +914,14 @@ def fetch_url(
             if content:
                 return response.content
             return response.text
+
+        except requests.exceptions.ReadTimeout as e:
+            # ReadTimeout means the request reached the server but no response came back.
+            # For non-idempotent operations (e.g. POST), retrying may create duplicates.
+            if not retry_read_timeout:
+                raise FetchUrlFailError(str(e)) from e
+            last_exception = e
+            THROTTLE.report_exception(url)
 
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             last_exception = e
