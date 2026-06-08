@@ -64,7 +64,7 @@ def parent_title_no_ns(title, wiki_spreadsheet, archive_unit_name):
     if wiki_spreadsheet:
         result = parent_title(title)
         if not result:
-            return None
+            return ""
         if result.startswith(_NS_PREFIX):
             result = result[len(_NS_PREFIX):]
         return result
@@ -350,16 +350,22 @@ def get_cell_link_or_str(ws, cell_addr: str, import_message: str, check_contents
         result = parse_http_list(result)
         if len(result) > 1:
             _logger.warning(f"{len(result)} links in cell {cell_addr}")
-        elif result[0] and used_contents and result[0].upper().startswith('HTTP'):
+        elif result[0] and used_contents and result[0].upper().startswith('HTTP') and '4' not in cell_addr:
+            #Oxana asks not to issue this message for links in cell B4
             mess = f"no document link in cell {cell_addr}, using the cell contents '{result[0]}'"
 
         for res in result:
-            if not res.upper().startswith('HTTP') or ' ' in res:
+            looks_like_a_link = res.upper().startswith('HTTP') and string_ends_with_file_ext(res)
+            if not looks_like_a_link and ' ' in res:
                 mess = f"Document link '{res}' in cell '{cell_addr}', sheet '{ws.title}' may contain comments"
     if mess:
         _logger.warning(mess)
         import_message = add_to_message(import_message, mess)
     return import_message, result
+
+def string_ends_with_file_ext(s: str):
+    s = s.upper()
+    return s.endswith(".PDF") or s.endswith(".DJVU") or s.endswith(".ZIP")
 
 
 def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: str, only_check_link: bool):
@@ -382,7 +388,7 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
             if only_check_link:
                 cell_links = ""
             return import_message, cell_links
-        real_doc = '.pdf' in cell_link_replaced or '.djvu' in cell_link_replaced or '.zip' in cell_link_replaced
+        real_doc = string_ends_with_file_ext(cell_link_replaced)
 
     mess = ''
     if not real_doc and only_check_link:
@@ -640,14 +646,6 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell, archive_latin_name) -> t
         return [s], url, in_first_cell
 
     return [], "", in_first_cell
-
-
-def str_to_timestamp(date_str, date_format):
-    try:
-        dt = datetime.strptime(date_str, date_format)
-        return str(dt)  #str(dt.timestamp())
-    except ValueError:
-        return None
 
 
 def is_series_of_case_numbers(s: str, ignore_parts: bool) -> tuple[bool, int, bool]:
@@ -958,12 +956,12 @@ def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, she
         if not string_contains_part(url, sequence, wiki_spreadsheet):
             mess = (f"url {url} in cell {cell_address} in worksheet '{sheet_title}'"
                     f" was supposed to include '{sequence}'")
-    else:
-        for part in necessary_parts:
-            if not string_contains_part(url, part, wiki_spreadsheet):
-                mess = (f"url {url} in cell {cell_address} in worksheet '{sheet_title}'"
-                        f" was supposed to include '{part}'")
-                break
+#    else:
+#        for part in necessary_parts:
+#            if not string_contains_part(url, part, wiki_spreadsheet):
+#                mess = (f"url {url} in cell {cell_address} in worksheet '{sheet_title}'"
+#                       f" was supposed to include '{part}'")
+#                break
 
     if mess != "":
         _logger.warning(mess)
@@ -1343,7 +1341,13 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
             break
         curr_import_message = ""
         ignore_parts = usual_case_number_found and not possible_hyphen_in_case_num
-        case_number_series, num_parts, inconsistent_parts = is_series_of_case_numbers(str(case_num_cell.value),
+        if fund_and_opus_name == "DAHMO-K" and case_num_cell.value == "ELAU site":
+            # there are no case numbers in DAHMO-K-wiki-20250820.xlsx
+            case_number_series = [""]
+            num_parts = 1
+            inconsistent_parts = False
+        else:
+            case_number_series, num_parts, inconsistent_parts = is_series_of_case_numbers(str(case_num_cell.value),
                                                                                       ignore_parts)
         if not case_number_series:
             if possible_hyphen_in_case_num:
@@ -1542,6 +1546,12 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
             for attribute in fund_opus_attributes:
                 archive_unit_name = f"{archive_unit_name}/{attribute}"
                 archive_unit_cyrillic_name = f"{archive_unit_cyrillic_name}/{attribute}"
+
+            # for DAHMO-K-wiki-20250820.xlsx, there are no attributes on the opus page
+            header = get_cell_value(sheet['B6'])
+            if 'Case description, file link' == header:
+                num_attributes = 2
+                fund_opus_attributes = ['', '']
 
             match num_attributes:
                 case 2:
@@ -1777,8 +1787,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/DAOO-D-wiki-20260427.xlsx"
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHEO-R-archive-20260408.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/ImportProblem/DAHMO-K-wiki-20250820.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHO-archive-20260213.xlsx"
     import_spreadsheet(filepath)
 #    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki"
-#    process_dir(dir_path, False)
+#    process_dir(dir_path)
