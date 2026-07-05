@@ -242,6 +242,9 @@ def page_label(title):
     tail = [transliterate(t) for t in split_title[1:]]
     return "/".join([label_root] + tail)
 
+def get_root_label(label):
+    return label.split("/")[0]
+
 def is_archive(title):
     return canonicalize_title(title) in ARCHIVE_BY_TITLE
 
