@@ -17,6 +17,7 @@ from birddog.wiki import (
     API_URL,
     canonicalize_title,
     page_label,
+    get_root_label,
     parent_title,
     sequential_page_label,
     page_kind,
@@ -52,12 +53,13 @@ def _edit_links(db, table_name, link_field, source_record, target_records, repla
     existing_targets = db.get_links(table_name, link_field, source_record)
     existing_set = set(existing_targets)
     if existing_set == target_set or not replace and target_set.issubset(existing_set):
-        # no change
-        return False
+        return set(), set()
+    added = target_set - existing_set
+    removed = existing_set - target_set if replace else set()
     if replace:
         db.delete_links(table_name, link_field, source_record, existing_targets)
     db.create_links(table_name, link_field, source_record, target_records)
-    return True
+    return added, removed
 
 def _replace_links(db, table_name, link_field, source_record, target_records):
     return _edit_links(db, table_name, link_field, source_record, target_records, replace=True)
@@ -231,6 +233,7 @@ def _form_simple_page_record(title):
         "title": title,
         "url": normalize_url(page_url_from_title(title)),
         "label": label,
+        "root_label": get_root_label(label),
         "level": page_kind(title),
         "seq_label": sequential_page_label(label),
         "source_type": "wiki",
@@ -372,7 +375,9 @@ def _form_page_info_from_title(title):
         info["error"] = error
     else:
         record["level"] = page_kind(title, info["links"].get("children"))
-        record["label"] = page_label(title)
+        label = page_label(title)
+        record["label"] = label
+        record["root_label"] = get_root_label(label)
         record["seq_label"] = sequential_page_label(record["label"])
         revid = parse.get("revid", "")
         record["timestamp"] = _get_latest_mod_date(revid)
@@ -651,7 +656,11 @@ def _run_concurrent(tasks, max_workers=4):
 class DatabaseUpdater:
     def __init__(self, runtime, db=None):
         self._runtime = runtime
-        self._db = db if db else Database()
+        self._db = db
+        if not self._db and self._runtime:
+            self._db = self._runtime.database
+        else:
+            self._db = Database()
 
     # -------------------------------------------------------------------------
     # PAGE AND DOCUMENT TABLE UPDATES
@@ -883,7 +892,7 @@ class DatabaseUpdater:
 
         try:
             link_results = _run_concurrent(tasks, max_workers=4)
-            links_changed = any(link_results)
+            links_changed = any(a or r for a, r in link_results)
         except Exception as e:
             _logger.error(f"exception during page linking {tid}: {e}. Aborting.")
             return False
@@ -918,7 +927,23 @@ class DatabaseUpdater:
                     _replace_links(self._db, "Pages", "doc_links", pid, dids))
 
             doc_link_results = _run_concurrent(tasks, max_workers=4)
-            doc_links_changed = any(doc_link_results)
+
+            # any document records that are linked/unlinked as a result of the process should have lookup_status
+            # invalidated so that the document record fields that depend on page data are updated
+            affected_doc_ids = set()
+            for added, removed in doc_link_results:
+                affected_doc_ids |= added | removed
+            doc_links_changed = bool(affected_doc_ids)
+            if affected_doc_ids:
+                id_to_url = {v: k for k, v in canonical_id_map.items() if v}
+                unknown_ids = affected_doc_ids - id_to_url.keys()
+                if unknown_ids:
+                    unknown_recs = self._db.read("Documents", list(unknown_ids), fields="url")
+                    id_to_url.update({rec["Id"]: rec["url"] for rec in unknown_recs if rec and rec.get("url")})
+                self._db.write("Documents", [
+                    {"url": id_to_url[doc_id], "lookup_status": "invalid"}
+                    for doc_id in affected_doc_ids if doc_id in id_to_url
+                ])
 
         _logger.info(f"Updater {tid}: finished update")
 
@@ -1060,6 +1085,109 @@ class DatabaseUpdater:
             if update:
                 _logger.info(f"Updater: updating translations (length={len(update)})")
                 result = self._db.write("Pages", update)
+                key_field = self._db.key_field_name("Pages")
+                affected_doc_ids = set()
+                for record in update:
+                    page_id = record.get(key_field)
+                    if page_id:
+                        affected_doc_ids.update(self._db.get_links("Pages", "doc_links", page_id))
+                if affected_doc_ids:
+                    doc_recs = self._db.read("Documents", list(affected_doc_ids), fields="url")
+                    self._db.write("Documents", [
+                        {"url": rec["url"], "lookup_status": "invalid"}
+                        for rec in doc_recs if rec and rec.get("url")
+                    ])
+
+    # -------------------------------------------------------------------------
+    # Document table lookup field management
+    # (mechanism to copy fields from Page table to Document table to avoid
+    # inefficient lookup fields)
+
+    def _get_owner_ids(self, doc_ids):
+        #_logger.info(f"start _get_owner_ids: len={len(doc_ids)}")
+        doc_ids = list(doc_ids)
+        tasks = [
+            lambda did=did: self._db.get_links("Documents", "owning_pages", did)
+            for did in doc_ids
+        ]
+        owners_list = _run_concurrent(tasks, max_workers=4)
+        #_logger.info(f"done _get_owner_ids: len={len(doc_ids)}")
+        return {
+            did: (owners if owners else [])
+            for did, owners in zip(doc_ids, owners_list)
+        }
+
+    def _get_field_lookups(self, doc_map, page_map, owner_map, field_name):
+        result = {}
+        for did, rec in doc_map.items():
+            # a page id may be a dangling link (page record no longer exists);
+            # skip those rather than treating them as owners with no data
+            result[did] = [
+                page_map[p][field_name] for p in owner_map[did] if p in page_map
+            ]
+        return result
+
+    def _reduce_update_value(self, field_name, update_value):
+        # simplistic logic - always take value of 'first' owning page
+        return update_value[0] if update_value else None
+
+    def _set_doc_lookup_fields(self, doc_map, page_map, owner_map, lookup_fields, lookup_field_mapping):
+        doc_updates = { 
+            did: { 
+                "url": doc_rec["url"],
+                "lookup_status": "valid",
+            } for did, doc_rec in doc_map.items() }
+        for field_name in lookup_fields:
+            updates = self._get_field_lookups(doc_map, page_map, owner_map, field_name)
+            mapped_field_name = lookup_field_mapping.get(field_name, field_name)
+            for did, update_value in updates.items():
+                doc_updates[did][mapped_field_name] = self._reduce_update_value(field_name, update_value)
+        return list(doc_updates.values())   
+
+    def refresh_doc_lookups(self, limit=500):
+        doc_recs, _ = self._db.scan(
+            "Documents", 
+            view_name="BD:Need Page Lookups",
+            fields="url",
+            limit=limit,
+        )
+        if not doc_recs:
+            return False
+        owner_map = self._get_owner_ids([r["Id"] for r in doc_recs])
+
+        _lookup_fields = [
+            "label",
+            "seq_label",
+            "root_label",
+            "level",
+            "description",
+            "native_description",
+        ]
+        _lookup_field_mapping = {
+            "description": "page_description",
+            "native_description": "page_native_description",
+        }
+
+        page_ids = []
+        for p in owner_map.values():
+            page_ids.extend(p)
+        page_ids = list(set(page_ids))
+
+        page_recs = self._db.read("Pages", page_ids, fields=_lookup_fields)
+        # read() returns {} for a dangling owning_pages link (deleted page record);
+        # drop those rather than crashing on the missing "Id" key
+        page_map = { r["Id"]: r for r in page_recs if r }
+        doc_map = { r["Id"]: r for r in doc_recs }
+
+        updates = self._set_doc_lookup_fields(
+            doc_map, 
+            page_map, 
+            owner_map, 
+            _lookup_fields, 
+            _lookup_field_mapping)
+
+        _logger.info(f"refresh_doc_lookups: writing {len(updates)} updates")
+        return bool(self._db.write("Documents", updates))
 
 class DatabaseUpdateManager(TaskManager):
     _BATCH_SIZE = 20

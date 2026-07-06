@@ -670,6 +670,7 @@ class Runtime:
         if self.database_update_enabled:
             self._database_updater.start_translation()
             self._database_update_manager.update_document_metadata()
+            self._database_updater.refresh_doc_lookups()
 
     @property
     def database(self):

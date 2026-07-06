@@ -734,7 +734,9 @@ class NocoDBDatabase(Database):
     def _encode_field_spec(self, table_name, fields):
         if isinstance(fields, str):
             fields = [ fields ]
-        elif not isinstance(fields, (list, tuple)):
+        elif isinstance(fields, (list, tuple)):
+            fields = list(fields)
+        else:
             raise ValueError(f"unrecognized field spec: {fields}")
         if "Id" not in fields:
             fields.append("Id")
