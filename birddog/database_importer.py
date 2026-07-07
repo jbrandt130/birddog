@@ -6,6 +6,7 @@ from birddog.utility import utc_now_dt
 from birddog.wiki import (
     WIKI_NAMESPACE,
     get_title,
+    get_root_label,
     parent_title,
     page_label,
     sequential_page_label,
@@ -1085,6 +1086,7 @@ def add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, 
         "title": title,
         "url": url,
         "label": label,
+        "root_label": get_root_label(label),
         "seq_label": sequential_page_label(label),
         "level": level,
         "change_date": change_date,
@@ -1118,6 +1120,7 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url,
         "title": title,
         "url": url,
         "label": label,
+        "root_label": get_root_label(label),
         "seq_label": sequential_page_label(label),
         "level": "fond",
         "change_date": change_date,
@@ -1155,6 +1158,7 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
         "title": archive_name,
         "url": archive_url,
         "label": label,
+        "root_label": get_root_label(label),
         "seq_label": sequential_page_label(label),
         "level": level,
         "description": get_cell_value(ws["A2"]),
@@ -1226,6 +1230,7 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
             "title": parent_name,
             "url": fund_url,
             "label": label,
+            "root_label": get_root_label(label),
             "seq_label": sequential_page_label(label),
             "level": "fond",
             "description": get_cell_value(ws["A2"]),
@@ -1235,7 +1240,9 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
             "doc_links": doc_links,
             "source_type": source_type,
             "import_message": import_message,
-            "parent": parent_title_no_ns(parent_name, wiki_spreadsheet, fund_cyrillic_name),
+            "parent": parent_title_no_ns(
+                parent_name, wiki_spreadsheet, fund_cyrillic_name
+            ),
             "parent_url": archive_url,
             "comments": comments,
         },
@@ -1315,6 +1322,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
             "title": opus_title,
             "url": opus_url,
             "label": label,
+            "root_label": get_root_label(label),
             "seq_label": sequential_page_label(label),
             "level": "opus",
             "description": description,
@@ -1476,6 +1484,7 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
         "title": title,
         "url": raw_url,
         "label": label,
+        "root_label": get_root_label(label),
         "seq_label": sequential_page_label(label),
         "level": level,
         "change_date": change_date,
@@ -1645,7 +1654,6 @@ def import_spreadsheet(sw_filepath, actually_write=True):
 
         # upload the page record
         page_payload = {k: v for k, v in page.items() if k not in doc_only_fields}
-        #page_payload["import_message"] = "" # clear any pre-existing import messages
         abort_page = False
         while True:
             try:
@@ -1726,6 +1734,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 doc_payload["title"] = quoted_record["title"]
                 link = quoted_record["url"]
                 doc_payload["url"] = link
+                doc_payload["lookup_status"] = "invalid"
 
                 relevant_page_data = inp_page_data[page["url"]]
                 for k in doc_only_fields:
@@ -1787,8 +1796,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/ImportProblem/DAHMO-K-wiki-20250820.xlsx"
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Archives/DAHO-archive-20260213.xlsx"
-    import_spreadsheet(filepath)
-#    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki"
-#    process_dir(dir_path)
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DACHGO-D-wiki-20260706.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/AVPRI-wiki-20250501.xlsx"
+#    import_spreadsheet(filepath, True)
+    dir_path = "C:/jewishGen/Import2DB/SourceSpreadsheets/07_07"
+    process_dir(dir_path)
