@@ -11,3 +11,7 @@ doc
 notebooks
 venv*
 var
+nocodb
+deploy
+docs
+htmlcov
