@@ -10,6 +10,7 @@ import re
 import threading
 import time
 import requests
+from urllib.parse import urlparse, parse_qs
 from copy import copy
 from datetime import datetime
 
@@ -550,6 +551,9 @@ class NocoDBDatabase(Database):
     def _records_url(self, table_id):
         return f"{self._host}/api/v2/tables/{table_id}/records"
 
+    def _records_url_v3(self, table_id):
+        return f"{self._host}/api/v3/data/{self._base_id}/{table_id}/records"
+
     def _list_tables_url(self):
         return f"{self._host}/api/v2/meta/bases/{self._base_id}/tables"
 
@@ -822,6 +826,49 @@ class NocoDBDatabase(Database):
             params["offset"] += len(records)
         return ids
 
+    def _extract_v3_page_cursor(self, next_url):
+        """
+        Pull the page number out of a v3 'next' URL. Only the page number is
+        trusted from NocoDB's returned link -- pageSize, fields, where, and sort
+        are re-supplied by the caller on the next scan() call rather than parsed
+        out of this URL, both because pageSize is not reliably present in it and
+        because the URL has been observed to accumulate stale/duplicate query
+        params across pages.
+        """
+        qs = parse_qs(urlparse(next_url).query)
+        page = qs.get("page", [None])[0]
+        if page is None or not page.isdigit():
+            raise InvalidRecordId(f"Unexpected v3 next cursor: {next_url}")
+        return page
+
+    def _flatten_v3_record(self, record):
+        """
+        Convert a v3 {"id": ..., "id_fields": {...}, "fields": {...}} record into
+        a flat dict matching the v2 shape (e.g. {"Id": ..., "url": ..., ...}).
+        Any field value that is a list of nested linked-record objects (each of
+        the same {"id", "id_fields", "fields"} shape) is reduced to a plain list
+        of linked record ids.
+        """
+        flat = {}
+        flat.update(record.get("id_fields") or {})
+        for key, value in (record.get("fields") or {}).items():
+            flat[key] = self._reduce_link_value(value)
+        return flat
+
+
+    def _reduce_link_value(self, value):
+        """
+        If value is a list of dicts each matching the nested v3 linked-record
+        shape ({"id": ..., ...}), collapse it to a plain list of ids. Any other
+        value (scalar, attachment list, multi-select list, etc.) passes through
+        unchanged.
+        """
+        if isinstance(value, list) and value and all(
+            isinstance(item, dict) and "id" in item for item in value
+        ):
+            return [item["id"] for item in value]
+        return value
+
     def scan(self, 
         table_name, 
         limit=100, 
@@ -830,7 +877,8 @@ class NocoDBDatabase(Database):
         view_name=None, 
         sort=None, 
         fields=None, 
-        raw=False):
+        raw=False,
+        use_v3=False):
         """
         Page through records of a table without requiring the table key.
 
@@ -868,13 +916,22 @@ class NocoDBDatabase(Database):
             - FailedIO
         """
         table_id = self._table_id(table_name)
-        try:
-            offset = int(cursor) if cursor is not None else 0
-        except (TypeError, ValueError):
-            raise InvalidRecordId(f"Invalid cursor value: {cursor}")
 
-        url = self._records_url(table_id)
-        params = {"offset": offset, "limit": limit}
+        if use_v3:
+            try:
+                page = int(cursor) if cursor is not None else 1
+            except (TypeError, ValueError):
+                raise InvalidRecordId(f"Invalid v3 cursor value: {cursor}")
+            url = self._records_url_v3(table_id)
+            params = {"page": page, "pageSize": limit}
+        else:
+            try:
+                offset = int(cursor) if cursor is not None else 0
+            except (TypeError, ValueError):
+                raise InvalidRecordId(f"Invalid v2 cursor value: {cursor}")
+            url = self._records_url(table_id)
+            params = {"offset": offset, "limit": limit}
+
         if where:
             params["where"] = self._encode_where_spec(table_name, where)
         if sort:
@@ -886,14 +943,17 @@ class NocoDBDatabase(Database):
 
         with LogService("NocoDB", "scan") as log:
             data = self._fetch(url, params=params)
-            records = data.get("list", []) or []
-            page_info = data.get("pageInfo") or {}
-            is_last = bool(page_info.get("isLastPage")) or not records
 
-            if is_last:
-                next_cursor = None
+            if use_v3:
+                raw_records = data.get("records", []) or []
+                records = [self._flatten_v3_record(r) for r in raw_records]
+                next_url = data.get("next")
+                next_cursor = self._extract_v3_page_cursor(next_url) if next_url else None
             else:
-                next_cursor = str(offset + len(records))
+                records = data.get("list", []) or []
+                page_info = data.get("pageInfo") or {}
+                is_last = bool(page_info.get("isLastPage")) or not records
+                next_cursor = None if is_last else str(offset + len(records))
 
             if not raw:
                 self.normalize_records(table_name, records)

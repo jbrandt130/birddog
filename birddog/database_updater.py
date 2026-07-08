@@ -1103,18 +1103,10 @@ class DatabaseUpdater:
     # (mechanism to copy fields from Page table to Document table to avoid
     # inefficient lookup fields)
 
-    def _get_owner_ids(self, doc_ids):
-        #_logger.info(f"start _get_owner_ids: len={len(doc_ids)}")
-        doc_ids = list(doc_ids)
-        tasks = [
-            lambda did=did: self._db.get_links("Documents", "owning_pages", did)
-            for did in doc_ids
-        ]
-        owners_list = _run_concurrent(tasks, max_workers=4)
-        #_logger.info(f"done _get_owner_ids: len={len(doc_ids)}")
+    def _get_owner_ids(self, doc_recs):
         return {
-            did: (owners if owners else [])
-            for did, owners in zip(doc_ids, owners_list)
+            r["Id"]: (r.get("owning_pages") or [])
+            for r in doc_recs
         }
 
     def _get_field_lookups(self, doc_map, page_map, owner_map, field_name):
@@ -1146,14 +1138,15 @@ class DatabaseUpdater:
 
     def refresh_doc_lookups(self, limit=500):
         doc_recs, _ = self._db.scan(
-            "Documents", 
+            "Documents",
             view_name="BD:Need Page Lookups",
-            fields="url",
+            fields=["url", "owning_pages"],
             limit=limit,
+            use_v3=True,
         )
         if not doc_recs:
             return False
-        owner_map = self._get_owner_ids([r["Id"] for r in doc_recs])
+        owner_map = self._get_owner_ids(doc_recs)
 
         _lookup_fields = [
             "label",

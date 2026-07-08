@@ -510,6 +510,75 @@ class TestDatabase(unittest.TestCase):
         with self.assertRaises(InvalidViewName):
             self.db.scan("Pages", view_name="__nonexistent_view__")
 
+    def test_scan_use_v3_matches_v2(self):
+        """
+        scan(use_v3=True) hits the v3 records endpoint and flattens the
+        {"fields": {...}} shape back to the v2 flat-dict shape. Verify both
+        paths return the same records for an identical query.
+        """
+        n = 6
+        pages = [
+            {"title": self._mk_page_title(f"v3_{i}"),
+             "url":   self._mk_page_url(f"v3_{i}")}
+            for i in range(n)
+        ]
+        ids = self.db.write("Pages", pages)
+        self.created_page_ids.extend(ids)
+
+        urls = [p["url"] for p in pages]
+        where = ("url", "in", urls)
+
+        v2_records, v2_cursor = self.db.scan("Pages", limit=100, where=where, use_v3=False)
+        v3_records, v3_cursor = self.db.scan("Pages", limit=100, where=where, use_v3=True)
+
+        self.assertIsNone(v2_cursor)
+        self.assertIsNone(v3_cursor)
+        self.assertEqual(len(v2_records), n)
+        self.assertEqual(len(v3_records), n)
+
+        v2_by_id = {rec["Id"]: rec for rec in v2_records}
+        v3_by_id = {rec["Id"]: rec for rec in v3_records}
+        self.assertEqual(set(v2_by_id), set(ids))
+        self.assertEqual(set(v3_by_id), set(ids))
+
+        for rid in ids:
+            v2_rec = v2_by_id[rid]
+            v3_rec = v3_by_id[rid]
+            self.assertEqual(v3_rec.get("title"), v2_rec.get("title"))
+            self.assertEqual(v3_rec.get("url"), v2_rec.get("url"))
+
+    def test_scan_use_v3_linked_field(self):
+        """
+        scan(use_v3=True) requesting a link field (Pages.children) must return
+        a flat list of linked record ids -- _flatten_v3_record's
+        _reduce_link_value collapses the nested {"id": ...} objects returned
+        by the v3 API down to the same plain-id-list shape the v2 path uses.
+        """
+        parent_title = self._mk_page_title("v3link_parent")
+        parent_url = self._mk_page_url("v3link_parent")
+        child_title = self._mk_page_title("v3link_child")
+        child_url = self._mk_page_url("v3link_child")
+
+        parent_id = self.db.write("Pages", {"title": parent_title, "url": parent_url})
+        child_id = self.db.write("Pages", {"title": child_title, "url": child_url})
+        self.created_page_ids.extend([parent_id, child_id])
+
+        self.db.create_links("Pages", "children", parent_id, child_id)
+
+        records, cursor = self.db.scan(
+            "Pages",
+            where=("Id", "eq", parent_id),
+            fields=["title", "children"],
+            use_v3=True,
+        )
+        self.assertIsNone(cursor)
+        self.assertEqual(len(records), 1)
+
+        record = records[0]
+        self.assertEqual(record.get("Id"), parent_id)
+        self.assertIsInstance(record.get("children"), list)
+        self.assertIn(child_id, record.get("children"))
+
 
 if __name__ == "__main__":
     unittest.main()
