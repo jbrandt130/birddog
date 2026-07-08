@@ -1162,6 +1162,7 @@ class DatabaseUpdater:
             "level",
             "description",
             "native_description",
+            "years",
         ]
         _lookup_field_mapping = {
             "description": "page_description",
