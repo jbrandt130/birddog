@@ -385,12 +385,16 @@ def update_master_archive_list():
         archives[archive_name] = sniff_subarchives(archive)
         translate_structure(archives[archive_name])
         for sub, value in archives[archive_name].items():
+            #_logger.info(f"subarchive translation: {sub}->{value}")
             if sub == "Р":  # make sure Cyrillic Р maps to Latin R
                 _logger.info("Mapping Cyrillic Р to Latin R")
                 value["subarchive"]["en"] = "R"
             elif sub == "А": # make sure Cyrillic А maps to Latin A
                 _logger.info("Mapping Cyrillic А to Latin A")
                 value["subarchive"]["en"] = "A"
+            elif sub == "К": # make sure Cyrillic К maps to Latin K
+                _logger.info("Mapping Cyrillic К to Latin K")
+                value["subarchive"]["en"] = "K"
 
     for fond_name, fond_title in manifest["fonds"].items():
         fond_name = fond_name.split('-')
