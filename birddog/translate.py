@@ -233,7 +233,6 @@ class GoogleCloudTranslator(Translator):
 
         # 1. When the source language is not specified, this is the first attempt: Use default auto-detection
         result = self._translation_attempt(q, params, is_list)
-        print(f"first attempt result: {result}")
 
         if self._source is None:
             # Regex to detect any Cyrillic characters (\u0400-\u04FF)
