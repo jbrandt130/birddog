@@ -8,6 +8,7 @@ import time
 import random
 import threading
 import html
+import re
 from collections import deque
 from dataclasses import dataclass
 from typing import Optional, Sequence, Union, Protocol
@@ -191,22 +192,11 @@ class GoogleCloudTranslator(Translator):
     def translate_batch(self, text: Sequence[str]) -> Sequence[str]:
         return self.translate(text)  # both paths support batch
 
-    # ----------- v2 via REST (API key) ---------------------------------------
-    def _translate_v2_rest(self, text: TextLike) -> TextLike:
-        is_list = isinstance(text, (list, tuple))
-        q = list(text) if is_list else [text]
-
-        params = {
-            "key": self._api_key,
-            "target": self._target,
-            "format": "text",
-        }
-        if self._source:
-            params["source"] = self._source
-
+    def _translation_attempt(self, q, params, is_list):
         # Google v2 REST expects repeated 'q' fields; preserve prior behavior.
         form_data = [("q", s) for s in q]
 
+        # 1. When the source language is not specified, this is the first attempt: Use default auto-detection
         payload = fetch_url(
             self._V2_ENDPOINT,
             method="POST",
@@ -223,9 +213,44 @@ class GoogleCloudTranslator(Translator):
         if is_list:
             if len(out) != len(q):
                 raise IncompleteTranslationError(expected=len(q), got=len(out))
-            return out
+            result = out
+        else:
+            result = out[0]
+        return result
 
-        return out[0]
+    # ----------- v2 via REST (API key) ---------------------------------------
+    def _translate_v2_rest(self, text: TextLike) -> TextLike:
+        is_list = isinstance(text, (list, tuple))
+        q = list(text) if is_list else [text]
+
+        params = {
+            "key": self._api_key,
+            "target": self._target,
+            "format": "text",
+        }
+        if self._source:
+            params["source"] = self._source
+
+        # 1. When the source language is not specified, this is the first attempt: Use default auto-detection
+        result = self._translation_attempt(q, params, is_list)
+
+        if self._source is None:
+            # Regex to detect any Cyrillic characters (\u0400-\u04FF)
+            cyrillic_pattern = re.compile(r"[\u0400-\u04FF]")
+
+            # 2. Check if the output still contains Cyrillic
+            cyrillic_found = False
+            if is_list:
+                cyrillic_found = any(cyrillic_pattern.search(text) for text in result)
+            else:
+                cyrillic_found = cyrillic_pattern.search(str(result))
+
+            if cyrillic_found:
+                # Repeat the translation forcing Ukrainian as the source
+                params["source"] = 'uk'
+                result = self._translation_attempt(q, params, is_list)
+
+        return result
 
     # ----------- v2 via client (service account) ------------------------------
     def _translate_v2_client(self, text: TextLike) -> TextLike:
