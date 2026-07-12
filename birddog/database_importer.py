@@ -1443,6 +1443,12 @@ def get_label_source_type(latin_title, source_type, title, wiki_spreadsheet):
     return curr_source_type, label
 
 
+def normalize_doc_type(doc_type: str | None) -> str | None:
+    if "M" == doc_type:
+        # "M" is obsolete
+        doc_type = "V"
+    return doc_type
+
 def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: str, case_num_col: str,
                   change_date: str | None, comments_col: int, curr_import_message: Literal[
                                                                                        '', 'Document without a page', 'Old case numbering', 'Other case numbering'] | Any,
@@ -1476,7 +1482,8 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
     process_code, curr_import_message = normalize_process_code(process_code, curr_import_message)
     when_transcribed = ws[when_transcribed_cell_addr].value
     when_transcribed = str(when_transcribed) if when_transcribed else ""
-
+    doc_type = get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True)  # D
+    doc_type = normalize_doc_type(doc_type)
     curr_import_message, doc_links = get_doc_links(
         ws, f"{chr(ord(case_num_col) + description_col_offs)}{r}", curr_import_message, raw_url, False)
 
@@ -1495,7 +1502,7 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
         "parent": opus_title,
         "parent_url": opus_url,
         "doc_links": doc_links,  # B
-        "doc_type": get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True),  # D
+        "doc_type": doc_type,  
         "content_code": get_cell_value(ws[f"{chr(ord(case_num_col) + content_code_col_offs)}{r}"], True),  # E
         "process_code": process_code,
         "import_message": curr_import_message,
