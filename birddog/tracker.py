@@ -18,7 +18,7 @@ from birddog.wiki import (
     lookup_namespace_id,
     )
 from birddog.store import KeyValueStore
-from birddog.utility import json_size, HeartbeatManager, utc_now_dt, to_utc_format, from_utc_format
+from birddog.utility import json_size, HeartbeatManager, utc_now_dt
 from birddog.log import get_logger, LogService
 _logger = get_logger()
 
@@ -49,8 +49,7 @@ class PageChangeLog:
         return max(v["timestamp"] for v in self._changes.values())
 
     def refresh(self):
-        cutoff_date = self.newest() if self._changes else None
-        utc_start = to_utc_format(cutoff_date) if cutoff_date else None
+        utc_start = self.newest() if self._changes else None
         updates = get_recent_changes(utc_start=utc_start)
         if updates:
             _logger.info(f"PageChangeLog: recording {len(updates)} new page changes")
@@ -60,7 +59,7 @@ class PageChangeLog:
             }
             for title, update in updates.items():
                 entry = {
-                    "timestamp": from_utc_format(update["timestamp"]),
+                    "timestamp": update["timestamp"],
                     "user": update["user"],
                     "action": update.get("action"),
                 }
@@ -86,6 +85,10 @@ class PageTracker:
         if not all_titles:
             _logger.info("PageTracker.reset: generating title inventory for archive...")
             all_titles = get_all_pages()
+        if not isinstance(all_titles, dict):
+            # get_all_pages() (and any other title-list source) returns titles with
+            # no known timestamp yet; seed them as unknowns for initialize_batch_of_unknowns().
+            all_titles = {title: {} for title in all_titles}
         self._kv.remove_all(_TRACKER_KV_NS_TRACKER)
         if all_titles:
             _logger.info(f"PageTracker.reset: inserting {len(all_titles)} titles into tracker")

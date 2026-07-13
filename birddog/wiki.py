@@ -15,15 +15,11 @@ from itertools import islice
 
 import mwparserfromhell
 from cachetools import LRUCache
-from bs4 import BeautifulSoup
 
 from birddog.utility import (
-    from_utc_format,
-    to_utc_format,
     transliterate,
     equal_text,
     form_text_item,
-    format_date,
     get_text,
     is_linked,
     )
@@ -344,7 +340,7 @@ def get_all_pages(namespace=WIKI_NAMESPACE_ID, prefix=None, limit=500):
             #time.sleep(5)
         else:
             break
-    return titles
+    return [canonicalize_title(t) for t in titles]
 
 # -------------------------------------------------------------------------------
 # subarchive sniffer
@@ -1205,38 +1201,12 @@ def mw_read_page(page_title, oldid=None):
 
     pages = rev_data['query']['pages']
     page_id = next(iter(pages))
-    page["lastmod"] = from_utc_format(pages[page_id]['revisions'][0]['timestamp'])
+    page["lastmod"] = pages[page_id]['revisions'][0]['timestamp']
 
     return page
 
 # -------------------------------------------------------------------------------
 # WikiSource change detection
-
-def do_search(query_string, limit=10, offset=0):
-    """
-    Search archive site for matching entries, sorted on last modification date.
-    For each hit, return dict with item with keys: title, link, and lastmod.
-    """
-    _logger.info(f'do_search({query_string}, limit={limit}, offset={offset})')
-    query_string = quote(query_string, safe='', encoding=None, errors=None)
-    url = f'{ARCHIVE_BASE}/w/index.php?limit={limit}&offset={offset}'
-    url += f'&ns0=1&sort=last_edit_desc&search={query_string}'
-    #_logger.info(f'search url={url}')
-    soup = BeautifulSoup(fetch_url(url), 'lxml')
-    results = []
-    for result in soup.find_all('li', attrs = {'class': 'mw-search-result'}):
-        div = result.find('div', attrs = {'class': 'mw-search-result-heading'})
-        data = result.find('div', attrs = {'class': 'mw-search-result-data'})
-        data = data.text.strip()
-        pos = data.find('-')
-        data = format_date(data[(pos + 1):].strip())
-        item = {
-            'title': div.a['title'],
-            'link': div.a['href'],
-            'lastmod': data
-        }
-        results.append(item)
-    return results
 
 def report_page_changes(page):
     """
@@ -1315,47 +1285,6 @@ def check_page_changes(page, reference, report=False):
 
     if report:
         report_page_changes(page)
-
-def _page_update_summary(archive, change_list):
-    #assert isinstance(archive, Archive)
-    archive_prefix = archive.url[:archive.url.rfind('/')]
-    archive_prefix = archive_prefix.replace(ARCHIVE_BASE, '')
-    archive_prefix = archive_prefix.replace('%3A', ':')
-    # Form list of fonds belonging to this archive
-    fond_list={get_text(c[0]['text']) for c in archive.children}
-    result = {}
-    for item in change_list:
-        page_spec = item["title"].split('/')
-        address = archive.address[:2]
-        address += tuple(entry for entry in page_spec[1:])
-        address = (address + ("",) * 3)[:5]
-        fond = address[2]
-        address = ','.join(address)
-        mod_date = item["lastmod"]
-        # Confirm that the item belongs to the selected archive
-        if fond in fond_list and item["link"].startswith(archive_prefix):
-            if address in result:
-                result[address] = max(mod_date, result["address"])
-            else:
-                result[address] = mod_date
-    return result
-
-def check_page_updates(archive, cutoff_date):
-    #assert isinstance(archive, Archive)
-    change_list = []
-    batch_size = 50
-    offset = 0
-    while True:
-        #_logger.info(f'check_page_updates: {archive.name}, {batch_size}, {offset}')
-        changes = archive.latest_changes(limit=batch_size, offset=offset)
-        change_list += changes
-        if not changes or changes[-1]["lastmod"] < cutoff_date:
-            break
-        offset += batch_size
-        batch_size *= 2 # search geometrically longer history
-    change_list = [item for item in change_list if item["lastmod"] >= cutoff_date]
-    _logger.info(f"check_page_updates, {len(change_list)}, changes found")
-    return _page_update_summary(archive, change_list)
 
 # -------------------------------------------------------------------------------
 # Get most recent page modification dates within given namespace
@@ -1453,11 +1382,11 @@ def get_recent_changes(
 
 def get_last_mod(titles, api_delay=0):
     """
-    Return a dict of {page_title: last_content_modified_datetime} using 'prop=revisions'.
+    Return a dict of {page_title: last_content_modified_timestamp} using 'prop=revisions'.
     This avoids inflated 'touched' timestamps from template updates, purges, or file usage.
 
     Input: str or list of str (page titles)
-    Output: dict {title: datetime or None}
+    Output: dict {title: UTC ISO8601 timestamp str (e.g. "2025-01-02T03:04:05Z"), or None}
     """
     if isinstance(titles, str):
         titles = [titles]
@@ -1489,7 +1418,7 @@ def get_last_mod(titles, api_delay=0):
                 original_title = title_mapping.get(actual_title, actual_title)
 
                 if revs:
-                    result[original_title] = from_utc_format(revs[0]["timestamp"])
+                    result[original_title] = revs[0]["timestamp"]
                 else:
                     result[original_title] = None
         else:
@@ -1531,7 +1460,7 @@ def get_page_history(page_title, limit=10):
     for page in pages.values():
         history = [ {
             'revid': rev['revid'],
-            'modified': from_utc_format(rev['timestamp']),
+            'modified': rev['timestamp'],
             'link': page_revision_url(page_title, rev['revid'])
         } for rev in page.get('revisions') ]
         return history

@@ -56,7 +56,7 @@ class TestPageChangeLog(unittest.TestCase):
 
         # Start with one existing change so refresh uses newest() as cutoff_date.
         log = tracker.PageChangeLog()
-        log._changes["Page:A"] = {"timestamp": "2025,01,01,00:00", "user": "u1"}
+        log._changes["Page:A"] = {"timestamp": "2025-01-01T00:00:00Z", "user": "u1"}
 
 
         # Prepare a refresh payload that includes:
@@ -74,7 +74,7 @@ class TestPageChangeLog(unittest.TestCase):
              mock.patch.object(tracker, "get_recent_changes", return_value=recent_changes) as grc:
             log.refresh()
 
-            # utc_start passed should be the newest existing timestamp converted to UTC.
+            # utc_start passed should be the newest existing timestamp, unmodified.
             grc.assert_called_once()
             _, kwargs = grc.call_args
             self.assertEqual(kwargs.get("utc_start"), "2025-01-01T00:00:00Z")
@@ -84,11 +84,11 @@ class TestPageChangeLog(unittest.TestCase):
 
         got = log.get()
         # Page:A should reflect the newer update
-        self.assertEqual(got["PAGE:A"]["timestamp"], "2025,01,02,00:00")
+        self.assertEqual(got["PAGE:A"]["timestamp"], "2025-01-02T00:00:00Z")
         self.assertEqual(got["PAGE:A"]["user"], "u2")
 
         # PAGE:B should reflect the later of the two B updates (2025-01-04...)
-        self.assertEqual(got["PAGE:B"]["timestamp"], "2025,01,04,00:00")
+        self.assertEqual(got["PAGE:B"]["timestamp"], "2025-01-04T00:00:00Z")
         self.assertEqual(got["PAGE:B"]["user"], "u4")
 
     def test_changes_persisted_and_reloaded(self):
@@ -108,9 +108,9 @@ class TestPageChangeLog(unittest.TestCase):
         # New instance should deserialize from the same KV store (same temp dir)
         log2 = tracker.PageChangeLog()
         got = log2.get()
-        self.assertEqual(got["PAGE:X"]["timestamp"], "2025,06,01,00:00")
+        self.assertEqual(got["PAGE:X"]["timestamp"], "2025-06-01T00:00:00Z")
         self.assertEqual(got["PAGE:X"]["user"], "alice")
-        self.assertEqual(got["PAGE:Y"]["timestamp"], "2025,06,02,00:00")
+        self.assertEqual(got["PAGE:Y"]["timestamp"], "2025-06-02T00:00:00Z")
         self.assertEqual(got["PAGE:Y"]["user"], "bob")
 
     def test_refresh_with_empty_log_passes_none_cutoff(self):

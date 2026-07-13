@@ -239,12 +239,12 @@ class UserTest(unittest.TestCase):
 
         _add_watchlist_item(email, key_a, cutoff="2020,01,01,00:00")
         item_a = _get_watchlist_item(email, key_a)
-        self.assertEqual(item_a["cutoff_date"], "2020,01,01,00:00")
+        self.assertEqual(item_a["cutoff_date"], "2020-01-01T00:00:00Z")
         self.assertNotIn("last_checked_date", item_a)
 
         _add_watchlist_item(email, key_b, cutoff="2021,01,01,00:00", last_checked="2021,02,03,04:05")
         item_b = _get_watchlist_item(email, key_b)
-        self.assertEqual(item_b["last_checked_date"], "2021,02,03,04:05")
+        self.assertEqual(item_b["last_checked_date"], "2021-02-03T04:05:00Z")
 
         wl = _get_watchlist(email)
         self.assertIn(key_a, wl)
@@ -252,7 +252,7 @@ class UserTest(unittest.TestCase):
 
         _update_watchlist_item(email, key_a, last_checked="2022,03,04,05:06")
         item_a2 = _get_watchlist_item(email, key_a)
-        self.assertEqual(item_a2["last_checked_date"], "2022,03,04,05:06")
+        self.assertEqual(item_a2["last_checked_date"], "2022-03-04T05:06:00Z")
 
         _remove_watchlist_item(email, key_b)
         wl2 = _get_watchlist(email)
@@ -267,8 +267,8 @@ class UserTest(unittest.TestCase):
         }
         _load_watchlist(email2, legacy)
         wl_legacy = _get_watchlist(email2)
-        self.assertEqual(wl_legacy["X-Y"]["cutoff_date"], "2019,01,01,00:00")
-        self.assertEqual(wl_legacy["A-B"]["last_checked_date"], "2019,01,03,00:00")
+        self.assertEqual(wl_legacy["X-Y"]["cutoff_date"], "2019-01-01T00:00:00Z")
+        self.assertEqual(wl_legacy["A-B"]["last_checked_date"], "2019-01-03T00:00:00Z")
 
     def test_get_watchlist_item_missing_raises_keyerror(self):
         with self.assertRaises(KeyError):
@@ -313,7 +313,7 @@ class UserTest(unittest.TestCase):
 
         wl = u.get_watchlist()
         self.assertIn("DAARK-D", wl)
-        self.assertEqual(wl["DAARK-D"]["cutoff_date"], "2020,01,01,00:00")
+        self.assertEqual(wl["DAARK-D"]["cutoff_date"], "2020-01-01T00:00:00Z")
 
         # remove should succeed even if watcher file is absent
         self.assertTrue(u.remove_from_watchlist("DAARK", "D"))
@@ -330,7 +330,7 @@ class UserTest(unittest.TestCase):
 
         item = _get_watchlist_item(u.email, "DAARK-D")
         self.assertIn("last_checked_date", item)
-        self.assertRegex(item["last_checked_date"], r"^\d{4},\d{2},\d{2},\d{2}:\d{2}$")
+        self.assertRegex(item["last_checked_date"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
         watcher_path = user_mod._watcher_cache_path(u.email, "DAARK", "D")
         self.assertIn(watcher_path, self.cache._objects)
@@ -400,9 +400,9 @@ class UserTest(unittest.TestCase):
         _add_watchlist_item(email, "A-B", cutoff="2020,06,01")
         _update_watchlist_item(email, "A-B", last_checked="2021,01,02,03:04")
         item = _get_watchlist_item(email, "A-B")
-        self.assertEqual(item["cutoff_date"], "2020,06,01",
+        self.assertEqual(item["cutoff_date"], "2020-06-01T00:00:00Z",
             "_update_watchlist_item must not overwrite cutoff_date")
-        self.assertEqual(item["last_checked_date"], "2021,01,02,03:04")
+        self.assertEqual(item["last_checked_date"], "2021-01-02T03:04:00Z")
 
     def test_user_migrates_legacy_watchlist_and_preferences_on_init(self):
         email = "migrate@example.com"

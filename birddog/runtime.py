@@ -37,7 +37,7 @@ from birddog.translate import TranslationManager
 from birddog.excel import ExportManager
 from birddog.store import KeyValueStore
 from birddog.env import detect_environment
-from birddog.utility import HeartbeatManager
+from birddog.utility import HeartbeatManager, utc_now_dt, to_utc_format
 from birddog.fetch import FetchUrlFailError
 
 #_ENABLE_DB_SYNC = os.environ.get("BIRDDOG_ENABLE_DB_SYNC", False)
@@ -213,7 +213,7 @@ class ArchiveWatcher:
 
     def save(self):
         return {
-            'version': 'v4',
+            'version': 'v5',
             'archive': self._archive,
             'subarchive': self._subarchive,
             'cutoff_date': self._cutoff_date,
@@ -258,6 +258,21 @@ class ArchiveWatcher:
             # dispose of all unresolved items - force refresh
             watcher._unresolved = {}
             watcher.check()
+
+        if version < "v5":
+            # convert legacy "YYYY,MM,DD,HH:MM" dates to UTC ISO8601
+            def _migrate_date(value):
+                return to_utc_format(value) if value else value
+
+            watcher._cutoff_date = _migrate_date(watcher._cutoff_date)
+            watcher._last_checked_date = _migrate_date(watcher._last_checked_date)
+            for unresolved_item in watcher._unresolved.values():
+                unresolved_item["modified"] = _migrate_date(unresolved_item.get("modified"))
+                unresolved_item["last_resolved"] = _migrate_date(unresolved_item.get("last_resolved"))
+            for resolved_entries in watcher._resolved.values():
+                for resolved_entry in resolved_entries:
+                    resolved_entry["modified"] = _migrate_date(resolved_entry.get("modified"))
+                    resolved_entry["last_resolved"] = _migrate_date(resolved_entry.get("last_resolved"))
 
         return watcher
 
@@ -318,7 +333,7 @@ class ArchiveWatcher:
 
     def resolve(self, item, deep=False):
         #_logger.info(f'ArchiveWatcher.resolve: before\n\tunresolved: {self._unresolved}\n\tresolved: {self._resolved}')
-        now = datetime.now().strftime('%Y,%m,%d,%H:%M')
+        now = utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ')
         if deep:
             _logger.info(f'ArchiveWatcher: deep resolve: {item}')
             item = item.rstrip(',').split(",")

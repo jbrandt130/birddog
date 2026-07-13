@@ -40,10 +40,18 @@ function is_linked(item) {
 function format_date(mod_date, strip_time=false) {
     if (!mod_date)
         return '';
+    // UTC ISO8601, e.g. "2025-10-09T10:36:46Z" -> "2025-10-09 10:36:46"
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(mod_date)) {
+        const result = mod_date.slice(0, -1).replace('T', ' ');
+        if (strip_time)
+            return result.slice(0, 10);
+        return result.replace(/ 00:00:00$/, '');
+    }
+    // legacy "YYYY,MM,DD,HH:MM"
     const parsed = mod_date.split(',');
     if (parsed.length <= 1)
         return mod_date;
-    result = `${parsed[2]} ${months[Number(parsed[1])-1]} ${parsed[0]}`;
+    let result = `${parsed[2]} ${months[Number(parsed[1])-1]} ${parsed[0]}`;
     if (parsed.length > 3 && !strip_time)
          result += ` ${parsed[3]}`;
     return result;
@@ -1180,7 +1188,8 @@ async function populate_watchlist_archive_select(archives) {
 // Confirm adding to the watchlist
 async function confirm_add_to_watchlist() {
     var archive = document.getElementById('watchlistArchiveSelect').value.split('-');
-    const cutoff_date = document.getElementById('watchlistCutoffDate').value.replace(/-/g, ',');
+    const cutoff_input = document.getElementById('watchlistCutoffDate').value;
+    const cutoff_date = cutoff_input ? `${cutoff_input}T00:00:00Z` : '';
     const subarchive = archive[1];
     archive = archive[0];
     console.log(archive, subarchive, cutoff_date);

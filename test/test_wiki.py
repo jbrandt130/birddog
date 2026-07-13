@@ -22,7 +22,6 @@ from birddog.wiki import (
     mw_page_doc_url,
     mw_read_page,
     batch_fetch_document_links,
-    check_page_updates,
     check_page_changes,
     report_page_changes,
     _normalize_link_title,
@@ -44,8 +43,6 @@ from birddog.utility import (
     get_text,
     form_text_item,
 )
-
-from birddog.core import Archive
 
 # ── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -1110,12 +1107,6 @@ class TestLiveReadPage(unittest.TestCase):
             "title", "template", "revid", "description", "dates",
             "notes", "other_links", "tables", "lastmod", "link", "doc_link"
         })
-
-    def test_update_check(self):
-        archive = Archive("DACHGO", subarchive="D")
-        updates = check_page_updates(archive, cutoff_date="2024,12,31")
-        self.assertIsInstance(updates, dict)
-
 
 if __name__ == "__main__":
     unittest.main()

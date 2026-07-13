@@ -13,7 +13,8 @@ from birddog.utility import (
     get_text,
     match_text,
     form_text_item,
-    is_linked
+    is_linked,
+    to_utc_format,
     )
 from birddog.cache import load_cached_object, save_cached_object, remove_cached_object, CacheMissError
 from birddog.wiki import (
@@ -30,7 +31,6 @@ from birddog.wiki import (
     page_exists,
     HistoryLRU,
     mw_read_page,
-    do_search,
     batch_fetch_document_links,
     check_page_changes,
     )
@@ -141,6 +141,10 @@ class Page:
         if limit:
             return _history_lru.lookup(self.title, limit)
         if cutoff_date:
+            # accept legacy "YYYY,MM,DD[,HH:MM]" cutoffs too, normalized to match
+            # the UTC ISO8601 'modified' values in history
+            if "," in cutoff_date:
+                cutoff_date = to_utc_format(cutoff_date)
             return _history_lru.lookup_by_cutoff(self.title, cutoff_date=cutoff_date)
         raise ValueError(f'Page({self.title}).history must specify either limit or cutoff_date')
 
@@ -374,9 +378,6 @@ class Page:
         _logger.info(f'prepare_to_download: {self.name} ({self.lastmod})')
         # trigger on-demand processing needed for download that may entail cache update
         self.load_child_document_links()
-
-    def latest_changes(self, limit=100, offset=0):
-        return do_search(self.title.split('/')[0], limit=limit, offset=offset)
 
     def compare(self, ref_date):
         page = self.detached_copy()

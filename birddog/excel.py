@@ -30,14 +30,14 @@ _logger = get_logger()
 
 def _format_date(date_str):
     """
-    Converts a date string from 'YYYY,MM,DD,hh:mm' to 'DD Mon YYYY'.
+    Converts a UTC ISO8601 date string ('YYYY-MM-DDTHH:MM:SSZ') to 'DD Mon YYYY'.
 
     Example:
-        format_date('2024,04,14,07:30') -> '14 Apr 2024'
+        _format_date('2024-04-14T07:30:00Z') -> '14 Apr 2024'
     """
     if not date_str:
         return ''
-    dt = datetime.strptime(date_str, "%Y,%m,%d,%H:%M")
+    dt = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ")
     return dt.strftime("%d %b %Y")
 
 def _expand_url(link):

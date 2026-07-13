@@ -5,7 +5,6 @@
 
 import json
 from threading import RLock, Lock
-from datetime import datetime
 
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -16,6 +15,7 @@ from birddog.cache import (
     remove_cached_object,
     CacheMissError)
 from birddog.store import KeyValueStore
+from birddog.utility import utc_now_dt, to_utc_format
 
 from birddog.log import get_logger
 _logger = get_logger()
@@ -34,17 +34,37 @@ def _watcher_cache_path(email, archive, subarchive):
 def _watchlist_namespace(email):
     return f"wl:{email}"
 
+def _to_utc(value):
+    # normalize a legacy "YYYY,MM,DD,HH:MM" date to UTC ISO8601; already-ISO
+    # (or falsy) values pass through unchanged
+    return to_utc_format(value) if value and "," in value else value
+
+def _load_watchlist_item(email, key, raw):
+    # parse a stored watchlist item, normalizing any legacy date fields to UTC
+    # ISO8601 and persisting the update back to the store if anything changed
+    item = json.loads(raw)
+    cutoff_date = _to_utc(item.get("cutoff_date"))
+    last_checked_date = _to_utc(item.get("last_checked_date"))
+    if cutoff_date != item.get("cutoff_date") or last_checked_date != item.get("last_checked_date"):
+        item["cutoff_date"] = cutoff_date
+        item["last_checked_date"] = last_checked_date
+        _kv_store.insert(_watchlist_namespace(email), key, json.dumps(item))
+    return item
+
 def _get_watchlist_item(email, key):
     # will raise KeyError if key not in watchlist store
-    return json.loads(_kv_store.get(_watchlist_namespace(email), key))
+    return _load_watchlist_item(email, key, _kv_store.get(_watchlist_namespace(email), key))
 
 def _get_watchlist(email):
-    return {k: json.loads(v) for k, v in _kv_store.get_all(_watchlist_namespace(email))}
+    return {
+        k: _load_watchlist_item(email, k, v)
+        for k, v in _kv_store.get_all(_watchlist_namespace(email))
+    }
 
 def _add_watchlist_item(email, key, cutoff, last_checked=None):
-    payload = { "cutoff_date": cutoff}
+    payload = { "cutoff_date": _to_utc(cutoff)}
     if last_checked:
-        payload["last_checked_date"] = last_checked
+        payload["last_checked_date"] = _to_utc(last_checked)
     _kv_store.insert(_watchlist_namespace(email), key, json.dumps(payload))
 
 def _remove_watchlist_item(email, key):
@@ -52,9 +72,9 @@ def _remove_watchlist_item(email, key):
 
 def _update_watchlist_item(email, key, last_checked):
     ns = _watchlist_namespace(email)
-    payload = json.loads(_kv_store.get(ns, key))
-    payload["last_checked_date"] = last_checked
-    _kv_store.insert(ns, key, json.dumps(payload))
+    item = _load_watchlist_item(email, key, _kv_store.get(ns, key))
+    item["last_checked_date"] = _to_utc(last_checked)
+    _kv_store.insert(ns, key, json.dumps(item))
 
 def _load_watchlist(email, watchlist):
     for key, item in watchlist.items():
@@ -172,7 +192,7 @@ class User:
                     runtime=self._runtime)
             watcher.check()
             save_cached_object(watcher.save(), path)
-            _update_watchlist_item(self.email, key, datetime.now().strftime('%Y,%m,%d,%H:%M'))
+            _update_watchlist_item(self.email, key, utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ'))
 
         # Return just the result, not the watcher itself
         if tree:

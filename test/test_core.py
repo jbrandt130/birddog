@@ -1,6 +1,5 @@
 import os
 from copy import copy
-from datetime import datetime
 from urllib.parse import quote, unquote
 
 import unittest
@@ -10,6 +9,7 @@ from birddog.core import (
     Page,
     )
 from birddog.runtime import Runtime, PageLRU, ArchiveWatcher
+from birddog.utility import utc_now_dt
 
 
 fond_id = '1'
@@ -120,7 +120,7 @@ class Test(unittest.TestCase):
         self.assertTrue(item in watcher.resolved)
         # Regression for issue #103: last_resolved must be stamped with the
         # actual resolution time, not left as the stale cutoff date.
-        today = datetime.now().strftime("%Y,%m,%d")
+        today = utc_now_dt().strftime("%Y-%m-%d")
         last_resolved = watcher.resolved[item][-1]["last_resolved"]
         self.assertTrue(
             last_resolved.startswith(today),
