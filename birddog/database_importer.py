@@ -1090,7 +1090,7 @@ def add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, 
         "seq_label": sequential_page_label(label),
         "level": level,
         "change_date": change_date,
-        "timestamp": timestamp,
+        "reference_date": timestamp,
         "description": get_cell_value(ws[f"B{r}"]),
         "years": get_cell_value(ws[f"C{r}"]),
         "availability": availability,
@@ -1124,7 +1124,7 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url,
         "seq_label": sequential_page_label(label),
         "level": "fond",
         "change_date": change_date,
-        "timestamp": timestamp,
+        "reference_date": timestamp,
         "description": get_cell_value(ws[f"B{r}"]),
         "years": get_cell_value(ws[f"C{r}"]),
         "availability": availability,
@@ -1164,7 +1164,7 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
         "description": get_cell_value(ws["A2"]),
         "availability": "linked",
         "change_date": change_date,
-        "timestamp": timestamp,
+        "reference_date": timestamp,
         "doc_links": doc_links,
         "source_type": source_type,
         "import_message": import_message,
@@ -1236,7 +1236,7 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
             "description": get_cell_value(ws["A2"]),
             "availability": "linked",
             "change_date": change_date,
-            "timestamp": timestamp,
+            "reference_date": timestamp,
             "doc_links": doc_links,
             "source_type": source_type,
             "import_message": import_message,
@@ -1328,7 +1328,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
             "description": description,
             "availability": "linked",
             "change_date": change_date,
-            "timestamp": timestamp,
+            "reference_date": timestamp,
             "doc_links": doc_links,
             "parent": curr_parent_title,
             "parent_url": fund_url,
@@ -1443,6 +1443,12 @@ def get_label_source_type(latin_title, source_type, title, wiki_spreadsheet):
     return curr_source_type, label
 
 
+def normalize_doc_type(doc_type: str | None) -> str | None:
+    if "M" == doc_type:
+        # "M" is obsolete
+        doc_type = "V"
+    return doc_type
+
 def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: str, case_num_col: str,
                   change_date: str | None, comments_col: int, curr_import_message: Literal[
                                                                                        '', 'Document without a page', 'Old case numbering', 'Other case numbering'] | Any,
@@ -1476,7 +1482,8 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
     process_code, curr_import_message = normalize_process_code(process_code, curr_import_message)
     when_transcribed = ws[when_transcribed_cell_addr].value
     when_transcribed = str(when_transcribed) if when_transcribed else ""
-
+    doc_type = get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True)  # D
+    doc_type = normalize_doc_type(doc_type)
     curr_import_message, doc_links = get_doc_links(
         ws, f"{chr(ord(case_num_col) + description_col_offs)}{r}", curr_import_message, raw_url, False)
 
@@ -1488,14 +1495,14 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
         "seq_label": sequential_page_label(label),
         "level": level,
         "change_date": change_date,
-        "timestamp": timestamp,
+        "reference_date": timestamp,
         "description": get_cell_value(ws[f"{chr(ord(case_num_col) + description_col_offs)}{r}"]),
         "years": get_cell_value(ws[f"{chr(ord(case_num_col) + years_col_offs)}{r}"]),
         "source_type": curr_source_type,
         "parent": opus_title,
         "parent_url": opus_url,
         "doc_links": doc_links,  # B
-        "doc_type": get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True),  # D
+        "doc_type": doc_type,  
         "content_code": get_cell_value(ws[f"{chr(ord(case_num_col) + content_code_col_offs)}{r}"], True),  # E
         "process_code": process_code,
         "import_message": curr_import_message,
@@ -1636,7 +1643,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
 
     doc_and_page_fields = {
         "comments",
-        "timestamp",
+        "reference_date",
         "availability",
         "import_message",
         "last_imported",
