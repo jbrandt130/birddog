@@ -254,13 +254,12 @@ class ArchiveWatcher:
                     if "title" not in resolved_items:
                         resolved_items["title"] = page_title_from_address(key.split(","))
 
-        if version < "v4":
-            # dispose of all unresolved items - force refresh
-            watcher._unresolved = {}
-            watcher.check()
-
         if version < "v5":
-            # convert legacy "YYYY,MM,DD,HH:MM" dates to UTC ISO8601
+            # convert legacy "YYYY,MM,DD,HH:MM" dates to UTC ISO8601 -- must run
+            # before the "v4" check() below, since check() compares these dates
+            # against already-UTC mod dates from the update pipeline; comparing
+            # a mixed legacy/ISO pair is not safe (',' sorts before '-' in ASCII,
+            # so e.g. "2025-01-01..." > "2025,12,31..." even though it's earlier)
             def _migrate_date(value):
                 return to_utc_format(value) if value else value
 
@@ -273,6 +272,11 @@ class ArchiveWatcher:
                 for resolved_entry in resolved_entries:
                     resolved_entry["modified"] = _migrate_date(resolved_entry.get("modified"))
                     resolved_entry["last_resolved"] = _migrate_date(resolved_entry.get("last_resolved"))
+
+        if version < "v4":
+            # dispose of all unresolved items - force refresh
+            watcher._unresolved = {}
+            watcher.check()
 
         return watcher
 
