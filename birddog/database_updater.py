@@ -12,6 +12,7 @@ import threading
 import mwparserfromhell
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from birddog.abstract_database import InvalidRecordId
 from birddog.database import Database
 from birddog.wiki import (
     API_URL,
@@ -1124,19 +1125,24 @@ class DatabaseUpdater:
         return update_value[0] if update_value else None
 
     def _set_doc_lookup_fields(self, doc_map, page_map, owner_map, lookup_fields, lookup_field_mapping):
-        doc_updates = { 
-            did: { 
+        # only docs with at least one owning page actually have something to look up;
+        # skip the rest so they stay lookup_status="invalid" and get retried once linked,
+        # rather than being locked in as "valid" with empty metadata
+        doc_updates = {
+            did: {
                 "url": doc_rec["url"],
                 "lookup_status": "valid",
-            } for did, doc_rec in doc_map.items() }
+            } for did, doc_rec in doc_map.items() if owner_map.get(did) }
         for field_name in lookup_fields:
             updates = self._get_field_lookups(doc_map, page_map, owner_map, field_name)
             mapped_field_name = lookup_field_mapping.get(field_name, field_name)
             for did, update_value in updates.items():
+                if did not in doc_updates:
+                    continue
                 doc_updates[did][mapped_field_name] = self._reduce_update_value(field_name, update_value)
-        return list(doc_updates.values())   
+        return list(doc_updates.values())
 
-    def refresh_doc_lookups(self, limit=500):
+    def refresh_doc_lookups(self, limit=100):
         doc_recs, _ = self._db.scan(
             "Documents",
             view_name="BD:Need Page Lookups",
