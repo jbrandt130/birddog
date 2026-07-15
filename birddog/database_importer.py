@@ -1738,7 +1738,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                     if joint_field in page:
                         doc_payload[joint_field] = page[joint_field]
 
-                doc_payload["wiki"] = quoted_record["source_type"] == "wiki"
+                doc_payload["wiki"] = quoted_record["wiki"]
                 doc_payload["title"] = quoted_record["title"]
                 link = quoted_record["url"]
                 doc_payload["url"] = link
@@ -1804,8 +1804,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DACHGO-D-wiki-20260706.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DADO-archives-20250923.xlsx"
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/AVPRI-wiki-20250501.xlsx"
-#    import_spreadsheet(filepath, True)
-    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\All"
-    process_dir(dir_path)
+    import_spreadsheet(filepath, True)
+#    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\All"
+#    process_dir(dir_path)
