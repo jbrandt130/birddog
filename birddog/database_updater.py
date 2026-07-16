@@ -1086,10 +1086,8 @@ class DatabaseUpdater:
             if update:
                 _logger.info(f"Updater: updating translations (length={len(update)})")
                 result = self._db.write("Pages", update)
-                key_field = self._db.key_field_name("Pages")
                 affected_doc_ids = set()
-                for record in update:
-                    page_id = record.get(key_field)
+                for page_id in result:
                     if page_id:
                         affected_doc_ids.update(self._db.get_links("Pages", "doc_links", page_id))
                 if affected_doc_ids:

@@ -952,7 +952,7 @@ class NocoDBDatabase(Database):
             else:
                 records = data.get("list", []) or []
                 page_info = data.get("pageInfo") or {}
-                is_last = bool(page_info.get("isLastPage")) or not records
+                is_last = bool(page_info.get("isLastPage")) or not records or len(records) < limit
                 next_cursor = None if is_last else str(offset + len(records))
 
             if not raw:
@@ -1498,7 +1498,7 @@ class NocoDBDatabase(Database):
             page_info = response.get("pageInfo")
             if page_info:
                 link_ids = [item["Id"] for item in response.get("list", []) or []]
-                is_last = bool(page_info.get("isLastPage")) or not link_ids
+                is_last = bool(page_info.get("isLastPage")) or not link_ids or len(link_ids) < limit
                 next_cursor = None if is_last else str(offset + len(link_ids))
                 return link_ids, next_cursor
 
