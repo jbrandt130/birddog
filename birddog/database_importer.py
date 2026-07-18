@@ -974,7 +974,9 @@ def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, she
 def get_language(ws, cell_address):
     language = get_cell_value(ws[cell_address], False)
     if language:
-        language = re.split(r"[;,& ]+", language)
+        parts = re.split(r"[;,& ]+", language)
+        # replace 'Russ' with 'Russian' in the resulting list
+        language = ['Russian' if s == 'Russ' else s for s in parts]
         _logger.warning(f"Found language {language}")
     return language
 
@@ -1804,7 +1806,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-R-wiki-20260614.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAKO-D-fund280-wiki-20260629.xlsx"
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/AVPRI-wiki-20250501.xlsx"
     import_spreadsheet(filepath, True)
 #    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\16_07"
