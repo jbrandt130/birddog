@@ -42,6 +42,7 @@ from birddog.fetch import FetchUrlFailError
 
 #_ENABLE_DB_SYNC = os.environ.get("BIRDDOG_ENABLE_DB_SYNC", False)
 _ENABLE_DB_SYNC = True
+_ENABLE_DB_HOUSEKEEPING = True
 _ENABLE_DOC_TRACKER = True
 if _ENABLE_DB_SYNC:
     from birddog.database_updater import DatabaseUpdater, DatabaseUpdateManager
@@ -213,7 +214,7 @@ class ArchiveWatcher:
 
     def save(self):
         return {
-            'version': 'v5',
+            'version': 'v7',
             'archive': self._archive,
             'subarchive': self._subarchive,
             'cutoff_date': self._cutoff_date,
@@ -278,6 +279,46 @@ class ArchiveWatcher:
             watcher._unresolved = {}
             watcher.check()
 
+        if version < "v6":
+            # The v5 migration above runs legacy comma-format dates through
+            # to_utc_format(), which has no seconds field to preserve, so any
+            # item last resolved before that migration has its
+            # resolved[-1]["modified"] rounded down to :00. check() then
+            # compares that truncated value against a full-precision mod_date
+            # from the live update feed and always finds it "newer" by a few
+            # seconds, permanently re-flagging an already-resolved item as
+            # unresolved even though nothing actually changed. Drop those
+            # ghost entries: same source edit, same minute, no real new edit.
+            for key in list(watcher._unresolved.keys()):
+                resolved_entries = watcher._resolved.get(key)
+                if not resolved_entries:
+                    continue
+                last_modified = resolved_entries[-1].get("modified")
+                unresolved_modified = watcher._unresolved[key].get("modified")
+                if (last_modified and unresolved_modified
+                        and last_modified[:16] == unresolved_modified[:16]):
+                    del watcher._unresolved[key]
+
+        if version < "v7":
+            # The v6 cleanup above only ran once, at the moment a given store
+            # first upgraded past v6 -- but check()'s comparison bug (raw
+            # string/datetime compare of a full-precision live mod_date
+            # against a permanently :00-truncated resolved[-1]["modified"])
+            # kept regenerating the same ghost entries on every check() cycle
+            # after that, on stores that were already at v6. check() is now
+            # fixed to compare at minute precision, so re-run the same
+            # same-minute cleanup once more to purge whatever ghosts
+            # accumulated in the meantime.
+            for key in list(watcher._unresolved.keys()):
+                resolved_entries = watcher._resolved.get(key)
+                if not resolved_entries:
+                    continue
+                last_modified = resolved_entries[-1].get("modified")
+                unresolved_modified = watcher._unresolved[key].get("modified")
+                if (last_modified and unresolved_modified
+                        and last_modified[:16] == unresolved_modified[:16]):
+                    del watcher._unresolved[key]
+
         return watcher
 
     @staticmethod
@@ -307,8 +348,11 @@ class ArchiveWatcher:
     def check(self):
         # register just in case it hasn't been already
         page_manager = self._runtime.update_manager
-        # retrieve updates from page manager
-        updates = page_manager.get_updates(self._archive, self._subarchive)
+        # retrieve updates from page manager -- bounded to updates seen since the
+        # last check, so already-resolved edits from prior cycles aren't handed
+        # back and re-evaluated forever (get_updates(cutoff_date=None) returns the
+        # entire unbounded history for the prefix)
+        updates = page_manager.get_updates(self._archive, self._subarchive, cutoff_date=self._last_checked_date)
         _logger.info(f"ArchiveWatcher.check: found {len(updates)} updates.")
         if updates:
             new_cutoff = self._last_checked_date
@@ -325,7 +369,13 @@ class ArchiveWatcher:
                 new_cutoff = max(mod_date, new_cutoff)
                 user = update.get("user", "")
                 latest_resolved = self._resolved[item][-1]["modified"] if item in self._resolved else self._cutoff_date
-                if latest_resolved is None or mod_date > latest_resolved:
+                # Compare to minute precision: legacy dates migrated through
+                # to_utc_format() have their seconds permanently zeroed, so a
+                # raw string/datetime compare against a full-precision live
+                # mod_date always reads as "newer" by a few seconds even when
+                # it's the same edit -- which would re-flag an already-resolved
+                # item as unresolved forever.
+                if latest_resolved is None or mod_date[:16] > latest_resolved[:16]:
                     self._unresolved[item] = {
                         "modified": mod_date,
                         "last_resolved": self._last_resolved_date(item),
@@ -686,7 +736,7 @@ class Runtime:
             self._database_update_manager.cancel(task_name)
 
     def run_database_housekeeping(self):
-        if self.database_update_enabled:
+        if self.database_update_enabled and _ENABLE_DB_HOUSEKEEPING:
             self._database_updater.start_translation()
             self._database_update_manager.update_document_metadata()
             self._database_updater.refresh_doc_lookups()

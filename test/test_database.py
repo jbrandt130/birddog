@@ -482,6 +482,104 @@ class TestDatabase(unittest.TestCase):
         self.assertEqual(len(set(a_exclusive_ids) & set(b_exclusive_ids)), 0,
                          "Thread-exclusive IDs overlap — unexpected shared record")
 
+    def test_reservation_survives_slow_lookup(self):
+        """
+        Regression test for a specific duplicate-creation bug: _write_unique()
+        reserves a key before checking whether it exists, but the reservation
+        used to be a flat TTL with no renewal while the guarded lookup()/write
+        was still in flight. If NocoDB was slow enough that a lookup() call
+        (which retries on read timeout) outlived the reservation window, the
+        reservation would silently expire mid-operation, letting a second
+        writer for the same key reserve it, find nothing yet, and create a
+        duplicate record — even though the first writer was still working.
+        This was observed in production for wiki document URLs during a
+        high-concurrency crawl (see nocodb_database.py's Reserver/_write_unique
+        and the _touch_reservation heartbeat added to fix it).
+
+        Reproduces the race deterministically: shrinks the reservation
+        interval/touch cadence so the test runs fast, then forces exactly one
+        writer's lookup() call for a shared key to run for several multiples
+        of the (shrunk) reservation window. Without the heartbeat renewing the
+        reservation during that delay, the second, concurrently-retrying
+        writer would see the key as free partway through and create a
+        duplicate. With the fix, it must stay rejected until the first writer
+        actually finishes.
+        """
+        import threading
+        import birddog.nocodb_database as ncdb
+
+        shared_url = self._mk_page_url("reservation_race")
+        title = self._mk_page_title("reservation_race")
+
+        # Shrink the reservation window and heartbeat cadence so the delay
+        # below only has to be a second or so, not 30+ real seconds, while
+        # still being several multiples of the (shrunk) window — i.e. the
+        # reservation would have expired at least 3-4 times over without the
+        # heartbeat keeping it alive.
+        test_interval = 0.3
+        test_touch_interval = 0.1
+        lookup_delay = 1.2
+
+        real_lookup = ncdb.NocoDBDatabase.lookup
+        delay_event = threading.Event()
+
+        def slow_lookup(self_db, table_name, key_set, use_in_clause=True):
+            # Only delay the *first* caller that looks up the shared key —
+            # that's whichever thread wins the initial reservation. The
+            # losing thread must stay rejected in the collision-retry loop
+            # and never reach lookup() until the winner releases.
+            if (table_name == "Pages" and isinstance(key_set, set)
+                    and shared_url in key_set and not delay_event.is_set()):
+                delay_event.set()
+                time.sleep(lookup_delay)
+            return real_lookup(self_db, table_name, key_set, use_in_clause=use_in_clause)
+
+        barrier = threading.Barrier(2)
+        results = [None, None]
+        errors = [None, None]
+
+        def writer(idx, comments_value):
+            try:
+                barrier.wait()
+                results[idx] = self.db.write(
+                    "Pages",
+                    {"url": shared_url, "title": title, "comments": comments_value},
+                )
+            except Exception as exc:
+                errors[idx] = exc
+
+        with patch.object(ncdb.NocoDBDatabase, "lookup", slow_lookup), \
+             patch.object(ncdb, "_WRITE_RESERVATION_INTERVAL", test_interval), \
+             patch.object(ncdb, "_WRITE_RESERVATION_TOUCH_INTERVAL", test_touch_interval):
+            t0 = threading.Thread(target=writer, args=(0, "from_a"))
+            t1 = threading.Thread(target=writer, args=(1, "from_b"))
+            t0.start()
+            t1.start()
+            t0.join(timeout=30)
+            t1.join(timeout=30)
+
+        for rid in results:
+            if rid and rid not in self.created_page_ids:
+                self.created_page_ids.append(rid)
+
+        self.assertIsNone(errors[0], f"Thread 0 raised: {errors[0]}")
+        self.assertIsNone(errors[1], f"Thread 1 raised: {errors[1]}")
+        self.assertIsNotNone(results[0], "Thread 0 returned no result")
+        self.assertIsNotNone(results[1], "Thread 1 returned no result")
+        self.assertEqual(
+            results[0], results[1],
+            "Reservation expired mid-lookup and let a second writer create a "
+            f"duplicate: thread 0 got {results[0]}, thread 1 got {results[1]}"
+        )
+
+        # Direct ground-truth check, independent of the id-equality assertion
+        # above: exactly one row must exist for this url.
+        matches, _ = self.db.scan("Pages", where=("url", "eq", shared_url))
+        self.assertEqual(
+            len(matches), 1,
+            f"expected exactly one Pages record for {shared_url!r}, found {len(matches)}"
+        )
+
     def test_scan_with_view_name(self):
         # -----------------------
         # Discover available views for the Pages table, then scan using one.

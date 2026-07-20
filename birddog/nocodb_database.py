@@ -66,6 +66,7 @@ else:
 
 _WRITE_CHUNK_SIZE               = 500       # max records per reservation window
 _WRITE_RESERVATION_INTERVAL     = 30        # seconds a write reservation is held
+_WRITE_RESERVATION_TOUCH_INTERVAL = 10       # seconds between reservation renewals while a write is in flight
 _WRITE_WAIT_SLEEP               = 0.1       # seconds to sleep before retrying rejected keys
 
 # ----------------------------------------------------------------------
@@ -497,6 +498,19 @@ class Reserver:
         with self._lock:
             for key in keys:
                 self._reservations.pop(key, None)
+
+    def extend(self, keys, interval):
+        """
+        Renew the expiry of keys currently held by the caller, for `interval` seconds
+        from now. Keys not currently reserved (e.g. already released) are left alone
+        rather than being re-reserved — same trust model as release().
+        """
+        now = time.monotonic()
+        expiry = now + interval
+        with self._lock:
+            for key in keys:
+                if key in self._reservations:
+                    self._reservations[key] = expiry
 
 # ----------------------------------------------------------------------
 
@@ -1180,6 +1194,17 @@ class NocoDBDatabase(Database):
                 for future in as_completed(futures):
                     future.result()
 
+    def _touch_reservation(self, reserver, keys, stop_event):
+        """
+        Periodically renew a set of key reservations while the guarded lookup/write
+        is in flight. Without this, a reservation can expire mid-operation if NocoDB
+        is slow (lookup() retries on read timeout can take well over the reservation
+        window), letting a second writer reserve the same key and create a duplicate
+        record before the first writer finishes.
+        """
+        while not stop_event.wait(_WRITE_RESERVATION_TOUCH_INTERVAL):
+            reserver.extend(keys, _WRITE_RESERVATION_INTERVAL)
+
     def _write_non_unique(self, table_id, records):
         """POST all records without key-field dedup or reservation (no-key-field tables)."""
         url = self._records_url(table_id)
@@ -1195,11 +1220,15 @@ class NocoDBDatabase(Database):
         Processes records in chunks of _WRITE_CHUNK_SIZE. For each chunk, a while
         loop retries any keys that were rejected (already reserved by another writer):
           1. reserve all remaining keys
-          2. lookup to split existing (PATCH) vs new (POST)
-          3. release reservations for existing keys immediately
-          4. POST new records; release their reservations in a finally block
-          5. PATCH existing records (no reservation needed)
-          6. if rejected keys remain, sleep and repeat with them
+          2. start a background toucher that renews those reservations every
+             _WRITE_RESERVATION_TOUCH_INTERVAL seconds, so a slow/retrying lookup
+             or write can't outlive the reservation and let a second writer in
+          3. lookup to split existing (PATCH) vs new (POST)
+          4. release reservations for existing keys immediately
+          5. POST new records; release their reservations in a finally block
+          6. PATCH existing records (no reservation needed)
+          7. stop the toucher
+          8. if rejected keys remain, sleep and repeat with them
         """
         url = self._records_url(table_id)
         reserver = self._get_reserver(table_name)
@@ -1216,26 +1245,38 @@ class NocoDBDatabase(Database):
                 reserved = [k for k in remaining if k not in set(rejected)]
 
                 if reserved:
-                    with LogService("NocoDB", "write", size=json_size([record_dict[k] for k in reserved])):
-                        known_key_map = self.lookup(table_name, set(reserved))
+                    stop_touch = threading.Event()
+                    toucher = threading.Thread(
+                        target=self._touch_reservation,
+                        args=(reserver, reserved, stop_touch),
+                        name="write-reservation-toucher",
+                        daemon=True,
+                    )
+                    toucher.start()
+                    try:
+                        with LogService("NocoDB", "write", size=json_size([record_dict[k] for k in reserved])):
+                            known_key_map = self.lookup(table_name, set(reserved))
 
-                        existing_keys = list(known_key_map.keys())
-                        new_keys = [k for k in reserved if k not in known_key_map]
+                            existing_keys = list(known_key_map.keys())
+                            new_keys = [k for k in reserved if k not in known_key_map]
 
-                        for key, record_id in known_key_map.items():
-                            record_dict[key]["Id"] = record_id
+                            for key, record_id in known_key_map.items():
+                                record_dict[key]["Id"] = record_id
 
-                        existing_records = [record_dict[k] for k in existing_keys]
-                        new_records = [record_dict[k] for k in new_keys]
+                            existing_records = [record_dict[k] for k in existing_keys]
+                            new_records = [record_dict[k] for k in new_keys]
 
-                        reserver.release(existing_keys)
+                            reserver.release(existing_keys)
 
-                        try:
-                            self._run_write_batched(lambda batch: self._do_write_post(url, batch), new_records)
-                        finally:
-                            reserver.release(new_keys)
+                            try:
+                                self._run_write_batched(lambda batch: self._do_write_post(url, batch), new_records)
+                            finally:
+                                reserver.release(new_keys)
 
-                        self._run_write_batched(lambda batch: self._do_write_patch(url, batch), existing_records)
+                            self._run_write_batched(lambda batch: self._do_write_patch(url, batch), existing_records)
+                    finally:
+                        stop_touch.set()
+                        toucher.join(timeout=1)
 
                 remaining = rejected
                 if remaining:
