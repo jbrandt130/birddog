@@ -366,7 +366,7 @@ def translate_structure(structure, dry_run=False):
 
 # --- ASYNC TRANSLATION MANAGER ---
 
-_BATCH_SIZE = 10
+_BATCH_SIZE = 50
 
 class TranslationManager(TaskManager):
     def __init__(self, runtime):
