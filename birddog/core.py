@@ -22,12 +22,13 @@ from birddog.wiki import (
     SUBARCHIVES,
     ARCHIVE_BY_ADDRESS,
     canonicalize_title,
-    page_name,
+    page_label,
     page_address,
     is_archive,
     get_title,
     classify_page,
     parent_title,
+    literal_parent_title,
     page_exists,
     HistoryLRU,
     mw_read_page,
@@ -200,7 +201,10 @@ class Page:
 
     @property
     def parent(self):
-        parent = parent_title(self._title)
+        # literal title-path parent, so it stays consistent with .name
+        # (page_label()); this differs from the curated content-hierarchy
+        # parent that parent_title() computes for set_child_link_status()
+        parent = literal_parent_title(self._title)
         if not parent:
             return None
         if self._runtime:
@@ -227,11 +231,13 @@ class Page:
 
     @property
     def name(self):
-        return page_name(self._title)
+        # matches the breadcrumb exactly -- same literal title-path-based
+        # labeling, not the old archive-subarchive address notation
+        return page_label(self._title)
 
     @property
     def display_name(self):
-        return page_name(self._title).replace("/", " ")
+        return page_label(self._title).replace("/", " ")
 
     @property
     def archive_name(self):

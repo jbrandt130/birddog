@@ -85,6 +85,23 @@ def _ensure_birddog_stubs():
     runtime_mod.ArchiveWatcher = ArchiveWatcher
     sys.modules["birddog.runtime"] = runtime_mod
 
+    # birddog.wiki
+    wiki_mod = types.ModuleType("birddog.wiki")
+
+    def archive_root(archive, subarchive):
+        return f"Archive:{archive}"
+
+    def canonicalize_title(title, include_namespace=True):
+        if not title:
+            return None
+        if include_namespace and not title.startswith("Archive:"):
+            return f"Archive:{title}"
+        return title
+
+    wiki_mod.archive_root = archive_root
+    wiki_mod.canonicalize_title = canonicalize_title
+    sys.modules["birddog.wiki"] = wiki_mod
+
 
 _ensure_birddog_stubs()
 
@@ -93,10 +110,9 @@ from birddog import user as user_mod  # type: ignore
 
 # Re-export the functions/classes under test for readability
 _get_watchlist = user_mod._get_watchlist
-_get_watchlist_item = user_mod._get_watchlist_item
-_add_watchlist_item = user_mod._add_watchlist_item
-_remove_watchlist_item = user_mod._remove_watchlist_item
-_update_watchlist_item = user_mod._update_watchlist_item
+_new_watch_item = user_mod._new_watch_item
+_save_watch_item = user_mod._save_watch_item
+_watch_title = user_mod._watch_title
 _load_watchlist = user_mod._load_watchlist
 
 _set_preference = user_mod._set_preference
@@ -157,22 +173,14 @@ class FakeArchiveWatcher:
     Minimal ArchiveWatcher to exercise User.check_archive / resolve_item paths
     without network/filesystem dependencies.
     """
-    def __init__(self, archive, subarchive, cutoff_date, runtime=None):
-        self.archive = archive
-        self.subarchive = subarchive
+    def __init__(self, include, cutoff_date, exclude=None, runtime=None):
+        self.include = list(include)
+        self.exclude = list(exclude) if exclude else []
         self.cutoff_date = cutoff_date
         self.runtime = runtime
         self.unresolved = {"example": {"count": 1}}
         self.unresolved_tree = {"name": "root", "children": [{"name": "example"}]}
         self._resolved = []
-
-    @classmethod
-    def key(cls, archive, subarchive, fond=None, opus=None, case=None):
-        parts = [archive, subarchive]
-        for p in (fond, opus, case):
-            if p:
-                parts.append(str(p))
-        return "/".join(parts)
 
     def check(self):
         self.unresolved = {"example": {"count": 1}}
@@ -185,8 +193,8 @@ class FakeArchiveWatcher:
 
     def save(self):
         return {
-            "archive": self.archive,
-            "subarchive": self.subarchive,
+            "include": self.include,
+            "exclude": self.exclude,
             "cutoff_date": self.cutoff_date,
             "unresolved": self.unresolved,
             "unresolved_tree": self.unresolved_tree,
@@ -196,9 +204,9 @@ class FakeArchiveWatcher:
     @classmethod
     def load(cls, watcher_data, runtime=None):
         w = cls(
-            watcher_data["archive"],
-            watcher_data["subarchive"],
+            watcher_data["include"],
             watcher_data["cutoff_date"],
+            exclude=watcher_data.get("exclude"),
             runtime=runtime,
         )
         w.unresolved = watcher_data.get("unresolved", {})
@@ -234,45 +242,57 @@ class UserTest(unittest.TestCase):
 
     def test_watchlist_crud_and_load(self):
         email = "test@example.com"
-        key_a = "DAARK-D"
-        key_b = "DACHGO-R"
+        title_a = _watch_title("DAARK", "D")
 
-        _add_watchlist_item(email, key_a, cutoff="2020,01,01,00:00")
-        item_a = _get_watchlist_item(email, key_a)
-        self.assertEqual(item_a["cutoff_date"], "2020-01-01T00:00:00Z")
-        self.assertNotIn("last_checked_date", item_a)
+        _save_watch_item(email, title_a, _new_watch_item("2020,01,01,00:00", include=[title_a]))
+        wl = _get_watchlist(email)
+        self.assertIn(title_a, wl)
+        self.assertEqual(wl[title_a]["cutoff_date"], "2020-01-01T00:00:00Z")
+        self.assertNotIn("last_checked_date", wl[title_a])
 
-        _add_watchlist_item(email, key_b, cutoff="2021,01,01,00:00", last_checked="2021,02,03,04:05")
-        item_b = _get_watchlist_item(email, key_b)
-        self.assertEqual(item_b["last_checked_date"], "2021-02-03T04:05:00Z")
+        _save_watch_item(
+            email, title_a,
+            _new_watch_item("2020,01,01,00:00", last_checked_date="2022,03,04,05:06", include=[title_a]))
+        wl2 = _get_watchlist(email)
+        self.assertEqual(wl2[title_a]["last_checked_date"], "2022-03-04T05:06:00Z")
+
+    def test_get_watchlist_empty_for_unknown_user(self):
+        self.assertEqual(_get_watchlist("nobody@example.com"), {})
+
+    def test_legacy_watchlist_item_coarsens_to_archive_title_on_read(self):
+        email = "legacy@example.com"
+        title = _watch_title("DAARK", "D")
+
+        # simulate a pre-migration raw KV entry: "archive-subarchive" key,
+        # no "include" field
+        self.kv.insert(user_mod._watchlist_namespace(email), "DAARK-D", '{"cutoff_date": "2019,01,01,00:00"}')
 
         wl = _get_watchlist(email)
-        self.assertIn(key_a, wl)
-        self.assertIn(key_b, wl)
+        self.assertIn(title, wl)
+        self.assertEqual(wl[title]["cutoff_date"], "2019-01-01T00:00:00Z")
+        self.assertEqual(wl[title]["include"], [title])
 
-        _update_watchlist_item(email, key_a, last_checked="2022,03,04,05:06")
-        item_a2 = _get_watchlist_item(email, key_a)
-        self.assertEqual(item_a2["last_checked_date"], "2022-03-04T05:06:00Z")
+        # legacy key must be gone, replaced by the title-keyed entry
+        self.assertNotIn(("wl:" + email, "DAARK-D"), self.kv._data)
 
-        _remove_watchlist_item(email, key_b)
-        wl2 = _get_watchlist(email)
-        self.assertIn(key_a, wl2)
-        self.assertNotIn(key_b, wl2)
+    def test_legacy_sibling_subarchive_entries_merge_on_read(self):
+        email = "legacy2@example.com"
+        title = _watch_title("DACHGO", "D")
+        self.assertEqual(title, _watch_title("DACHGO", "R"))  # same owning archive
 
-        # legacy migration
-        email2 = "legacy@example.com"
-        legacy = {
-            "X-Y": {"cutoff_date": "2019,01,01,00:00"},
-            "A-B": {"cutoff_date": "2019,01,02,00:00", "last_checked_date": "2019,01,03,00:00"},
-        }
-        _load_watchlist(email2, legacy)
-        wl_legacy = _get_watchlist(email2)
-        self.assertEqual(wl_legacy["X-Y"]["cutoff_date"], "2019-01-01T00:00:00Z")
-        self.assertEqual(wl_legacy["A-B"]["last_checked_date"], "2019-01-03T00:00:00Z")
+        ns = user_mod._watchlist_namespace(email)
+        self.kv.insert(ns, "DACHGO-D", '{"cutoff_date": "2021,06,01,00:00"}')
+        self.kv.insert(ns, "DACHGO-R", '{"cutoff_date": "2020,01,01,00:00", "last_checked_date": "2020,02,01,00:00"}')
 
-    def test_get_watchlist_item_missing_raises_keyerror(self):
-        with self.assertRaises(KeyError):
-            _get_watchlist_item("nobody@example.com", "missing")
+        wl = _get_watchlist(email)
+        self.assertEqual(len(wl), 1)
+        self.assertIn(title, wl)
+        # oldest cutoff_date/last_checked_date of the merged entries wins
+        self.assertEqual(wl[title]["cutoff_date"], "2020-01-01T00:00:00Z")
+        self.assertEqual(wl[title]["last_checked_date"], "2020-02-01T00:00:00Z")
+
+        self.assertNotIn((ns, "DACHGO-D"), self.kv._data)
+        self.assertNotIn((ns, "DACHGO-R"), self.kv._data)
 
     # ------------------ PREFERENCES MANAGEMENT ------------------
 
@@ -309,52 +329,69 @@ class UserTest(unittest.TestCase):
 
     def test_user_watchlist_methods_add_get_remove(self):
         u = User(name="Test", email="w@example.com", password="pw")
-        u.add_to_watchlist("DAARK", "D", cutoff_date="2020,01,01,00:00")
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
 
         wl = u.get_watchlist()
-        self.assertIn("DAARK-D", wl)
-        self.assertEqual(wl["DAARK-D"]["cutoff_date"], "2020-01-01T00:00:00Z")
+        self.assertIn(title, wl)
+        self.assertEqual(wl[title]["cutoff_date"], "2020-01-01T00:00:00Z")
+        self.assertEqual(wl[title]["include"], [title])
 
         # remove should succeed even if watcher file is absent
-        self.assertTrue(u.remove_from_watchlist("DAARK", "D"))
+        self.assertTrue(u.remove_from_watchlist(title))
         wl2 = u.get_watchlist()
-        self.assertNotIn("DAARK-D", wl2)
+        self.assertNotIn(title, wl2)
 
-    def test_user_check_archive_cache_miss_creates_watcher_and_updates_last_checked(self):
+    def test_user_add_to_watchlist_merges_when_already_watched(self):
+        u = User(name="Test", email="w2@example.com", password="pw")
+        title = _watch_title("DACHGO", "D")
+
+        u.add_to_watchlist(title, "2021,06,01,00:00")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
+
+        wl = u.get_watchlist()
+        self.assertEqual(len(wl), 1)
+        # oldest cutoff_date wins on merge
+        self.assertEqual(wl[title]["cutoff_date"], "2020-01-01T00:00:00Z")
+
+    def test_user_check_watchlist_item_cache_miss_creates_watcher_and_updates_last_checked(self):
         u = User(name="Test", email="c@example.com", password="pw")
-        u.add_to_watchlist("DAARK", "D", cutoff_date="2020,01,01,00:00")
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
 
-        result = u.check_archive("DAARK", "D", tree=False)
+        result = u.check_watchlist_item(title, tree=False)
         self.assertIsInstance(result, list)
         self.assertEqual(result[0]["name"], "example")
 
-        item = _get_watchlist_item(u.email, "DAARK-D")
+        item = _get_watchlist(u.email)[title]
         self.assertIn("last_checked_date", item)
         self.assertRegex(item["last_checked_date"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
-        watcher_path = user_mod._watcher_cache_path(u.email, "DAARK", "D")
+        watcher_path = user_mod._watcher_cache_path(u.email, title)
         self.assertIn(watcher_path, self.cache._objects)
 
-        result2 = u.check_archive("DAARK", "D", tree=True)
+        result2 = u.check_watchlist_item(title, tree=True)
         self.assertIsInstance(result2, dict)
         self.assertEqual(result2["name"], "root")
 
     def test_user_resolve_item_raises_when_no_watcher(self):
         u = User(name="Test", email="r@example.com", password="pw")
-        u.add_to_watchlist("DAARK", "D", cutoff_date="2020,01,01,00:00")
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
 
         with self.assertRaises(FileNotFoundError):
-            u.resolve_item("DAARK", "D", fond="1", opus="2", case="3")
+            u.resolve_item(title, f"{title}/1/2/3")
 
     def test_user_resolve_item_loads_watcher_and_saves(self):
         u = User(name="Test", email="r2@example.com", password="pw")
-        u.add_to_watchlist("DAARK", "D", cutoff_date="2020,01,01,00:00")
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
 
-        watcher_path = user_mod._watcher_cache_path(u.email, "DAARK", "D")
-        seeded = FakeArchiveWatcher("DAARK", "D", "2020,01,01,00:00").save()
+        watcher_path = user_mod._watcher_cache_path(u.email, title)
+        seeded = FakeArchiveWatcher([title], "2020,01,01,00:00").save()
         self.cache.save(seeded, watcher_path)
 
-        unresolved_after = u.resolve_item("DAARK", "D", fond="1", opus="2", case="3", tree=False, deep=True)
+        unresolved_after = u.resolve_item(title, f"{title}/1/2/3", tree=False, deep=True)
         self.assertEqual(unresolved_after, [])
 
         saved = self.cache.load(watcher_path)
@@ -374,10 +411,10 @@ class UserTest(unittest.TestCase):
         self.assertEqual(u2.name, "Test2")
         self.assertEqual(u2.email, "s2@example.com")
 
-    def test_check_archive_raises_if_not_in_watchlist(self):
+    def test_check_watchlist_item_raises_if_not_in_watchlist(self):
         u = User(name="Test", email="nowatch@example.com", password="pw")
         with self.assertRaises(KeyError):
-            u.check_archive("NOPE", "X")
+            u.check_watchlist_item("Archive:NOPE")
 
     def test_user_set_and_get_preference(self):
         u = User(name="Test", email="prefuser@example.com", password="pw")
@@ -388,29 +425,34 @@ class UserTest(unittest.TestCase):
 
     def test_resolve_item_tree_returns_dict(self):
         u = User(name="Test", email="rtree@example.com", password="pw")
-        u.add_to_watchlist("DAARK", "D", cutoff_date="2020,01,01,00:00")
-        watcher_path = user_mod._watcher_cache_path(u.email, "DAARK", "D")
-        self.cache.save(FakeArchiveWatcher("DAARK", "D", "2020,01,01,00:00").save(), watcher_path)
-        result = u.resolve_item("DAARK", "D", fond="1", opus="2", case="3", tree=True)
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
+        watcher_path = user_mod._watcher_cache_path(u.email, title)
+        self.cache.save(FakeArchiveWatcher([title], "2020,01,01,00:00").save(), watcher_path)
+        result = u.resolve_item(title, f"{title}/1/2/3", tree=True)
         self.assertIsInstance(result, dict)
         self.assertEqual(result["name"], "root")
 
-    def test_update_watchlist_item_preserves_cutoff_date(self):
-        email = "upd@example.com"
-        _add_watchlist_item(email, "A-B", cutoff="2020,06,01")
-        _update_watchlist_item(email, "A-B", last_checked="2021,01,02,03:04")
-        item = _get_watchlist_item(email, "A-B")
+    def test_check_watchlist_item_preserves_cutoff_date_while_updating_last_checked(self):
+        u = User(name="Test", email="upd@example.com", password="pw")
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,06,01")
+
+        u.check_watchlist_item(title)
+
+        item = _get_watchlist(u.email)[title]
         self.assertEqual(item["cutoff_date"], "2020-06-01T00:00:00Z",
-            "_update_watchlist_item must not overwrite cutoff_date")
-        self.assertEqual(item["last_checked_date"], "2021-01-02T03:04:00Z")
+            "check_watchlist_item must not overwrite cutoff_date when updating last_checked_date")
+        self.assertRegex(item["last_checked_date"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
     def test_user_migrates_legacy_watchlist_and_preferences_on_init(self):
         email = "migrate@example.com"
-        legacy_watchlist = {"A-B": {"cutoff_date": "2010,01,01,00:00"}}
+        title = _watch_title("DAARK", "D")
+        legacy_watchlist = {"DAARK-D": {"cutoff_date": "2010,01,01,00:00"}}
         legacy_prefs = {"x": 123}
 
         u = User(name="Test", email=email, password="pw", watchlist=legacy_watchlist, preferences=legacy_prefs)
-        self.assertIn("A-B", u.get_watchlist())
+        self.assertIn(title, u.get_watchlist())
         self.assertEqual(_get_preference(email, "x"), 123)
         self.assertIn(f"users/{email}.json", self.cache._objects)
 

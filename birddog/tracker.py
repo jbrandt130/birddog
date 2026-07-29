@@ -16,6 +16,7 @@ from birddog.wiki import (
     get_last_mod,
     canonicalize_title,
     lookup_namespace_id,
+    register_archive_root,
     )
 from birddog.store import KeyValueStore
 from birddog.utility import json_size, HeartbeatManager, utc_now_dt
@@ -80,6 +81,19 @@ class PageTracker:
             k: json.loads(v)
             for k, v in self._kv.get_all(_TRACKER_KV_NS_TRACKER)
         }
+        self._discover_archive_roots(self._page_dict.keys())
+
+    def _discover_archive_roots(self, titles):
+        # a root archive is any title with no further "/" path segments;
+        # register_archive_root() no-ops on anything else and is a cheap
+        # cache-hit for titles already known, so this is safe to call freely.
+        # This is a best-effort side effect (labeling), never allowed to
+        # break the tracker's actual job of tracking page updates.
+        for title in titles:
+            try:
+                register_archive_root(title)
+            except Exception:
+                _logger.exception(f"PageTracker: failed to register archive root for {title!r}")
 
     def reset(self, all_titles=None):
         if not all_titles:
@@ -110,6 +124,7 @@ class PageTracker:
             for title, item in newer_updates.items():
                 self._kv.insert(_TRACKER_KV_NS_TRACKER, title, json.dumps(item))
                 self._page_dict[title] = item
+            self._discover_archive_roots(newer_updates.keys())
         return newer_updates
 
     def initialize_batch_of_unknowns(self, batch_size=50, api_delay=.1):

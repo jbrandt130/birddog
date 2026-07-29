@@ -25,6 +25,7 @@ from birddog.utility import (
     )
 from birddog.translate import translate_structure
 from birddog.fetch import fetch_url
+from birddog.store import KeyValueStore
 
 from birddog.log import get_logger
 _logger = get_logger()
@@ -38,6 +39,8 @@ WIKI_NAMESPACE  = "Архів"
 WIKI_NAMESPACE_ALIASES = ("Архів", "Архіви")  # add others if they exist
 WIKI_NAMESPACE_FULL_ALIASES = ("Архів:", "Архіви/")  # add others if they exist
 WIKI_NAMESPACE_ID = '116' # use lookup_namespace_id() to find this out
+ROOT_HUB_TITLE  = "Архів:Архіви"  # already canonical: has the namespace prefix, no alias to normalize
+ROOT_HUB_LABEL  = "HOME"
 ARCHIVES        = None
 API_URL         = f"{ARCHIVE_BASE}/w/api.php"
 
@@ -104,6 +107,156 @@ def canonicalize_title(title: str, include_namespace: bool = True) -> str | None
 def page_url_from_title(title):
     return f"{ARCHIVE_BASE}/wiki/{canonicalize_title(title)}"
 
+# ------------------------------------------------------------------------------
+# dynamic archive-root registry
+#
+# Replaces offline subarchive-sniffing for root-level discovery/labeling: a
+# "root archive" is any title of the form "Архів:xxx" (no further "/" path
+# segments) -- discovered automatically by the page tracker (see tracker.py)
+# rather than curated in resources/archives_master.json. The legacy
+# ARCHIVES/ARCHIVE_BY_TITLE/ARCHIVE_BY_ADDRESS tables (archive+subarchive
+# tuples) are kept as-is; they're still needed to migrate old watchlists.
+
+_ARCHIVE_ROOTS_NAMESPACE = "archive_roots"
+_archive_roots_kv = KeyValueStore()
+_archive_roots_cache = None  # lazy-loaded dict: title -> label
+
+def _load_archive_roots():
+    global _archive_roots_cache
+    _archive_roots_cache = dict(_archive_roots_kv.get_all(_ARCHIVE_ROOTS_NAMESPACE))
+    return _archive_roots_cache
+
+def is_root_title(title):
+    return "/" not in canonicalize_title(title)
+
+def register_archive_root(title, label=None):
+    """Register a root-shaped title, if not already known. Returns its label
+    (existing or newly-assigned), or None if the title isn't root-shaped."""
+    title = canonicalize_title(title)
+    if not is_root_title(title):
+        return None
+    if title == ROOT_HUB_TITLE:
+        # permanent, hand-picked label -- not the auto-transliteration, and
+        # never persisted (nothing to go stale)
+        return ROOT_HUB_LABEL
+    if _archive_roots_cache is None:
+        _load_archive_roots()
+    if title not in _archive_roots_cache:
+        if label is None:
+            label = _default_archive_root_label(title)
+            # guard against a fresh default colliding with some other,
+            # already-registered title's label (e.g. a hand-picked curated
+            # code coincidentally matching another title's raw
+            # transliteration) -- explicit labels passed by the caller are
+            # trusted as-is, not disambiguated
+            others = {l for t, l in _archive_roots_cache.items() if t != title}
+            label = _disambiguate_label(label, others)
+        _archive_roots_kv.insert(_ARCHIVE_ROOTS_NAMESPACE, title, label)
+        _archive_roots_cache[title] = label
+    return _archive_roots_cache[title]
+
+def _disambiguate_label(label, taken):
+    """Return label, or label with a numeric suffix appended, so the result
+    isn't in taken. Used to keep two different root titles from ending up
+    with the same displayed label."""
+    candidate = label
+    n = 2
+    while candidate in taken:
+        candidate = f"{label}-{n}"
+        n += 1
+    return candidate
+
+def _default_archive_root_label(title):
+    # prefer the curated archive_key (a clean, hand-picked identifier, e.g.
+    # "DADNO") when this root is also a legacy curated archive -- raw
+    # transliteration of the title inherits whatever inconsistent case the
+    # wiki's own Cyrillic title happens to use (e.g. "Архів:ДАДнО" has a
+    # lowercase "н" in the middle), which looks broken for archive codes
+    # even though it's faithful to the source
+    curated = ARCHIVES_BY_ROOT.get(title)
+    if curated:
+        archive_key, subarchive_key = curated[0]
+        if subarchive_key in "D_":
+            # "D"/"_" is the legacy address system's placeholder for "the
+            # whole archive" -- archive_key alone is the intended label
+            return archive_key
+        # some legacy archive_keys (e.g. "GDA", "Decerkva") were split from
+        # a compound code that covers what are, at the root-title level,
+        # actually *different* archives (e.g. "GDA-MVS" and "GDA-MOD" are
+        # different institutions, not subarchives of one "GDA") -- keep the
+        # subarchive_key so they don't collapse onto one label
+        return f"{archive_key}-{subarchive_key}"
+    return transliterate(title.removeprefix(f"{WIKI_NAMESPACE}:"))
+
+def refresh_curated_archive_root_labels():
+    """Re-sync already-registered labels for roots that have curated legacy
+    data, in case they were registered before this preference existed (or
+    with a stale/incomplete default). One-off maintenance -- not called
+    automatically. Returns the number of labels corrected."""
+    if _archive_roots_cache is None:
+        _load_archive_roots()
+    fixed = 0
+    for title in list(_archive_roots_cache.keys()):
+        curated = ARCHIVES_BY_ROOT.get(title)
+        if not curated:
+            continue
+        correct_label = _default_archive_root_label(title)
+        if _archive_roots_cache[title] != correct_label:
+            _archive_roots_kv.insert(_ARCHIVE_ROOTS_NAMESPACE, title, correct_label)
+            _archive_roots_cache[title] = correct_label
+            fixed += 1
+    return fixed
+
+def deduplicate_archive_root_labels():
+    """Resolve already-registered roots that ended up sharing a label with a
+    *different* title -- e.g. a hand-picked curated code that coincidentally
+    matches another, non-curated title's raw transliteration default.
+    Titles with curated legacy data keep priority for the plain label (it
+    was hand-picked); any other title colliding with it is reassigned a
+    disambiguated label. One-off maintenance, like
+    refresh_curated_archive_root_labels() -- not called automatically.
+    Returns the number of labels corrected."""
+    if _archive_roots_cache is None:
+        _load_archive_roots()
+    # curated titles first (their labels are hand-picked, so they keep the
+    # plain form on a collision), then alphabetically for determinism
+    titles = sorted(_archive_roots_cache.keys(), key=lambda t: (t not in ARCHIVES_BY_ROOT, t))
+    claimed = {}
+    fixed = 0
+    for title in titles:
+        label = _archive_roots_cache[title]
+        if label not in claimed:
+            claimed[label] = title
+            continue
+        new_label = _disambiguate_label(_default_archive_root_label(title), claimed)
+        claimed[new_label] = title
+        if new_label != label:
+            _archive_roots_kv.insert(_ARCHIVE_ROOTS_NAMESPACE, title, new_label)
+            _archive_roots_cache[title] = new_label
+            fixed += 1
+    return fixed
+
+def archive_root_label(title):
+    title = canonicalize_title(title)
+    if title == ROOT_HUB_TITLE:
+        return ROOT_HUB_LABEL
+    if _archive_roots_cache is None:
+        _load_archive_roots()
+    return _archive_roots_cache.get(title)
+
+def all_archive_roots():
+    """All discovered archive roots as {title, label}, sorted by label.
+    Excludes ROOT_HUB_TITLE itself -- it's reachable via the permanent
+    breadcrumb home icon, not the archive picker."""
+    if _archive_roots_cache is None:
+        _load_archive_roots()
+    entries = [
+        {"title": title, "label": label}
+        for title, label in _archive_roots_cache.items()
+        if title != ROOT_HUB_TITLE
+    ]
+    return sorted(entries, key=lambda e: e["label"])
+
 def _archives_init():
     archives_by_root = {}
     archive_by_title = {}
@@ -159,7 +312,7 @@ def archive_root(archive, subarchive):
 
 def classify_page(title):
     title = canonicalize_title(title)
-    if title in ARCHIVE_BY_TITLE:
+    if title in ARCHIVE_BY_TITLE or is_root_title(title):
         return "archive"
     title_split = title.split("/")
     if len(title_split) <= 2:
@@ -170,8 +323,11 @@ def classify_page(title):
 
 def parent_title(title):
     title = canonicalize_title(title)
-    if title in ARCHIVE_BY_TITLE:
-        # top level page for an archive
+    if title in ARCHIVE_BY_TITLE or is_root_title(title):
+        # top level page for an archive -- either a real subarchive page, or
+        # a bare root title (curated or newly-discovered), which is never
+        # itself a subarchive page but is a valid top-level title in its own
+        # right (e.g. from coarsened archive-level watching)
         return None
     title_split = title.split("/")
     if title_split[0] not in ARCHIVES_BY_ROOT:
@@ -199,6 +355,17 @@ def parent_title(title):
         return default_title
     raise RuntimeError(f"Unable to find parent of {title} (searched {archives[0][0]})")
 
+def literal_parent_title(title):
+    # pure title-path parent, matching what the breadcrumb (title_lineage())
+    # shows -- unlike parent_title(), never substitutes a curated subarchive
+    # placeholder for a bare fond's parent
+    title = canonicalize_title(title)
+    if title in ARCHIVE_BY_TITLE or is_root_title(title):
+        return None
+    if "/" not in title:
+        return None
+    return title.rsplit("/", 1)[0]
+
 def lineage(title):
     title = canonicalize_title(title)
     #_logger.info(f"lineage({title})")
@@ -207,6 +374,30 @@ def lineage(title):
         result.append(title)
         title = parent_title(title)
     return result
+
+def title_lineage(title):
+    # ancestor chain by literal title path only, unlike lineage() which
+    # inserts a subarchive level via parent_title()'s address-based guessing;
+    # matches what the wiki's own breadcrumbs show. Always terminates at
+    # ROOT_HUB_TITLE (the whole-tree index page) so every page's breadcrumb
+    # has a way back to it, unless the title already is that page.
+    title = canonicalize_title(title)
+    result = []
+    while title:
+        result.append(title)
+        if "/" not in title:
+            break
+        title = title.rsplit("/", 1)[0]
+    if result[-1] != ROOT_HUB_TITLE:
+        result.append(ROOT_HUB_TITLE)
+    return result
+
+def title_lineage_labels(title):
+    # a latinized display label per title_lineage() level, in the same
+    # leaf-to-root order -- each entry is that level's own display segment
+    # (page_label() transliterates path segments 1:1, so the last segment of
+    # page_label(level) always corresponds to that level's own name)
+    return [page_label(level).split("/")[-1] for level in title_lineage(title)]
 
 def page_address(title):
     title = canonicalize_title(title)
@@ -221,18 +412,26 @@ def page_address(title):
         tail.extend((3 - len(tail)) * [""])
     else:
         tail = 3 * [""]
-    result = ( *ARCHIVE_BY_TITLE[hierarchy[-1]] , *tail)
+    # a bare archive-root title (e.g. from coarsened archive-level watching)
+    # is never itself a subarchive page, so it has no ARCHIVE_BY_TITLE entry
+    # -- fall back to any one of its curated subarchives (they share an
+    # address), or, for a root with no legacy curation at all, synthesize a
+    # standalone address from its dynamic registry label
+    root = hierarchy[-1]
+    if root in ARCHIVE_BY_TITLE:
+        archive_key = ARCHIVE_BY_TITLE[root]
+    elif root in ARCHIVES_BY_ROOT:
+        archive_key = ARCHIVES_BY_ROOT[root][0]
+    else:
+        archive_key = (archive_root_label(root) or root, "_")
+    result = ( *archive_key , *tail)
     #_logger.info(f"page_address({title}) -> {result}")
     return result
-
-def page_name(title):
-    address = page_address(title)
-    return f"{address[0]}-{address[1]}/{'/'.join(address[2:])}".rstrip("/")
 
 def page_label(title):
     title = canonicalize_title(title)
     split_title = title.split("/", 1)
-    label_root = LABELS_BY_PREFIX.get(split_title[0])
+    label_root = LABELS_BY_PREFIX.get(split_title[0]) or archive_root_label(split_title[0])
     if not label_root:
         return title.removeprefix(f"{WIKI_NAMESPACE}:")
     tail = [transliterate(t) for t in split_title[1:]]
@@ -242,7 +441,8 @@ def get_root_label(label):
     return label.split("/")[0]
 
 def is_archive(title):
-    return canonicalize_title(title) in ARCHIVE_BY_TITLE
+    title = canonicalize_title(title)
+    return title in ARCHIVE_BY_TITLE or is_root_title(title)
 
 def page_kind(title, has_children=False):
     result = classify_page(title)
@@ -257,6 +457,25 @@ def page_title_from_address(address):
     if not tail:
         return ARCHIVE_BY_ADDRESS[address[:2]]
     return "/".join([archive_root(*address[:2]), tail])
+
+# -------------------------------------------------------------------------------
+# title-hierarchy scope matching (watchlists, etc.)
+
+def _title_prefix_match(title, prefix):
+    # a prefix ending in ":" is a namespace root (e.g. "Архів:"), which is
+    # already a complete boundary; other prefixes need a "/" boundary so
+    # "Архів:ДАД" doesn't match "Архів:ДАДнО"
+    if prefix.endswith(":"):
+        return title.startswith(prefix)
+    return title == prefix or title.startswith(prefix + "/")
+
+def title_in_scope(title, include, exclude=None):
+    title = canonicalize_title(title)
+    if not any(_title_prefix_match(title, prefix) for prefix in include):
+        return False
+    if exclude and any(_title_prefix_match(title, prefix) for prefix in exclude):
+        return False
+    return True
 
 # -------------------------------------------------------------------------------
 # sequential page label (for sorting)
@@ -411,13 +630,6 @@ def update_master_archive_list():
             'comment':  _comment_string(),
             'archives': archives
             }, indent=4))
-
-def all_archives():
-    #_logger.info(ARCHIVES)
-    return [
-        [arc, sub['subarchive']['en'], sub['title']['uk']]
-        for arc, archive in ARCHIVES.items()
-        for sub in archive.values()]
 
 def _select_subarchive(archive, subarchive):
     for key, value in archive.items():
@@ -1127,16 +1339,34 @@ def _parse_wiki_text(wikitext, page_title, title, revid=None):
         table["name"] = f"Table {i+1}"
 
     if not tables:
-        # try to populate a "table" if there is either a list of subpages or commons links
+        # try to populate a "table" if there is either a list of subpages,
+        # absolute links to other root archives (only for a page that is
+        # itself a bare archive-root/hub page, e.g. "Архів:Архіви" links to
+        # each archive by full title rather than as a literal subpage -- NOT
+        # applied to ordinary content pages, which routinely cross-link to
+        # other archives in prose and would otherwise get a bogus "Linked
+        # Pages" table out of incidental references), or commons links
         children = []
-        sub_pages = [link for link in page_links["internal_links"] if link.startswith("/")]
+        page_is_hub = is_root_title(page_title)
+        def _is_child_link(link_target):
+            if link_target.startswith("/"):
+                return True
+            if not page_is_hub:
+                return False
+            target_title = canonicalize_title(link_target)
+            return bool(target_title) and target_title != page_title and is_root_title(target_title)
+        sub_pages = [link for link in page_links["internal_links"] if _is_child_link(link)]
         if sub_pages:
             # synthesize a table from list of links to subpages
             for link_target in sub_pages:
                 link = expand_link_target(link_target, page_title)
                 all_page_links.add(link)
                 _safe_remove(page_links["internal_links"], link_target)
-                text = form_text_item(link_target.strip("./ "))
+                if link_target.startswith("/"):
+                    display = link_target.strip("./ ")
+                else:
+                    display = link_target.strip().removeprefix(f"{WIKI_NAMESPACE}:")
+                text = form_text_item(display)
                 children.append([{'text': text, 'link': link}])
         else:
             sub_pages = list(page_links["commons_links"])

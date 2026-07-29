@@ -142,6 +142,13 @@ class TestPageTracker(unittest.TestCase):
 
         self.tracker = _reload_tracker_with_local_env()
 
+        # register_archive_root() lives in birddog.wiki's own module-level KV
+        # store, unrelated to what these tests exercise -- stub it out so
+        # tracker tests don't depend on that real, unmocked storage.
+        p2 = mock.patch.object(self.tracker, "register_archive_root", lambda title: None)
+        p2.start()
+        self.addCleanup(p2.stop)
+
     def test_refresh_writes_only_newer_updates(self):
         tracker = self.tracker
 

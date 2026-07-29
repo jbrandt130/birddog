@@ -16,6 +16,9 @@ const months                = [
 const closed_icon = "bi-plus-circle-fill";
 const open_icon = "bi-dash-circle-fill";
 
+const ROOT_HUB_TITLE = "Архів:Архіви";
+const ROOT_HUB_LABEL = "HOME";
+
 // ---------------------------------------------------------------------------
 // HELPER FUNCTIONS
 
@@ -179,13 +182,13 @@ async function update_translation_progress(data) {
     }
 }
 
-function get_resolve_info(page_name) {
+function get_resolve_info(page_title) {
   const updates = window.unresolved_updates;
   for (const prefix in updates) {
-    if (page_name.startsWith(prefix)) {
+    if (page_title.startsWith(prefix)) {
       const entries = updates[prefix];
       for (const [title, obj] of entries) {
-        if (title === page_name) {
+        if (title === page_title) {
           return obj;
         }
       }
@@ -194,17 +197,17 @@ function get_resolve_info(page_name) {
   return null;
 }
 
-function get_next_unresolved_item(page_name) {
+function get_next_unresolved_item(page_title) {
     const updates = window.unresolved_updates;
     // first pass: look within current archive
     for (const prefix in updates) {
-        if (page_name.startsWith(prefix)) {
+        if (page_title.startsWith(prefix)) {
             const entries = updates[prefix];
             var candidate = null;
             var candidate_obj = null;
             for (let i = 0; i < entries.length; i++) {
                 const [title, obj] = entries[i];
-                if (title > page_name && obj.hasOwnProperty("modified")) {
+                if (title > page_title && obj.hasOwnProperty("modified")) {
                     if (candidate == null || candidate > title) {
                         candidate = title;
                         candidate_obj = obj;
@@ -219,7 +222,7 @@ function get_next_unresolved_item(page_name) {
 
     // second pass: look to lexically next archive
     for (const prefix in updates) {
-        if (page_name < prefix) {
+        if (page_title < prefix) {
             const entries = updates[prefix];
             for (const [title, obj] of entries) {
                 if (obj.hasOwnProperty("modified")) {
@@ -242,14 +245,16 @@ function get_next_unresolved_item(page_name) {
     return null;
 }
 
-function find_archive(archive, subarchive) {
-    for (const i in archives) {
-        const entry = archives[i];
-        if (entry[0] == archive && entry[1] == subarchive) {
-            return entry;
-        }
-    }
-    return null;
+function find_archive(title) {
+    return archives.find(a => a.title === title) || null;
+}
+
+function label_for_watch_title(title) {
+    const watch_entry = watchlist && watchlist.find(w => w.title === title);
+    if (watch_entry) return watch_entry.label;
+    const archive = find_archive(title);
+    if (archive) return archive.label;
+    return title;
 }
 
 // Helper to safely escape values for HTML attributes
@@ -672,25 +677,19 @@ function render_page_data(data) {
     if (resolve_enable && data.lastmod == "") {
         // not an actual update - offer to simply resolve it
         if (confirm("This page no longer exists. It is safe to clear this page's unresolved status. Click OK to clear it.")) {
-            const path = data.name.split('/');
-            const archive = path[0].split('-');
-            const new_path = archive.concat(path.slice(1)).join(',')
-            resolve_page_update(new_path, deep=false);
+            resolve_page_update(watch_title_for_page(data), data.title, deep=false);
             data.refmod = null;
             is_comparison = false;
             resolve_enable = false;
-        }        
+        }
     }
     if (resolve_enable && false_comparison) {
         // check for false alarm in page update
-        const resolve_info = get_resolve_info(data.name);
+        const resolve_info = get_resolve_info(data.title);
         if (resolve_info && resolve_info.last_resolved > data.lastmod) {
             // not an actual update - offer to simply resolve it
             if (confirm("The latest modification of this page precedes the comparison date due to a false change detection. It is safe to clear this page's unresolved status. Click OK to clear it.")) {
-                const path = data.name.split('/');
-                const archive = path[0].split('-');
-                const new_path = archive.concat(path.slice(1)).join(',')
-                resolve_page_update(new_path, deep=false);
+                resolve_page_update(watch_title_for_page(data), data.title, deep=false);
                 data.refmod = null;
                 is_comparison = false;
                 resolve_enable = false;
@@ -845,7 +844,7 @@ function render_page_data(data) {
 
     // set button enables
     enable_if("resolve-btn", resolve_enable);
-    enable_if("next-unresolved-btn", get_next_unresolved_item(current_page.name) != null);
+    enable_if("next-unresolved-btn", get_next_unresolved_item(current_page.title) != null);
     enable_if("translate-btn", data.needs_translation);
 
     render_breadcrumbs(data);
@@ -888,51 +887,37 @@ function render_history(data) {
     }
 }
 
-function handle_breadcrumb_click(parts, index) {
-    //console.log(`handle_breadcrumb_click: ${parts}, ${index}`);
-    let title = current_page.lineage[current_page.lineage.length-1-index]
-    console.log(`handle_breadcrumb_click: ${parts}, ${index}, ${title}`);
-    load_page_by_title(title);
-}
-
 function render_breadcrumbs(data) {
     const breadcrumbContainer = document.getElementById('breadcrumb');
     breadcrumbContainer.innerHTML = ''; // Clear existing content
 
-    var archive_name = data.archive;
-    if (data.subarchive != "_")
-        archive_name += `-${data.subarchive}`
-    parts = [ archive_name ];
-    // Add from lineage, from penultimate to first
-    for (let i = data.lineage.length - 2; i >= 0; i--) {
-        const item = data.lineage[i];
-        const lastSegment = item.split("/").pop();
-        parts.push(lastSegment);
-    }
+    // data.lineage/data.lineage_labels are leaf-to-root; render root-to-leaf.
+    // The server always terminates lineage at ROOT_HUB_TITLE, so the root
+    // crumb (rendered as a house icon) is always present -- no client-side
+    // special-casing needed here.
+    const levels = data.lineage.map((title, i) => ({ title, label: data.lineage_labels[i] })).reverse();
 
-    //console.log('parts = ', parts);
-    if (parts.length == 1) {
-        // no need for breadcrumbs
-        return;
-    }
-
-    parts.forEach((part, index) => {
+    levels.forEach((level, index) => {
         const li = document.createElement('li');
         li.classList.add('breadcrumb-item');
 
-        if (index === parts.length - 1) {
+        const content = level.title === ROOT_HUB_TITLE
+            ? '<i class="bi bi-house-fill"></i>'
+            : level.label;
+
+        if (index === levels.length - 1) {
             // Final part - make it non-clickable (active)
             li.classList.add('active');
             li.setAttribute('aria-current', 'page');
-            li.textContent = part;
+            li.innerHTML = content;
         } else {
-            // Intermediate parts - make them clickable
+            // Intermediate parts are clickable
             const link = document.createElement('a');
             link.href = '#'; // Optional: Use an actual URL if needed
-            link.textContent = part;
+            link.innerHTML = content;
             link.addEventListener('click', (event) => {
                 event.preventDefault();
-                handle_breadcrumb_click(parts, index);
+                load_page_by_title(level.title);
             });
             li.appendChild(link);
         }
@@ -941,11 +926,21 @@ function render_breadcrumbs(data) {
     });
 }
 
+function watch_title_for_page(page) {
+    // the (coarsened) watchlist entry a page falls under is the level just
+    // below the permanent hub root in its lineage (lineage is leaf-to-root);
+    // if there's no such level (the page IS the hub), fall back to the
+    // page's own title -- which then simply won't match anything watchable
+    const lineage = page.lineage || [];
+    return lineage.length > 1 ? lineage[lineage.length - 2] : page.title;
+}
+
 function update_archive_select() {
-    console.log('update_archive_select:', current_page.archive, current_page.subarchive);
+    const archive_root_title = watch_title_for_page(current_page);
+    console.log('update_archive_select:', archive_root_title);
     document.getElementById('archiveSelect').value = -1;
     archives.forEach((archive, index) => {
-        if (archive[0] == current_page.archive && archive[1] == current_page.subarchive) {
+        if (archive.title === archive_root_title) {
             console.log('archive select:', index)
             document.getElementById('archiveSelect').value = index;
         }
@@ -974,12 +969,8 @@ async function populate_archive_select() {
                 }
                 throw new Error(`Failed to fetch archives: ${response.statusText}`);
             }
-            const archive_list = await response.json();
-            archive_list.sort((a, b) => {
-                const firstCompare = a[0].localeCompare(b[0]);
-                return firstCompare !== 0 ? firstCompare : a[1].localeCompare(b[1]);
-            });
-            return archive_list;
+            // /archives already returns entries sorted by label
+            return await response.json();
         } catch (error) {
             console.error('Error fetching archives:', error);
             alert('Failed to load archives. Please try again.');
@@ -991,9 +982,8 @@ async function populate_archive_select() {
         archive_select.innerHTML = '<option value="-1" selected>Select an archive...</option>';
         archive_list.forEach((archive, index) => {
             const option = document.createElement('option');
-            const value = `${archive[0]}-${archive[1]}`.replace("-_", "");
             option.value = index;
-            option.textContent = value;
+            option.textContent = archive.label;
             archive_select.appendChild(option);
         });
     }
@@ -1012,8 +1002,8 @@ async function populate_archive_select() {
             return;
         }
         const selected_archive = archives[archive_index];
-        console.log(`Selected Archive: ${selected_archive[0]}-${selected_archive[1]} (title=${selected_archive[2]})`);
-        load_page_by_title(selected_archive[2])
+        console.log(`Selected Archive: ${selected_archive.label} (title=${selected_archive.title})`);
+        load_page_by_title(selected_archive.title)
         archive_select_modal.hide();
     };
 }
@@ -1053,26 +1043,21 @@ function render_watchlist() {
     const table_body = document.getElementById('watchlist-body');
     table_body.innerHTML = '';
 
-    // Sort by archive, then subarchive
-    const sorted_watchlist = [...watchlist].sort((a, b) => {
-        const archive_cmp = a.archive.localeCompare(b.archive);
-        return archive_cmp !== 0 ? archive_cmp : a.subarchive.localeCompare(b.subarchive);
-    });
+    const sorted_watchlist = [...watchlist].sort((a, b) => a.label.localeCompare(b.label));
 
     sorted_watchlist.forEach(item => {
         const row = `
-            <tr data-archive="${item.archive}" data-subarchive="${item.subarchive}" data-title="${escape_attr(item.title)}">
-                <td>${item.archive}</td>
-                <td>${item.subarchive}</td>
+            <tr data-title="${escape_attr(item.title)}">
+                <td>${item.label}</td>
                 <td>${format_date(item.last_checked_date)}</td>
                 <td>${format_date(item.cutoff_date)}</td>
                 <td>
-                    <button class="btn btn-primary" title="Check for Updates" onclick="check_watchlist('${item.archive}', '${item.subarchive}')">
+                    <button class="btn btn-primary" title="Check for Updates" onclick="check_watchlist('${item.title}')">
                         <i class="bi bi-arrow-clockwise"></i>
                     </button>
                 </td>
                 <td>
-                    <button class="btn btn-primary" title="Remove from Watchlist" onclick="remove_from_watchlist('${item.archive}', '${item.subarchive}')">
+                    <button class="btn btn-primary" title="Remove from Watchlist" onclick="remove_from_watchlist('${item.title}')">
                         <i class="bi bi-x-square"></i>
                     </button>
                 </td>
@@ -1085,29 +1070,28 @@ function render_watchlist() {
     document.getElementById('nav-home').scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-async function remove_from_watchlist(archive, subarchive) {
-    await fetch(`/watchlist/${archive}/${subarchive}`, { method: 'DELETE' });
+async function remove_from_watchlist(title) {
+    await fetch(`/watchlist/${encodeURIComponent(title)}`, { method: 'DELETE' });
     load_watchlist(); // Refresh after deletion
-    const key = `${archive}-${subarchive}`
-    if (key in unresolved_updates) {
-        delete unresolved_updates[key];
+    if (title in unresolved_updates) {
+        delete unresolved_updates[title];
         render_unresolved_items();
     }
 }
 
-async function check_watchlist(archive, subarchive, quiet=false, render=true) {
-    console.log(`Checking ${archive}-${subarchive}...`);
+async function check_watchlist(title, quiet=false, render=true) {
+    console.log(`Checking ${title}...`);
     try {
         // Show the spinner
         show('unresolved-updates-loading-spinner');
         hide('unresolved-updates-container');
 
-        const response = await fetch(`/watchlist/${archive}/${subarchive}/check?tree`);
+        const response = await fetch(`/watchlist/${encodeURIComponent(title)}/check?tree`);
 
         if (response.status === 404) {
-            if (!find_archive(archive, subarchive)) {
+            if (!find_archive(title)) {
                 // the specified archive doesn't exists
-                alert(`The archive ${archive}-${subarchive} is unrecognized. Please remove it from your watchlist.`);
+                alert(`The archive ${title} is unrecognized. Please remove it from your watchlist.`);
                 show('unresolved-updates-container');
                 hide('unresolved-updates-loading-spinner');
                 return;
@@ -1126,8 +1110,7 @@ async function check_watchlist(archive, subarchive, quiet=false, render=true) {
         const data = await response.json();
         console.log('check_watchlist:', data);
 
-        console.log(`Checking ${archive}-${subarchive}: unresolved items: ${data}`);
-        unresolved_updates[`${archive}-${subarchive}`] = data.unresolved;
+        unresolved_updates[title] = data.unresolved;
         if (render) {
             // Hide the spinner
             show('unresolved-updates-container');
@@ -1135,7 +1118,7 @@ async function check_watchlist(archive, subarchive, quiet=false, render=true) {
             render_unresolved_items();
         }
         if (!quiet && data.unresolved.length == 0)
-            alert(`No new updates for ${archive}-${subarchive}.`);
+            alert(`No new updates for ${title}.`);
         watchlist = data.watchlist;
         render_watchlist();
     } catch (error) {
@@ -1153,8 +1136,8 @@ async function check_all_watchlists() {
     hide('unresolved-updates-container');
 
     const promises = watchlist.map(item =>
-        check_watchlist(item.archive, item.subarchive, true, false)
-            .catch(err => console.error(`Error in ${item.archive}-${item.subarchive}:`, err))
+        check_watchlist(item.title, true, false)
+            .catch(err => console.error(`Error in ${item.title}:`, err))
     );
 
     await Promise.all(promises);
@@ -1172,11 +1155,20 @@ async function populate_watchlist_archive_select(archives) {
     archive_select.innerHTML = '<option value="" selected>Select an archive...</option>';
 
     try {
+        // the hub page itself is a valid, if narrow, watch target (it only
+        // ever flags edits to the hub index page itself, since no other
+        // page's title is prefixed by it) -- offered here, not in the
+        // general archive browse dropdown, since it's already reachable
+        // there via the permanent breadcrumb home icon
+        const hub_option = document.createElement('option');
+        hub_option.value = ROOT_HUB_TITLE;
+        hub_option.textContent = ROOT_HUB_LABEL;
+        archive_select.appendChild(hub_option);
+
         archives.forEach(archive => {
             const option = document.createElement('option');
-            const value = `${archive[0]}-${archive[1]}`;
-            option.value = value;
-            option.textContent = value.replace("-_", "");
+            option.value = archive.title;
+            option.textContent = archive.label;
             archive_select.appendChild(option);
         });
     } catch (error) {
@@ -1187,13 +1179,11 @@ async function populate_watchlist_archive_select(archives) {
 
 // Confirm adding to the watchlist
 async function confirm_add_to_watchlist() {
-    var archive = document.getElementById('watchlistArchiveSelect').value.split('-');
+    const title = document.getElementById('watchlistArchiveSelect').value;
     const cutoff_input = document.getElementById('watchlistCutoffDate').value;
     const cutoff_date = cutoff_input ? `${cutoff_input}T00:00:00Z` : '';
-    const subarchive = archive[1];
-    archive = archive[0];
-    console.log(archive, subarchive, cutoff_date);
-    if (!archive || !subarchive || !cutoff_date) {
+    console.log(title, cutoff_date);
+    if (!title || !cutoff_date) {
         alert('All fields are required.');
         return;
     }
@@ -1210,8 +1200,7 @@ async function confirm_add_to_watchlist() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            archive: archive,
-            subarchive: subarchive,
+            title: title,
             cutoff_date: cutoff_date
         })
     });
@@ -1241,10 +1230,7 @@ var node_map = null;
 var path_to_node = null;
 
 function page_path(page) {
-    const archive = `${page.archive}-${page.subarchive}`;
-    return [archive, page.fond, page.opus, page.case]
-        .filter(Boolean)
-        .join('/');
+    return page.title;
 }
 
 function needs_resolve(page) {
@@ -1255,7 +1241,7 @@ function needs_resolve(page) {
     return path in path_to_node;
 }
 
-function build_tree(data_list) {
+function build_tree(data_list, watch_title) {
     const root = {};
     for (const [path, meta] of data_list) {
         const parts = path.split('/');
@@ -1266,6 +1252,7 @@ function build_tree(data_list) {
         }
         current._meta = meta;
         current._full_path = path;
+        current._watch_title = watch_title;
     }
     return root;
 }
@@ -1279,14 +1266,13 @@ function view_changes(page_title, modified, last_resolved) {
 }
 
 
-async function resolve_page_update(page_name, deep=false) {
+async function resolve_page_update(title, item_title, deep=false) {
     try {
-        const path = page_name.replace(/,+$/, '').replace(/,/g, '/');
-        console.log('Resolving:', path, "deep=", deep);
-        var url = `/resolve/${path}?tree=1`;
+        console.log('Resolving:', title, item_title, "deep=", deep);
+        const params = new URLSearchParams({ title: title, item: item_title, tree: '1' });
         if (deep)
-            url += '&deep=1';
-        const response = await fetch(url);
+            params.set('deep', '1');
+        const response = await fetch(`/resolve?${params.toString()}`);
         if (!response.ok) {
             if (response.status === 404) {
                 alert('Your session may have expired. Please log in again.');
@@ -1298,9 +1284,8 @@ async function resolve_page_update(page_name, deep=false) {
 
         // update unresolved item table
         const data = await response.json();
-        const parsed_path = path.split('/');
         console.log('resolve result:', data);
-        unresolved_updates[`${parsed_path[0]}-${parsed_path[1]}`] = data.unresolved;
+        unresolved_updates[title] = data.unresolved;
 
         render_unresolved_items();
     } catch (error) {
@@ -1310,13 +1295,10 @@ async function resolve_page_update(page_name, deep=false) {
 }
 
 function mark_resolved(node_id) {
-    // full_path.replace(/'/g, "\\'")
-    //console.log(full_path)
     const node = node_map[node_id];
     const has_children = Object.keys(node).some(key => !key.startsWith('_'));
     const full_path = node._full_path || name;
-    const page_title = node._meta.title;
-    var deep = false;
+    const watch_title = node._watch_title;
     const confirm_message = has_children?
         `${full_path} has unresolved subsidiary pages. Resolve all subsidiaries?` :
         `Resolve ${full_path}?`;
@@ -1327,11 +1309,8 @@ function mark_resolved(node_id) {
         console.log('resolve cancelled by user');
         return false;
     }
-    const path = full_path.split('/');
-    const archive = path[0].split('-');
-    const new_path = archive.concat(path.slice(1)).join(',')
-    console.log("Marking resolved:", new_path);
-    resolve_page_update(new_path, deep=has_children);
+    console.log("Marking resolved:", watch_title, full_path);
+    resolve_page_update(watch_title, full_path, deep=has_children);
     return true;
 }
 
@@ -1350,7 +1329,7 @@ function resolve_page() {
 
 // called from next unresolved button on browse page
 function next_unresolved() {
-    const next_unresolved = get_next_unresolved_item(current_page.name);
+    const next_unresolved = get_next_unresolved_item(current_page.title);
     console.log("next unresolved: ", next_unresolved);
     if (next_unresolved != null) {
         view_changes(next_unresolved.title, next_unresolved.modified, next_unresolved.last_resolved);
@@ -1401,7 +1380,7 @@ function render_node(name, node) {
         </button>
     `;
 
-    const display_name = name.replace("-_", "");
+    const display_name = (meta && meta.label ? meta.label : name).replace("-_", "");
     const name_html = has_children
         ? `<a data-bs-toggle="collapse" href="#${node_id}" role="button" aria-expanded="false" aria-controls="${node_id}">
                 <i class="bi ${closed_icon} arrow" data-arrow="closed"></i>
@@ -1455,8 +1434,8 @@ function render_tree(tree) {
     return `<ul class="list-group">${top_level}</ul>`;
 }
 
-function render_tree_to_dom(data_list, container_id) {
-    const tree = build_tree(data_list);
+function render_tree_to_dom(data_list, container_id, watch_title) {
+    const tree = build_tree(data_list, watch_title);
     const html = render_tree(tree);
 
     const container = document.getElementById(container_id);
@@ -1537,15 +1516,18 @@ function render_unresolved_items() {
     path_to_node = {};
     document.getElementById(container_id).innerHTML = '';
 
-    // Sort by keys in unresolved_updates
-    const sorted_keys = Object.keys(unresolved_updates).sort(); // alphabetical sort
+    // Sort by each entry's displayed (latinized) label, not the raw
+    // Cyrillic watch title, so the on-screen order matches what's shown
+    const sorted_keys = Object.keys(unresolved_updates).sort(
+        (a, b) => label_for_watch_title(a).localeCompare(label_for_watch_title(b))
+    );
     console.log(`render_unresolved_items: sorted_keys=${sorted_keys}`);
 
     sorted_keys.forEach(key => {
         const item = unresolved_updates[key];
         // only render if there are unresolved items for this archive
         if (Object.keys(item).length > 0) {
-            render_tree_to_dom(item, 'tree-container');
+            render_tree_to_dom(item, 'tree-container', key);
         }
     });
 
@@ -1666,11 +1648,9 @@ async function on_loaded() {
         watchlist_body.addEventListener('click', (event) => {
             const row = event.target.closest('tr');
             if (row && !event.target.closest('button')) {
-                const archive = row.dataset.archive;
-                const subarchive = row.dataset.subarchive;
                 const title = row.dataset.title;
-                if (archive && subarchive) {
-                    console.log(`browse: ${archive}-${subarchive} (${title})`)
+                if (title) {
+                    console.log(`browse: ${title}`)
                     // load the selected page
                     load_page_by_title(title);
                     // Switch to the browse tab

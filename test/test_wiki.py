@@ -1,15 +1,19 @@
 import os
+import tempfile
 from copy import copy
 import unittest
 from unittest.mock import patch, MagicMock
 
 import mwparserfromhell
 
+from birddog.store import SQLiteKeyValueStore
+
 from birddog.wiki import (
     ARCHIVE_BASE,
     WIKI_NAMESPACE,
     ARCHIVE_BY_TITLE,
     ARCHIVE_BY_ADDRESS,
+    ARCHIVES_BY_ROOT,
     LABELS_BY_PREFIX,
     canonicalize_title,
     get_title,
@@ -19,6 +23,18 @@ from birddog.wiki import (
     is_archive,
     page_kind,
     page_label,
+    page_address,
+    parent_title,
+    title_in_scope,
+    title_lineage,
+    title_lineage_labels,
+    ROOT_HUB_TITLE,
+    is_root_title,
+    register_archive_root,
+    archive_root_label,
+    all_archive_roots,
+    refresh_curated_archive_root_labels,
+    deduplicate_archive_root_labels,
     mw_page_doc_url,
     mw_read_page,
     batch_fetch_document_links,
@@ -257,7 +273,27 @@ class TestClassifyPage(unittest.TestCase):
         self.assertEqual(page_kind(_SAMPLE_OPUS, has_children=True), "opus")
 
 
-# ── mw_page_doc_url ───────────────────────────────────────────────────────────
+# ── bare archive-root titles ────────────────────────────────────────────────
+#
+# A bare archive-root title (e.g. "Архів:ДАЛО", with no "/subarchive" suffix)
+# is never itself a subarchive page, so it has no ARCHIVE_BY_TITLE entry --
+# only ARCHIVES_BY_ROOT knows about it. Coarsened archive-level watching (see
+# user.py's _watch_title()) can surface a real edit to exactly this title, so
+# it must be classifiable, not just the subarchive-suffixed titles.
+
+class TestBareArchiveRoot(unittest.TestCase):
+    def test_classify_page_is_archive(self):
+        self.assertEqual(classify_page(_ARCHIVE_ROOT), "archive")
+
+    def test_is_archive_true(self):
+        self.assertTrue(is_archive(_ARCHIVE_ROOT))
+
+    def test_parent_title_is_none(self):
+        self.assertIsNone(parent_title(_ARCHIVE_ROOT))
+
+    def test_page_address_does_not_raise(self):
+        address = page_address(_ARCHIVE_ROOT)
+        self.assertEqual(address[2:], ("", "", ""))
 
 class TestMwPageDocUrl(unittest.TestCase):
     def _page(self, notes=None, internal=None, other_commons=None, external=None,
@@ -860,6 +896,24 @@ class TestParseWikiText(unittest.TestCase):
         page = self._parse("No tables, no links.")
         self.assertEqual(page["tables"], [])
 
+    def test_synthetic_table_from_absolute_links_on_hub_page(self):
+        # a bare archive-root page (e.g. "Архів:Архіви") links to other
+        # archives by full title, not as a literal subpage
+        wt = "* [[Архів:ДАЛО]]\n* [[Архів:ДААРК]]"
+        page = self._parse(wt, page_title="Архів:Архіви", title="Архіви")
+        self.assertEqual(len(page["tables"]), 1)
+        self.assertEqual(page["tables"][0]["name"], "Linked Pages")
+        children_text = {get_text(c[0]["text"]) for c in page["tables"][0]["children"]}
+        self.assertEqual(children_text, {"ДАЛО", "ДААРК"})
+
+    def test_absolute_links_not_picked_up_on_ordinary_content_page(self):
+        # regression guard: ordinary content pages routinely cross-link to
+        # other archives in prose -- those must NOT be swept into a
+        # synthesized "Linked Pages" table (unlike a hub page's own links)
+        wt = "See also [[Архів:ДАЛО]] and [[Архів:ДААРК]] for related records."
+        page = self._parse(wt)  # default page_title is a fond-level title
+        self.assertEqual(page["tables"], [])
+
 
 # ── mw_read_page (mocked network) ────────────────────────────────────────────
 
@@ -1023,6 +1077,222 @@ class TestPageLabel(unittest.TestCase):
     def test_bare_title_normalised_same_as_explicit_namespace(self):
         # canonicalize_title adds the namespace; result must match the explicit form
         self.assertEqual(page_label("ДААРК/Д/П-1"), page_label("Архів:ДААРК/Д/П-1"))
+
+
+# ── title_in_scope ───────────────────────────────────────────────────────────
+
+class TestTitleInScope(unittest.TestCase):
+    """title_in_scope matches a title against literal title-path prefixes."""
+
+    def test_exact_match(self):
+        self.assertTrue(title_in_scope(_SAMPLE_FOND, [_SAMPLE_FOND]))
+
+    def test_descendant_matches(self):
+        self.assertTrue(title_in_scope(_SAMPLE_CASE, [_SAMPLE_FOND]))
+
+    def test_ancestor_does_not_match(self):
+        self.assertFalse(title_in_scope(_ARCHIVE_ROOT, [_SAMPLE_FOND]))
+
+    def test_unrelated_title_does_not_match(self):
+        self.assertFalse(title_in_scope(_SAMPLE_FOND, ["Архів:НевідомийАрхів"]))
+
+    def test_sibling_sharing_string_prefix_does_not_match(self):
+        # ".../Ф-1" must not match a sibling like ".../Ф-10" -- boundary is "/", not raw prefix
+        self.assertFalse(title_in_scope(_ARCHIVE_ROOT + "/Ф-10", [_SAMPLE_FOND]))
+
+    def test_namespace_root_matches_everything(self):
+        self.assertTrue(title_in_scope(_SAMPLE_CASE, [f"{WIKI_NAMESPACE}:"]))
+
+    def test_any_include_prefix_is_sufficient(self):
+        self.assertTrue(title_in_scope(_SAMPLE_FOND, ["Архів:НевідомийАрхів", _ARCHIVE_ROOT]))
+
+    def test_no_include_match_returns_false(self):
+        self.assertFalse(title_in_scope(_SAMPLE_FOND, ["Архів:НевідомийАрхів"]))
+
+    def test_exclude_removes_otherwise_included_title(self):
+        self.assertFalse(title_in_scope(_SAMPLE_FOND, [_ARCHIVE_ROOT], exclude=[_SAMPLE_FOND]))
+
+    def test_exclude_only_affects_matching_subtree(self):
+        self.assertTrue(title_in_scope(_SAMPLE_OPUS, [_ARCHIVE_ROOT], exclude=["Архів:НевідомийАрхів"]))
+
+    def test_title_is_canonicalized(self):
+        # bare title (no namespace) should match the same as the fully qualified form
+        bare = _SAMPLE_FOND[len(f"{WIKI_NAMESPACE}:"):]
+        self.assertTrue(title_in_scope(bare, [_SAMPLE_FOND]))
+
+
+# ── title_lineage ────────────────────────────────────────────────────────────
+
+class TestTitleLineage(unittest.TestCase):
+    """title_lineage walks ancestors by literal title path only, and always
+    terminates at ROOT_HUB_TITLE so every page has a way back to it."""
+
+    def test_leaf_to_root_order(self):
+        self.assertEqual(
+            title_lineage(_SAMPLE_CASE),
+            [_SAMPLE_CASE, _SAMPLE_OPUS, _SAMPLE_FOND, _ARCHIVE_ROOT, ROOT_HUB_TITLE],
+        )
+
+    def test_archive_root_has_no_synthetic_subarchive_level(self):
+        # unlike lineage(), no synthetic subarchive level is inserted --
+        # the bare archive-root title is the immediate parent of a fond
+        self.assertEqual(title_lineage(_SAMPLE_FOND), [_SAMPLE_FOND, _ARCHIVE_ROOT, ROOT_HUB_TITLE])
+
+    def test_bare_archive_root_terminates_at_hub(self):
+        self.assertEqual(title_lineage(_ARCHIVE_ROOT), [_ARCHIVE_ROOT, ROOT_HUB_TITLE])
+
+    def test_hub_title_is_single_element(self):
+        # viewing the hub itself must not duplicate it
+        self.assertEqual(title_lineage(ROOT_HUB_TITLE), [ROOT_HUB_TITLE])
+
+    def test_does_not_raise_on_titles_parent_title_cannot_classify(self):
+        # regression: parent_title()/lineage() raise ValueError on a bare
+        # multi-subarchive archive root (e.g. "Архів:ДАДнО") since it's
+        # never itself a classified entry in ARCHIVE_BY_TITLE
+        self.assertEqual(title_lineage("Архів:ДАДнО"), ["Архів:ДАДнО", ROOT_HUB_TITLE])
+
+
+class TestTitleLineageLabels(unittest.TestCase):
+    """title_lineage_labels gives a latinized display label per lineage level."""
+
+    def test_same_length_and_order_as_lineage(self):
+        labels = title_lineage_labels(_SAMPLE_CASE)
+        self.assertEqual(len(labels), len(title_lineage(_SAMPLE_CASE)))
+
+    def test_each_label_is_that_levels_own_segment(self):
+        # _SAMPLE_FOND is "<root>/Ф-1"; its lineage is [fond, root, hub]
+        labels = title_lineage_labels(_SAMPLE_FOND)
+        self.assertEqual(labels[1], page_label(_ARCHIVE_ROOT))
+        # the hub's label comes from the dynamic archive-root registry (not
+        # LABELS_BY_PREFIX) and, once registered, persists -- so compare
+        # against page_label() itself rather than a hardcoded string; the
+        # frontend shows an icon for this level regardless of its value
+        self.assertEqual(labels[2], page_label(ROOT_HUB_TITLE))
+
+    def test_hub_alone_has_one_label(self):
+        self.assertEqual(title_lineage_labels(ROOT_HUB_TITLE), [page_label(ROOT_HUB_TITLE)])
+
+
+# ── dynamic archive-root registry ───────────────────────────────────────────
+
+class TestDynamicArchiveRootRegistry(unittest.TestCase):
+    """is_root_title/register_archive_root/archive_root_label/all_archive_roots
+    -- the KV-backed registry replacing offline subarchive-sniffing for
+    root-level discovery. Uses synthetic, clearly-fake titles so this
+    doesn't depend on real archive data, and stays idempotent across runs
+    (register_archive_root never overwrites an already-known title). Uses a
+    throwaway, temp-file-backed KV store swapped in for
+    birddog.wiki._archive_roots_kv for the duration of each test, so this
+    class never reads or writes the real local/production archive-roots
+    store."""
+
+    _PROBE_TITLE = "Архів:__TestRegistryProbe__"
+
+    def setUp(self):
+        import birddog.wiki as wiki_mod
+        self._wiki_mod = wiki_mod
+        self._orig_kv = wiki_mod._archive_roots_kv
+        self._orig_cache = wiki_mod._archive_roots_cache
+        self._tmp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+        self._tmp_db.close()
+        wiki_mod._archive_roots_kv = SQLiteKeyValueStore(db_path=self._tmp_db.name)
+        wiki_mod._archive_roots_cache = {}  # matches a fresh store's lazy-loaded state
+
+    def tearDown(self):
+        wiki_mod = self._wiki_mod
+        wiki_mod._archive_roots_kv = self._orig_kv
+        wiki_mod._archive_roots_cache = self._orig_cache
+        os.remove(self._tmp_db.name)
+
+    def test_is_root_title(self):
+        self.assertTrue(is_root_title(_ARCHIVE_ROOT))
+        self.assertFalse(is_root_title(_SAMPLE_FOND))
+
+    def test_register_and_lookup_round_trip(self):
+        label = register_archive_root(self._PROBE_TITLE, label="ProbeLabel")
+        self.assertEqual(label, "ProbeLabel")
+        self.assertEqual(archive_root_label(self._PROBE_TITLE), "ProbeLabel")
+
+    def test_register_non_root_title_is_a_no_op(self):
+        self.assertIsNone(register_archive_root(_SAMPLE_FOND))
+        self.assertIsNone(archive_root_label(_SAMPLE_FOND))
+
+    def test_register_default_label_is_transliterated(self):
+        probe = "Архів:__ПробаРеєстру__"
+        label = register_archive_root(probe)
+        self.assertTrue(label)
+        self.assertTrue(label.isascii())
+
+    def test_register_default_label_prefers_curated_archive_key(self):
+        # _ARCHIVE_ROOT has curated legacy data -- its default label must be
+        # the clean archive_key (e.g. "DADNO"), not a raw transliteration of
+        # the title, which can inherit inconsistent case from the wiki's own
+        # Cyrillic spelling (e.g. "Архів:ДАДнО" -> "DADnO")
+        expected = ARCHIVES_BY_ROOT[_ARCHIVE_ROOT][0][0]
+        label = register_archive_root(_ARCHIVE_ROOT)
+        self.assertEqual(label, expected)
+
+    def test_refresh_curated_archive_root_labels_fixes_stale_default(self):
+        import birddog.wiki as wiki_mod
+        expected = ARCHIVES_BY_ROOT[_ARCHIVE_ROOT][0][0]
+        # directly seed a stale, non-curated label -- bypassing
+        # register_archive_root's no-overwrite guard -- to simulate data
+        # registered before this preference existed
+        wiki_mod._archive_roots_kv.insert(
+            wiki_mod._ARCHIVE_ROOTS_NAMESPACE, _ARCHIVE_ROOT, "StaleLabel")
+        wiki_mod._archive_roots_cache[_ARCHIVE_ROOT] = "StaleLabel"
+        self.assertEqual(archive_root_label(_ARCHIVE_ROOT), "StaleLabel")
+
+        fixed = refresh_curated_archive_root_labels()
+
+        self.assertGreaterEqual(fixed, 1)
+        self.assertEqual(archive_root_label(_ARCHIVE_ROOT), expected)
+
+    def test_register_default_label_keeps_distinct_roots_split_from_one_curated_key_apart(self):
+        # "Архів:ГДА_МВС" and "Архів:ГДА_МО" are different real archives,
+        # but the legacy curated data split a compound code ("GDA-MVS",
+        # "GDA-MOD") into archive_key="GDA" + a subarchive_key for each --
+        # using archive_key alone as the label would collapse them onto the
+        # same "GDA" label, so the (non-"D_") subarchive_key must be kept
+        mvs = register_archive_root("Архів:ГДА_МВС")
+        mod = register_archive_root("Архів:ГДА_МО")
+        self.assertNotEqual(mvs, mod)
+        self.assertEqual(mvs, "GDA-MVS")
+        self.assertEqual(mod, "GDA-MOD")
+
+    def test_register_disambiguates_default_colliding_with_another_title(self):
+        first = register_archive_root("Архів:__DupProbeA__", label="DupLabel")
+        second = register_archive_root("Архів:__DupProbeB__")
+        self.assertEqual(first, "DupLabel")
+        self.assertNotEqual(second, "DupLabel")
+
+    def test_deduplicate_archive_root_labels_fixes_collision(self):
+        import birddog.wiki as wiki_mod
+        titles = ("Архів:__DedupProbeA__", "Архів:__DedupProbeB__")
+        for title in titles:
+            wiki_mod._archive_roots_kv.insert(
+                wiki_mod._ARCHIVE_ROOTS_NAMESPACE, title, "SharedProbeLabel")
+            wiki_mod._archive_roots_cache[title] = "SharedProbeLabel"
+
+        fixed = deduplicate_archive_root_labels()
+
+        self.assertGreaterEqual(fixed, 1)
+        labels = {archive_root_label(title) for title in titles}
+        self.assertEqual(len(labels), 2)
+
+    def test_all_archive_roots_excludes_hub(self):
+        titles = [e["title"] for e in all_archive_roots()]
+        self.assertNotIn(ROOT_HUB_TITLE, titles)
+
+    def test_all_archive_roots_includes_registered_probe(self):
+        register_archive_root(self._PROBE_TITLE, label="ProbeLabel")
+        entries = all_archive_roots()
+        self.assertIn({"title": self._PROBE_TITLE, "label": "ProbeLabel"}, entries)
+
+    def test_all_archive_roots_sorted_by_label(self):
+        entries = all_archive_roots()
+        labels = [e["label"] for e in entries]
+        self.assertEqual(labels, sorted(labels))
 
 
 # ── batch_fetch_document_links ────────────────────────────────────────────────

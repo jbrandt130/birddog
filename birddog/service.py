@@ -35,10 +35,10 @@ from birddog.cache import (
     load_cached_object,
     CacheMissError)
 from birddog.wiki import (
-    all_archives,
-    page_address,
-    lineage,
-    ARCHIVE_BY_ADDRESS,
+    all_archive_roots,
+    title_lineage,
+    title_lineage_labels,
+    page_label,
     )
 from birddog.user import User
 from birddog.ai import list_column_classes, classify_table_columns
@@ -74,7 +74,6 @@ SMTP_PASSWORD = os.getenv('BIRDDOG_SMTP_PASSWORD', '')  # For password reset
 
 # ---- APP GLOBALS  -----------------------------------------------------------
 
-ARCHIVE_MASTER_LIST     = all_archives()
 users                   = None
 runtime                 = None
 
@@ -366,7 +365,10 @@ def _compress_history(history, max_entries=50):
 @app.route("/archives", methods=['GET'])
 @login_required
 def archive_list(user):
-    return jsonify(ARCHIVE_MASTER_LIST)
+    # computed fresh each request (not cached at startup) since the
+    # dynamic archive-root registry grows over time as new archives are
+    # discovered by the tracker
+    return jsonify(all_archive_roots())
 
 @app.route('/page', methods=['GET'])
 @login_required
@@ -378,9 +380,6 @@ def page_data(user):
             #page_title = request.args.get('title')
             _logger.info(f'/page looking up title: {page_title}')
             page = runtime.lookup_by_title(page_title)
-            address = page_address(page_title)
-            _logger.info(f'/page mapping title to address: {address}')
-            (archive, subarchive, fond, opus, case) = address
         else:
             return "Missing required parameter: 'title'", 400
         if page:
@@ -388,20 +387,11 @@ def page_data(user):
             if ref_date:
                 page = page.compare(ref_date)
 
-            # recheck page address (which could be different)
-            address = page_address(page.title)
-            true_fond, true_opus, true_case = address[2:]
-            subarchive = address[1]
-
             # prevent mutation of page data in LRU/cache
             page_dict = deepcopy(page.page)
             page_dict['title'] = page.title
-            page_dict['lineage'] = lineage(page.title)
-            page_dict['archive'] = archive
-            page_dict['subarchive'] = subarchive
-            page_dict['fond'] = true_fond
-            page_dict['opus'] = true_opus
-            page_dict['case'] = true_case
+            page_dict['lineage'] = title_lineage(page.title)
+            page_dict['lineage_labels'] = title_lineage_labels(page.title)
             page_dict['kind'] = page.kind
             page_dict['name'] = page.name
             page_dict['needs_translation'] = page.needs_translation
@@ -409,10 +399,10 @@ def page_data(user):
 
             user.set_preference("last_page", page.title)
             return jsonify(page_dict), 200
-        _logger.error(f'PageLRU({archive}, {subarchive}, {fond}, {opus}, {case}) returned None')
+        _logger.error(f'PageLRU lookup for title {page_title!r} returned None')
         return 'Page not found', 404
     except PageLRU.NotFoundError:
-        _logger.error(f'PageLRU({archive}, {subarchive}, {fond}, {opus}, {case}) raised NotFoundError')
+        _logger.error(f'PageLRU lookup for title {page_title!r} raised NotFoundError')
         return 'Page not found', 404
 
 def ascii_filename(name):
@@ -567,21 +557,15 @@ def export_dialog(user):
 
 # ---- WATCHLIST MANAGEMENT -------------------------------------------------
 
-def _safe_split_pair(key, sep="-"):
-    parts = key.split(sep, 1)
-    return parts if len(parts) == 2 else (key, "")
-
 def _format_watchlist(watchlist):
     return [
         {
-            "archive": archive,
-            "subarchive": subarchive,
+            "title": title,
+            "label": page_label(title),
             "last_checked_date": v.get("last_checked_date"),
             "cutoff_date": v.get("cutoff_date"),
-            "title": ARCHIVE_BY_ADDRESS.get((archive, subarchive)),
         }
-        for key, v in watchlist.items()
-        for archive, subarchive in (_safe_split_pair(key),)
+        for title, v in watchlist.items()
     ]
 
 # Get user's watchlist
@@ -597,32 +581,28 @@ def get_watchlist(user):
 @login_required
 def add_to_watchlist(user):
     data = request.json
-    user.add_to_watchlist(
-        archive=data['archive'],
-        subarchive=data['subarchive'],
-        cutoff_date=data['cutoff_date']
-    )
+    user.add_to_watchlist(data['title'], data['cutoff_date'])
 
     return jsonify(_format_watchlist(user.get_watchlist())), 201
 
 # Remove from user's watchlist
-@app.route('/watchlist/<archive>/<subarchive>', methods=['DELETE'])
+@app.route('/watchlist/<path:title>', methods=['DELETE'])
 @login_required
-def remove_from_watchlist(user, archive, subarchive):
-    _logger.info(f'Removing watcher[{_hide(user.email)}]: {archive}-{subarchive}')
-    success = user.remove_from_watchlist(archive, subarchive)
+def remove_from_watchlist(user, title):
+    _logger.info(f'Removing watcher[{_hide(user.email)}]: {title}')
+    success = user.remove_from_watchlist(title)
 
     if success:
         return '', 204
     return jsonify({'error': 'Entry not found'}), 404
 
 # Check for updates on a specific watchlist item
-@app.route('/watchlist/<archive>/<subarchive>/check', methods=['GET'])
+@app.route('/watchlist/<path:title>/check', methods=['GET'])
 @login_required
-def check_watchlist_item(user, archive, subarchive):
+def check_watchlist_item(user, title):
     try:
         tree = request.args.get('tree') is not None
-        result = user.check_archive(archive, subarchive, tree=tree)
+        result = user.check_watchlist_item(title, tree=tree)
 
         return jsonify({
             'success': True,
@@ -635,23 +615,20 @@ def check_watchlist_item(user, archive, subarchive):
 
 
 @app.route('/resolve', methods=['GET'])
-@app.route('/resolve/<archive>/<subarchive>', methods=['GET'])
-@app.route('/resolve/<archive>/<subarchive>/<fond>', methods=['GET'])
-@app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>', methods=['GET'])
-@app.route('/resolve/<archive>/<subarchive>/<fond>/<opus>/<case>', methods=['GET'])
 @login_required
-def resolve_update(user, archive=None, subarchive=None, fond=None, opus=None, case=None):
-    page_title = request.args.get('title')
+def resolve_update(user):
+    title = request.args.get('title')
+    if not title:
+        return jsonify({'error': "Missing required parameter: 'title'"}), 400
+    # resolving the watch entry's own root-level item (no deeper item given)
+    # is the common case of "mark this whole watch as caught up"
+    item_title = request.args.get('item') or title
     tree = request.args.get('tree') is not None
     deep = request.args.get('deep') is not None
 
-    _logger.info(f'resolve_update(deep={deep}): {archive}, {subarchive}, {fond}, {opus}, {case}')
+    _logger.info(f'resolve_update(deep={deep}): title={title}, item={item_title}')
     try:
-        result = user.resolve_item(
-            archive, subarchive,
-            fond=fond, opus=opus, case=case,
-            tree=tree, deep=deep
-        )
+        result = user.resolve_item(title, item_title, tree=tree, deep=deep)
 
         return jsonify({'success': True, 'unresolved': result}), 200
 

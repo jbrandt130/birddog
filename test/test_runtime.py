@@ -3,13 +3,12 @@ from unittest import mock
 
 from birddog.runtime import (
     ArchiveWatcher,
-    _title_from_name,
+    PageUpdateManager,
     _parse_string,
     _sort_keys,
     _flatten_hierarchy,
     _make_tree,
     )
-from birddog.wiki import ARCHIVE_BY_ADDRESS, archive_root
 from birddog.utility import utc_now_dt, to_utc_format
 
 
@@ -19,16 +18,20 @@ from birddog.utility import utc_now_dt, to_utc_format
 # ArchiveWatcher.check() only ever touches self._runtime.update_manager, so a
 # minimal fake covering that one attribute is enough to unit test it without
 # any live wiki/AWS access. FakePageUpdateManager mirrors the real
-# PageTracker.get_updates() cutoff_date filtering (cutoff_date=None means "no
-# floor") so tests can verify ArchiveWatcher actually narrows its queries.
+# PageUpdateManager.get_updates() cutoff_date filtering (cutoff_date=None means
+# "no floor") so tests can verify ArchiveWatcher actually narrows its queries.
+#
+# Fixtures use the real "Архів:ДААРК" (single subarchive) and "Архів:ДАЧгО"
+# (D/R subarchives) archives, same ones test_wiki.py/test_user.py already use,
+# so no mocking of archive_root()/page_title_from_address() is needed.
 
 class FakePageUpdateManager:
     def __init__(self, updates):
         self._updates = updates
         self.calls = []
 
-    def get_updates(self, archive, subarchive, cutoff_date=None):
-        self.calls.append((archive, subarchive, cutoff_date))
+    def get_updates(self, include, exclude=None, cutoff_date=None):
+        self.calls.append((tuple(include), tuple(exclude) if exclude else (), cutoff_date))
         floor = cutoff_date or "0"
         return {
             title: update
@@ -42,35 +45,20 @@ class FakeRuntime:
         self.update_manager = update_manager
 
 
-def _fake_page_address(title):
-    # Test titles are pre-formatted as ArchiveWatcher key strings
-    # ("ARCHIVE,SUB,fond,opus,case"), so recovering the address is just a split.
-    parts = title.split(",")
-    parts += [""] * (5 - len(parts))
-    return tuple(parts[:5])
+class FakeTracker:
+    def __init__(self, updates_by_prefix):
+        self._updates_by_prefix = updates_by_prefix
+        self.calls = []
 
-
-def _fake_page_title_from_address(address):
-    return "/".join(part for part in address if part)
-
-
-PATCH_ADDRESS = mock.patch("birddog.runtime.page_address", side_effect=_fake_page_address)
-PATCH_TITLE = mock.patch("birddog.runtime.page_title_from_address", side_effect=_fake_page_title_from_address)
+    def get_updates(self, prefix, cutoff_date=None):
+        self.calls.append((prefix, cutoff_date))
+        return dict(self._updates_by_prefix.get(prefix, {}))
 
 
 # ----------------------------------------------------------------------------
 # Pure helper functions
 
 class HelperFunctionTests(unittest.TestCase):
-    def test_title_from_name_top_level(self):
-        self.assertEqual(_title_from_name("DAKO-D"), ARCHIVE_BY_ADDRESS[("DAKO", "D")])
-
-    def test_title_from_name_nested(self):
-        self.assertEqual(
-            _title_from_name("DAKO-D/1/2"),
-            f"{archive_root('DAKO', 'D')}/1/2",
-            )
-
     def test_parse_string_numeric_ordering(self):
         # "10" must sort after "2" numerically, not lexically
         self.assertLess(_parse_string("2"), _parse_string("10"))
@@ -84,52 +72,53 @@ class HelperFunctionTests(unittest.TestCase):
 
     def test_make_tree_and_flatten_hierarchy(self):
         unresolved = {
-            "DAKO,D,1,2,3": {"modified": "2026-01-01T00:00:00Z", "last_resolved": None, "title": "leaf"},
+            "Архів:ДААРК/1/2/3": {"modified": "2026-01-01T00:00:00Z", "last_resolved": None},
         }
         tree = _make_tree(unresolved)
         flattened = dict(_flatten_hierarchy(tree))
 
-        # the leaf itself carries its own record
-        self.assertEqual(flattened["DAKO-D/1/2/3"]["title"], "leaf")
+        # every node's title reflects its own reconstructed path -- the
+        # frontend reads meta.title directly, it doesn't derive it from the
+        # tree path itself, so this must hold for leaves too, not just
+        # synthesized intermediate nodes
+        self.assertEqual(flattened["Архів:ДААРК/1/2/3"]["title"], "Архів:ДААРК/1/2/3")
+        self.assertEqual(flattened["Архів:ДААРК/1/2/3"]["modified"], "2026-01-01T00:00:00Z")
 
-        # intermediate nodes with no unresolved record of their own get a
-        # synthesized title and no modified/last_resolved fields
-        self.assertNotIn("modified", flattened["DAKO-D/1"])
-        self.assertEqual(flattened["DAKO-D/1"]["title"], _title_from_name("DAKO-D/1"))
-        self.assertEqual(flattened["DAKO-D/1/2"]["title"], _title_from_name("DAKO-D/1/2"))
+        self.assertNotIn("modified", flattened["Архів:ДААРК/1"])
+        self.assertEqual(flattened["Архів:ДААРК/1"]["title"], "Архів:ДААРК/1")
+        self.assertEqual(flattened["Архів:ДААРК/1/2"]["title"], "Архів:ДААРК/1/2")
+
+        # each node's "label" is its own latinized display segment (not the
+        # full latinized path), for the frontend to show instead of the raw
+        # Cyrillic tree key
+        self.assertEqual(flattened["Архів:ДААРК/1/2/3"]["label"], "3")
+        self.assertEqual(flattened["Архів:ДААРК/1"]["label"], "1")
+        self.assertEqual(flattened["Архів:ДААРК"]["label"], "DAARK")
 
     def test_flatten_hierarchy_orders_children(self):
         unresolved = {
-            "DAKO,D,10,,": {"modified": "2026-01-01T00:00:00Z", "last_resolved": None, "title": "t10"},
-            "DAKO,D,2,,": {"modified": "2026-01-01T00:00:00Z", "last_resolved": None, "title": "t2"},
+            "Архів:ДААРК/10": {"modified": "2026-01-01T00:00:00Z", "last_resolved": None},
+            "Архів:ДААРК/2": {"modified": "2026-01-01T00:00:00Z", "last_resolved": None},
         }
         tree = _make_tree(unresolved)
         paths = [path for path, _ in _flatten_hierarchy(tree)]
-        self.assertLess(paths.index("DAKO-D/2"), paths.index("DAKO-D/10"))
+        self.assertLess(paths.index("Архів:ДААРК/2"), paths.index("Архів:ДААРК/10"))
 
 
 # ----------------------------------------------------------------------------
-# ArchiveWatcher.key / resolve / unresolve
-
-class ArchiveWatcherKeyTests(unittest.TestCase):
-    def test_key_join(self):
-        self.assertEqual(ArchiveWatcher.key("A", "B", "1", "2", "3"), "A,B,1,2,3")
-
-    def test_key_defaults_none_to_empty(self):
-        self.assertEqual(ArchiveWatcher.key("A", "B"), "A,B,,,")
-
+# ArchiveWatcher.resolve() / unresolve()
 
 class ArchiveWatcherResolveTests(unittest.TestCase):
     def setUp(self):
-        self.watcher = ArchiveWatcher("TEST", "_", cutoff_date="2025-01-01T00:00:00Z")
+        self.watcher = ArchiveWatcher(["Архів:ДААРК"], cutoff_date="2025-01-01T00:00:00Z")
         self.watcher._unresolved = {
-            "TEST,_,100,1,5": {"modified": "2026-01-01T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z", "title": "a"},
-            "TEST,_,100,1,6": {"modified": "2026-01-02T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z", "title": "b"},
-            "TEST,_,200,1,5": {"modified": "2026-01-03T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z", "title": "c"},
+            "Архів:ДААРК/100/1/5": {"modified": "2026-01-01T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z"},
+            "Архів:ДААРК/100/1/6": {"modified": "2026-01-02T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z"},
+            "Архів:ДААРК/200/1/5": {"modified": "2026-01-03T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z"},
         }
 
     def test_resolve_moves_item_and_stamps_now(self):
-        item = "TEST,_,100,1,5"
+        item = "Архів:ДААРК/100/1/5"
         self.watcher.resolve(item)
         self.assertNotIn(item, self.watcher.unresolved)
         self.assertIn(item, self.watcher.resolved)
@@ -141,24 +130,24 @@ class ArchiveWatcherResolveTests(unittest.TestCase):
         self.assertEqual(self.watcher.resolved[item][-1]["modified"], "2026-01-01T00:00:00Z")
 
     def test_resolve_deep_only_matches_prefix(self):
-        self.watcher.resolve("TEST,_,100,,", deep=True)
-        self.assertNotIn("TEST,_,100,1,5", self.watcher.unresolved)
-        self.assertNotIn("TEST,_,100,1,6", self.watcher.unresolved)
-        self.assertIn("TEST,_,100,1,5", self.watcher.resolved)
-        self.assertIn("TEST,_,100,1,6", self.watcher.resolved)
+        self.watcher.resolve("Архів:ДААРК/100", deep=True)
+        self.assertNotIn("Архів:ДААРК/100/1/5", self.watcher.unresolved)
+        self.assertNotIn("Архів:ДААРК/100/1/6", self.watcher.unresolved)
+        self.assertIn("Архів:ДААРК/100/1/5", self.watcher.resolved)
+        self.assertIn("Архів:ДААРК/100/1/6", self.watcher.resolved)
         # sibling under a different fond must be untouched
-        self.assertIn("TEST,_,200,1,5", self.watcher.unresolved)
-        self.assertNotIn("TEST,_,200,1,5", self.watcher.resolved)
+        self.assertIn("Архів:ДААРК/200/1/5", self.watcher.unresolved)
+        self.assertNotIn("Архів:ДААРК/200/1/5", self.watcher.resolved)
 
     def test_unresolve_reverses_resolve(self):
-        item = "TEST,_,100,1,5"
+        item = "Архів:ДААРК/100/1/5"
         self.watcher.resolve(item)
         self.watcher.unresolve(item)
         self.assertIn(item, self.watcher.unresolved)
         self.assertNotIn(item, self.watcher.resolved)
 
     def test_unresolve_cleans_up_empty_resolved_list(self):
-        item = "TEST,_,100,1,5"
+        item = "Архів:ДААРК/100/1/5"
         self.watcher.resolve(item)
         self.watcher.unresolve(item)
         self.assertNotIn(item, self.watcher._resolved)
@@ -176,54 +165,51 @@ class ArchiveWatcherResolveTests(unittest.TestCase):
 
 class ArchiveWatcherCheckTests(unittest.TestCase):
     def _watcher(self, cutoff_date="2025-01-01T00:00:00Z"):
-        return ArchiveWatcher("TEST", "_", cutoff_date=cutoff_date)
+        return ArchiveWatcher(["Архів:ДААРК"], cutoff_date=cutoff_date)
 
     def test_check_creates_unresolved_entries(self):
         updates = {
-            "TEST,_,100,1,5": {"timestamp": "2026-01-01T10:00:00Z", "user": "alice"},
+            "Архів:ДААРК/100/1/5": {"timestamp": "2026-01-01T10:00:00Z", "user": "alice"},
         }
         manager = FakePageUpdateManager(updates)
         watcher = self._watcher()
         watcher._runtime = FakeRuntime(manager)
 
-        with PATCH_ADDRESS:
-            watcher.check()
+        watcher.check()
 
-        entry = watcher.unresolved["TEST,_,100,1,5"]
+        entry = watcher.unresolved["Архів:ДААРК/100/1/5"]
         self.assertEqual(entry["modified"], "2026-01-01T10:00:00Z")
         self.assertEqual(entry["user"], "alice")
         self.assertEqual(watcher._last_checked_date, "2026-01-01T10:00:00Z")
 
     def test_check_passes_last_checked_date_as_cutoff(self):
         updates = {
-            "TEST,_,100,1,5": {"timestamp": "2026-01-01T10:00:00Z", "user": "alice"},
-            "TEST,_,100,1,6": {"timestamp": "2026-01-02T10:00:00Z", "user": "bob"},
+            "Архів:ДААРК/100/1/5": {"timestamp": "2026-01-01T10:00:00Z", "user": "alice"},
+            "Архів:ДААРК/100/1/6": {"timestamp": "2026-01-02T10:00:00Z", "user": "bob"},
         }
         manager = FakePageUpdateManager(updates)
         watcher = self._watcher()
         watcher._runtime = FakeRuntime(manager)
 
-        with PATCH_ADDRESS:
-            watcher.check()
-            watcher.check()
+        watcher.check()
+        watcher.check()
 
         # second call must be bounded by what the first call advanced
         # last_checked_date to, not re-scan unbounded history (cutoff_date=None)
-        self.assertEqual(manager.calls[0], ("TEST", "_", "2025-01-01T00:00:00Z"))
-        self.assertEqual(manager.calls[1], ("TEST", "_", "2026-01-02T10:00:00Z"))
+        self.assertEqual(manager.calls[0], (("Архів:ДААРК",), (), "2025-01-01T00:00:00Z"))
+        self.assertEqual(manager.calls[1], (("Архів:ДААРК",), (), "2026-01-02T10:00:00Z"))
 
     def test_check_does_not_reflag_already_resolved_edit(self):
         # resolved["modified"] simulates a legacy date that passed through
         # to_utc_format() and had its seconds permanently zeroed; the "live"
         # update feed reports the same edit with real (non-zero) seconds
         # because get_updates is unbounded and keeps returning it.
-        item = "TEST,_,100,1,5"
+        item = "Архів:ДААРК/100/1/5"
         watcher = self._watcher()
         watcher._resolved = {
             item: [{
                 "modified": "2026-03-27T19:29:00Z",
                 "last_resolved": "2026-03-29T13:42:00Z",
-                "title": "case",
                 "user": "someone",
             }],
         }
@@ -231,19 +217,17 @@ class ArchiveWatcherCheckTests(unittest.TestCase):
         updates = {item: {"timestamp": "2026-03-27T19:29:30Z", "user": "someone"}}
         watcher._runtime = FakeRuntime(FakePageUpdateManager(updates))
 
-        with PATCH_ADDRESS:
-            watcher.check()
+        watcher.check()
 
         self.assertNotIn(item, watcher.unresolved)
 
     def test_check_flags_genuine_new_edit_after_resolve(self):
-        item = "TEST,_,100,1,5"
+        item = "Архів:ДААРК/100/1/5"
         watcher = self._watcher()
         watcher._resolved = {
             item: [{
                 "modified": "2026-03-27T19:29:00Z",
                 "last_resolved": "2026-03-29T13:42:00Z",
-                "title": "case",
                 "user": "someone",
             }],
         }
@@ -251,8 +235,7 @@ class ArchiveWatcherCheckTests(unittest.TestCase):
         updates = {item: {"timestamp": "2026-04-01T10:00:00Z", "user": "someone-else"}}
         watcher._runtime = FakeRuntime(FakePageUpdateManager(updates))
 
-        with PATCH_ADDRESS:
-            watcher.check()
+        watcher.check()
 
         self.assertIn(item, watcher.unresolved)
         entry = watcher.unresolved[item]
@@ -261,31 +244,40 @@ class ArchiveWatcherCheckTests(unittest.TestCase):
         self.assertEqual(entry["last_resolved"], "2026-03-29T13:42:00Z")
         self.assertLess(entry["last_resolved"], entry["modified"])
 
-    def test_check_ignores_nonconforming_long_addresses(self):
-        watcher = self._watcher()
-        watcher._runtime = FakeRuntime(FakePageUpdateManager({
-            "TEST,_,1,2,3,4": {"timestamp": "2026-01-01T00:00:00Z", "user": ""},
-        }))
-        with mock.patch("birddog.runtime.page_address", return_value=("TEST", "_", "1", "2", "3", "4")):
-            watcher.check()
-        self.assertEqual(watcher.unresolved, {})
-
 
 # ----------------------------------------------------------------------------
 # ArchiveWatcher.save() / load() version migrations
+#
+# Legacy fixtures use "DAARK"/"D" (a real, single-subarchive archive) so
+# archive_root()/page_title_from_address() work without mocking. Every
+# pre-v8 load also runs the v8 upgrade (re-keying resolved/unresolved from
+# comma-joined address tuples to plain titles), so assertions check the
+# retitled key, not the original comma-joined one.
 
 class ArchiveWatcherSaveLoadTests(unittest.TestCase):
-    def test_save_round_trip_is_v7(self):
-        watcher = ArchiveWatcher("TEST", "_", cutoff_date="2025-01-01T00:00:00Z")
-        watcher._unresolved = {"TEST,_,1,,": {"modified": "2026-01-01T00:00:00Z", "last_resolved": None, "title": "t"}}
-        watcher._resolved = {"TEST,_,2,,": [{"modified": "2025-06-01T00:00:00Z", "last_resolved": "2025-06-02T00:00:00Z", "title": "u"}]}
+    def test_save_round_trip_is_v8(self):
+        watcher = ArchiveWatcher(["Архів:ДААРК"], cutoff_date="2025-01-01T00:00:00Z")
+        watcher._unresolved = {"Архів:ДААРК/1": {"modified": "2026-01-01T00:00:00Z", "last_resolved": None}}
+        watcher._resolved = {"Архів:ДААРК/2": [{"modified": "2025-06-01T00:00:00Z", "last_resolved": "2025-06-02T00:00:00Z"}]}
 
         saved = watcher.save()
-        self.assertEqual(saved["version"], "v7")
+        self.assertEqual(saved["version"], "v8")
+        self.assertEqual(saved["include"], ["Архів:ДААРК"])
+        self.assertEqual(saved["exclude"], [])
 
         reloaded = ArchiveWatcher.load(saved)
         self.assertEqual(reloaded.unresolved, watcher.unresolved)
         self.assertEqual(reloaded.resolved, watcher.resolved)
+
+    def test_load_legacy_archive_subarchive_shape_coarsens_to_archive_title(self):
+        data = {
+            "version": "v7",
+            "archive": "DACHGO", "subarchive": "R", "cutoff_date": "2025-01-01T00:00:00Z",
+            "unresolved": {}, "resolved": {},
+        }
+        watcher = ArchiveWatcher.load(data)
+        self.assertEqual(watcher._include, ["Архів:ДАЧгО"])
+        self.assertEqual(watcher._exclude, [])
 
     def test_load_v1_normalizes_bare_resolved_dates_to_lists(self):
         # v1 stores are also pre-v5, so cutoff_date/resolved dates must be in
@@ -295,14 +287,13 @@ class ArchiveWatcherSaveLoadTests(unittest.TestCase):
         # needs a (here, empty) live runtime to not crash.
         data = {
             "version": "v1",
-            "archive": "TEST", "subarchive": "_", "cutoff_date": "2025,01,01,00:00",
+            "archive": "DAARK", "subarchive": "D", "cutoff_date": "2025,01,01,00:00",
             "unresolved": {},
-            "resolved": {"TEST,_,1,,": "2025,06,01,08:15"},
+            "resolved": {"DAARK,D,1,,": "2025,06,01,08:15"},
         }
-        with PATCH_ADDRESS:
-            watcher = ArchiveWatcher.load(data, runtime=FakeRuntime(FakePageUpdateManager({})))
+        watcher = ArchiveWatcher.load(data, runtime=FakeRuntime(FakePageUpdateManager({})))
         self.assertEqual(
-            watcher.resolved["TEST,_,1,,"],
+            watcher.resolved["Архів:ДААРК/1"],
             [{"modified": to_utc_format("2025,06,01,08:15"), "last_resolved": to_utc_format("2025,01,01,00:00")}],
             )
 
@@ -312,13 +303,12 @@ class ArchiveWatcherSaveLoadTests(unittest.TestCase):
         # by that wipe) is observable here.
         data = {
             "version": "v2",
-            "archive": "TEST", "subarchive": "_", "cutoff_date": "2025,01,01,00:00",
+            "archive": "DAARK", "subarchive": "D", "cutoff_date": "2025,01,01,00:00",
             "unresolved": {},
-            "resolved": {"TEST,_,1,,": [{"modified": "2025,06,01,08:15", "last_resolved": "2025,06,02,00:00"}]},
+            "resolved": {"DAARK,D,1,,": [{"modified": "2025,06,01,08:15", "last_resolved": "2025,06,02,00:00"}]},
         }
-        with PATCH_TITLE, PATCH_ADDRESS:
-            watcher = ArchiveWatcher.load(data, runtime=FakeRuntime(FakePageUpdateManager({})))
-        self.assertEqual(watcher.resolved["TEST,_,1,,"][0]["title"], "TEST/_/1")
+        watcher = ArchiveWatcher.load(data, runtime=FakeRuntime(FakePageUpdateManager({})))
+        self.assertEqual(watcher.resolved["Архів:ДААРК/1"][0]["title"], "Архів:ДААРК/1")
 
     def test_load_v5_migrates_legacy_comma_dates(self):
         # version="v4": below v5 (so the date migration fires) but not below
@@ -326,15 +316,15 @@ class ArchiveWatcherSaveLoadTests(unittest.TestCase):
         # doesn't) -- isolates the v5 migration on its own.
         data = {
             "version": "v4",
-            "archive": "TEST", "subarchive": "_", "cutoff_date": "2025,03,01,12:30",
-            "unresolved": {"TEST,_,1,,": {"modified": "2025,06,01,08:15", "last_resolved": "2025,03,01,00:00", "title": "t"}},
-            "resolved": {"TEST,_,2,,": [{"modified": "2025,05,01,09:00", "last_resolved": "2025,05,02,10:00", "title": "u"}]},
+            "archive": "DAARK", "subarchive": "D", "cutoff_date": "2025,03,01,12:30",
+            "unresolved": {"DAARK,D,1,,": {"modified": "2025,06,01,08:15", "last_resolved": "2025,03,01,00:00", "title": "t"}},
+            "resolved": {"DAARK,D,2,,": [{"modified": "2025,05,01,09:00", "last_resolved": "2025,05,02,10:00", "title": "u"}]},
         }
         watcher = ArchiveWatcher.load(data)
 
         self.assertEqual(watcher.cutoff_date, to_utc_format("2025,03,01,12:30"))
-        self.assertEqual(watcher.unresolved["TEST,_,1,,"]["modified"], to_utc_format("2025,06,01,08:15"))
-        self.assertEqual(watcher.resolved["TEST,_,2,,"][0]["modified"], to_utc_format("2025,05,01,09:00"))
+        self.assertEqual(watcher.unresolved["Архів:ДААРК/1"]["modified"], to_utc_format("2025,06,01,08:15"))
+        self.assertEqual(watcher.resolved["Архів:ДААРК/2"][0]["modified"], to_utc_format("2025,05,01,09:00"))
         # to_utc_format has no seconds field to preserve -- documents the
         # precision loss that makes the v6/v7 cleanups necessary
         self.assertTrue(watcher.cutoff_date.endswith(":00Z"))
@@ -342,73 +332,109 @@ class ArchiveWatcherSaveLoadTests(unittest.TestCase):
     def test_load_v4_forces_refresh_via_check(self):
         data = {
             "version": "v3",
-            "archive": "TEST", "subarchive": "_", "cutoff_date": "2025,01,01,00:00",
-            "unresolved": {"TEST,_,stale,,": {"modified": "2020,01,01,00:00", "last_resolved": None, "title": "stale"}},
+            "archive": "DAARK", "subarchive": "D", "cutoff_date": "2025,01,01,00:00",
+            "unresolved": {"DAARK,D,stale,,": {"modified": "2020,01,01,00:00", "last_resolved": None, "title": "stale"}},
             "resolved": {},
         }
         manager = FakePageUpdateManager({
-            "TEST,_,1,,": {"timestamp": "2026-01-01T00:00:00Z", "user": ""},
+            "Архів:ДААРК/1": {"timestamp": "2026-01-01T00:00:00Z", "user": ""},
         })
-        with PATCH_ADDRESS:
-            watcher = ArchiveWatcher.load(data, runtime=FakeRuntime(manager))
+        watcher = ArchiveWatcher.load(data, runtime=FakeRuntime(manager))
 
         # stale pre-migration entry discarded, replaced by a fresh check()
-        self.assertNotIn("TEST,_,stale,,", watcher.unresolved)
-        self.assertIn("TEST,_,1,,", watcher.unresolved)
+        self.assertNotIn("Архів:ДААРК/stale", watcher.unresolved)
+        self.assertIn("Архів:ДААРК/1", watcher.unresolved)
 
     def test_load_v6_purges_matching_ghost_on_upgrade(self):
-        item = "TEST,_,1,,"
         data = {
             "version": "v5",
-            "archive": "TEST", "subarchive": "_", "cutoff_date": "2025-01-01T00:00:00Z",
-            "unresolved": {item: {"modified": "2026-03-27T19:29:30Z", "last_resolved": "2026-03-29T13:42:00Z", "title": "t"}},
-            "resolved": {item: [{"modified": "2026-03-27T19:29:00Z", "last_resolved": "2026-03-29T13:42:00Z", "title": "t"}]},
+            "archive": "DAARK", "subarchive": "D", "cutoff_date": "2025-01-01T00:00:00Z",
+            "unresolved": {"DAARK,D,1,,": {"modified": "2026-03-27T19:29:30Z", "last_resolved": "2026-03-29T13:42:00Z", "title": "t"}},
+            "resolved": {"DAARK,D,1,,": [{"modified": "2026-03-27T19:29:00Z", "last_resolved": "2026-03-29T13:42:00Z", "title": "t"}]},
         }
         watcher = ArchiveWatcher.load(data)
-        self.assertNotIn(item, watcher.unresolved)
+        self.assertNotIn("Архів:ДААРК/1", watcher.unresolved)
 
     def test_load_v7_purges_ghost_left_by_already_v6_tagged_store(self):
         # Reproduces the real-world bug: a store already saved at "v6" (so
         # the v6 block above won't fire again) that accumulated a new ghost
         # entry afterward because check() kept re-flagging it. This is
         # exactly the shape found in the production AGAD/CDIAK watcher files.
-        item = "TEST,_,1,,"
         data = {
             "version": "v6",
-            "archive": "TEST", "subarchive": "_", "cutoff_date": "2025-01-01T00:00:00Z",
-            "unresolved": {item: {"modified": "2026-03-27T19:29:30Z", "last_resolved": "2026-03-29T13:42:00Z", "title": "t"}},
-            "resolved": {item: [{"modified": "2026-03-27T19:29:00Z", "last_resolved": "2026-03-29T13:42:00Z", "title": "t"}]},
+            "archive": "DAARK", "subarchive": "D", "cutoff_date": "2025-01-01T00:00:00Z",
+            "unresolved": {"DAARK,D,1,,": {"modified": "2026-03-27T19:29:30Z", "last_resolved": "2026-03-29T13:42:00Z", "title": "t"}},
+            "resolved": {"DAARK,D,1,,": [{"modified": "2026-03-27T19:29:00Z", "last_resolved": "2026-03-29T13:42:00Z", "title": "t"}]},
         }
         watcher = ArchiveWatcher.load(data)
-        self.assertNotIn(item, watcher.unresolved)
+        self.assertNotIn("Архів:ДААРК/1", watcher.unresolved)
 
     def test_load_v7_preserves_genuinely_unresolved_items(self):
         # A real new edit landing on a different minute than the last
         # resolved copy must survive the v7 cleanup, not just anything with
         # resolved history.
-        item = "TEST,_,1,,"
         data = {
             "version": "v6",
-            "archive": "TEST", "subarchive": "_", "cutoff_date": "2025-01-01T00:00:00Z",
-            "unresolved": {item: {"modified": "2026-04-11T15:31:18Z", "last_resolved": "2026-04-12T08:00:00Z", "title": "t"}},
-            "resolved": {item: [{"modified": "2026-03-27T19:29:00Z", "last_resolved": "2026-04-12T08:00:00Z", "title": "t"}]},
+            "archive": "DAARK", "subarchive": "D", "cutoff_date": "2025-01-01T00:00:00Z",
+            "unresolved": {"DAARK,D,1,,": {"modified": "2026-04-11T15:31:18Z", "last_resolved": "2026-04-12T08:00:00Z", "title": "t"}},
+            "resolved": {"DAARK,D,1,,": [{"modified": "2026-03-27T19:29:00Z", "last_resolved": "2026-04-12T08:00:00Z", "title": "t"}]},
         }
         watcher = ArchiveWatcher.load(data)
-        self.assertIn(item, watcher.unresolved)
+        self.assertIn("Архів:ДААРК/1", watcher.unresolved)
 
-    def test_load_already_v7_does_not_rerun_migrations(self):
-        item = "TEST,_,1,,"
+    def test_load_already_v7_retitles_but_does_not_rerun_other_migrations(self):
         data = {
             "version": "v7",
-            "archive": "TEST", "subarchive": "_", "cutoff_date": "2025-01-01T00:00:00Z",
-            "unresolved": {item: {"modified": "2026-03-27T19:29:30Z", "last_resolved": "2026-03-29T13:42:00Z", "title": "t"}},
-            "resolved": {item: [{"modified": "2026-03-27T19:29:00Z", "last_resolved": "2026-03-29T13:42:00Z", "title": "t"}]},
+            "archive": "DAARK", "subarchive": "D", "cutoff_date": "2025-01-01T00:00:00Z",
+            "unresolved": {"DAARK,D,1,,": {"modified": "2026-03-27T19:29:30Z", "last_resolved": "2026-03-29T13:42:00Z", "title": "t"}},
+            "resolved": {"DAARK,D,1,,": [{"modified": "2026-03-27T19:29:00Z", "last_resolved": "2026-03-29T13:42:00Z", "title": "t"}]},
         }
         watcher = ArchiveWatcher.load(data)
-        # already at v7: migrations don't re-run, so a ghost sitting in an
-        # already-v7 file (shouldn't happen going forward, but if it did)
-        # is left alone rather than silently mutated on every load
-        self.assertIn(item, watcher.unresolved)
+        # already at v7: the v6/v7 ghost-purge migrations don't re-run, so a
+        # ghost sitting in an already-v7 file (shouldn't happen going
+        # forward, but if it did) is left alone -- only re-keyed to a title
+        self.assertIn("Архів:ДААРК/1", watcher.unresolved)
+
+
+# ----------------------------------------------------------------------------
+# PageUpdateManager.get_updates()
+
+class PageUpdateManagerGetUpdatesTests(unittest.TestCase):
+    def _manager(self, updates_by_prefix):
+        manager = PageUpdateManager.__new__(PageUpdateManager)
+        manager._tracker = FakeTracker(updates_by_prefix)
+        return manager
+
+    def test_filters_by_title_in_scope_boundary(self):
+        # the tracker itself does a naive startswith(); get_updates must
+        # still enforce the "/" boundary title_in_scope provides
+        manager = self._manager({
+            "Архів:ДААРК": {
+                "Архів:ДААРК/1": {"timestamp": "2026-01-01T00:00:00Z"},
+                "Архів:ДААРК2/9": {"timestamp": "2026-01-01T00:00:00Z"},
+            },
+        })
+        result = manager.get_updates(["Архів:ДААРК"])
+        self.assertEqual(list(result.keys()), ["Архів:ДААРК/1"])
+
+    def test_applies_exclude(self):
+        manager = self._manager({
+            "Архів:ДААРК": {
+                "Архів:ДААРК/1": {"timestamp": "2026-01-01T00:00:00Z"},
+                "Архів:ДААРК/2": {"timestamp": "2026-01-01T00:00:00Z"},
+            },
+        })
+        result = manager.get_updates(["Архів:ДААРК"], exclude=["Архів:ДААРК/2"])
+        self.assertEqual(list(result.keys()), ["Архів:ДААРК/1"])
+
+    def test_queries_each_include_prefix(self):
+        manager = self._manager({
+            "Архів:ДААРК": {"Архів:ДААРК/1": {"timestamp": "2026-01-01T00:00:00Z"}},
+            "Архів:ДАЧгО": {"Архів:ДАЧгО/1": {"timestamp": "2026-01-01T00:00:00Z"}},
+        })
+        result = manager.get_updates(["Архів:ДААРК", "Архів:ДАЧгО"])
+        self.assertEqual(set(result.keys()), {"Архів:ДААРК/1", "Архів:ДАЧгО/1"})
+        self.assertEqual({prefix for prefix, _ in manager._tracker.calls}, {"Архів:ДААРК", "Архів:ДАЧгО"})
 
 
 if __name__ == "__main__":

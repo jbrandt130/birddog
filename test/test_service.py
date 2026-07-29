@@ -321,5 +321,117 @@ class TestServiceRoutes(unittest.TestCase):
             self.assertEqual(user._pw, "newpw")
 
 
+class TestWatchlistAndResolveRoutes(unittest.TestCase):
+    """Title-based /watchlist, /resolve, /archives routes (Stage 4)."""
+
+    def setUp(self):
+        app.config["TESTING"] = True
+        app.secret_key = "test_secret"
+        service.serializer = URLSafeTimedSerializer(app.secret_key)
+
+        service.runtime = _RuntimeStub(state="running")
+        service.users = MagicMock()
+
+        self._render_template_patcher = patch("birddog.service.render_template", lambda *a, **k: "OK")
+        self._render_template_patcher.start()
+        self.addCleanup(self._render_template_patcher.stop)
+
+        self.client = app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"email": TEST_EMAIL, "name": TEST_NAME}
+
+    def _mock_user(self):
+        user = MagicMock()
+        user.email = TEST_EMAIL
+        service.users.lookup.return_value = user
+        return user
+
+    def test_get_watchlist_formats_title_and_label(self):
+        user = self._mock_user()
+        user.get_watchlist.return_value = {
+            "Архів:ДАЛО": {"cutoff_date": "2020-01-01T00:00:00Z", "last_checked_date": "2020-02-01T00:00:00Z"},
+        }
+        resp = self.client.get("/watchlist")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]["title"], "Архів:ДАЛО")
+        self.assertEqual(data[0]["cutoff_date"], "2020-01-01T00:00:00Z")
+        self.assertIn("label", data[0])
+
+    def test_post_watchlist_calls_add_to_watchlist_with_title(self):
+        user = self._mock_user()
+        user.get_watchlist.return_value = {}
+        resp = self.client.post("/watchlist", json={"title": "Архів:ДАЛО", "cutoff_date": "2020-01-01T00:00:00Z"})
+        self.assertEqual(resp.status_code, 201)
+        user.add_to_watchlist.assert_called_once_with("Архів:ДАЛО", "2020-01-01T00:00:00Z")
+
+    def test_delete_watchlist_success_and_not_found(self):
+        user = self._mock_user()
+        user.remove_from_watchlist.return_value = True
+        resp = self.client.delete("/watchlist/Архів:ДАЛО")
+        self.assertEqual(resp.status_code, 204)
+        user.remove_from_watchlist.assert_called_once_with("Архів:ДАЛО")
+
+        user.remove_from_watchlist.return_value = False
+        resp2 = self.client.delete("/watchlist/Архів:ДАЛО")
+        self.assertEqual(resp2.status_code, 404)
+
+    def test_check_watchlist_item_success_and_missing(self):
+        user = self._mock_user()
+        user.check_watchlist_item.return_value = [{"name": "x"}]
+        user.get_watchlist.return_value = {}
+        resp = self.client.get("/watchlist/Архів:ДАЛО/check?tree")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data["success"])
+        user.check_watchlist_item.assert_called_once_with("Архів:ДАЛО", tree=True)
+
+        user.check_watchlist_item.side_effect = KeyError("Архів:ДАЛО")
+        resp2 = self.client.get("/watchlist/Архів:ДАЛО/check")
+        self.assertEqual(resp2.status_code, 404)
+
+    def test_resolve_requires_title(self):
+        self._mock_user()
+        resp = self.client.get("/resolve")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_resolve_defaults_item_to_title_when_not_given(self):
+        user = self._mock_user()
+        user.resolve_item.return_value = []
+        resp = self.client.get("/resolve?title=Архів:ДАЛО")
+        self.assertEqual(resp.status_code, 200)
+        user.resolve_item.assert_called_once_with("Архів:ДАЛО", "Архів:ДАЛО", tree=False, deep=False)
+
+    def test_resolve_with_explicit_item_tree_and_deep(self):
+        user = self._mock_user()
+        user.resolve_item.return_value = {}
+        resp = self.client.get("/resolve?title=Архів:ДАЛО&item=Архів:ДАЛО/104&tree=1&deep=1")
+        self.assertEqual(resp.status_code, 200)
+        user.resolve_item.assert_called_once_with("Архів:ДАЛО", "Архів:ДАЛО/104", tree=True, deep=True)
+
+    def test_resolve_error_paths(self):
+        user = self._mock_user()
+
+        user.resolve_item.side_effect = KeyError("x")
+        resp = self.client.get("/resolve?title=Архів:ДАЛО")
+        self.assertEqual(resp.status_code, 404)
+
+        user.resolve_item.side_effect = FileNotFoundError()
+        resp2 = self.client.get("/resolve?title=Архів:ДАЛО")
+        self.assertEqual(resp2.status_code, 404)
+
+        user.resolve_item.side_effect = RuntimeError("boom")
+        resp3 = self.client.get("/resolve?title=Архів:ДАЛО")
+        self.assertEqual(resp3.status_code, 500)
+
+    def test_archives_route_serves_dynamic_registry(self):
+        self._mock_user()
+        with patch("birddog.service.all_archive_roots", return_value=[{"title": "Архів:ДАЛО", "label": "DALO"}]):
+            resp = self.client.get("/archives")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), [{"title": "Архів:ДАЛО", "label": "DALO"}])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -26,6 +26,8 @@ from birddog.wiki import (
     page_address,
     page_title_from_address,
     parent_title,
+    title_in_scope,
+    page_label,
     )
 from birddog.tracker import (
     PageTracker,
@@ -143,13 +145,6 @@ _DASH_CHARS = r"\-\u2010\u2011\u2012\u2013\u2014"
 _ALPHA_DASH = fr"[\p{{L}}{_DASH_CHARS}]*"
 _pattern = regex.compile(fr"^({_ALPHA_DASH})(\d+)({_ALPHA_DASH})$")
 
-def _title_from_name(name):
-    parts = name.split("/", 1)
-    archive, subarchive = parts[0].split("-")
-    if len(parts) == 1:
-        return ARCHIVE_BY_ADDRESS[(archive, subarchive)]
-    return f"{archive_root(archive, subarchive)}/{parts[1]}"
-
 def _parse_string(s):
     match = _pattern.fullmatch(s)
     if match:
@@ -179,34 +174,38 @@ def _flatten_hierarchy(d, prefix=None):
             result.extend(_flatten_hierarchy(value, current_path))
 
     def _gen_title(item):
-        if not item[1]:
-            return (item[0], { "title": _title_from_name(item[0]) })
-        return item
+        # a node's full_path_str is already its real title, since it's built
+        # by rejoining literal title-path segments -- ensure every node
+        # (leaf or synthesized intermediate) carries it in its own record,
+        # since the frontend reads meta.title rather than the tree path.
+        # "label" is this node's own latinized display segment (page_label()
+        # transliterates path segments 1:1, so the last segment of
+        # page_label(path) always corresponds to this node's own name).
+        path, value = item
+        label = page_label(path).split("/")[-1]
+        if not value:
+            return (path, { "title": path, "label": label })
+        return (path, { **value, "title": path, "label": label })
 
     return [_gen_title(item) for item in result]
 
 def _make_tree(unresolved):
     root = {}
     for key, value in unresolved.items():
-        address = key.rstrip(',')
-        address = address.replace(",", "-", 1)
-        address = address.split(',')
         pos = root
-        for item in address:
-            if item not in pos:
-                pos[item] = {}
-            pos = pos[item]
+        for part in key.split("/"):
+            if part not in pos:
+                pos[part] = {}
+            pos = pos[part]
         pos['unresolved'] = value
     return root
 
 class ArchiveWatcher:
-    def __init__(self, archive, subarchive, cutoff_date, runtime=None):
+    def __init__(self, include, cutoff_date, exclude=None, runtime=None):
         _logger.info(f"ArchiveWatcher init (runtime={runtime})")
         self._runtime = runtime
-        self._archive = archive
-        if not subarchive:
-            subarchive = Archive(archive).subarchive
-        self._subarchive = subarchive
+        self._include = list(include)
+        self._exclude = list(exclude) if exclude else []
         self._cutoff_date = cutoff_date
         self._last_checked_date = cutoff_date
         self._resolved = {}
@@ -214,9 +213,9 @@ class ArchiveWatcher:
 
     def save(self):
         return {
-            'version': 'v7',
-            'archive': self._archive,
-            'subarchive': self._subarchive,
+            'version': 'v8',
+            'include': self._include,
+            'exclude': self._exclude,
             'cutoff_date': self._cutoff_date,
             'resolved': self._resolved,
             'unresolved': self._unresolved,
@@ -225,8 +224,17 @@ class ArchiveWatcher:
 
     @staticmethod
     def load(data, runtime=None):
-        watcher = ArchiveWatcher(data['archive'], data['subarchive'], data['cutoff_date'], runtime=runtime)
         version = data.get("version", "v1")  # default to legacy
+        if "include" in data:
+            watcher = ArchiveWatcher(data["include"], data["cutoff_date"], exclude=data.get("exclude"), runtime=runtime)
+        else:
+            # legacy archive/subarchive-addressed watcher -- coarsen to the
+            # whole archive, matching the watchlist-item migration in user.py
+            watcher = ArchiveWatcher(
+                [archive_root(data['archive'], data['subarchive'])],
+                data['cutoff_date'],
+                runtime=runtime,
+            )
 
         # normalize unresolved (assume format is fine)
         watcher._unresolved = data.get('unresolved', {})
@@ -319,11 +327,19 @@ class ArchiveWatcher:
                         and last_modified[:16] == unresolved_modified[:16]):
                     del watcher._unresolved[key]
 
-        return watcher
+        if version < "v8":
+            # legacy stores key resolved/unresolved by comma-joined address
+            # tuple ("archive,subarchive,fond,opus,case"); re-key by title to
+            # match the current item identity
+            def _retitle(key):
+                try:
+                    return page_title_from_address(key.split(","))
+                except (KeyError, ValueError):
+                    return key
+            watcher._resolved = {_retitle(k): v for k, v in watcher._resolved.items()}
+            watcher._unresolved = {_retitle(k): v for k, v in watcher._unresolved.items()}
 
-    @staticmethod
-    def key(archive, subarchive, fond=None, opus=None, case=None):
-        return ','.join((archive, subarchive, fond or '', opus or '', case or ''))
+        return watcher
 
     @property
     def resolved(self):
@@ -352,18 +368,12 @@ class ArchiveWatcher:
         # last check, so already-resolved edits from prior cycles aren't handed
         # back and re-evaluated forever (get_updates(cutoff_date=None) returns the
         # entire unbounded history for the prefix)
-        updates = page_manager.get_updates(self._archive, self._subarchive, cutoff_date=self._last_checked_date)
+        updates = page_manager.get_updates(self._include, exclude=self._exclude, cutoff_date=self._last_checked_date)
         _logger.info(f"ArchiveWatcher.check: found {len(updates)} updates.")
         if updates:
             new_cutoff = self._last_checked_date
             for title, update in updates.items():
-                address = page_address(title)
-                assert address[0] == self._archive and address[1] == self._subarchive
-                if len(address) >= 6:
-                    # FIXME: handle longer addresses correctly
-                    _logger.info(f"Watcher.check: ignoring nonconforming address: {address}")
-                    continue
-                item = ArchiveWatcher.key(*address)
+                item = canonicalize_title(title)
                 # Get most recent resolved mod date (if any)
                 mod_date = update["timestamp"]
                 new_cutoff = max(mod_date, new_cutoff)
@@ -379,7 +389,6 @@ class ArchiveWatcher:
                     self._unresolved[item] = {
                         "modified": mod_date,
                         "last_resolved": self._last_resolved_date(item),
-                        "title": title,
                         "user": user,
                     }
             #_logger.info(f'ArchiveWatcher.check() unresolved: {json.dumps(self._unresolved, indent=4)}')
@@ -388,15 +397,14 @@ class ArchiveWatcher:
     def resolve(self, item, deep=False):
         #_logger.info(f'ArchiveWatcher.resolve: before\n\tunresolved: {self._unresolved}\n\tresolved: {self._resolved}')
         now = utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ')
+        item = canonicalize_title(item)
         if deep:
             _logger.info(f'ArchiveWatcher: deep resolve: {item}')
-            item = item.rstrip(',').split(",")
             for key in list(self.unresolved.keys()):
-                split_key = key.split(",")[:len(item)]
-                if split_key == item:
+                if title_in_scope(key, [item]):
                     unresolved_item = self._unresolved.pop(key)
                     unresolved_item["last_resolved"] = now
-                    _logger.info(f'ArchiveWatcher: deep resolving subitem: {key}; {item}; {unresolved_item}')
+                    _logger.info(f'ArchiveWatcher: deep resolving subitem: {key}; {item}')
                     self._resolved.setdefault(key, []).append(unresolved_item)
         elif item in self._unresolved:
             unresolved_item = self._unresolved.pop(item)
@@ -498,19 +506,15 @@ class PageUpdateManager(HeartbeatManager):
         self._runtime.trim_logs()
         _logger.info("PageUpdateManager: finished update check...")
 
-    def get_updates(self, archive, subarchive, cutoff_date=None):
-        prefix = archive_root(archive, subarchive)
-        _logger.info(f"PageUpdateManager.get_updates: prefix={prefix}, cutoff_date={cutoff_date}")
-        updates = self._tracker.get_updates(prefix, cutoff_date=cutoff_date)
-        _logger.info(f"PageUpdateManager.get_updates: {len(updates)} total updates")
+    def get_updates(self, include, exclude=None, cutoff_date=None):
+        _logger.info(f"PageUpdateManager.get_updates: include={include}, exclude={exclude}, cutoff_date={cutoff_date}")
         result = {}
-        for title, update in updates.items():
-            try:
-                address = page_address(title)
-                if address[:2] == (archive, subarchive):
+        for prefix in include:
+            prefix_updates = self._tracker.get_updates(prefix, cutoff_date=cutoff_date)
+            for title, update in prefix_updates.items():
+                if title_in_scope(title, include, exclude):
                     result[title] = update
-            except ValueError:
-                _logger.error(f"PageUpdateManager.get_updates: cannot find title {title}. Skipping...")
+        _logger.info(f"PageUpdateManager.get_updates: {len(result)} total updates")
         return result
 
 # ----------------------------------------------------------------------------

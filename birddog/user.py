@@ -5,10 +5,12 @@
 
 import json
 from threading import RLock, Lock
+from urllib.parse import quote
 
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from birddog.runtime import ArchiveWatcher
+from birddog.wiki import archive_root, canonicalize_title
 from birddog.cache import (
     load_cached_object,
     save_cached_object,
@@ -25,11 +27,14 @@ _kv_store = KeyValueStore()
 # ---------------------------------------------------------------------
 # WATCHLIST MANAGEMENT
 
-def _watchlist_key(archive, subarchive):
-    return f'{archive}-{subarchive}'
+def _watch_title(archive, subarchive):
+    # watchlist entries are coarsened to the whole owning archive -- there's
+    # no title-prefix that isolates a single subarchive, since its fonds
+    # interleave with other subarchives' fonds under the same literal title
+    return archive_root(archive, subarchive)
 
-def _watcher_cache_path(email, archive, subarchive):
-    return f'watchers/{email}/{archive}-{subarchive}.json'
+def _watcher_cache_path(email, title):
+    return f'watchers/{email}/{quote(title, safe="")}.json'
 
 def _watchlist_namespace(email):
     return f"wl:{email}"
@@ -39,46 +44,88 @@ def _to_utc(value):
     # (or falsy) values pass through unchanged
     return to_utc_format(value) if value and "," in value else value
 
-def _load_watchlist_item(email, key, raw):
-    # parse a stored watchlist item, normalizing any legacy date fields to UTC
-    # ISO8601 and persisting the update back to the store if anything changed
-    item = json.loads(raw)
-    cutoff_date = _to_utc(item.get("cutoff_date"))
-    last_checked_date = _to_utc(item.get("last_checked_date"))
-    if cutoff_date != item.get("cutoff_date") or last_checked_date != item.get("last_checked_date"):
-        item["cutoff_date"] = cutoff_date
-        item["last_checked_date"] = last_checked_date
-        _kv_store.insert(_watchlist_namespace(email), key, json.dumps(item))
+def _new_watch_item(cutoff_date, last_checked_date=None, include=None, exclude=None):
+    item = {"cutoff_date": _to_utc(cutoff_date)}
+    if last_checked_date:
+        item["last_checked_date"] = _to_utc(last_checked_date)
+    item["include"] = include or []
+    item["exclude"] = exclude or []
     return item
 
-def _get_watchlist_item(email, key):
-    # will raise KeyError if key not in watchlist store
-    return _load_watchlist_item(email, key, _kv_store.get(_watchlist_namespace(email), key))
+def _older(a, b):
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return min(a, b)
+
+def _merge_watch_items(a, b):
+    # multiple legacy (archive, subarchive) entries can coarsen to the same
+    # archive-level title; take the older cutoff/last_checked of the two so
+    # nothing pending on either original entry is silently dropped
+    return _new_watch_item(
+        _older(a.get("cutoff_date"), b.get("cutoff_date")),
+        _older(a.get("last_checked_date"), b.get("last_checked_date")),
+        include=a.get("include") or b.get("include"),
+        exclude=a.get("exclude") or b.get("exclude"),
+    )
+
+def _parse_watch_item(raw):
+    # normalize any legacy comma-format dates to UTC ISO8601
+    item = json.loads(raw)
+    item["cutoff_date"] = _to_utc(item.get("cutoff_date"))
+    if item.get("last_checked_date"):
+        item["last_checked_date"] = _to_utc(item["last_checked_date"])
+    return item
+
+def _save_watch_item(email, title, item):
+    _kv_store.insert(_watchlist_namespace(email), title, json.dumps(item))
 
 def _get_watchlist(email):
-    return {
-        k: _load_watchlist_item(email, k, v)
-        for k, v in _kv_store.get_all(_watchlist_namespace(email))
-    }
+    # lazily upgrade legacy "archive-subarchive"-keyed entries (no "include"
+    # field) to title-keyed entries, coarsened to the owning archive and
+    # merged with any sibling subarchive entries (or a pre-existing
+    # title-keyed entry) for the same archive
+    ns = _watchlist_namespace(email)
+    raw = {k: _parse_watch_item(v) for k, v in _kv_store.get_all(ns)}
 
-def _add_watchlist_item(email, key, cutoff, last_checked=None):
-    payload = { "cutoff_date": _to_utc(cutoff)}
+    result = {}
+    legacy_keys = []
+    changed_titles = set()
+    for key, item in raw.items():
+        if "include" in item:
+            title = key
+        else:
+            archive, subarchive = key.split("-", 1)
+            title = _watch_title(archive, subarchive)
+            item = _new_watch_item(item.get("cutoff_date"), item.get("last_checked_date"), include=[title])
+            legacy_keys.append(key)
+            changed_titles.add(title)
+
+        if title in result:
+            result[title] = _merge_watch_items(result[title], item)
+            changed_titles.add(title)
+        else:
+            result[title] = item
+
+    for key in legacy_keys:
+        _kv_store.remove(ns, key)
+    for title in changed_titles:
+        _save_watch_item(email, title, result[title])
+
+    return result
+
+def _write_legacy_watch_item(email, key, cutoff, last_checked=None):
+    # writes the pre-title-migration shape; swept up by the lazy upgrade in
+    # _get_watchlist() on first read, same as any other legacy KV entry
+    payload = {"cutoff_date": _to_utc(cutoff)}
     if last_checked:
         payload["last_checked_date"] = _to_utc(last_checked)
     _kv_store.insert(_watchlist_namespace(email), key, json.dumps(payload))
 
-def _remove_watchlist_item(email, key):
-    _kv_store.remove(_watchlist_namespace(email), key)
-
-def _update_watchlist_item(email, key, last_checked):
-    ns = _watchlist_namespace(email)
-    item = _load_watchlist_item(email, key, _kv_store.get(ns, key))
-    item["last_checked_date"] = _to_utc(last_checked)
-    _kv_store.insert(ns, key, json.dumps(item))
-
 def _load_watchlist(email, watchlist):
     for key, item in watchlist.items():
-        _add_watchlist_item(
+        _write_legacy_watch_item(
             email,
             key,
             item["cutoff_date"],
@@ -159,49 +206,61 @@ class User:
         with self._lock:
             return _get_watchlist(self._email)
 
-    def add_to_watchlist(self, archive, subarchive, cutoff_date):
-        key = _watchlist_key(archive, subarchive)
+    def add_to_watchlist(self, title, cutoff_date):
+        title = canonicalize_title(title)
         with self._lock:
-            _add_watchlist_item(self.email, key, cutoff_date)
+            watchlist = _get_watchlist(self.email)
+            item = _new_watch_item(cutoff_date, include=[title])
+            existing = watchlist.get(title)
+            if existing:
+                item = _merge_watch_items(existing, item)
+            _save_watch_item(self.email, title, item)
 
-    def remove_from_watchlist(self, archive, subarchive):
-        key = _watchlist_key(archive, subarchive)
+    def remove_from_watchlist(self, title):
+        title = canonicalize_title(title)
         with self._lock:
-            _remove_watchlist_item(self.email, key)
+            _get_watchlist(self.email)  # fold in any un-migrated sibling entries first
+            _kv_store.remove(_watchlist_namespace(self.email), title)
 
         # Remove associated watcher file (outside lock)
-        watcher_path = _watcher_cache_path(self.email, archive, subarchive)
+        watcher_path = _watcher_cache_path(self.email, title)
         try:
             remove_cached_object(watcher_path)
         except CacheMissError:
             pass  # it's already gone
         return True
 
-    def check_archive(self, archive, subarchive, tree=False):
-        key = _watchlist_key(archive, subarchive)
-        path = _watcher_cache_path(self.email, archive, subarchive)
+    def check_watchlist_item(self, title, tree=False):
+        title = canonicalize_title(title)
+        path = _watcher_cache_path(self.email, title)
         with self._lock:
-            watchlist_item = _get_watchlist_item(self.email, key)
+            watchlist_item = _get_watchlist(self.email)[title]  # raises KeyError if not watched
             try:
                 watcher_data = load_cached_object(path)
                 watcher = ArchiveWatcher.load(watcher_data, runtime=self._runtime)
             except CacheMissError:
                 watcher = ArchiveWatcher(
-                    archive, subarchive,
+                    watchlist_item['include'],
                     watchlist_item['cutoff_date'],
+                    exclude=watchlist_item.get('exclude'),
                     runtime=self._runtime)
             watcher.check()
             save_cached_object(watcher.save(), path)
-            _update_watchlist_item(self.email, key, utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ'))
+            watchlist_item["last_checked_date"] = _to_utc(utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ'))
+            _save_watch_item(self.email, title, watchlist_item)
 
         # Return just the result, not the watcher itself
         if tree:
             return watcher.unresolved_tree
         return [{'name': k, **v} for k, v in watcher.unresolved.items()]
 
-    def resolve_item(self, archive, subarchive, fond=None, opus=None, case=None, tree=False, deep=False):
-        key = _watchlist_key(archive, subarchive)
-        path = _watcher_cache_path(self.email, archive, subarchive)
+    def resolve_item(self, title, item_title, tree=False, deep=False):
+        # title identifies which watchlist entry/watcher; item_title is the
+        # specific unresolved item within it being resolved -- distinct
+        # because a watcher's scope (e.g. a whole archive) is coarser than
+        # any one item inside it
+        title = canonicalize_title(title)
+        path = _watcher_cache_path(self.email, title)
         with self._lock:
             try:
                 watcher_data = load_cached_object(path)
@@ -210,9 +269,8 @@ class User:
 
             watcher = ArchiveWatcher.load(watcher_data, runtime=self._runtime)
 
-            resolve_key = ArchiveWatcher.key(archive, subarchive, fond, opus, case)
-            _logger.info(f'Resolving {resolve_key}, deep={deep}, tree={tree}')
-            watcher.resolve(resolve_key, deep=deep)
+            _logger.info(f'Resolving {item_title}, deep={deep}, tree={tree}')
+            watcher.resolve(item_title, deep=deep)
 
             save_cached_object(watcher.save(), path)
 
