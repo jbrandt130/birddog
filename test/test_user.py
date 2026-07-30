@@ -403,6 +403,7 @@ class UserTest(unittest.TestCase):
         d = u.to_dict()
         self.assertEqual(d["name"], "Test")
         self.assertIn("password", d)
+        self.assertEqual(d["role"], "user")
 
         u.save()
         self.assertIn(f"users/{u.email}.json", self.cache._objects)
@@ -410,6 +411,22 @@ class UserTest(unittest.TestCase):
         u2 = User.from_dict("s2@example.com", {"name": "Test2", "password": u._password_hash}, runtime=None)
         self.assertEqual(u2.name, "Test2")
         self.assertEqual(u2.email, "s2@example.com")
+        self.assertEqual(u2.role, "user")
+
+    def test_user_role_defaults_and_set_role_round_trips(self):
+        u = User(name="Test", email="role@example.com", password="pw")
+        self.assertEqual(u.role, "user")
+
+        u.set_role("admin")
+        self.assertEqual(u.role, "admin")
+
+        reloaded = User.from_dict("role@example.com", u.to_dict(), runtime=None)
+        self.assertEqual(reloaded.role, "admin")
+
+    def test_user_from_dict_defaults_missing_role_to_user(self):
+        # pre-role accounts have no "role" key in their persisted dict
+        u = User.from_dict("legacy@example.com", {"name": "Legacy", "password": "hash"}, runtime=None)
+        self.assertEqual(u.role, "user")
 
     def test_check_watchlist_item_raises_if_not_in_watchlist(self):
         u = User(name="Test", email="nowatch@example.com", password="pw")

@@ -14,16 +14,12 @@ import regex
 from cachetools import LRUCache
 
 from birddog.core import (
-    Archive,
     Page,
     )
 from birddog.wiki import (
-    ARCHIVE_BY_TITLE,
-    ARCHIVE_BY_ADDRESS,
     WIKI_NAMESPACE,
     canonicalize_title,
     archive_root,
-    page_address,
     page_title_from_address,
     parent_title,
     title_in_scope,
@@ -57,15 +53,6 @@ _logger = get_logger()
 # Page LRU memory cache
 
 class PageLRU:
-    class NotFoundError(Exception):
-        def __init__(self, address):
-            self._address = address
-            super().__init__(f"Page not found: {address}")
-
-        @property
-        def address(self):
-            return self._address
-
     def __init__(self, maxsize=100, reset_limit=5 * 60):
         self._reset_limit = reset_limit # seconds
         self._timer_start = time.time()
@@ -78,26 +65,10 @@ class PageLRU:
         return f"{self.key(page.title)}/{child_id}"
 
     def _get_page(self, title, runtime):
-        # FIXME: Archive should not be a subclass
-        if title in ARCHIVE_BY_TITLE:
-            return Archive(*ARCHIVE_BY_TITLE[title], runtime=runtime)
-        else:
-            return Page(title, runtime=runtime)
+        return Page(title, runtime=runtime)
 
     def lookup_child(self, page, child_id, runtime=None):
         return self.lookup_by_title(self._child_key(page, child_id), runtime=runtime)
-
-    def lookup_by_address(self, archive, subarchive, fond=None, opus=None, case=None, runtime=None):
-        archive_title = ARCHIVE_BY_ADDRESS[(archive, subarchive)]
-        #_logger.info(f"PageLRU.lookup_by_address({archive}, {subarchive}, {fond}, {opus}, {case}), archive={archive_title}")
-        page = self.lookup_by_title(archive_title, runtime=runtime)
-        if fond:
-            page = page[fond]
-            if opus:
-                page = page[opus]
-                if case:
-                    page = page[case]
-        return page
 
     def lookup_by_title(self, title, runtime=None):
         # periodically flush the lru to ensure the pages don't become stale
@@ -662,12 +633,6 @@ class Runtime:
             if self._wikisource_doc_tracker:
                 self._wikisource_doc_tracker.release()
             self._state = "running"
-
-    def lookup_address(self, title):
-        return page_address(title)
-
-    def lookup_by_address(self, archive, subarchive, fond=None, opus=None, case=None):
-        return self._page_lru.lookup_by_address(archive, subarchive, fond, opus, case, runtime=self)
 
     def lookup_by_title(self, title):
         return self._page_lru.lookup_by_title(title, runtime=self)

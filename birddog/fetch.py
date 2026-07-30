@@ -581,11 +581,14 @@ PROFILES: Dict[str, HostProfile] = {
         max_in_flight=24,
     ),
     "localhost:api": HostProfile(
-        initial_rps=20.0, min_rps=1.0, max_rps=100.0, bucket_capacity=40.0,
-        ai_step=1.0, increase_every_s=10.0,
-        md_429=0.7, md_transient=0.85,
-        transient_cooldown_s=(0.1, 0.3),
-        max_in_flight=24,
+        # local NocoDB backed by SQLite in Docker -- SQLite serializes
+        # writers, so a production-sized concurrency ceiling just causes
+        # requests to queue behind each other past the read timeout
+        initial_rps=5.0, min_rps=0.5, max_rps=20.0, bucket_capacity=8.0,
+        ai_step=0.5, increase_every_s=15.0,
+        md_429=0.7, md_transient=0.7,
+        transient_cooldown_s=(0.3, 0.8),
+        max_in_flight=4,
     ),
     # NocoDB Cloud (hosted on nocodb.com)
     # Docs indicate 5 req/s per user; when exceeded, 429 and "wait ~30s".

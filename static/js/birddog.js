@@ -4,6 +4,7 @@
 // ---------------------------------------------------------------------------
 // APP GLOBALS
 var current_page            = null;
+var current_user            = null;
 var archives                = null;
 var watchlist               = null;
 var unresolved_updates      = {};
@@ -1009,6 +1010,82 @@ async function populate_archive_select() {
 }
 
 // ---------------------------------------------------------------------------
+// ARCHIVES TAB (title/label/description table)
+
+function render_archives_table() {
+    const table_body = document.getElementById('archives-table-body');
+    table_body.innerHTML = '';
+
+    const can_edit = current_user && current_user.role === 'admin';
+    const sorted_archives = [...archives].sort((a, b) => a.label.localeCompare(b.label));
+
+    sorted_archives.forEach(archive => {
+        const label = archive.label;
+        const description = archive.description || '';
+        const label_cell = can_edit
+            ? `<input type="text" class="form-control form-control-sm" data-original="${escape_attr(label)}" value="${escape_attr(label)}" oninput="update_archive_save_state(this)">`
+            : escape_attr(label);
+        const description_cell = can_edit
+            ? `<input type="text" class="form-control form-control-sm" data-original="${escape_attr(description)}" value="${escape_attr(description)}" oninput="update_archive_save_state(this)">`
+            : escape_attr(description);
+        const save_cell = can_edit
+            ? `<button class="btn btn-primary btn-sm" title="Save Changes" onclick="save_archive_row(this)" disabled>
+                   <i class="bi bi-arrow-up-square"></i>
+               </button>`
+            : '';
+        const row = `
+            <tr data-title="${escape_attr(archive.title)}">
+                <td style="word-break: break-word;"><a href="${escape_attr(archive.url)}" target="birddog_archive_source">${escape_attr(archive.title)}</a></td>
+                <td style="word-break: break-word;">${label_cell}</td>
+                <td style="word-break: break-word;">${description_cell}</td>
+                <td>${save_cell}</td>
+            </tr>
+        `;
+        table_body.innerHTML += row;
+    });
+}
+
+function update_archive_save_state(input) {
+    const row = input.closest('tr');
+    const inputs = row.querySelectorAll('input');
+    const dirty = Array.from(inputs).some(inp => inp.value !== inp.dataset.original);
+    row.querySelector('button').disabled = !dirty;
+}
+
+async function save_archive_row(button) {
+    const row = button.closest('tr');
+    const title = row.dataset.title;
+    const inputs = row.querySelectorAll('input');
+    const label = inputs[0].value.trim();
+    const description = inputs[1].value.trim();
+
+    try {
+        const response = await fetch('/archives', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, label, description }),
+        });
+        if (!response.ok) {
+            const data = await response.json().catch(() => null);
+            throw new Error(data?.error || `Failed to save: ${response.statusText}`);
+        }
+        const archive = find_archive(title);
+        if (archive) {
+            archive.label = label;
+            archive.description = description;
+        }
+        inputs[0].value = label;
+        inputs[1].value = description;
+        inputs[0].dataset.original = label;
+        inputs[1].dataset.original = description;
+        button.disabled = true;
+    } catch (error) {
+        console.error('Error saving archive metadata:', error);
+        alert(`Failed to save archive details: ${error.message}`);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // WATCHLIST MANAGEMENT
 
 async function load_watchlist(check_all=false, initial_load=false) {
@@ -1631,6 +1708,7 @@ async function on_loaded() {
     // if user is logged in, then start loading the page data
     const user_data_elem = document.getElementById('user-data');
     if (user_data_elem) {
+        current_user = JSON.parse(user_data_elem.dataset.user);
 
         // ------------------ VERSION SELECT HANDLER ------------------
         // version select listener
@@ -1919,6 +1997,7 @@ async function on_loaded() {
         console.log("loading archive select");
         await populate_archive_select();
         console.log("archives =", archives);
+        render_archives_table();
 
         // start with a default browse page (FIXME: remember user's last page)
         console.log("loading browse page")

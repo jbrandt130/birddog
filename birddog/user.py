@@ -157,11 +157,12 @@ _global_lock = Lock()
 _global_user_locks = {}
 
 class User:
-    def __init__(self, name, email, password, runtime=None, watchlist=None, preferences=None, is_hashed=False):
+    def __init__(self, name, email, password, runtime=None, watchlist=None, preferences=None, is_hashed=False, role="user"):
         self._name = name
         self._email = email
         self._password_hash = password if is_hashed else generate_password_hash(password)
         self._runtime = runtime
+        self._role = role
 
         with _global_lock:
             self._lock = _global_user_locks.get(email, RLock())
@@ -185,6 +186,15 @@ class User:
     @property
     def email(self):
         return self._email
+
+    @property
+    def role(self):
+        return self._role
+
+    def set_role(self, role):
+        with self._lock:
+            self._role = role
+            self.save()
 
     def check_password(self, password):
         return check_password_hash(self._password_hash, password)
@@ -295,6 +305,7 @@ class User:
         return {
             'name': self.name,
             'password': self._password_hash,
+            'role': self._role,
             #'watchlist': self._watchlist,   # deprecated
             #'preferences': self._preferences # deprecated
         }
@@ -309,4 +320,5 @@ class User:
             preferences=d.get('preferences'),       # legacy
             is_hashed=True,
             runtime=runtime,
+            role=d.get('role', 'user'),             # pre-role accounts default to non-admin
         )

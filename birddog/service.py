@@ -29,13 +29,15 @@ from flask import (
     g)
 
 # Birddog packages
-from birddog.runtime import Runtime, PageLRU
+from birddog.runtime import Runtime
 from birddog.excel import list_templates
 from birddog.cache import (
     load_cached_object,
     CacheMissError)
 from birddog.wiki import (
     all_archive_roots,
+    archive_root_label,
+    update_archive_root,
     title_lineage,
     title_lineage_labels,
     page_label,
@@ -188,6 +190,9 @@ def home():
                 return error_response, status
             if user:
                 start_title = user.get_preference("last_page")
+                # read live rather than trusting a role that may have been
+                # cached in the session cookie since login
+                user_session = {**user_session, 'role': user.role}
     return render_template(
         'index.html',
         user=user_session,
@@ -370,40 +375,55 @@ def archive_list(user):
     # discovered by the tracker
     return jsonify(all_archive_roots())
 
+# Update label/description for existing archives
+@app.route("/archives", methods=['POST'])
+@login_required
+def update_archives(user):
+    if user.role != 'admin':
+        return jsonify({'error': 'Forbidden'}), 403
+
+    data = request.json
+    items = data if isinstance(data, list) else [data]
+
+    unknown = [item.get('title') for item in items if not archive_root_label(item.get('title'))]
+    if unknown:
+        return jsonify({'error': f'Unknown archive title(s): {unknown}'}), 400
+
+    for item in items:
+        update_archive_root(item['title'], label=item.get('label'), description=item.get('description'))
+
+    return jsonify(all_archive_roots())
+
 @app.route('/page', methods=['GET'])
 @login_required
 def page_data(user):
-    try:
-        page = None
-        page_title = request.args.get('title')
-        if page_title:
-            #page_title = request.args.get('title')
-            _logger.info(f'/page looking up title: {page_title}')
-            page = runtime.lookup_by_title(page_title)
-        else:
-            return "Missing required parameter: 'title'", 400
-        if page:
-            ref_date = request.args.get('compare')
-            if ref_date:
-                page = page.compare(ref_date)
+    page = None
+    page_title = request.args.get('title')
+    if page_title:
+        #page_title = request.args.get('title')
+        _logger.info(f'/page looking up title: {page_title}')
+        page = runtime.lookup_by_title(page_title)
+    else:
+        return "Missing required parameter: 'title'", 400
+    if page:
+        ref_date = request.args.get('compare')
+        if ref_date:
+            page = page.compare(ref_date)
 
-            # prevent mutation of page data in LRU/cache
-            page_dict = deepcopy(page.page)
-            page_dict['title'] = page.title
-            page_dict['lineage'] = title_lineage(page.title)
-            page_dict['lineage_labels'] = title_lineage_labels(page.title)
-            page_dict['kind'] = page.kind
-            page_dict['name'] = page.name
-            page_dict['needs_translation'] = page.needs_translation
-            page_dict['history'] = _compress_history(page.history(cutoff_date='2000'))
+        # prevent mutation of page data in LRU/cache
+        page_dict = deepcopy(page.page)
+        page_dict['title'] = page.title
+        page_dict['lineage'] = title_lineage(page.title)
+        page_dict['lineage_labels'] = title_lineage_labels(page.title)
+        page_dict['kind'] = page.kind
+        page_dict['name'] = page.name
+        page_dict['needs_translation'] = page.needs_translation
+        page_dict['history'] = _compress_history(page.history(cutoff_date='2000'))
 
-            user.set_preference("last_page", page.title)
-            return jsonify(page_dict), 200
-        _logger.error(f'PageLRU lookup for title {page_title!r} returned None')
-        return 'Page not found', 404
-    except PageLRU.NotFoundError:
-        _logger.error(f'PageLRU lookup for title {page_title!r} raised NotFoundError')
-        return 'Page not found', 404
+        user.set_preference("last_page", page.title)
+        return jsonify(page_dict), 200
+    _logger.error(f'PageLRU lookup for title {page_title!r} returned None')
+    return 'Page not found', 404
 
 def ascii_filename(name):
     # Transliterate non-ASCII characters into closest ASCII representation

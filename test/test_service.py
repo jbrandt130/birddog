@@ -432,6 +432,48 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), [{"title": "Архів:ДАЛО", "label": "DALO"}])
 
+    def test_archives_post_updates_matching_title(self):
+        user = self._mock_user()
+        user.role = 'admin'
+        with patch("birddog.service.archive_root_label", return_value="DALO") as mock_label, \
+             patch("birddog.service.update_archive_root") as mock_update, \
+             patch("birddog.service.all_archive_roots", return_value=[]):
+            resp = self.client.post("/archives", json={"title": "Архів:ДАЛО", "label": "DALO", "description": "Lviv"})
+        self.assertEqual(resp.status_code, 200)
+        mock_label.assert_called_once_with("Архів:ДАЛО")
+        mock_update.assert_called_once_with("Архів:ДАЛО", label="DALO", description="Lviv")
+
+    def test_archives_post_accepts_array_payload(self):
+        user = self._mock_user()
+        user.role = 'admin'
+        with patch("birddog.service.archive_root_label", return_value="DALO"), \
+             patch("birddog.service.update_archive_root") as mock_update, \
+             patch("birddog.service.all_archive_roots", return_value=[]):
+            resp = self.client.post("/archives", json=[
+                {"title": "Архів:ДАЛО", "label": "DALO", "description": "Lviv"},
+                {"title": "Архів:ДАЖО", "label": "DAZHO", "description": "Zhytomyr"},
+            ])
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(mock_update.call_count, 2)
+
+    def test_archives_post_rejects_unknown_title(self):
+        user = self._mock_user()
+        user.role = 'admin'
+        with patch("birddog.service.archive_root_label", return_value=None), \
+             patch("birddog.service.update_archive_root") as mock_update:
+            resp = self.client.post("/archives", json={"title": "Архів:НеІснує", "label": "X", "description": "Y"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("Архів:НеІснує", resp.get_json()["error"])
+        mock_update.assert_not_called()
+
+    def test_archives_post_forbidden_for_non_admin(self):
+        user = self._mock_user()
+        user.role = 'user'
+        with patch("birddog.service.update_archive_root") as mock_update:
+            resp = self.client.post("/archives", json={"title": "Архів:ДАЛО", "label": "X", "description": "Y"})
+        self.assertEqual(resp.status_code, 403)
+        mock_update.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

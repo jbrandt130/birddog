@@ -123,7 +123,10 @@ _archive_roots_cache = None  # lazy-loaded dict: title -> label
 
 def _load_archive_roots():
     global _archive_roots_cache
-    _archive_roots_cache = dict(_archive_roots_kv.get_all(_ARCHIVE_ROOTS_NAMESPACE))
+    _archive_roots_cache = {
+        title: json.loads(value)
+        for title, value in _archive_roots_kv.get_all(_ARCHIVE_ROOTS_NAMESPACE)
+    }
     return _archive_roots_cache
 
 def is_root_title(title):
@@ -149,11 +152,12 @@ def register_archive_root(title, label=None):
             # code coincidentally matching another title's raw
             # transliteration) -- explicit labels passed by the caller are
             # trusted as-is, not disambiguated
-            others = {l for t, l in _archive_roots_cache.items() if t != title}
+            others = {entry["label"] for t, entry in _archive_roots_cache.items() if t != title}
             label = _disambiguate_label(label, others)
-        _archive_roots_kv.insert(_ARCHIVE_ROOTS_NAMESPACE, title, label)
-        _archive_roots_cache[title] = label
-    return _archive_roots_cache[title]
+        record = {"label": label, "description": ""}
+        _archive_roots_kv.insert(_ARCHIVE_ROOTS_NAMESPACE, title, json.dumps(record))
+        _archive_roots_cache[title] = record
+    return _archive_roots_cache[title]["label"]
 
 def _disambiguate_label(label, taken):
     """Return label, or label with a numeric suffix appended, so the result
@@ -196,14 +200,15 @@ def refresh_curated_archive_root_labels():
     if _archive_roots_cache is None:
         _load_archive_roots()
     fixed = 0
-    for title in list(_archive_roots_cache.keys()):
+    for title, entry in list(_archive_roots_cache.items()):
         curated = ARCHIVES_BY_ROOT.get(title)
         if not curated:
             continue
         correct_label = _default_archive_root_label(title)
-        if _archive_roots_cache[title] != correct_label:
-            _archive_roots_kv.insert(_ARCHIVE_ROOTS_NAMESPACE, title, correct_label)
-            _archive_roots_cache[title] = correct_label
+        if entry["label"] != correct_label:
+            entry = {**entry, "label": correct_label}
+            _archive_roots_kv.insert(_ARCHIVE_ROOTS_NAMESPACE, title, json.dumps(entry))
+            _archive_roots_cache[title] = entry
             fixed += 1
     return fixed
 
@@ -224,15 +229,17 @@ def deduplicate_archive_root_labels():
     claimed = {}
     fixed = 0
     for title in titles:
-        label = _archive_roots_cache[title]
+        entry = _archive_roots_cache[title]
+        label = entry["label"]
         if label not in claimed:
             claimed[label] = title
             continue
         new_label = _disambiguate_label(_default_archive_root_label(title), claimed)
         claimed[new_label] = title
         if new_label != label:
-            _archive_roots_kv.insert(_ARCHIVE_ROOTS_NAMESPACE, title, new_label)
-            _archive_roots_cache[title] = new_label
+            entry = {**entry, "label": new_label}
+            _archive_roots_kv.insert(_ARCHIVE_ROOTS_NAMESPACE, title, json.dumps(entry))
+            _archive_roots_cache[title] = entry
             fixed += 1
     return fixed
 
@@ -242,17 +249,52 @@ def archive_root_label(title):
         return ROOT_HUB_LABEL
     if _archive_roots_cache is None:
         _load_archive_roots()
-    return _archive_roots_cache.get(title)
+    entry = _archive_roots_cache.get(title)
+    return entry["label"] if entry else None
+
+def archive_root_description(title):
+    title = canonicalize_title(title)
+    if title == ROOT_HUB_TITLE:
+        return ""
+    if _archive_roots_cache is None:
+        _load_archive_roots()
+    entry = _archive_roots_cache.get(title)
+    return entry.get("description", "") if entry else None
+
+def update_archive_root(title, label=None, description=None):
+    """Update the curated label and/or description for an already-registered
+    archive root. A field left as None is unchanged (pass "" to clear it).
+    Returns False (no-op) if the title hasn't been registered."""
+    title = canonicalize_title(title)
+    if _archive_roots_cache is None:
+        _load_archive_roots()
+    entry = _archive_roots_cache.get(title)
+    if entry is None:
+        return False
+    updated = dict(entry)
+    if label is not None:
+        updated["label"] = label
+    if description is not None:
+        updated["description"] = description
+    if updated != entry:
+        _archive_roots_kv.insert(_ARCHIVE_ROOTS_NAMESPACE, title, json.dumps(updated))
+        _archive_roots_cache[title] = updated
+    return True
 
 def all_archive_roots():
-    """All discovered archive roots as {title, label}, sorted by label.
-    Excludes ROOT_HUB_TITLE itself -- it's reachable via the permanent
-    breadcrumb home icon, not the archive picker."""
+    """All discovered archive roots as {title, label, description, url},
+    sorted by label. Excludes ROOT_HUB_TITLE itself -- it's reachable via the
+    permanent breadcrumb home icon, not the archive picker."""
     if _archive_roots_cache is None:
         _load_archive_roots()
     entries = [
-        {"title": title, "label": label}
-        for title, label in _archive_roots_cache.items()
+        {
+            "title": title,
+            "label": entry["label"],
+            "description": entry.get("description", ""),
+            "url": page_url_from_title(title),
+        }
+        for title, entry in _archive_roots_cache.items()
         if title != ROOT_HUB_TITLE
     ]
     return sorted(entries, key=lambda e: e["label"])
@@ -398,35 +440,6 @@ def title_lineage_labels(title):
     # (page_label() transliterates path segments 1:1, so the last segment of
     # page_label(level) always corresponds to that level's own name)
     return [page_label(level).split("/")[-1] for level in title_lineage(title)]
-
-def page_address(title):
-    title = canonicalize_title(title)
-    hierarchy = lineage(title)
-    if not hierarchy:
-        raise ValueError(f"Cannot compute address for title {title}")
-    archive_title = hierarchy[-1].split("/")
-    if len(hierarchy) > 1:
-        tail = title.split("/")[1:]
-        if tail and tail[0] == archive_title[-1]:
-            tail.pop(0)
-        tail.extend((3 - len(tail)) * [""])
-    else:
-        tail = 3 * [""]
-    # a bare archive-root title (e.g. from coarsened archive-level watching)
-    # is never itself a subarchive page, so it has no ARCHIVE_BY_TITLE entry
-    # -- fall back to any one of its curated subarchives (they share an
-    # address), or, for a root with no legacy curation at all, synthesize a
-    # standalone address from its dynamic registry label
-    root = hierarchy[-1]
-    if root in ARCHIVE_BY_TITLE:
-        archive_key = ARCHIVE_BY_TITLE[root]
-    elif root in ARCHIVES_BY_ROOT:
-        archive_key = ARCHIVES_BY_ROOT[root][0]
-    else:
-        archive_key = (archive_root_label(root) or root, "_")
-    result = ( *archive_key , *tail)
-    #_logger.info(f"page_address({title}) -> {result}")
-    return result
 
 def page_label(title):
     title = canonicalize_title(title)

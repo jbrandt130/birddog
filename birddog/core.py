@@ -20,11 +20,8 @@ from birddog.cache import load_cached_object, save_cached_object, remove_cached_
 from birddog.wiki import (
     ARCHIVE_BASE,
     SUBARCHIVES,
-    ARCHIVE_BY_ADDRESS,
     canonicalize_title,
     page_label,
-    page_address,
-    is_archive,
     get_title,
     classify_page,
     parent_title,
@@ -179,10 +176,6 @@ class Page:
         return self._title
 
     @property
-    def address(self):
-        return page_address(self._title)
-
-    @property
     def page(self):
         return self._page
 
@@ -225,8 +218,6 @@ class Page:
 
     @property
     def id(self):
-        if is_archive(self.title):
-            return self.archive_name
         return self.title.rsplit("/", 1)[-1]
 
     @property
@@ -241,14 +232,9 @@ class Page:
 
     @property
     def archive_name(self):
-        address = page_address(self._title)
-        if address[1] in "D_":
-            return address[0]
-        return f"{address[0]}-{address[1]}"
-
-    @property
-    def subarchive(self):
-        return page_address(self._title)[1]
+        # top-level archive label, e.g. for the xlsx export templates --
+        # no subarchive suffix (that notation is gone from titles/naming)
+        return page_label(self._title).split("/", 1)[0]
 
     @property
     def exists(self):
@@ -404,9 +390,4 @@ class Page:
         _logger.info(f"updating child link status: parent={self.title}, child_id={parts[1]}, status={link_status}")
         child[0]["exists"] = link_status
         self._cache_save()
-
-class Archive(Page):
-    """Represents a top level archive page."""
-    def __init__(self, archive_tag, subarchive=None, runtime=None):
-        super().__init__(ARCHIVE_BY_ADDRESS[(archive_tag, subarchive)], runtime=runtime)
 

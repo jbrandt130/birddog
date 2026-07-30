@@ -1,4 +1,5 @@
 import os
+import json
 import tempfile
 from copy import copy
 import unittest
@@ -12,7 +13,6 @@ from birddog.wiki import (
     ARCHIVE_BASE,
     WIKI_NAMESPACE,
     ARCHIVE_BY_TITLE,
-    ARCHIVE_BY_ADDRESS,
     ARCHIVES_BY_ROOT,
     LABELS_BY_PREFIX,
     canonicalize_title,
@@ -23,7 +23,6 @@ from birddog.wiki import (
     is_archive,
     page_kind,
     page_label,
-    page_address,
     parent_title,
     title_in_scope,
     title_lineage,
@@ -290,10 +289,6 @@ class TestBareArchiveRoot(unittest.TestCase):
 
     def test_parent_title_is_none(self):
         self.assertIsNone(parent_title(_ARCHIVE_ROOT))
-
-    def test_page_address_does_not_raise(self):
-        address = page_address(_ARCHIVE_ROOT)
-        self.assertEqual(address[2:], ("", "", ""))
 
 class TestMwPageDocUrl(unittest.TestCase):
     def _page(self, notes=None, internal=None, other_commons=None, external=None,
@@ -1239,8 +1234,8 @@ class TestDynamicArchiveRootRegistry(unittest.TestCase):
         # register_archive_root's no-overwrite guard -- to simulate data
         # registered before this preference existed
         wiki_mod._archive_roots_kv.insert(
-            wiki_mod._ARCHIVE_ROOTS_NAMESPACE, _ARCHIVE_ROOT, "StaleLabel")
-        wiki_mod._archive_roots_cache[_ARCHIVE_ROOT] = "StaleLabel"
+            wiki_mod._ARCHIVE_ROOTS_NAMESPACE, _ARCHIVE_ROOT, json.dumps({"label": "StaleLabel", "description": ""}))
+        wiki_mod._archive_roots_cache[_ARCHIVE_ROOT] = {"label": "StaleLabel", "description": ""}
         self.assertEqual(archive_root_label(_ARCHIVE_ROOT), "StaleLabel")
 
         fixed = refresh_curated_archive_root_labels()
@@ -1271,8 +1266,8 @@ class TestDynamicArchiveRootRegistry(unittest.TestCase):
         titles = ("Архів:__DedupProbeA__", "Архів:__DedupProbeB__")
         for title in titles:
             wiki_mod._archive_roots_kv.insert(
-                wiki_mod._ARCHIVE_ROOTS_NAMESPACE, title, "SharedProbeLabel")
-            wiki_mod._archive_roots_cache[title] = "SharedProbeLabel"
+                wiki_mod._ARCHIVE_ROOTS_NAMESPACE, title, json.dumps({"label": "SharedProbeLabel", "description": ""}))
+            wiki_mod._archive_roots_cache[title] = {"label": "SharedProbeLabel", "description": ""}
 
         fixed = deduplicate_archive_root_labels()
 
@@ -1287,7 +1282,15 @@ class TestDynamicArchiveRootRegistry(unittest.TestCase):
     def test_all_archive_roots_includes_registered_probe(self):
         register_archive_root(self._PROBE_TITLE, label="ProbeLabel")
         entries = all_archive_roots()
-        self.assertIn({"title": self._PROBE_TITLE, "label": "ProbeLabel"}, entries)
+        self.assertIn(
+            {
+                "title": self._PROBE_TITLE,
+                "label": "ProbeLabel",
+                "description": "",
+                "url": page_url_from_title(self._PROBE_TITLE),
+            },
+            entries,
+        )
 
     def test_all_archive_roots_sorted_by_label(self):
         entries = all_archive_roots()

@@ -5,20 +5,20 @@ import os
 import unittest
 import filecmp
 from copy import copy
-from birddog.core import Archive
-from birddog.wiki import check_page_changes
+from birddog.core import Page
+from birddog.wiki import check_page_changes, ARCHIVE_BY_ADDRESS
 from birddog.excel import export_page
 
 UNITTEST_RESOURCE_DIR = 'test/resources'
 
-# ------------------ EXCEL UNIT TESTS ------------------ 
+# ------------------ EXCEL UNIT TESTS ------------------
 class Test(unittest.TestCase):
     def test_export(self):
         for fname in ['unittest_DAZHO', 'unittest_DAZHO_1', 'unittest_DAZHO_1_74']:
             path = f'var/{fname}.xlsx'
             if os.path.isfile(path):
                 os.remove(path)
-        archive = Archive('DAZHO')
+        archive = Page(ARCHIVE_BY_ADDRESS[('DAZHO', None)])
         archive.prepare_to_download()
         export_page(archive, 'var/unittest_DAZHO.xlsx')
         fond1 = archive.lookup('1')

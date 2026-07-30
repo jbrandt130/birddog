@@ -3,9 +3,8 @@ from copy import copy
 from urllib.parse import quote, unquote
 
 import unittest
-from birddog.wiki import ARCHIVE_BASE, canonicalize_title, lineage, archive_root, page_title_from_address
+from birddog.wiki import ARCHIVE_BASE, ARCHIVE_BY_ADDRESS, canonicalize_title, lineage, archive_root, page_title_from_address
 from birddog.core import (
-    Archive,
     Page,
     )
 from birddog.runtime import Runtime, PageLRU, ArchiveWatcher
@@ -19,11 +18,11 @@ case_id = '1'
 # ------------------ UTILITY UNIT TESTS ------------------ 
 class Test(unittest.TestCase):
     def test_Archive(self):
-        page = Archive('DAZHO')
+        page = Page(ARCHIVE_BY_ADDRESS[('DAZHO', None)])
         self.assertTrue(
             unquote(page.url) == unquote(ARCHIVE_BASE + '/wiki/Архів:ДАЖО/Д'))
         print('id', page.id)
-        self.assertTrue(page.id == 'DAZHO')
+        self.assertTrue(page.id == 'Д')
         print('kind', page.kind)
         self.assertTrue(page.kind == 'archive')
         print('name', page.name)
@@ -32,14 +31,12 @@ class Test(unittest.TestCase):
         self.assertTrue(page.refmod == '')
         print('report', page.report, f'{page.kind},{page.name},{page.lastmod}')
         self.assertTrue(page.report == f'{page.kind},{page.name},{page.lastmod}')
-        print('subarchive', page.subarchive)
-        self.assertTrue(page.subarchive == 'D')
         print('title', page.title)
         self.assertTrue(page.title == 'Архів:ДАЖО/Д')
         print('url', page.url)
-        
+
     def test_Fond(self):
-        page = Archive('DAZHO').lookup(fond_id)
+        page = Page(ARCHIVE_BY_ADDRESS[('DAZHO', None)]).lookup(fond_id)
         self.assertTrue(
             page.url == f'{ARCHIVE_BASE}/wiki/Архів:ДАЖО/1')
         print('id', page.id)
@@ -57,7 +54,7 @@ class Test(unittest.TestCase):
         print('url', page.url)
        
     def test_Opus(self):
-        page = Archive('DAZHO').lookup(fond_id).lookup(opus_id)
+        page = Page(ARCHIVE_BY_ADDRESS[('DAZHO', None)]).lookup(fond_id).lookup(opus_id)
         self.assertTrue(page.url == f'{page.parent.url}/{opus_id}')
         print('id', page.id)
         self.assertTrue(page.id == opus_id)
@@ -75,7 +72,7 @@ class Test(unittest.TestCase):
         print('url', page.url)
 
     def test_Case(self):
-        page = Archive('DAZHO').lookup(fond_id).lookup(opus_id).lookup(case_id)
+        page = Page(ARCHIVE_BY_ADDRESS[('DAZHO', None)]).lookup(fond_id).lookup(opus_id).lookup(case_id)
         self.assertTrue(
             page.url == f'{page.parent.url}/{case_id}')
         print('id', page.id)
@@ -94,14 +91,14 @@ class Test(unittest.TestCase):
 
     def test_PageLRU(self):
         lru = PageLRU()
-        page = lru.lookup_by_address("DAHMO", "D")
-        print(page.title)
-        page = lru.lookup_by_address("DAHMO", "D", "1")
-        print(page.title)
-        page = lru.lookup_by_address("DAHMO", "D", "2", "3")
-        print(page.title)
-        page = lru.lookup_by_address("DAHMO", "R", "Р-5", "1")
-        print(page.title)
+        for title in [
+            "Архів:ДАХмО/Д",
+            "Архів:ДАХмО/1",
+            "Архів:ДАХмО/2/3",
+            "Архів:ДАХмО/Р-5/1",
+        ]:
+            page = lru.lookup_by_title(title)
+            print(page.title)
 
     def test_ArchiveWatcher(self):
         runtime = Runtime()
@@ -162,8 +159,6 @@ class Test(unittest.TestCase):
         def test_title(title, runtime):
             page = runtime.lookup_by_title(title)
             self.assertEqual(page.title, title)
-            page1 = runtime.lookup_by_address(*page.address)
-            self.assertEqual(page1.title, title)
         
         for title in titles:    
             ancestry = lineage(title)
