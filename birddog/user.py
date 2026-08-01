@@ -39,6 +39,22 @@ def _watcher_cache_path(email, title):
 def _watchlist_namespace(email):
     return f"wl:{email}"
 
+# reserved key marking that the one-time legacy-format migration sweep (see
+# _get_watchlist below) has already run for this user, so single-item call
+# sites can skip straight to a single-key KV lookup instead of paying for a
+# full-namespace scan on every add/remove/check
+_MIGRATION_MARKER_KEY = "__migrated__"
+
+def _is_watchlist_migrated(email):
+    try:
+        _kv_store.get(_watchlist_namespace(email), _MIGRATION_MARKER_KEY)
+        return True
+    except KeyError:
+        return False
+
+def _mark_watchlist_migrated(email):
+    _kv_store.insert(_watchlist_namespace(email), _MIGRATION_MARKER_KEY, "1")
+
 def _to_utc(value):
     # normalize a legacy "YYYY,MM,DD,HH:MM" date to UTC ISO8601; already-ISO
     # (or falsy) values pass through unchanged
@@ -87,7 +103,11 @@ def _get_watchlist(email):
     # merged with any sibling subarchive entries (or a pre-existing
     # title-keyed entry) for the same archive
     ns = _watchlist_namespace(email)
-    raw = {k: _parse_watch_item(v) for k, v in _kv_store.get_all(ns)}
+    raw = {
+        k: _parse_watch_item(v)
+        for k, v in _kv_store.get_all(ns)
+        if k != _MIGRATION_MARKER_KEY
+    }
 
     result = {}
     legacy_keys = []
@@ -113,7 +133,16 @@ def _get_watchlist(email):
     for title in changed_titles:
         _save_watch_item(email, title, result[title])
 
+    _mark_watchlist_migrated(email)
     return result
+
+def _get_watch_item(email, title):
+    # single-key fast path once this user's namespace is known to be free of
+    # legacy-format entries; falls back to the full migration sweep exactly
+    # once per account (see _get_watchlist), never again after that
+    if not _is_watchlist_migrated(email):
+        return _get_watchlist(email)[title]
+    return _parse_watch_item(_kv_store.get(_watchlist_namespace(email), title))
 
 def _write_legacy_watch_item(email, key, cutoff, last_checked=None):
     # writes the pre-title-migration shape; swept up by the lazy upgrade in
@@ -219,9 +248,11 @@ class User:
     def add_to_watchlist(self, title, cutoff_date):
         title = canonicalize_title(title)
         with self._lock:
-            watchlist = _get_watchlist(self.email)
             item = _new_watch_item(cutoff_date, include=[title])
-            existing = watchlist.get(title)
+            try:
+                existing = _get_watch_item(self.email, title)
+            except KeyError:
+                existing = None
             if existing:
                 item = _merge_watch_items(existing, item)
             _save_watch_item(self.email, title, item)
@@ -229,7 +260,8 @@ class User:
     def remove_from_watchlist(self, title):
         title = canonicalize_title(title)
         with self._lock:
-            _get_watchlist(self.email)  # fold in any un-migrated sibling entries first
+            if not _is_watchlist_migrated(self.email):
+                _get_watchlist(self.email)  # fold in any un-migrated sibling entries first
             _kv_store.remove(_watchlist_namespace(self.email), title)
 
         # Remove associated watcher file (outside lock)
@@ -244,7 +276,7 @@ class User:
         title = canonicalize_title(title)
         path = _watcher_cache_path(self.email, title)
         with self._lock:
-            watchlist_item = _get_watchlist(self.email)[title]  # raises KeyError if not watched
+            watchlist_item = _get_watch_item(self.email, title)  # raises KeyError if not watched
             try:
                 watcher_data = load_cached_object(path)
                 watcher = ArchiveWatcher.load(watcher_data, runtime=self._runtime)

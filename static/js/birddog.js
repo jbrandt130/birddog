@@ -1023,26 +1023,37 @@ function render_archives_table() {
         const label = archive.label;
         const description = archive.description || '';
         const label_cell = can_edit
-            ? `<input type="text" class="form-control form-control-sm" data-original="${escape_attr(label)}" value="${escape_attr(label)}" oninput="update_archive_save_state(this)">`
+            ? `<input type="text" class="form-control form-control-sm" data-original="${escape_attr(label)}" value="${escape_attr(label)}" onclick="event.stopPropagation()" oninput="update_archive_save_state(this)">`
             : escape_attr(label);
         const description_cell = can_edit
-            ? `<input type="text" class="form-control form-control-sm" data-original="${escape_attr(description)}" value="${escape_attr(description)}" oninput="update_archive_save_state(this)">`
+            ? `<input type="text" class="form-control form-control-sm" data-original="${escape_attr(description)}" value="${escape_attr(description)}" onclick="event.stopPropagation()" oninput="update_archive_save_state(this)">`
             : escape_attr(description);
         const save_cell = can_edit
-            ? `<button class="btn btn-primary btn-sm" title="Save Changes" onclick="save_archive_row(this)" disabled>
+            ? `<button class="btn btn-primary btn-sm" title="Save Changes" onclick="event.stopPropagation(); save_archive_row(this)" disabled>
                    <i class="bi bi-arrow-up-square"></i>
                </button>`
             : '';
         const row = `
-            <tr data-title="${escape_attr(archive.title)}">
-                <td style="word-break: break-word;"><a href="${escape_attr(archive.url)}" target="birddog_archive_source">${escape_attr(archive.title)}</a></td>
+            <tr data-title="${escape_attr(archive.title)}" style="cursor: pointer;" onclick="open_archive_row(this)">
+                <td style="word-break: break-word;">${escape_attr(archive.title)}</td>
                 <td style="word-break: break-word;">${label_cell}</td>
                 <td style="word-break: break-word;">${description_cell}</td>
+                <td>
+                    <a href="${escape_attr(archive.url)}" target="birddog_archive_source" class="btn btn-primary btn-sm" title="View Source" onclick="event.stopPropagation()">
+                        <i class="bi bi-box-arrow-up-right"></i>
+                    </a>
+                </td>
                 <td>${save_cell}</td>
             </tr>
         `;
         table_body.innerHTML += row;
     });
+}
+
+function open_archive_row(row) {
+    const title = row.dataset.title;
+    load_page_by_title(title);
+    show_tab('nav-browse-tab');
 }
 
 function update_archive_save_state(input) {
