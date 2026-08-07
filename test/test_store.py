@@ -178,6 +178,41 @@ class TestStores(unittest.TestCase):
         with self.assertRaises(KeyError):
             kv.get(ns, k1)
 
+        # --- bulk primitives ---
+
+        # insert_many/get_many round trip
+        kv.insert_many(ns, {k1: "b1", k2: "b2", k3: "b3"})
+        self.assertEqual(kv.count(ns), 3)
+        self.assertEqual(kv.get_many(ns, [k1, k2, k3]), {k1: "b1", k2: "b2", k3: "b3"})
+
+        # get_many silently omits missing keys (no KeyError, no empty-string filler)
+        self.assertEqual(kv.get_many(ns, [k1, "does-not-exist"]), {k1: "b1"})
+
+        # get_many/insert_many with nothing to do are safe no-ops
+        self.assertEqual(kv.get_many(ns, []), {})
+        kv.insert_many(ns, {})
+        self.assertEqual(kv.count(ns), 3)
+
+        # insert_many upserts existing keys
+        kv.insert_many(ns, {k1: "b1-updated"})
+        self.assertEqual(kv.get(ns, k1), "b1-updated")
+        self.assertEqual(kv.count(ns), 3)
+
+        # remove_many removes exactly the given keys, ignoring ones that don't exist
+        kv.remove_many(ns, [k2, "does-not-exist"])
+        self.assertEqual(kv.count(ns), 2)
+        with self.assertRaises(KeyError):
+            kv.get(ns, k2)
+        self.assertEqual(kv.get(ns, k1), "b1-updated")
+
+        # remove_many with nothing to do is a safe no-op
+        kv.remove_many(ns, [])
+        self.assertEqual(kv.count(ns), 2)
+
+        # final cleanup
+        kv.remove_all(ns)
+        self.assertEqual(kv.count(ns), 0)
+
     # -------------------------
     # The actual tests
     # -------------------------

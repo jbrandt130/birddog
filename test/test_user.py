@@ -76,14 +76,27 @@ def _ensure_birddog_stubs():
     cache_mod.remove_cached_object = remove_cached_object
     sys.modules["birddog.cache"] = cache_mod
 
-    # birddog.runtime
-    runtime_mod = types.ModuleType("birddog.runtime")
+    # birddog.watcher
+    watcher_mod = types.ModuleType("birddog.watcher")
 
-    class ArchiveWatcher:
-        pass
+    def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=None):
+        raise NotImplementedError  # replaced by FakeWatcher in setUp()
 
-    runtime_mod.ArchiveWatcher = ArchiveWatcher
-    sys.modules["birddog.runtime"] = runtime_mod
+    def resolve_watcher(email, archive_title, item, runtime=None, deep=False):
+        raise NotImplementedError  # replaced by FakeWatcher in setUp()
+
+    def unresolved_tree(unresolved):
+        raise NotImplementedError  # replaced by FakeWatcher in setUp()
+
+    def remove_watcher(email, archive_title):
+        raise NotImplementedError  # replaced by FakeWatcher in setUp()
+
+    watcher_mod.check_watcher = check_watcher
+    watcher_mod.resolve_watcher = resolve_watcher
+    watcher_mod.unresolved_tree = unresolved_tree
+    watcher_mod.remove_watcher = remove_watcher
+    sys.modules["birddog.watcher"] = watcher_mod
+    birddog_pkg.watcher = watcher_mod  # `from birddog import watcher` needs this bound on the package too
 
     # birddog.wiki
     wiki_mod = types.ModuleType("birddog.wiki")
@@ -168,65 +181,51 @@ class FakeCache:
         del self._objects[path]
 
 
-class FakeArchiveWatcher:
+class FakeWatcher:
     """
-    Minimal ArchiveWatcher to exercise User.check_archive / resolve_item paths
-    without network/filesystem dependencies.
+    Minimal stand-in for birddog.watcher, to exercise
+    User.check_watchlist_item / resolve_item / remove_from_watchlist paths
+    without touching real KV/cache storage. Records the arguments each
+    method was called with, so tests can assert User correctly orchestrates
+    calls into birddog.watcher (real watcher.py behavior -- check/resolve
+    semantics, legacy migration -- has its own dedicated coverage in
+    test_watcher.py).
     """
-    def __init__(self, include, cutoff_date, exclude=None, runtime=None):
-        self.include = list(include)
-        self.exclude = list(exclude) if exclude else []
-        self.cutoff_date = cutoff_date
-        self.runtime = runtime
-        self.unresolved = {"example": {"count": 1}}
-        self.unresolved_tree = {"name": "root", "children": [{"name": "example"}]}
-        self._resolved = []
+    def __init__(self):
+        self.check_calls = []
+        self.resolve_calls = []
+        self.removed = []
+        self.check_result = {"example": {"count": 1}}
+        self.resolve_result = {}
+        self.resolve_raises = None
 
-    def check(self):
-        self.unresolved = {"example": {"count": 1}}
-        self.unresolved_tree = {"name": "root", "children": [{"name": "example"}]}
+    def check_watcher(self, email, archive_title, runtime, include, cutoff_date, exclude=None):
+        self.check_calls.append((email, archive_title, runtime, include, cutoff_date, exclude))
+        return self.check_result
 
-    def resolve(self, resolve_key, deep=False):
-        self._resolved.append((resolve_key, deep))
-        self.unresolved = {}
-        self.unresolved_tree = {"name": "root", "children": []}
+    def resolve_watcher(self, email, archive_title, item, runtime=None, deep=False):
+        self.resolve_calls.append((email, archive_title, item, runtime, deep))
+        if self.resolve_raises:
+            raise self.resolve_raises
+        return self.resolve_result
 
-    def save(self):
-        return {
-            "include": self.include,
-            "exclude": self.exclude,
-            "cutoff_date": self.cutoff_date,
-            "unresolved": self.unresolved,
-            "unresolved_tree": self.unresolved_tree,
-            "resolved": self._resolved,
-        }
+    def unresolved_tree(self, unresolved):
+        return {"name": "root", "children": [{"name": k} for k in unresolved]}
 
-    @classmethod
-    def load(cls, watcher_data, runtime=None):
-        w = cls(
-            watcher_data["include"],
-            watcher_data["cutoff_date"],
-            exclude=watcher_data.get("exclude"),
-            runtime=runtime,
-        )
-        w.unresolved = watcher_data.get("unresolved", {})
-        w.unresolved_tree = watcher_data.get("unresolved_tree", {"name": "root", "children": []})
-        w._resolved = watcher_data.get("resolved", [])
-        return w
+    def remove_watcher(self, email, archive_title):
+        self.removed.append((email, archive_title))
 
 
 class UserTest(unittest.TestCase):
     def setUp(self):
         self.kv = FakeKVStore()
         self.cache = FakeCache()
+        self.watcher = FakeWatcher()
 
         self._patches = [
             mock.patch.object(user_mod, "_kv_store", self.kv),
-            mock.patch.object(user_mod, "CacheMissError", FakeCacheMissError),
-            mock.patch.object(user_mod, "load_cached_object", side_effect=self.cache.load),
             mock.patch.object(user_mod, "save_cached_object", side_effect=self.cache.save),
-            mock.patch.object(user_mod, "remove_cached_object", side_effect=self.cache.remove),
-            mock.patch.object(user_mod, "ArchiveWatcher", FakeArchiveWatcher),
+            mock.patch.object(user_mod, "watcher", self.watcher),
         ]
         for p in self._patches:
             p.start()
@@ -337,10 +336,11 @@ class UserTest(unittest.TestCase):
         self.assertEqual(wl[title]["cutoff_date"], "2020-01-01T00:00:00Z")
         self.assertEqual(wl[title]["include"], [title])
 
-        # remove should succeed even if watcher file is absent
+        # remove should succeed even if no watcher state exists yet
         self.assertTrue(u.remove_from_watchlist(title))
         wl2 = u.get_watchlist()
         self.assertNotIn(title, wl2)
+        self.assertEqual(self.watcher.removed, [(u.email, title)])
 
     def test_user_add_to_watchlist_merges_when_already_watched(self):
         u = User(name="Test", email="w2@example.com", password="pw")
@@ -354,7 +354,7 @@ class UserTest(unittest.TestCase):
         # oldest cutoff_date wins on merge
         self.assertEqual(wl[title]["cutoff_date"], "2020-01-01T00:00:00Z")
 
-    def test_user_check_watchlist_item_cache_miss_creates_watcher_and_updates_last_checked(self):
+    def test_user_check_watchlist_item_calls_watcher_and_updates_last_checked(self):
         u = User(name="Test", email="c@example.com", password="pw")
         title = _watch_title("DAARK", "D")
         u.add_to_watchlist(title, "2020,01,01,00:00")
@@ -363,12 +363,15 @@ class UserTest(unittest.TestCase):
         self.assertIsInstance(result, list)
         self.assertEqual(result[0]["name"], "example")
 
+        email, watch_title, runtime, include, cutoff_date, exclude = self.watcher.check_calls[-1]
+        self.assertEqual(email, u.email)
+        self.assertEqual(watch_title, title)
+        self.assertEqual(include, [title])
+        self.assertEqual(cutoff_date, "2020-01-01T00:00:00Z")
+
         item = _get_watchlist(u.email)[title]
         self.assertIn("last_checked_date", item)
         self.assertRegex(item["last_checked_date"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-
-        watcher_path = user_mod._watcher_cache_path(u.email, title)
-        self.assertIn(watcher_path, self.cache._objects)
 
         result2 = u.check_watchlist_item(title, tree=True)
         self.assertIsInstance(result2, dict)
@@ -379,24 +382,24 @@ class UserTest(unittest.TestCase):
         title = _watch_title("DAARK", "D")
         u.add_to_watchlist(title, "2020,01,01,00:00")
 
+        self.watcher.resolve_raises = FileNotFoundError('No watcher found')
         with self.assertRaises(FileNotFoundError):
             u.resolve_item(title, f"{title}/1/2/3")
 
-    def test_user_resolve_item_loads_watcher_and_saves(self):
+    def test_user_resolve_item_calls_watcher_and_formats_result(self):
         u = User(name="Test", email="r2@example.com", password="pw")
         title = _watch_title("DAARK", "D")
         u.add_to_watchlist(title, "2020,01,01,00:00")
 
-        watcher_path = user_mod._watcher_cache_path(u.email, title)
-        seeded = FakeArchiveWatcher([title], "2020,01,01,00:00").save()
-        self.cache.save(seeded, watcher_path)
-
+        self.watcher.resolve_result = {}
         unresolved_after = u.resolve_item(title, f"{title}/1/2/3", tree=False, deep=True)
         self.assertEqual(unresolved_after, [])
 
-        saved = self.cache.load(watcher_path)
-        self.assertEqual(saved["unresolved"], {})
-        self.assertTrue(saved["resolved"])
+        email, watch_title, item_title, runtime, deep = self.watcher.resolve_calls[-1]
+        self.assertEqual(email, u.email)
+        self.assertEqual(watch_title, title)
+        self.assertEqual(item_title, f"{title}/1/2/3")
+        self.assertTrue(deep)
 
     def test_user_to_dict_from_dict_and_save(self):
         u = User(name="Test", email="s@example.com", password="pw")
@@ -444,8 +447,7 @@ class UserTest(unittest.TestCase):
         u = User(name="Test", email="rtree@example.com", password="pw")
         title = _watch_title("DAARK", "D")
         u.add_to_watchlist(title, "2020,01,01,00:00")
-        watcher_path = user_mod._watcher_cache_path(u.email, title)
-        self.cache.save(FakeArchiveWatcher([title], "2020,01,01,00:00").save(), watcher_path)
+        self.watcher.resolve_result = {"x": 1}
         result = u.resolve_item(title, f"{title}/1/2/3", tree=True)
         self.assertIsInstance(result, dict)
         self.assertEqual(result["name"], "root")

@@ -5,17 +5,12 @@
 
 import json
 from threading import RLock, Lock
-from urllib.parse import quote
 
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from birddog.runtime import ArchiveWatcher
+from birddog import watcher
 from birddog.wiki import archive_root, canonicalize_title
-from birddog.cache import (
-    load_cached_object,
-    save_cached_object,
-    remove_cached_object,
-    CacheMissError)
+from birddog.cache import save_cached_object
 from birddog.store import KeyValueStore
 from birddog.utility import utc_now_dt, to_utc_format
 
@@ -32,9 +27,6 @@ def _watch_title(archive, subarchive):
     # no title-prefix that isolates a single subarchive, since its fonds
     # interleave with other subarchives' fonds under the same literal title
     return archive_root(archive, subarchive)
-
-def _watcher_cache_path(email, title):
-    return f'watchers/{email}/{quote(title, safe="")}.json'
 
 def _watchlist_namespace(email):
     return f"wl:{email}"
@@ -264,37 +256,25 @@ class User:
                 _get_watchlist(self.email)  # fold in any un-migrated sibling entries first
             _kv_store.remove(_watchlist_namespace(self.email), title)
 
-        # Remove associated watcher file (outside lock)
-        watcher_path = _watcher_cache_path(self.email, title)
-        try:
-            remove_cached_object(watcher_path)
-        except CacheMissError:
-            pass  # it's already gone
+        # Remove associated watcher state (outside lock)
+        watcher.remove_watcher(self.email, title)
         return True
 
     def check_watchlist_item(self, title, tree=False):
         title = canonicalize_title(title)
-        path = _watcher_cache_path(self.email, title)
         with self._lock:
             watchlist_item = _get_watch_item(self.email, title)  # raises KeyError if not watched
-            try:
-                watcher_data = load_cached_object(path)
-                watcher = ArchiveWatcher.load(watcher_data, runtime=self._runtime)
-            except CacheMissError:
-                watcher = ArchiveWatcher(
-                    watchlist_item['include'],
-                    watchlist_item['cutoff_date'],
-                    exclude=watchlist_item.get('exclude'),
-                    runtime=self._runtime)
-            watcher.check()
-            save_cached_object(watcher.save(), path)
+            unresolved = watcher.check_watcher(
+                self.email, title, self._runtime,
+                include=watchlist_item['include'],
+                cutoff_date=watchlist_item['cutoff_date'],
+                exclude=watchlist_item.get('exclude'))
             watchlist_item["last_checked_date"] = _to_utc(utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ'))
             _save_watch_item(self.email, title, watchlist_item)
 
-        # Return just the result, not the watcher itself
         if tree:
-            return watcher.unresolved_tree
-        return [{'name': k, **v} for k, v in watcher.unresolved.items()]
+            return watcher.unresolved_tree(unresolved)
+        return [{'name': k, **v} for k, v in unresolved.items()]
 
     def resolve_item(self, title, item_title, tree=False, deep=False):
         # title identifies which watchlist entry/watcher; item_title is the
@@ -302,24 +282,15 @@ class User:
         # because a watcher's scope (e.g. a whole archive) is coarser than
         # any one item inside it
         title = canonicalize_title(title)
-        path = _watcher_cache_path(self.email, title)
         with self._lock:
-            try:
-                watcher_data = load_cached_object(path)
-            except CacheMissError:
-                raise FileNotFoundError('No watcher found')
-
-            watcher = ArchiveWatcher.load(watcher_data, runtime=self._runtime)
-
             _logger.info(f'Resolving {item_title}, deep={deep}, tree={tree}')
-            watcher.resolve(item_title, deep=deep)
-
-            save_cached_object(watcher.save(), path)
+            unresolved = watcher.resolve_watcher(
+                self.email, title, item_title, runtime=self._runtime, deep=deep)
 
         if tree:
-            return watcher.unresolved_tree
+            return watcher.unresolved_tree(unresolved)
         else:
-            return [{'name': k, **v} for k, v in watcher.unresolved.items()]
+            return [{'name': k, **v} for k, v in unresolved.items()]
 
     def set_preference(self, key, value):
         with self._lock:

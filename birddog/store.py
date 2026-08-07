@@ -629,6 +629,21 @@ class AbstractKeyValueStore(ABC):
     def count(self, namespace: str) -> int:
         pass
 
+    @abstractmethod
+    def insert_many(self, namespace: str, items: dict):
+        """Upsert multiple key/value pairs as a single logged call (bulk insert())."""
+        pass
+
+    @abstractmethod
+    def get_many(self, namespace: str, keys: list) -> dict:
+        """Fetch multiple keys as a single logged call; keys with no entry are simply absent from the result."""
+        pass
+
+    @abstractmethod
+    def remove_many(self, namespace: str, keys: list):
+        """Remove multiple keys as a single logged call (bulk remove())."""
+        pass
+
 # key value store (sqlite version) ---------------------------------------
 
 _KEY_VALUE_STORE_PATH = ".cache/key_value_store.db"
@@ -734,6 +749,45 @@ class SQLiteKeyValueStore(AbstractKeyValueStore):
                     (namespace,)
                 )
                 return int(cur.fetchone()[0])
+
+    def insert_many(self, namespace: str, items: dict):
+        if not items:
+            return
+        size = sum(len(k) + len(v) for k, v in items.items())
+        with LogService("KVStore", "insert_many", path=namespace, size=size):
+            with self._conn() as conn:
+                conn.executemany(f"""
+                    INSERT INTO {self._table_name}(namespace, key, value)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(namespace, key) DO UPDATE SET value=excluded.value
+                """, [(namespace, k, v) for k, v in items.items()])
+                conn.commit()
+
+    def get_many(self, namespace: str, keys: list) -> dict:
+        if not keys:
+            return {}
+        with LogService("KVStore", "get_many", path=namespace) as log:
+            placeholders = ",".join("?" * len(keys))
+            with self._conn() as conn:
+                cur = conn.execute(
+                    f"SELECT key, value FROM {self._table_name} WHERE namespace = ? AND key IN ({placeholders})",
+                    (namespace, *keys)
+                )
+                rows = cur.fetchall()
+            log.size = json_size(rows)
+        return dict(rows)
+
+    def remove_many(self, namespace: str, keys: list):
+        if not keys:
+            return
+        with LogService("KVStore", "remove_many", path=namespace, size=len(keys)):
+            placeholders = ",".join("?" * len(keys))
+            with self._conn() as conn:
+                conn.execute(
+                    f"DELETE FROM {self._table_name} WHERE namespace = ? AND key IN ({placeholders})",
+                    (namespace, *keys)
+                )
+                conn.commit()
 
 # key value store (dynamodb version) ---------------------------------------
 
@@ -885,6 +939,40 @@ class DynamoDBKeyValueStore:
                 )
                 count += resp.get("Count", 0)
         return int(count)
+
+    def insert_many(self, namespace: str, items: dict):
+        if not items:
+            return
+        size = sum(len(k) + len(v) for k, v in items.items())
+        with LogService("KVStore", "insert_many", path=namespace, size=size):
+            with self._table.batch_writer() as batch:
+                for key, value in items.items():
+                    batch.put_item(Item={"namespace": namespace, "key": key, "value": value})
+
+    def get_many(self, namespace: str, keys: list) -> dict:
+        if not keys:
+            return {}
+        result = {}
+        with LogService("KVStore", "get_many", path=namespace) as log:
+            # batch_get_item is capped at 100 keys per call
+            for i in range(0, len(keys), 100):
+                request_keys = [{"namespace": namespace, "key": k} for k in keys[i:i + 100]]
+                request = {self._table_name: {"Keys": request_keys, "ConsistentRead": True}}
+                while request:
+                    resp = self._dynamodb.batch_get_item(RequestItems=request)
+                    for item in resp.get("Responses", {}).get(self._table_name, []):
+                        result[item["key"]] = item.get("value", "")
+                    request = resp.get("UnprocessedKeys") or None
+            log.size = json_size(result)
+        return result
+
+    def remove_many(self, namespace: str, keys: list):
+        if not keys:
+            return
+        with LogService("KVStore", "remove_many", path=namespace, size=len(keys)):
+            with self._table.batch_writer() as batch:
+                for key in keys:
+                    batch.delete_item(Key={"namespace": namespace, "key": key})
 
 # platform-independent access to key value store ----------------------------------
 

@@ -7,7 +7,8 @@ from birddog.wiki import ARCHIVE_BASE, ARCHIVE_BY_ADDRESS, canonicalize_title, l
 from birddog.core import (
     Page,
     )
-from birddog.runtime import Runtime, PageLRU, ArchiveWatcher
+from birddog.runtime import Runtime, PageLRU
+from birddog import watcher
 from birddog.utility import utc_now_dt
 
 
@@ -102,35 +103,36 @@ class Test(unittest.TestCase):
 
     def test_ArchiveWatcher(self):
         runtime = Runtime()
-        watcher = ArchiveWatcher([archive_root("DAKO", "D")], cutoff_date="2025,03,01", runtime=runtime)
-        self.assertFalse(watcher.resolved)
-        self.assertFalse(watcher.unresolved)
-        watcher.check()
-        self.assertFalse(watcher.resolved)
-        self.assertTrue(watcher.unresolved)
-        #print(watcher.unresolved)
+        email = "test_archive_watcher@example.com"
+        title = archive_root("DAKO", "D")
+        self.addCleanup(watcher.remove_watcher, email, title)
+
+        self.assertFalse(watcher._watcher_kv.get_all(watcher._resolved_ns(email, title)))
+        unresolved = watcher.check_watcher(email, title, runtime, include=[title], cutoff_date="2025,03,01")
+        self.assertFalse(watcher._watcher_kv.get_all(watcher._resolved_ns(email, title)))
+        self.assertTrue(unresolved)
+        #print(unresolved)
         item = page_title_from_address(("DAKO", "D", "280", "2", "111"))
         #item = "DAKO-D/1455/1/169"
-        self.assertTrue(item in watcher.unresolved)
-        watcher.resolve(item)
-        self.assertFalse(item in watcher.unresolved)
-        self.assertTrue(item in watcher.resolved)
+        self.assertTrue(item in unresolved)
+        unresolved = watcher.resolve_watcher(email, title, item, runtime=runtime)
+        self.assertFalse(item in unresolved)
+        history = watcher.get_resolved(email, title, item)
+        self.assertTrue(history)
         # Regression for issue #103: last_resolved must be stamped with the
         # actual resolution time, not left as the stale cutoff date.
         today = utc_now_dt().strftime("%Y-%m-%d")
-        last_resolved = watcher.resolved[item][-1]["last_resolved"]
+        last_resolved = history[-1]["last_resolved"]
         self.assertTrue(
             last_resolved.startswith(today),
             f"last_resolved {last_resolved!r} should reflect today ({today}), not the cutoff date"
         )
-        watcher.unresolve(item)
-        self.assertTrue(item in watcher.unresolved)
-        self.assertFalse(item in watcher.resolved)
-        watcher = ArchiveWatcher([archive_root('DADNO', 'R')], '2025,03,01', runtime=runtime)
-        watcher.check()
-        archive_title = archive_root('DADNO', 'R')
-        for key in list(watcher.unresolved.keys())[::77]:
-            if key == archive_title:
+
+        title2 = archive_root('DADNO', 'R')
+        self.addCleanup(watcher.remove_watcher, email, title2)
+        unresolved2 = watcher.check_watcher(email, title2, runtime, include=[title2], cutoff_date='2025,03,01')
+        for key in list(unresolved2.keys())[::77]:
+            if key == title2:
                 # the bare archive-root title isn't itself a classifiable
                 # fond/opus/case page (parent_title() has no entry for it);
                 # coarsened archive-level watching can surface it as an
@@ -139,7 +141,7 @@ class Test(unittest.TestCase):
                 # exercises
                 continue
             page = runtime.lookup_by_title(key)
-            self.assertTrue(page.lastmod <= watcher.unresolved[key]['modified'])
+            self.assertTrue(page.lastmod <= unresolved2[key]['modified'])
 
     def test_Titles(self):
         titles = [
