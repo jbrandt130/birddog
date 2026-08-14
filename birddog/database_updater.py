@@ -260,9 +260,11 @@ def _append_unlink_note(comments, page_title, timestamp):
 def _form_simple_page_record(title):
     title = _normalize_title(title)
     label = page_label(title)
+    url = normalize_url(page_url_from_title(title))
     return {
         "title": title,
-        "url": normalize_url(page_url_from_title(title)),
+        "url": url,
+        "domain": domain_from_url(url),
         "label": label,
         "root_label": get_root_label(label),
         "level": page_kind(title),
@@ -399,6 +401,7 @@ def _form_page_info_from_title(title):
     record = info["record"]
     record["title"] = _normalize_title(title)
     record["url"] = normalize_url(page_url_from_title(title))
+    record["domain"] = domain_from_url(record["url"])
     error = raw.get("error")
     if error:
         if error.get("code") == "missingtitle":
@@ -485,14 +488,19 @@ def _source_from_url(url):
         return "wikisource"
     return None
 
+def domain_from_url(url):
+    """Return the domain (host, e.g. "uk.wikisource.org") of a URL, or None."""
+    return urlparse(url).hostname
+
 def form_document_record(url):
     """
     Parse a document file URL and return:
       {
-        "title": wiki_title (if wiki) 
+        "title": wiki_title (if wiki)
             OR path tail if it's a recognized document file
             OR the url
         "url": canonical_link_or_original
+        "domain": host of "url"
       }
     """
     url = normalize_url(url)
@@ -519,14 +527,17 @@ def form_document_record(url):
         return {
             "title": title,
             "url": url,
+            "domain": domain_from_url(url),
             "wiki": False,
         }
 
     # wikisource or wikimedia
     if host.endswith(".wikisource.org") or host.endswith(".wikimedia.org"):
+        wiki_url = f"https://{host}/wiki/{canonical_title}"
         return {
             "title": title,
-            "url": f"https://{host}/wiki/{canonical_title}",
+            "url": wiki_url,
+            "domain": domain_from_url(wiki_url),
             "wiki": True,
         }
 
@@ -534,6 +545,7 @@ def form_document_record(url):
     return {
         "title": title,
         "url": url,
+        "domain": domain_from_url(url),
         "wiki": False,
     }
 
@@ -1325,11 +1337,21 @@ class DatabaseUpdater:
         doc_map = { r["Id"]: r for r in doc_recs }
 
         updates = self._set_doc_lookup_fields(
-            doc_map, 
-            page_map, 
-            owner_map, 
-            _lookup_fields, 
+            doc_map,
+            page_map,
+            owner_map,
+            _lookup_fields,
             _lookup_field_mapping)
+
+        # filename is derived from label/root_label rather than looked up directly,
+        # e.g. "DAHMO/R-254/1/3" with root label "DAHMO" -> "R-254-1-3"
+        for update in updates:
+            label = update.get("label")
+            if not label:
+                continue
+            root_label = update.get("root_label") or ""
+            tail = label[len(root_label):] if root_label and label.startswith(root_label) else label
+            update["filename"] = tail.lstrip("/").replace("/", "-")
 
         _logger.info(f"refresh_doc_lookups: writing {len(updates)} updates")
         return bool(self._db.write("Documents", updates))

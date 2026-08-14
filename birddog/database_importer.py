@@ -1,6 +1,6 @@
 from birddog.abstract_database import InvalidFieldValue
 from birddog.database import Database, timer
-from birddog.database_updater import form_document_record, normalize_url
+from birddog.database_updater import domain_from_url, form_document_record, normalize_url
 from birddog.log import get_logger
 from birddog.utility import utc_now_dt
 from birddog.wiki import (
@@ -472,6 +472,7 @@ def add_page(page: dict, page_table: dict) -> None:
     url = page["url"]
     url = canonical_wiki_url(url)
     page["url"] = url
+    page["domain"] = domain_from_url(url)
     page["last_imported"] = str(utc_now_dt().replace(microsecond=0))
     page["label"] = delete_part_between_hyphen_and_slash(page["label"])
 
@@ -1744,6 +1745,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 doc_payload["title"] = quoted_record["title"]
                 link = quoted_record["url"]
                 doc_payload["url"] = link
+                doc_payload["domain"] = quoted_record["domain"]
                 doc_payload["lookup_status"] = "invalid"
 
                 relevant_page_data = inp_page_data[page["url"]]
