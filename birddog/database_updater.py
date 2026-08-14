@@ -68,6 +68,13 @@ def _replace_links(db, table_name, link_field, source_record, target_records):
 def _create_links(db, table_name, link_field, source_record, target_records):
     return _edit_links(db, table_name, link_field, source_record, target_records, replace=False)
 
+def _apply_doc_link_diff(db, table_name, link_field, source_record, added, removed):
+    if removed:
+        db.delete_links(table_name, link_field, source_record, list(removed))
+    if added:
+        db.create_links(table_name, link_field, source_record, list(added))
+    return added, removed
+
 def _page_urls_from_titles(titles):
     if isinstance(titles, set):
         return {page_url_from_title(title) for title in titles}
@@ -226,6 +233,29 @@ _DOC_LINK_BLOCKLIST = [
 
 def _allowed_doc_link(link):
     return all([item not in link for item in _DOC_LINK_BLOCKLIST])
+
+# Fields written onto a Document record by the spreadsheet import pipeline
+# (database_importer.py: doc_only_fields | doc_and_page_fields). A document
+# carrying any of these represents curated work (transcription progress,
+# processor notes, etc.) that must not be silently lost if the live wiki
+# page's link set no longer references it.
+_DOC_PROCESSING_STATE_FIELDS = (
+    "last_imported", "doc_type", "content_code", "process_code", "comments",
+    "reference_date", "processor", "language", "when_transcribed",
+    "pages_processed", "import_message",
+)
+
+def _has_processing_state(doc_rec):
+    return any(doc_rec.get(field) for field in _DOC_PROCESSING_STATE_FIELDS)
+
+def _append_unlink_note(comments, page_title, timestamp):
+    # Idempotent per page_title so re-running the updater against an unchanged
+    # page doesn't append a fresh note (with a new timestamp) every cycle.
+    marker = f"unlinked from {page_title} on "
+    if comments and any(line.startswith(marker) for line in comments.splitlines()):
+        return comments
+    note = f"{marker}{timestamp}"
+    return f"{comments}\n{note}" if comments else note
 
 def _form_simple_page_record(title):
     title = _normalize_title(title)
@@ -960,15 +990,83 @@ class DatabaseUpdater:
             doc_id_map = {url: canonical_id_map.get(canonical) for url, canonical in canonical_url_map.items()}
 
             _logger.info(f"Updater {tid}: updating document links")
-            tasks = []
+            page_doc_targets = {}
             for page_title, page_doc_urls in doc_link_updates.items():
                 page_id = page_id_by_title.get(page_title)
                 if not page_id:
                     continue
                 doc_ids_for_page = [doc_id_map.get(url) for url in page_doc_urls]
                 doc_ids_for_page = [did for did in doc_ids_for_page if did]
-                tasks.append(lambda pid=page_id, dids=doc_ids_for_page:
-                    _replace_links(self._db, "Pages", "doc_links", pid, dids))
+                page_doc_targets[page_id] = (page_title, set(doc_ids_for_page))
+
+            fetch_tasks = [
+                (lambda pid=page_id: self._db.get_links("Pages", "doc_links", pid))
+                for page_id in page_doc_targets
+            ]
+            existing_lists = _run_concurrent(fetch_tasks, max_workers=4)
+            page_existing = {
+                page_id: set(existing)
+                for page_id, existing in zip(page_doc_targets.keys(), existing_lists)
+            }
+
+            # A doc dropped by every page that currently links it would become a
+            # fully orphaned Document record. If it already carries curated
+            # processing state (from the spreadsheet import pipeline), keep the
+            # link(s) alive instead of losing that state, and note the would-be
+            # unlink on the document record itself.
+            removed_by_page = {
+                page_id: page_existing[page_id] - target_set
+                for page_id, (_, target_set) in page_doc_targets.items()
+            }
+            removal_candidates = set().union(*removed_by_page.values())
+
+            kept_by_page = {page_id: set() for page_id in page_doc_targets}
+            if removal_candidates:
+                removing_pages_by_doc = {}
+                for page_id, removed in removed_by_page.items():
+                    for doc_id in removed:
+                        removing_pages_by_doc.setdefault(doc_id, set()).add(page_id)
+
+                guard_fields = ["url", "owning_pages"] + list(_DOC_PROCESSING_STATE_FIELDS)
+                guard_recs = {
+                    rec["Id"]: rec
+                    for rec in self._db.read("Documents", list(removal_candidates), fields=guard_fields)
+                    if rec
+                }
+
+                timestamp = str(utc_now_dt().replace(microsecond=0))
+                comment_updates = []
+                for doc_id, removing_pages in removing_pages_by_doc.items():
+                    doc_rec = guard_recs.get(doc_id)
+                    if not doc_rec:
+                        continue
+                    current_owners = set(doc_rec.get("owning_pages") or [])
+                    if current_owners - removing_pages:
+                        continue  # doc keeps at least one owner outside this batch
+                    if not _has_processing_state(doc_rec):
+                        continue  # nothing worth protecting
+
+                    comments = doc_rec.get("comments")
+                    for page_id in removing_pages:
+                        page_title = page_doc_targets[page_id][0]
+                        comments = _append_unlink_note(comments, page_title, timestamp)
+                        kept_by_page[page_id].add(doc_id)
+                    comment_updates.append({"url": doc_rec["url"], "comments": comments})
+
+                if comment_updates:
+                    _logger.info(f"Updater {tid}: protecting {len(comment_updates)} doc(s) from orphaning")
+                    self._db.write("Documents", comment_updates)
+
+            tasks = []
+            for page_id, (page_title, target_set) in page_doc_targets.items():
+                final_targets = target_set | kept_by_page[page_id]
+                existing_set = page_existing[page_id]
+                to_add = final_targets - existing_set
+                to_remove = existing_set - final_targets
+                if not to_add and not to_remove:
+                    continue
+                tasks.append(lambda pid=page_id, add=to_add, remove=to_remove:
+                    _apply_doc_link_diff(self._db, "Pages", "doc_links", pid, add, remove))
 
             doc_link_results = _run_concurrent(tasks, max_workers=4)
 

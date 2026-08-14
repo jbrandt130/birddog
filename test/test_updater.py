@@ -9,11 +9,14 @@ from birddog.database_updater import (
     DatabaseUpdater,
     DatabaseUpdateManager,
     _allowed_doc_link,
+    _apply_doc_link_diff,
+    _append_unlink_note,
     _create_links,
     _edit_links,
     _extract_links_from_wiki_parse,
     _form_simple_page_record,
     _get_linked_doc_urls,
+    _has_processing_state,
     _is_category_link,
     _lookup_pages,
     _normalize_title,
@@ -385,6 +388,74 @@ class TestEditLinks(unittest.TestCase):
         added, removed = _create_links(self.db, "Pages", "children", "p1", ["a", "c"])
         self.assertEqual(added, {"c"})
         self.assertEqual(removed, set())
+        self.assertEqual(self.db.delete_calls, [])
+        self.assertEqual(len(self.db.create_calls), 1)
+
+
+class TestHasProcessingState(unittest.TestCase):
+    def test_blank_record_has_no_state(self):
+        self.assertFalse(_has_processing_state({"url": "https://x", "owning_pages": []}))
+
+    def test_blank_string_and_zero_are_not_state(self):
+        rec = {"comments": "", "pages_processed": 0, "doc_type": None}
+        self.assertFalse(_has_processing_state(rec))
+
+    def test_any_populated_field_counts(self):
+        self.assertTrue(_has_processing_state({"processor": "Juliana"}))
+        self.assertTrue(_has_processing_state({"pages_processed": 3}))
+        self.assertTrue(_has_processing_state({"comments": "reviewed"}))
+
+    def test_unrelated_fields_do_not_count(self):
+        self.assertFalse(_has_processing_state({"url": "https://x", "sha1_hash": "abc"}))
+
+
+class TestAppendUnlinkNote(unittest.TestCase):
+    def test_first_note_on_blank_comments(self):
+        result = _append_unlink_note("", "ДАХмО/Р-582/2/272", "2026-08-14")
+        self.assertEqual(result, "unlinked from ДАХмО/Р-582/2/272 on 2026-08-14")
+
+    def test_first_note_on_none_comments(self):
+        result = _append_unlink_note(None, "Page A", "2026-08-14")
+        self.assertEqual(result, "unlinked from Page A on 2026-08-14")
+
+    def test_appends_to_existing_comments(self):
+        result = _append_unlink_note("processor: Juliana", "Page A", "2026-08-14")
+        self.assertEqual(result, "processor: Juliana\nunlinked from Page A on 2026-08-14")
+
+    def test_repeat_call_for_same_page_is_idempotent(self):
+        first = _append_unlink_note("", "Page A", "2026-08-14")
+        second = _append_unlink_note(first, "Page A", "2026-08-20")
+        self.assertEqual(second, first)
+
+    def test_different_page_gets_its_own_note(self):
+        first = _append_unlink_note("", "Page A", "2026-08-14")
+        second = _append_unlink_note(first, "Page B", "2026-08-14")
+        self.assertEqual(
+            second,
+            "unlinked from Page A on 2026-08-14\nunlinked from Page B on 2026-08-14",
+        )
+
+
+class TestApplyDocLinkDiff(unittest.TestCase):
+    def setUp(self):
+        self.db = FakeDB()
+        self.db.links[("Pages", "doc_links", "p1")] = {"d1", "d2"}
+
+    def test_deletes_removed_and_creates_added(self):
+        added, removed = _apply_doc_link_diff(
+            self.db, "Pages", "doc_links", "p1", {"d3"}, {"d1"})
+        self.assertEqual((added, removed), ({"d3"}, {"d1"}))
+        self.assertEqual(self.db.delete_calls, [("Pages", "doc_links", "p1", ["d1"])])
+        self.assertEqual(self.db.create_calls, [("Pages", "doc_links", "p1", ["d3"])])
+        self.assertEqual(self.db.links[("Pages", "doc_links", "p1")], {"d2", "d3"})
+
+    def test_no_op_when_both_sets_empty(self):
+        _apply_doc_link_diff(self.db, "Pages", "doc_links", "p1", set(), set())
+        self.assertEqual(self.db.create_calls, [])
+        self.assertEqual(self.db.delete_calls, [])
+
+    def test_add_only_skips_delete_call(self):
+        _apply_doc_link_diff(self.db, "Pages", "doc_links", "p1", {"d3"}, set())
         self.assertEqual(self.db.delete_calls, [])
         self.assertEqual(len(self.db.create_calls), 1)
 
