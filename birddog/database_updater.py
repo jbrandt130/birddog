@@ -391,16 +391,59 @@ def _form_page_info_from_title(title):
 
 _URL_PATH_UNSAFE = re.compile(r'[\x00-\x20\x7f#?]')
 
+# MediaWiki resolves namespace prefixes case-insensitively (e.g. "File:", "file:", and
+# "FILE:" all name the same namespace), but preserves whatever case was typed. Left
+# uncanonicalized, differently-cased links to the same page normalize to different URLs
+# and create duplicate document records (observed: "File:" vs "file:" on
+# commons.wikimedia.org, 2026-08-04). Covers both wikis in use here (commons.wikimedia.org,
+# English namespaces only) and uk.wikisource.org (Ukrainian-localized namespaces), plus this
+# app's own "Архів" namespace.
+_WIKI_NAMESPACE_CANONICAL = {
+    ns.lower(): ns
+    for ns in (
+        "File", "Файл",
+        "Category", "Категорія",
+        "Talk", "Обговорення",
+        "User", "Користувач",
+        "Template", "Шаблон",
+        "Help", "Довідка",
+        "Portal", "Портал",
+        "Special", "Спеціальна",
+        "Index", "Індекс",
+        "Page", "Сторінка",
+        "MediaWiki",
+        "Архів",
+    )
+}
+
+def _canonicalize_namespace_prefix(path):
+    """Canonicalize the case of a leading wiki namespace prefix in a /wiki/<title> path
+    (e.g. "/wiki/file:X.pdf" -> "/wiki/File:X.pdf"), matching MediaWiki's own
+    case-insensitive namespace resolution. Only touches the namespace segment; the rest
+    of the title is left as-is since it's genuinely case-sensitive."""
+    if not path.startswith("/wiki/"):
+        return path
+    title = path[len("/wiki/"):]
+    ns, sep, rest = title.partition(":")
+    if not sep:
+        return path
+    canonical_ns = _WIKI_NAMESPACE_CANONICAL.get(ns.lower())
+    if not canonical_ns:
+        return path
+    return f"/wiki/{canonical_ns}:{rest}"
+
 def normalize_url(url):
     """Return a canonical form of a URL suitable for use as a unique identifier.
 
     - Lowercases scheme and host
     - Fully decodes percent-encoded path characters (Unicode becomes literal)
     - Re-encodes only characters that are unsafe in a URL path (control chars, space, # ?)
+    - Canonicalizes the case of a leading wiki namespace prefix (e.g. File:/Категорія:)
     """
     url = url.strip()
     parsed = urlparse(url)
     path = _URL_PATH_UNSAFE.sub(lambda m: quote(m.group(0)), unquote(parsed.path))
+    path = _canonicalize_namespace_prefix(path)
     return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), path, parsed.params, parsed.query, ''))
 
 def _source_from_url(url):
@@ -793,7 +836,7 @@ class DatabaseUpdater:
                 for link in page_links.get(source, []):
                     if link.get("doc_type"):
                         url = link.get("url")
-                        url = url.replace(" ", "_").replace("file:", "File:")
+                        url = url.replace(" ", "_")
                         _add_doc_link(title, url)
 
             for url in page_links.get("external_links", []):
@@ -979,6 +1022,12 @@ class DatabaseUpdater:
         #_logger.info(f"### 1. {doc_records}\n\n")
 
         tid = threading.get_ident()
+
+        # Multiple raw urls (e.g. differing only in namespace-prefix case) can normalize to
+        # the same canonical url; collapse them to one record per canonical url up front so
+        # a single batch never fetches metadata twice or writes two rows for the same document.
+        doc_records = {record["url"]: record for record in doc_records.values()}
+
         # collect meta data for known sources
         if update_doc_metadata:
             _KNOWN_SOURCES = ("commons", "wikisource")
