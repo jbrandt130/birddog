@@ -16,6 +16,7 @@ from birddog.abstract_database import InvalidRecordId
 from birddog.database import Database
 from birddog.wiki import (
     API_URL,
+    archive_label_priority,
     canonicalize_title,
     page_label,
     get_root_label,
@@ -1267,37 +1268,41 @@ class DatabaseUpdater:
             for r in doc_recs
         }
 
-    def _get_field_lookups(self, doc_map, page_map, owner_map, field_name):
-        result = {}
-        for did, rec in doc_map.items():
-            # a page id may be a dangling link (page record no longer exists);
-            # skip those rather than treating them as owners with no data
-            result[did] = [
-                page_map[p][field_name] for p in owner_map[did] if p in page_map
-            ]
-        return result
-
-    def _reduce_update_value(self, field_name, update_value):
-        # simplistic logic - always take value of 'first' owning page
-        return update_value[0] if update_value else None
+    def _select_owning_page(self, owner_ids, page_map):
+        # a page id may be a dangling link (page record no longer exists);
+        # skip those rather than treating them as owners with no data
+        candidates = [page_map[p] for p in owner_ids if p in page_map]
+        if not candidates:
+            return None
+        # precedence: the page's archive (lower archive_label_priority wins,
+        # e.g. a "primary" archive beats an aggregator like TOWNS) -> the
+        # deepest (most specific/leaf-most) label within that archive -> a
+        # numerically-aware ("631/2" before "631/10") ordering among ties, so
+        # the choice among several owning pages is deterministic rather than
+        # depending on arbitrary link order
+        return min(candidates, key=lambda p: (
+            archive_label_priority(p.get("root_label")),
+            -len((p.get("label") or "").split("/")),
+            p.get("seq_label") or "",
+        ))
 
     def _set_doc_lookup_fields(self, doc_map, page_map, owner_map, lookup_fields, lookup_field_mapping):
-        # only docs with at least one owning page actually have something to look up;
-        # skip the rest so they stay lookup_status="invalid" and get retried once linked,
-        # rather than being locked in as "valid" with empty metadata
-        doc_updates = {
-            did: {
-                "url": doc_rec["url"],
-                "lookup_status": "valid",
-            } for did, doc_rec in doc_map.items() if owner_map.get(did) }
-        for field_name in lookup_fields:
-            updates = self._get_field_lookups(doc_map, page_map, owner_map, field_name)
-            mapped_field_name = lookup_field_mapping.get(field_name, field_name)
-            for did, update_value in updates.items():
-                if did not in doc_updates:
-                    continue
-                doc_updates[did][mapped_field_name] = self._reduce_update_value(field_name, update_value)
-        return list(doc_updates.values())
+        doc_updates = []
+        for did, doc_rec in doc_map.items():
+            owner_ids = owner_map.get(did)
+            # only docs with at least one owning page actually have something to
+            # look up; skip the rest so they stay lookup_status="invalid" and get
+            # retried once linked, rather than being locked in as "valid" with
+            # empty metadata
+            if not owner_ids:
+                continue
+            page = self._select_owning_page(owner_ids, page_map) or {}
+            update = {"url": doc_rec["url"], "lookup_status": "valid"}
+            for field_name in lookup_fields:
+                mapped_field_name = lookup_field_mapping.get(field_name, field_name)
+                update[mapped_field_name] = page.get(field_name)
+            doc_updates.append(update)
+        return doc_updates
 
     def refresh_doc_lookups(self, limit=100):
         doc_recs, _ = self._db.scan(

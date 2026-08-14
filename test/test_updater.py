@@ -609,7 +609,7 @@ class TestSetDocLookupFields(unittest.TestCase):
         self.assertEqual(updated_urls, {"https://example.org/d1"})
 
 
-class TestOwnerIdsAndFieldLookups(unittest.TestCase):
+class TestOwnerIds(unittest.TestCase):
     def setUp(self):
         self.updater = DatabaseUpdater(runtime=None)
 
@@ -617,16 +617,77 @@ class TestOwnerIdsAndFieldLookups(unittest.TestCase):
         result = self.updater._get_owner_ids([{"Id": "d1"}, {"Id": "d2", "owning_pages": ["p1"]}])
         self.assertEqual(result, {"d1": [], "d2": ["p1"]})
 
-    def test_get_field_lookups_skips_dangling_links(self):
-        doc_map = {"d1": {"Id": "d1"}}
-        page_map = {"p1": {"label": "L1"}}
-        owner_map = {"d1": ["p1", "p_deleted"]}
-        result = self.updater._get_field_lookups(doc_map, page_map, owner_map, "label")
-        self.assertEqual(result, {"d1": ["L1"]})
 
-    def test_reduce_update_value_takes_first_or_none(self):
-        self.assertEqual(self.updater._reduce_update_value("label", ["A", "B"]), "A")
-        self.assertIsNone(self.updater._reduce_update_value("label", []))
+class TestSelectOwningPage(unittest.TestCase):
+    """
+    Unit tests for DatabaseUpdater._select_owning_page, which picks the single
+    "winning" owning page for a Document linked to more than one Page, so that
+    every copied-over lookup field (label, root_label, level, ...) consistently
+    describes the same page instead of being reduced independently per field.
+
+    Precedence: archive priority (a "primary" archive beats a cross-cutting
+    aggregator like TOWNS) -> deepest/most specific label within that archive
+    -> numerically-aware ("631/2" before "631/10") ordering among remaining ties.
+    """
+
+    def setUp(self):
+        self.updater = DatabaseUpdater(runtime=None)
+
+    def test_no_owners_returns_none(self):
+        self.assertIsNone(self.updater._select_owning_page([], {}))
+
+    def test_skips_dangling_links(self):
+        page_map = {"p1": {"label": "L1", "root_label": "L1", "seq_label": "L1"}}
+        result = self.updater._select_owning_page(["p1", "p_deleted"], page_map)
+        self.assertEqual(result, page_map["p1"])
+
+    def test_all_dangling_returns_none(self):
+        self.assertIsNone(self.updater._select_owning_page(["p_deleted"], {}))
+
+    def test_prefers_primary_archive_over_aggregator(self):
+        page_map = {
+            "p_towns": {
+                "label": "TOWNS/Kyyivska_huberniya", "root_label": "TOWNS",
+                "seq_label": "TOWNS/Kyyivska_huberniya",
+            },
+            "p_dako": {
+                "label": "DAKO/1/325", "root_label": "DAKO",
+                "seq_label": "DAKO/00000001/00000325",
+            },
+        }
+        result = self.updater._select_owning_page(["p_towns", "p_dako"], page_map)
+        self.assertEqual(result, page_map["p_dako"])
+
+    def test_prefers_deeper_label_within_same_archive(self):
+        page_map = {
+            "p_opus": {
+                "label": "TSDAVO/5/2", "root_label": "TSDAVO",
+                "seq_label": "TSDAVO/00000005/00000002",
+            },
+            "p_case": {
+                "label": "TSDAVO/5/2/656", "root_label": "TSDAVO",
+                "seq_label": "TSDAVO/00000005/00000002/00000656",
+            },
+        }
+        result = self.updater._select_owning_page(["p_opus", "p_case"], page_map)
+        self.assertEqual(result, page_map["p_case"])
+
+    def test_numeric_aware_tiebreak_among_equal_depth(self):
+        # plain lexicographic comparison of "DAIFO/631/10" vs "DAIFO/631/2"
+        # would (wrongly) put "10" before "2"; seq_label zero-pads digit runs
+        # so the numeric ordering comes out right
+        page_map = {
+            "p_10": {
+                "label": "DAIFO/631/10", "root_label": "DAIFO",
+                "seq_label": "DAIFO/00000631/00000010",
+            },
+            "p_2": {
+                "label": "DAIFO/631/2", "root_label": "DAIFO",
+                "seq_label": "DAIFO/00000631/00000002",
+            },
+        }
+        result = self.updater._select_owning_page(["p_10", "p_2"], page_map)
+        self.assertEqual(result, page_map["p_2"])
 
 
 class TestUpdateDocRecordsFromRecords(unittest.TestCase):

@@ -453,6 +453,77 @@ def page_label(title):
 def get_root_label(label):
     return label.split("/")[0]
 
+# -------------------------------------------------------------------------------
+# archive label priority (for choosing among a Document's owning pages when they
+# span more than one archive -- see database_updater.py refresh_doc_lookups())
+
+# Stable, deterministic precedence order for archive root labels. Ordinal
+# position only needs to break ties consistently -- empirically, real
+# document-owned-by-two-different-archives conflicts are rare, so this list
+# doesn't encode any meaningful real-world importance ranking between two
+# "primary" archives. What does matter is that cross-cutting index /
+# finding-aid archives (see _AGGREGATOR_ARCHIVE_LABELS below) always lose to a
+# "primary" archive, since they aggregate records that already belong to some
+# other, more specific archive.
+_ARCHIVE_LABEL_ORDER = [
+    "AGAD", "ANK", "AVPRI", "Akty_tsyvilnoho_stanu_v_Ukrayini_(1917-1950)",
+    "Arkhivnyy_viddil_Brovarskoyi_rayderzhadministratsiyi",
+    "Arkhivnyy_viddil_Buchanskoyi_rayderzhadministratsiyi",
+    "Bila_Tserkva", "CDIAK", "CSAMM", "CSDAG", "DAARK", "DACHGO", "DACHKO",
+    "DACHVO", "DADNO", "DADO", "DAHEO", "DAHMO", "DAHO", "DAIFO", "DAK",
+    "DAKIRO", "DAKO", "DAKRE-R", "DALO", "DALUO", "DAMO", "DAOO", "DAPO",
+    "DARO", "DAS", "DASO", "DATO", "DAVIO", "DAVO", "DAZHO", "DAZKO", "DAZPO",
+    "DISZMO-Digital collections", "Decerkva-MalaLuka", "Decerkva-Novoselytsya",
+    "Decerkva-Ostapivka", "Decerkva-Perevolochna", "Decerkva-Trostyanets",
+    "Decerkva-Verkhnie", "Decerkva-Zolotolyn",
+    "Dokumenty_z_istoriyi_Zakhidnoyi_Slobozhanshchyny_(suchasnyy_Bohodukhivskyy_rayon)",
+    "GAVO", "GDA-MOD", "GDA-MVS", "GDA-SSU", "GDA-SZRU", "Heo", "IANANU",
+    "ILNAN-Digital collections", "IMFE", "IMFE-2", "IR-NBUV", "Inventarium",
+    "Inventarium-2", "KPDIMZ-Church records", "KUIZA", "Karazin", "Kremenchuk",
+    "Kyyiv", "LNB", "LVIA", "MAB-LT", "MVK-IF", "Memuary_Abrama_Bondarenka",
+    "Memuary_Abrama_Bondarenka_(drukovanyy_variant)", "NIAB", "NIAB-2",
+    "NML-AS", "NMTSh", "OMELNIK", "OMR", "ONU", "Perepys_Bohodukhova_(1667)",
+    "RGADA", "RGIA", "Revizki_kazky_Chernihivskoyi_huberniyi",
+    "Revizki_kazky_Katerynoslavskoyi_huberniyi",
+    "Revizki_kazky_Kyyivskoyi_huberniyi",
+    "Revizki_kazky_Podilskoyi_huberniyi",
+    "Revizki_kazky_Volynskoyi_huberniyi",
+    "Spysok_dokumentiv_Tarashchanskoho_mahistratu", "TOWNS", "TSDAVO",
+    "TSDAZU", "TSDIAL", "TsDAZU",
+]
+
+# cross-cutting index / finding-aid archives: these collect references to
+# records that (when present) are also owned by some other, more specific
+# archive, so they should always lose a Document-label tiebreak to that other
+# archive rather than being picked just because of link order.
+_AGGREGATOR_ARCHIVE_LABELS = {
+    "TOWNS",
+    "Heo",
+    "Inventarium",
+    "Inventarium-2",
+    "Akty_tsyvilnoho_stanu_v_Ukrayini_(1917-1950)",
+    "Revizki_kazky_Chernihivskoyi_huberniyi",
+    "Revizki_kazky_Katerynoslavskoyi_huberniyi",
+    "Revizki_kazky_Kyyivskoyi_huberniyi",
+    "Revizki_kazky_Podilskoyi_huberniyi",
+    "Revizki_kazky_Volynskoyi_huberniyi",
+}
+
+_ARCHIVE_LABEL_PRIORITY = {
+    label: (1 if label in _AGGREGATOR_ARCHIVE_LABELS else 0, i)
+    for i, label in enumerate(_ARCHIVE_LABEL_ORDER)
+}
+# a label outside the curated list above (e.g. a newly auto-registered root --
+# see register_archive_root()) gets normal-tier priority, ordered after every
+# curated label but still ahead of any aggregator
+_UNKNOWN_ARCHIVE_LABEL_PRIORITY = (0, len(_ARCHIVE_LABEL_ORDER))
+
+def archive_label_priority(label):
+    """Sort key for archive precedence: lower sorts first. Used to pick one
+    'winning' owning page when a Document is linked to pages in more than one
+    archive."""
+    return _ARCHIVE_LABEL_PRIORITY.get(label, _UNKNOWN_ARCHIVE_LABEL_PRIORITY)
+
 def is_archive(title):
     title = canonicalize_title(title)
     return title in ARCHIVE_BY_TITLE or is_root_title(title)
