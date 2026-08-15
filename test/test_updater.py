@@ -50,7 +50,11 @@ class FakeDB:
         self.lookup_map = {}        # table -> {key: id}
         self.records = {}           # table -> {id: record dict}
         self.links = {}             # (table, field, source) -> set(target ids)
-        self.scan_pages = {}        # table -> [(records, has_more), ...]
+        self.scan_pages = {}          # table -> [(records, has_more), ...]
+        self.scan_pages_by_view = {}  # (table, view_name) -> [(records, has_more), ...],
+                                       # takes precedence over scan_pages when set - lets a
+                                       # test seed two independent scan() sequences against
+                                       # the same table (one view-scoped, one not)
         self.scan_links_pages = {}  # (table, field, source) -> [(ids, has_more), ...]
         self.keys = {}              # table -> key field name
         self.create_calls = []
@@ -90,7 +94,11 @@ class FakeDB:
 
     def scan(self, table_name, limit=100, cursor=None, where=None,
              view_name=None, sort=None, fields=None, raw=False, use_v3=False):
-        pages = self.scan_pages.get(table_name, [])
+        view_key = (table_name, view_name)
+        if view_name and view_key in self.scan_pages_by_view:
+            pages = self.scan_pages_by_view[view_key]
+        else:
+            pages = self.scan_pages.get(table_name, [])
         idx = cursor or 0
         if idx >= len(pages):
             return [], None
@@ -718,6 +726,112 @@ class TestUpdateDocRecordsFromRecords(unittest.TestCase):
         changed = self.updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
         self.assertTrue(changed)
         self.assertEqual(len(self.db.write_calls), 1)
+
+
+class TestLinkHashDuplicates(unittest.TestCase):
+    """
+    link_hash_duplicates() makes two independent scan() sequences against
+    "Documents" in one call: a view-scoped scan for the unchecked batch, and
+    a plain where=("sha1_hash","in",...) scan for each hash's full group.
+    Both start at cursor=None, and FakeDB.scan() indexes pages purely by
+    cursor (not call order), so a single scan_pages["Documents"] list can't
+    represent both sequences - seed the view-scoped batch via
+    scan_pages_by_view and the group lookup via plain scan_pages.
+    """
+
+    def setUp(self):
+        self.db = FakeDB()
+        self.updater = make_updater(self.db)
+
+    def _seed(self, unchecked_page, group_page):
+        self.db.scan_pages_by_view[("Documents", "BD:Need Dupe Check")] = [
+            (unchecked_page, False),
+        ]
+        self.db.scan_pages["Documents"] = [
+            (group_page, False),
+        ]
+
+    def test_empty_batch_returns_false_noop(self):
+        self.db.scan_pages_by_view[("Documents", "BD:Need Dupe Check")] = [([], False)]
+        result = self.updater.link_hash_duplicates()
+        self.assertFalse(result)
+        self.assertEqual(self.db.write_calls, [])
+        self.assertEqual(self.db.create_calls, [])
+
+    def test_unique_hash_doc_gets_marked_checked_no_links(self):
+        rec = {"Id": "d1", "url": "https://x/1", "sha1_hash": "h1"}
+        self._seed([rec], [rec])
+
+        result = self.updater.link_hash_duplicates()
+
+        self.assertTrue(result)
+        self.assertEqual(self.db.create_calls, [])
+        _, updates = self.db.write_calls[0]
+        self.assertEqual(updates, [{"url": "https://x/1", "dupes_checked": True}])
+
+    def test_fresh_group_of_two_new_docs(self):
+        d1 = {"Id": "d1", "url": "https://x/1", "sha1_hash": "hA"}
+        d2 = {"Id": "d2", "url": "https://x/2", "sha1_hash": "hA"}
+        self._seed([d1, d2], [d1, d2])
+
+        result = self.updater.link_hash_duplicates()
+
+        self.assertTrue(result)
+        self.assertEqual(self.db.links[("Documents", "duplicates", "d1")], {"d2"})
+        self.assertEqual(self.db.links[("Documents", "duplicate_of", "d2")], {"d1"})
+        self.assertNotIn(("Documents", "duplicates", "d2"), self.db.links)
+        self.assertNotIn(("Documents", "duplicate_of", "d1"), self.db.links)
+        urls_checked = {u["url"] for _, updates in self.db.write_calls for u in updates}
+        self.assertEqual(urls_checked, {"https://x/1", "https://x/2"})
+
+    def test_new_doc_joins_already_linked_group(self):
+        self.db.links[("Documents", "duplicates", "d1")] = {"d2"}
+        self.db.links[("Documents", "duplicate_of", "d2")] = {"d1"}
+        d1 = {"Id": "d1", "url": "https://x/1", "sha1_hash": "hA"}
+        d2 = {"Id": "d2", "url": "https://x/2", "sha1_hash": "hA"}
+        d3 = {"Id": "d3", "url": "https://x/3", "sha1_hash": "hA"}
+        self._seed([d3], [d1, d2, d3])
+
+        result = self.updater.link_hash_duplicates()
+
+        self.assertTrue(result)
+        self.assertEqual(self.db.links[("Documents", "duplicates", "d1")], {"d2", "d3"})
+        self.assertEqual(self.db.links[("Documents", "duplicate_of", "d3")], {"d1"})
+        self.assertEqual(self.db.links[("Documents", "duplicate_of", "d2")], {"d1"})
+        _, updates = self.db.write_calls[0]
+        self.assertEqual(updates, [{"url": "https://x/3", "dupes_checked": True}])
+
+    def test_primary_can_be_an_already_checked_older_member(self):
+        # d1 has the lower Id (created earlier) but is only now getting its
+        # hash; d9 has a higher Id but was already checked as hash-unique (no
+        # group, no links) in an earlier cycle, before d1 had a hash at all.
+        # d1 becomes primary by min(Id) even though d9 is the "older" record.
+        d1 = {"Id": "d1", "url": "https://x/1", "sha1_hash": "hA"}
+        d9 = {"Id": "d9", "url": "https://x/9", "sha1_hash": "hA"}
+        self._seed([d1], [d1, d9])
+
+        result = self.updater.link_hash_duplicates()
+
+        self.assertTrue(result)
+        self.assertEqual(self.db.links[("Documents", "duplicates", "d1")], {"d9"})
+        self.assertEqual(self.db.links[("Documents", "duplicate_of", "d9")], {"d1"})
+        _, updates = self.db.write_calls[0]
+        self.assertEqual(updates, [{"url": "https://x/1", "dupes_checked": True}])
+
+    def test_mixed_batch_grouped_and_ungrouped(self):
+        d1 = {"Id": "d1", "url": "https://x/1", "sha1_hash": "hA"}
+        d2 = {"Id": "d2", "url": "https://x/2", "sha1_hash": "hA"}
+        d3 = {"Id": "d3", "url": "https://x/3", "sha1_hash": "hB"}
+        self._seed([d1, d2, d3], [d1, d2, d3])
+
+        result = self.updater.link_hash_duplicates()
+
+        self.assertTrue(result)
+        self.assertEqual(self.db.links[("Documents", "duplicates", "d1")], {"d2"})
+        self.assertNotIn(("Documents", "duplicates", "d3"), self.db.links)
+        self.assertNotIn(("Documents", "duplicate_of", "d3"), self.db.links)
+        urls_checked = {u["url"] for _, updates in self.db.write_calls for u in updates}
+        self.assertEqual(urls_checked, {"https://x/1", "https://x/2", "https://x/3"})
 
 
 class TestUpdateDocRecordsValidation(unittest.TestCase):

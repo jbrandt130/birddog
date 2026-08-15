@@ -1361,6 +1361,69 @@ class DatabaseUpdater:
         _logger.info(f"refresh_doc_lookups: writing {len(updates)} updates")
         return bool(self._db.write("Documents", updates))
 
+    def link_hash_duplicates(self, limit=200, hash_chunk_size=50):
+        unchecked_recs, _ = self._db.scan(
+            "Documents",
+            view_name="BD:Need Dupe Check",
+            fields=["url", "sha1_hash"],
+            limit=limit,
+        )
+        if not unchecked_recs:
+            return False
+
+        hashes = sorted({r["sha1_hash"] for r in unchecked_recs if r.get("sha1_hash")})
+
+        # hash -> {Id: rec}, queried against the whole table (no view_name) so this
+        # picks up group members that were already checked/linked in a prior cycle,
+        # not just the docs in this batch
+        members_by_hash = {}
+        for i in range(0, len(hashes), hash_chunk_size):
+            chunk = hashes[i:i + hash_chunk_size]
+            cursor = None
+            while True:
+                recs, cursor = self._db.scan(
+                    "Documents",
+                    where=("sha1_hash", "in", chunk),
+                    fields=["url", "sha1_hash"],
+                    limit=100,
+                    cursor=cursor,
+                )
+                for r in recs:
+                    members_by_hash.setdefault(r["sha1_hash"], {})[r["Id"]] = r
+                if not cursor:
+                    break
+
+        unchecked_ids = {r["Id"] for r in unchecked_recs}
+        groups_touched = 0
+
+        for members in members_by_hash.values():
+            if len(members) < 2:
+                continue  # unique hash - no group
+            if unchecked_ids.isdisjoint(members):
+                continue  # already fully linked in a prior cycle - nothing new to do
+
+            # Id order == creation order -> primary is always the first-created
+            # member, and adding later (higher-Id) members never changes it
+            member_ids = sorted(members)
+            primary_id, other_ids = member_ids[0], member_ids[1:]
+
+            # ensure primary -> everyone-else, and everyone-else -> primary.
+            # Neither side can be skipped based on new-vs-already-checked: hash
+            # population happens asynchronously and independently of when a
+            # Document row was first created, so the eventual primary (lowest
+            # Id) is not necessarily the member that's new this cycle - an
+            # older, already-checked member can be the one newly missing its
+            # duplicate_of link. _create_links is idempotent, so re-asserting
+            # both directions on every touched group is cheap and always safe.
+            _create_links(self._db, "Documents", "duplicates", primary_id, other_ids)
+            for other_id in other_ids:
+                _create_links(self._db, "Documents", "duplicate_of", other_id, [primary_id])
+            groups_touched += 1
+
+        updates = [{"url": r["url"], "dupes_checked": True} for r in unchecked_recs]
+        _logger.info(f"link_hash_duplicates: checked {len(updates)} docs, {groups_touched} groups touched")
+        return bool(self._db.write("Documents", updates))
+
 class DatabaseUpdateManager(TaskManager):
     _BATCH_SIZE = 20
     _BATCHED_DOC_UPDATE_THRESHOLD = 5

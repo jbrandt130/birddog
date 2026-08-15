@@ -424,6 +424,7 @@ class Runtime:
             self._database_updater.start_translation()
             self._database_update_manager.update_document_metadata()
             self._database_updater.refresh_doc_lookups()
+            self._database_updater.link_hash_duplicates()
 
     @property
     def database(self):
