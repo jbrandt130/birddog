@@ -1313,7 +1313,7 @@ class DatabaseUpdater:
         doc_recs, _ = self._db.scan(
             "Documents",
             view_name="BD:Need Page Lookups",
-            fields=["url", "owning_pages"],
+            fields=["url", "owning_pages", "filename"],
             limit=limit,
             use_v3=True,
         )
@@ -1354,8 +1354,12 @@ class DatabaseUpdater:
             _lookup_field_mapping)
 
         # filename is derived from label/root_label rather than looked up directly,
-        # e.g. "DAHMO/R-254/1/3" with root label "DAHMO" -> "R-254-1-3"
+        # e.g. "DAHMO/R-254/1/3" with root label "DAHMO" -> "R-254-1-3";
+        # only fill it in when missing so we don't clobber manual overrides
+        existing_filenames = {r["url"]: r.get("filename") for r in doc_recs}
         for update in updates:
+            if existing_filenames.get(update["url"]):
+                continue
             label = update.get("label")
             if not label:
                 continue
