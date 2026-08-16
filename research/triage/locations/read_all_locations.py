@@ -219,12 +219,12 @@ class LocationMatcher:
         if max_score >= threshold:
             if debug_print and  best_data:
                 print(
-                    f"Location {place_to_search} is identified as {best_data.get('main_name', '')}, "
+                    f"Location '{place_to_search}' is identified as '{best_data.get('main_name', '')}', "
                     f"{best_data.get('country', '')}, location ID={best_id} with score: {max_score}")
             return best_id
 
         if debug_print and  best_data:
-            print(f"No match found for {place_to_search}. Maximum score: {max_score}, "
+            print(f"No match found for '{place_to_search}'. Maximum score: {max_score}, "
                   f"best candidate {best_data.get('main_name', '')}")
 
         return None
