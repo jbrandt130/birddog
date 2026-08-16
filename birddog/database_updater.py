@@ -249,6 +249,11 @@ _DOC_PROCESSING_STATE_FIELDS = (
 def _has_processing_state(doc_rec):
     return any(doc_rec.get(field) for field in _DOC_PROCESSING_STATE_FIELDS)
 
+def _owning_page_ids(doc_rec):
+    # db.read() expands a link field like "owning_pages" to a list of nested
+    # {"Id": ..., "title": ...} dicts, not plain ids -- pull the ids back out.
+    return {p["Id"] for p in (doc_rec.get("owning_pages") or [])}
+
 def _append_unlink_note(comments, page_title, timestamp):
     # Idempotent per page_title so re-running the updater against an unchanged
     # page doesn't append a fresh note (with a new timestamp) every cycle.
@@ -1053,7 +1058,7 @@ class DatabaseUpdater:
                     doc_rec = guard_recs.get(doc_id)
                     if not doc_rec:
                         continue
-                    current_owners = set(doc_rec.get("owning_pages") or [])
+                    current_owners = _owning_page_ids(doc_rec)
                     if current_owners - removing_pages:
                         continue  # doc keeps at least one owner outside this batch
                     if not _has_processing_state(doc_rec):

@@ -20,6 +20,7 @@ from birddog.database_updater import (
     _is_category_link,
     _lookup_pages,
     _normalize_title,
+    _owning_page_ids,
     _page_urls_from_titles,
     _replace_links,
     _sniff_suffix,
@@ -415,6 +416,25 @@ class TestHasProcessingState(unittest.TestCase):
 
     def test_unrelated_fields_do_not_count(self):
         self.assertFalse(_has_processing_state({"url": "https://x", "sha1_hash": "abc"}))
+
+
+class TestOwningPageIds(unittest.TestCase):
+    def test_expands_nested_link_dicts_to_ids(self):
+        # this is the actual shape db.read() returns for a link field --
+        # regression test for a prior crash (set() on a list of dicts raises
+        # "unhashable type: 'dict'")
+        doc_rec = {"owning_pages": [{"Id": 730331, "title": "ГАДА/354"},
+                                     {"Id": 730332, "title": "ГАДА/354/25"}]}
+        self.assertEqual(_owning_page_ids(doc_rec), {730331, 730332})
+
+    def test_missing_field_is_empty(self):
+        self.assertEqual(_owning_page_ids({}), set())
+
+    def test_empty_list_is_empty(self):
+        self.assertEqual(_owning_page_ids({"owning_pages": []}), set())
+
+    def test_none_is_empty(self):
+        self.assertEqual(_owning_page_ids({"owning_pages": None}), set())
 
 
 class TestAppendUnlinkNote(unittest.TestCase):
