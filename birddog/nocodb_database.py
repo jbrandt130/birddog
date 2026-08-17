@@ -34,7 +34,7 @@ _logger = get_logger()
 timer = FunctionTimer()
 
 _NOCODB_RUN_LOCAL       = os.environ.get("BIRDDOG_USE_LOCAL_NOCODB")
-_NOCODB_RUN_HOSTED      = False
+_NOCODB_RUN_HOSTED      = os.environ.get("BIRDDOG_USE_CLOUD_NOCODB")
 
 if _NOCODB_RUN_LOCAL:
     # use locally running nocodb
@@ -47,13 +47,13 @@ if _NOCODB_RUN_LOCAL:
     _logger.info(f"Using local nocodb api: {_NOCODB_HOST}")
 elif _NOCODB_RUN_HOSTED:
     # use hosted nocodb on nocodb.com
-    _NOCODB_BASE_ID     = "pljzqjmv8a5nvku"
-    _NOCODB_API_TOKEN   = os.environ["NOCODB_API_TOKEN"]
+    _NOCODB_BASE_ID     = os.environ["BIRDDOG_CLOUD_BASE_ID"]
+    _NOCODB_API_TOKEN   = os.environ["BIRDDOG_CLOUD_NOCODB_API_TOKEN"]
     _NOCODB_HOST        = "https://app.nocodb.com"
     _NOCODB_API_DELAY   = .25
     _NOCODB_BATCH_SIZE  = 20
     _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
-    _logger.info(f"Using hosted nocodb api: {_NOCODB_HOST}")
+    _logger.info(f"Using cloud hosted nocodb api: {_NOCODB_HOST}")
 else:
     # use self-managed nocodb on aws
     _NOCODB_BASE_ID     = os.environ["BIRDDOG_AWS_BASE_ID"]

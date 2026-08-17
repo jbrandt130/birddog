@@ -996,9 +996,12 @@ class DatabaseUpdater:
         if doc_urls:
             #_logger.info(f"doc_urls: {doc_urls}")
             doc_records = { url: form_document_record(url) for url in doc_urls }
+            # this is the one legitimate path allowed to create new Document records --
+            # docs discovered by scraping an owning page's outgoing links.
             doc_records_changed = self._update_doc_records_from_records(
-                doc_records, 
-                update_doc_metadata)
+                doc_records,
+                update_doc_metadata,
+                allow_create=True)
 
             # One lookup for all document IDs, then reuse locally.
             # Documents are keyed by canonical link, so canonicalize before lookup
@@ -1115,7 +1118,13 @@ class DatabaseUpdater:
             doc_links_changed,
         ])
 
-    def update_doc_records(self, doc_urls, update_doc_metadata=True):
+    def update_doc_records(self, doc_urls, update_doc_metadata=True, allow_create=False):
+        # allow_create defaults to False: this is the safe default for a caller with
+        # no content-derived provenance for the urls it's passing in (WikiDocTracker's
+        # doc-change heartbeats, the BD:Missing Metadata backfill). Callers that DO
+        # have that provenance -- update_page_records' own direct call, and
+        # DatabaseUpdateManager._update_doc_metadata's inline/deferred refresh of docs
+        # just discovered on a scraped page -- explicitly pass allow_create=True.
         doc_records_changed = False
         if isinstance(doc_urls, str):
             doc_urls = { doc_urls }
@@ -1128,13 +1137,13 @@ class DatabaseUpdater:
 
         tid = threading.get_ident()
 
-        _logger.info(f"Updater.update_doc_records {tid}: #docs={len(doc_urls)}, metadata update={update_doc_metadata}")
+        _logger.info(f"Updater.update_doc_records {tid}: #docs={len(doc_urls)}, metadata update={update_doc_metadata}, allow_create={allow_create}")
         doc_records = { url: form_document_record(url) for url in doc_urls}
 
         return self._update_doc_records_from_records(
-            doc_records, update_doc_metadata=update_doc_metadata)
+            doc_records, update_doc_metadata=update_doc_metadata, allow_create=allow_create)
 
-    def _update_doc_records_from_records(self, doc_records, update_doc_metadata=True):
+    def _update_doc_records_from_records(self, doc_records, update_doc_metadata=True, allow_create=True):
         #_logger.info(f"### 1. {doc_records}\n\n")
 
         tid = threading.get_ident()
@@ -1192,9 +1201,15 @@ class DatabaseUpdater:
                 if changed:
                     record["last_birddog_update"] = timestamp
                     doc_update.append(record)
-            else:
+            elif allow_create:
                 record["last_birddog_update"] = timestamp
                 doc_update.append(record)
+            else:
+                _logger.warning(
+                    f"Updater._update_doc_records_from_records {tid}: refusing to create a new "
+                    f"Document for url={record['url']!r} (title={record.get('title')!r}) -- "
+                    f"creation is not allowed on this path"
+                )
 
         doc_ids = self._db.write("Documents", doc_update) if doc_update else []
         doc_records_changed = bool(doc_ids)
@@ -1572,6 +1587,13 @@ class DatabaseUpdateManager(TaskManager):
                 self.start_update(child_titles, deep=True)
 
     def _update_doc_metadata(self, titles):
+        # these urls come from Pages.doc_links, which update_page_records() (called
+        # immediately before this, for the same titles) just populated from the
+        # page's own content -- content-derived doc discovery, same trust level as
+        # update_page_records' own direct doc-creation call. allow_create=True here
+        # (unlike the WikiDocTracker/BD:Missing Metadata paths, which have no such
+        # provenance) so a deferred/resumed batch can still recover if the row it
+        # was queued for doesn't exist by the time it actually runs.
         update_doc_urls = []
         for title in titles:
             try:
@@ -1581,7 +1603,7 @@ class DatabaseUpdateManager(TaskManager):
                 else:
                     task_name = f"DBD_{new_id()}"
                     batches = [
-                        {"kind": self._DOC_UPDATE_KIND, "urls": doc_urls[i:i + self._BATCH_SIZE]}
+                        {"kind": self._DOC_UPDATE_KIND, "urls": doc_urls[i:i + self._BATCH_SIZE], "allow_create": True}
                         for i in range(0, len(doc_urls), self._BATCH_SIZE)
                     ]
                     self._create_task(task_name, self._DOC_UPDATE_KIND, title, len(doc_urls), batches, deep=False)
@@ -1589,7 +1611,7 @@ class DatabaseUpdateManager(TaskManager):
                 _logger.error(f"DatabaseUpdateManager: exception during doc metadata update for {title}: {err}")
         if update_doc_urls:
             try:
-                self._updater.update_doc_records(update_doc_urls, update_doc_metadata=True)
+                self._updater.update_doc_records(update_doc_urls, update_doc_metadata=True, allow_create=True)
             except Exception as err:
                 _logger.error(f"DatabaseUpdateManager: exception during doc metadata update for {update_doc_urls}: {err}")
 
@@ -1597,8 +1619,18 @@ class DatabaseUpdateManager(TaskManager):
         _logger.info(f"DatabaseUpdateManager: doc update subtask {subtask['task_id']}.{subtask['index']}")
         batch = subtask["payload"]
         urls = batch.get("urls", [])
+        # allow_create travels with the batch payload since this executor is shared
+        # by two different origins: _update_doc_metadata's deferred batches (content-
+        # derived, may create -- tags "allow_create": True) and start_document_update's
+        # batches (WikiDocTracker / BD:Missing Metadata backfill, must never create --
+        # tags "allow_create": False). Both origins now tag themselves explicitly, so
+        # the True fallback below only ever applies to a task queued before that
+        # tagging existed -- preserving the behavior it was created under (creation was
+        # always allowed, there was no guard yet) rather than silently reinterpreting
+        # old, already-queued work as newly-restricted.
+        allow_create = bool(batch.get("allow_create", True))
         try:
-            updated = self._updater.update_doc_records(urls, update_doc_metadata=True)
+            updated = self._updater.update_doc_records(urls, update_doc_metadata=True, allow_create=allow_create)
             subtask["payload"] = {
                 "kind": batch.get("kind"),
                 "updated": updated,
@@ -1635,9 +1667,13 @@ class DatabaseUpdateManager(TaskManager):
         if total <= 0:
             return None
 
+        # WikiDocTracker (via runtime.update_documents_to_database) and the
+        # BD:Missing Metadata backfill (via update_document_metadata) are this
+        # method's only two callers -- neither has content-derived provenance for
+        # these urls, so creation must stay explicitly disallowed.
         task_name = f"DBD_{new_id()}"
         batches = [
-            {"kind": self._DOC_UPDATE_KIND, "urls": doc_urls[i:i + self._BATCH_SIZE]}
+            {"kind": self._DOC_UPDATE_KIND, "urls": doc_urls[i:i + self._BATCH_SIZE], "allow_create": False}
             for i in range(0, total, self._BATCH_SIZE)
         ]
         urls_str = ", ".join(doc_urls[:50]) + ("..." if total > 50 else "")

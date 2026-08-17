@@ -747,6 +747,28 @@ class TestUpdateDocRecordsFromRecords(unittest.TestCase):
         self.assertTrue(changed)
         self.assertEqual(len(self.db.write_calls), 1)
 
+    def test_allow_create_false_skips_unknown_url(self):
+        # regression test for WikiDocTracker minting new orphan Documents: an
+        # unmatched url must be silently dropped, not written, when creation
+        # is disallowed on this call path.
+        doc_records = {"https://x/1": {"url": "https://x/1", "title": "1"}}
+        changed = self.updater._update_doc_records_from_records(
+            doc_records, update_doc_metadata=False, allow_create=False)
+        self.assertFalse(changed)
+        self.assertEqual(self.db.write_calls, [])
+
+    def test_allow_create_false_still_updates_known_doc(self):
+        # the guard only blocks creation of new rows -- updates to a doc that
+        # already resolves by url must still go through.
+        self.db.lookup_map["Documents"] = {"https://x/1": "d1"}
+        self.db.records["Documents"] = {"d1": {"Id": "d1", "url": "https://x/1", "title": "old"}}
+        doc_records = {"https://x/1": {"url": "https://x/1", "title": "new"}}
+
+        changed = self.updater._update_doc_records_from_records(
+            doc_records, update_doc_metadata=False, allow_create=False)
+        self.assertTrue(changed)
+        self.assertEqual(len(self.db.write_calls), 1)
+
 
 class TestLinkHashDuplicates(unittest.TestCase):
     """
@@ -867,8 +889,17 @@ class TestUpdateDocRecordsValidation(unittest.TestCase):
 
     def test_string_input_is_wrapped(self):
         # should not raise; single url is accepted same as a one-element list
-        result = self.updater.update_doc_records("https://example.org/x.pdf", update_doc_metadata=False)
+        result = self.updater.update_doc_records(
+            "https://example.org/x.pdf", update_doc_metadata=False, allow_create=True)
         self.assertTrue(result)
+
+    def test_defaults_to_disallowing_creation(self):
+        # regression test: update_doc_records() is the entry point used by
+        # WikiDocTracker and missing-metadata refresh, neither of which should
+        # ever be able to create a new Document record -- allow_create must
+        # default to False so an unknown url is silently dropped, not written.
+        result = self.updater.update_doc_records("https://example.org/x.pdf", update_doc_metadata=False)
+        self.assertFalse(result)
 
 
 class TestGetDocsWithMissingMetadata(unittest.TestCase):
@@ -990,6 +1021,10 @@ class TestBatchSplitting(unittest.TestCase):
         self.assertEqual(total, 45)
         sizes = [len(b["urls"]) for b in batches]
         self.assertEqual(sizes, [20, 20, 5])
+        # WikiDocTracker / BD:Missing Metadata batches have no content-derived
+        # provenance -- must explicitly opt out of creation, not just rely on a
+        # default (the default exists only to preserve pre-tagging legacy tasks).
+        self.assertTrue(all(b.get("allow_create") is False for b in batches))
 
     def test_start_update_normalizes_titles_and_sets_deep_flag(self):
         self.manager.start_update(["архів:дажо/д "], deep=True)
@@ -1082,7 +1117,7 @@ class TestExecuteDocUpdateSubtask(unittest.TestCase):
 
     def test_success_path(self):
         self.manager._updater = SimpleNamespace(
-            update_doc_records=lambda urls, update_doc_metadata: True
+            update_doc_records=lambda urls, update_doc_metadata, allow_create=False: True
         )
         subtask = {"task_id": "t1", "index": 0, "payload": {"kind": "update_docs", "urls": ["u1", "u2"]}}
         self.manager._execute_doc_update_subtask(subtask)
@@ -1092,7 +1127,7 @@ class TestExecuteDocUpdateSubtask(unittest.TestCase):
         self.assertEqual(self.progress_calls, [("t1", 2)])
 
     def test_failure_path(self):
-        def boom(urls, update_doc_metadata):
+        def boom(urls, update_doc_metadata, allow_create=False):
             raise RuntimeError("timeout")
 
         self.manager._updater = SimpleNamespace(update_doc_records=boom)
@@ -1101,6 +1136,48 @@ class TestExecuteDocUpdateSubtask(unittest.TestCase):
 
         self.assertEqual(subtask["payload"]["error"], "timeout")
         self.assertNotIn("updated", subtask["payload"])
+
+    def test_allow_create_defaults_true_for_legacy_payload_missing_the_key(self):
+        # a task queued before allow_create tagging existed has no such key in
+        # its payload -- it must keep the behavior it was created under
+        # (creation was unconditionally allowed, there was no guard yet), not
+        # be silently reinterpreted as newly-restricted on resume.
+        recorded = []
+        self.manager._updater = SimpleNamespace(
+            update_doc_records=lambda urls, update_doc_metadata, allow_create=False:
+                recorded.append(allow_create)
+        )
+        subtask = {"task_id": "t1", "index": 0, "payload": {"kind": "update_docs", "urls": ["u1"]}}
+        self.manager._execute_doc_update_subtask(subtask)
+
+        self.assertEqual(recorded, [True])
+
+    def test_allow_create_true_is_forwarded_from_payload(self):
+        # _update_doc_metadata's deferred/batched path tags "allow_create": True --
+        # a resumed/stale batch must still be able to recreate a missing doc.
+        recorded = []
+        self.manager._updater = SimpleNamespace(
+            update_doc_records=lambda urls, update_doc_metadata, allow_create=False:
+                recorded.append(allow_create)
+        )
+        subtask = {"task_id": "t1", "index": 0, "payload": {"kind": "update_docs", "urls": ["u1"], "allow_create": True}}
+        self.manager._execute_doc_update_subtask(subtask)
+
+        self.assertEqual(recorded, [True])
+
+    def test_allow_create_false_is_forwarded_from_payload(self):
+        # start_document_update's batches (WikiDocTracker / BD:Missing Metadata)
+        # tag "allow_create": False explicitly -- must be honored, not overridden
+        # by the legacy-payload default.
+        recorded = []
+        self.manager._updater = SimpleNamespace(
+            update_doc_records=lambda urls, update_doc_metadata, allow_create=False:
+                recorded.append(allow_create)
+        )
+        subtask = {"task_id": "t1", "index": 0, "payload": {"kind": "update_docs", "urls": ["u1"], "allow_create": False}}
+        self.manager._execute_doc_update_subtask(subtask)
+
+        self.assertEqual(recorded, [False])
 
 
 class TestUpdateDocMetadataHelper(unittest.TestCase):
@@ -1117,11 +1194,16 @@ class TestUpdateDocMetadataHelper(unittest.TestCase):
         recorded = []
         self.manager._updater = SimpleNamespace(
             _db=self.db,
-            update_doc_records=lambda urls, update_doc_metadata: recorded.append(urls),
+            update_doc_records=lambda urls, update_doc_metadata, allow_create=False:
+                recorded.append((urls, allow_create)),
         )
 
         self.manager._update_doc_metadata(["Архів:ДАЖО/Д"])
-        self.assertEqual(recorded, [["https://x/1"]])
+        # allow_create=True: these urls are content-derived (Pages.doc_links, just
+        # populated by update_page_records), not from WikiDocTracker or the
+        # BD:Missing Metadata backfill -- a resumed/stale batch must still be able
+        # to recreate a doc that no longer exists.
+        self.assertEqual(recorded, [(["https://x/1"], True)])
 
     def test_large_doc_set_creates_batched_task_instead(self):
         page_url = _page_urls_from_titles("Архів:ДАЖО/Д")
@@ -1135,13 +1217,16 @@ class TestUpdateDocMetadataHelper(unittest.TestCase):
         recorded = []
         self.manager._updater = SimpleNamespace(
             _db=self.db,
-            update_doc_records=lambda urls, update_doc_metadata: recorded.append(urls),
+            update_doc_records=lambda urls, update_doc_metadata, allow_create=False:
+                recorded.append((urls, allow_create)),
         )
 
         self.manager._update_doc_metadata(["Архів:ДАЖО/Д"])
 
         self.assertEqual(recorded, [])  # not handled inline
         self.assertEqual(len(created_tasks), 1)
+        (task_name, kind, title, total, batches, *_rest), _kw = created_tasks[0]
+        self.assertTrue(all(b.get("allow_create") is True for b in batches))
 
     def test_lookup_error_for_one_title_does_not_abort_others(self):
         page_url = _page_urls_from_titles("Архів:ДАЖО/Д")
@@ -1152,11 +1237,12 @@ class TestUpdateDocMetadataHelper(unittest.TestCase):
         recorded = []
         self.manager._updater = SimpleNamespace(
             _db=self.db,
-            update_doc_records=lambda urls, update_doc_metadata: recorded.append(urls),
+            update_doc_records=lambda urls, update_doc_metadata, allow_create=False:
+                recorded.append((urls, allow_create)),
         )
 
         self.manager._update_doc_metadata(["Архів:Unknown/Title", "Архів:ДАЖО/Д"])
-        self.assertEqual(recorded, [["https://x/1"]])
+        self.assertEqual(recorded, [(["https://x/1"], True)])
 
 
 class TestUpdateProgress(unittest.TestCase):

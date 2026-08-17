@@ -24,6 +24,7 @@ from birddog.wiki import (
 from birddog.tracker import (
     PageTracker,
     WikiDocTracker,
+    DocumentMap,
     WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC,
     UK_WIKISOURCE_DOC_TRACKER_SPEC,
     )
@@ -266,8 +267,13 @@ class Runtime:
                 self, 
                 updater=self._database_updater)
             if _ENABLE_DOC_TRACKER:
-                self._commons_doc_tracker = WikiDocTracker(self, spec=WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC)
-                self._wikisource_doc_tracker = WikiDocTracker(self, spec=UK_WIKISOURCE_DOC_TRACKER_SPEC)
+                # shared by both trackers so the (potentially large) full-table
+                # build happens once, not once per wiki site.
+                shared_doc_map = DocumentMap(self._database)
+                self._commons_doc_tracker = WikiDocTracker(
+                    self, spec=WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC, doc_map=shared_doc_map)
+                self._wikisource_doc_tracker = WikiDocTracker(
+                    self, spec=UK_WIKISOURCE_DOC_TRACKER_SPEC, doc_map=shared_doc_map)
             else:
                 self._commons_doc_tracker = None
                 self._wikisource_doc_tracker = None

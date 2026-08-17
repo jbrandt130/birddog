@@ -292,5 +292,242 @@ class TestPageTracker(unittest.TestCase):
         self.assertNotIn("Page:Gamma", pt2._page_dict)
 
 
+class _FakeDocumentMapDB:
+    """Minimal stand-in for Database, covering only what DocumentMap and
+    WikiDocTracker's heartbeat call: get_all_ids/read for the batched
+    id-snapshot build, and a view-scoped scan for the BD:WDT incremental
+    catch-up."""
+
+    def __init__(self):
+        self.all_ids = []
+        self.records_by_id = {}   # id -> {"Id":..., "title":..., "url":...}
+        self.view_pages = {}      # view_name -> [(records, has_more), ...]
+        self.read_calls = []      # list of id-batches passed to read()
+
+    def get_all_ids(self, table_name):
+        return list(self.all_ids)
+
+    def read(self, table_name, record_ids, fields=None):
+        self.read_calls.append(list(record_ids))
+        return [dict(self.records_by_id[rid]) for rid in record_ids if rid in self.records_by_id]
+
+    def scan(self, table_name, limit=100, cursor=None, where=None,
+             view_name=None, sort=None, fields=None, raw=False, use_v3=False):
+        pages = self.view_pages.get(view_name, [])
+        idx = cursor or 0
+        if idx >= len(pages):
+            return [], None
+        records, has_more = pages[idx]
+        next_cursor = idx + 1 if has_more else None
+        return records, next_cursor
+
+
+class TestDocumentMap(unittest.TestCase):
+    """
+    DocumentMap replaces the old KV-persisted, title-hash-keyed doc_map. It's
+    built in batches across repeated refresh() calls (a stable id snapshot
+    read by explicit id, immune to offset-pagination skew on a growing
+    table), shared by both WikiDocTracker instances, and keyed by canonical
+    url (via database_updater.normalize_url) rather than a title hash -- see
+    _canonical_doc_url's docstring for why that matters: the old title-hash
+    gate and the url-based create/update lookup in
+    _update_doc_records_from_records could disagree (e.g. differently-cased
+    namespace prefixes), which is what let WikiDocTracker mint new, ownerless
+    Document rows for documents it already knew about.
+    """
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self._old_cwd = os.getcwd()
+        os.chdir(self._tmpdir.name)
+        self.addCleanup(lambda: os.chdir(self._old_cwd))
+
+        p = mock.patch("birddog.store.LogService", _DummyLogService)
+        p.start()
+        self.addCleanup(p.stop)
+
+        self.tracker = _reload_tracker_with_local_env()
+
+    def test_first_refresh_snapshots_ids_and_returns_false(self):
+        db = _FakeDocumentMapDB()
+        db.all_ids = [1, 2, 3]
+        dm = self.tracker.DocumentMap(db)
+
+        self.assertFalse(dm.refresh())
+
+        self.assertEqual(dm._doc_ids, [1, 2, 3])
+        self.assertEqual(dm._scan_cursor, 0)
+        self.assertEqual(dm.size, 0)
+        self.assertFalse(dm.build_complete)
+        self.assertEqual(db.read_calls, [])
+
+    def test_build_drains_in_batches_then_transitions_to_current(self):
+        db = _FakeDocumentMapDB()
+        db.all_ids = [1, 2, 3]
+        db.records_by_id = {
+            1: {"Id": 1, "title": "File:A.pdf", "url": "https://commons.wikimedia.org/wiki/File:A.pdf"},
+            2: {"Id": 2, "title": "File:B.pdf", "url": "https://commons.wikimedia.org/wiki/File:B.pdf"},
+            3: {"Id": 3, "title": "File:C.pdf", "url": "https://commons.wikimedia.org/wiki/File:C.pdf"},
+        }
+        db.view_pages["BD:WDT"] = [([], False)]
+        dm = self.tracker.DocumentMap(db)
+
+        with mock.patch.object(self.tracker, "_DOCUMENT_MAP_ID_BATCH_SIZE", 2):
+            self.assertFalse(dm.refresh())  # phase A: snapshot ids
+            self.assertFalse(dm.refresh())  # phase B batch 1: ids [1, 2]
+            self.assertEqual(dm.size, 2)
+            self.assertFalse(dm.build_complete)
+            self.assertFalse(dm.refresh())  # phase B batch 2: id [3]
+            self.assertEqual(dm.size, 3)
+            self.assertTrue(dm.build_complete)  # snapshot fully drained...
+            self.assertTrue(dm.refresh())       # ...but refresh() only reports current
+                                                 # once the transition incremental scan runs
+
+        self.assertEqual(db.read_calls, [[1, 2], [3]])
+        # steady state: every subsequent call re-runs the (cheap) incremental
+        # scan and stays current
+        self.assertTrue(dm.refresh())
+
+    def test_incremental_refresh_extends_id_list_with_new_arrivals(self):
+        db = _FakeDocumentMapDB()
+        db.all_ids = []  # nothing existed at snapshot time
+        db.view_pages["BD:WDT"] = [
+            ([{"Id": 9, "title": "File:New.pdf", "url": "https://commons.wikimedia.org/wiki/File:New.pdf"}], False),
+        ]
+        dm = self.tracker.DocumentMap(db)
+
+        self.assertFalse(dm.refresh())  # phase A: empty snapshot
+        self.assertTrue(dm.refresh())   # phase B is trivially done -> incremental runs
+
+        self.assertEqual(dm.size, 1)
+        self.assertIn(9, dm._doc_ids)
+        self.assertEqual(dm._scan_cursor, len(dm._doc_ids))
+
+    def test_check_titles_matches_despite_differently_cased_namespace_prefix(self):
+        # regression test for the actual observed bug (2026-08-04, documented
+        # on normalize_url/_canonicalize_namespace_prefix): a title
+        # constructed without going through normalize_url's namespace-case
+        # canonicalization looks "unknown" even though the document is
+        # already tracked, because "File:" and "file:" normalize to
+        # different url strings without it.
+        db = _FakeDocumentMapDB()
+        db.all_ids = [1]
+        db.records_by_id = {
+            1: {"Id": 1, "title": "File:Foo.pdf", "url": "https://commons.wikimedia.org/wiki/File:Foo.pdf"},
+        }
+        db.view_pages["BD:WDT"] = [([], False)]
+        dm = self.tracker.DocumentMap(db)
+        dm.refresh()
+        dm.refresh()
+        self.assertTrue(dm.refresh())
+
+        result = dm.check_titles("https://commons.wikimedia.org", ["file:Foo.pdf", "File:Unknown.pdf"])
+
+        self.assertEqual(result, {"file:Foo.pdf": "https://commons.wikimedia.org/wiki/File:Foo.pdf"})
+
+    def test_refresh_returns_false_immediately_when_lock_contended(self):
+        db = _FakeDocumentMapDB()
+        db.all_ids = [1]
+        dm = self.tracker.DocumentMap(db)
+
+        dm._lock.acquire()  # simulate another thread already mid-refresh
+        try:
+            result = dm.refresh()
+        finally:
+            dm._lock.release()
+
+        self.assertFalse(result)
+        self.assertIsNone(dm._doc_ids)  # untouched -- no partial mutation
+
+
+class TestWikiDocTrackerHeartbeatDocMap(unittest.TestCase):
+    """
+    WikiDocTracker.heartbeat() must defer all wiki-change processing until
+    the shared DocumentMap reports itself current, and must never issue an
+    update for a title the map doesn't recognize -- the actual guarantee
+    against WikiDocTracker minting new orphan Documents lives in
+    database_updater.py's allow_create=False guard, but this is the first
+    line of defense: an unrecognized title should never even reach that path.
+    """
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self._old_cwd = os.getcwd()
+        os.chdir(self._tmpdir.name)
+        self.addCleanup(lambda: os.chdir(self._old_cwd))
+
+        p = mock.patch("birddog.store.LogService", _DummyLogService)
+        p.start()
+        self.addCleanup(p.stop)
+
+        self.tracker = _reload_tracker_with_local_env()
+
+        p2 = mock.patch.object(self.tracker, "lookup_namespace_id", return_value=6)
+        p2.start()
+        self.addCleanup(p2.stop)
+
+    def _make_wdt(self, db, doc_map=None):
+        runtime = mock.Mock()
+        runtime.database = db
+        runtime.database_update_enabled = True
+        return self.tracker.WikiDocTracker(
+            runtime, spec=self.tracker.WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC, doc_map=doc_map)
+
+    def test_heartbeat_skips_change_processing_when_doc_map_not_current(self):
+        db = _FakeDocumentMapDB()  # empty all_ids is fine -- refresh()'s first call is always False
+        wdt = self._make_wdt(db)
+
+        with mock.patch.object(self.tracker, "get_recent_changes") as grc_mock:
+            wdt.heartbeat()
+
+        grc_mock.assert_not_called()
+        wdt._runtime.update_documents_to_database.assert_not_called()
+
+    def test_heartbeat_updates_known_titles_once_doc_map_is_current(self):
+        db = _FakeDocumentMapDB()
+        db.all_ids = [1]
+        db.records_by_id = {
+            1: {"Id": 1, "title": "File:Foo.pdf", "url": "https://commons.wikimedia.org/wiki/File:Foo.pdf"},
+        }
+        db.view_pages["BD:WDT"] = [([], False)]
+        doc_map = self.tracker.DocumentMap(db)
+        doc_map.refresh()
+        doc_map.refresh()
+        self.assertTrue(doc_map.refresh())
+
+        wdt = self._make_wdt(db, doc_map=doc_map)
+        changes = {"File:Foo.pdf": {"timestamp": "2026-01-01T00:00:00Z", "user": "bot"}}
+        with mock.patch.object(self.tracker, "get_recent_changes", return_value=changes):
+            wdt.heartbeat()
+
+        wdt._runtime.update_documents_to_database.assert_called_once_with(
+            ["https://commons.wikimedia.org/wiki/File:Foo.pdf"])
+
+    def test_heartbeat_never_issues_an_update_for_an_unknown_title(self):
+        db = _FakeDocumentMapDB()  # nothing in Documents at all
+        db.view_pages["BD:WDT"] = [([], False)]
+        doc_map = self.tracker.DocumentMap(db)
+        self.assertFalse(doc_map.refresh())  # empty snapshot
+        self.assertTrue(doc_map.refresh())   # trivially caught up
+
+        wdt = self._make_wdt(db, doc_map=doc_map)
+        changes = {"File:NeverSeen.pdf": {"timestamp": "2026-01-01T00:00:00Z", "user": "bot"}}
+        with mock.patch.object(self.tracker, "get_recent_changes", return_value=changes):
+            wdt.heartbeat()
+
+        wdt._runtime.update_documents_to_database.assert_not_called()
+
+    def test_doc_map_is_shared_across_tracker_instances(self):
+        db = _FakeDocumentMapDB()
+        shared = self.tracker.DocumentMap(db)
+        wdt_a = self._make_wdt(db, doc_map=shared)
+        wdt_b = self.tracker.WikiDocTracker(
+            wdt_a._runtime, spec=self.tracker.UK_WIKISOURCE_DOC_TRACKER_SPEC, doc_map=shared)
+
+        self.assertIs(wdt_a._doc_map, wdt_b._doc_map)
+
+
 if __name__ == "__main__":
     unittest.main()

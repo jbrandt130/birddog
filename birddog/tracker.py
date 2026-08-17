@@ -1,9 +1,9 @@
 # (c) 2025 Jonathan Brandt
 # Licensed under the MIT License. See LICENSE file in the project root.
 
-import hashlib
 import json
 import os
+import threading
 from urllib.parse import unquote
 
 from datetime import datetime, timedelta, timezone
@@ -18,6 +18,7 @@ from birddog.wiki import (
     lookup_namespace_id,
     register_archive_root,
     )
+from birddog.database_updater import normalize_url
 from birddog.store import KeyValueStore
 from birddog.utility import json_size, HeartbeatManager, utc_now_dt
 from birddog.log import get_logger, LogService
@@ -208,6 +209,9 @@ _WIKI_SENTINEL = "WIKI_SENTINEL"
 _WIKI_CHANGE_EVENT_WINDOW = 1200  # seconds
 _DOC_TABLE_SENTINEL = "DOC_SENTINEL"
 
+_DOCUMENT_MAP_TABLE_VIEW = "BD:WDT"
+_DOCUMENT_MAP_ID_BATCH_SIZE = 10000
+
 WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC = {
     "base_url": "https://commons.wikimedia.org",
     "namespace": "File",
@@ -220,6 +224,162 @@ UK_WIKISOURCE_DOC_TRACKER_SPEC = {
     "table_view": "BD:WDT",
 }
 
+
+def _canonical_doc_url(base_url, title):
+    # must match database_updater.normalize_url exactly -- that's what every
+    # Document.url was written through (wiki-scrape, spreadsheet import, and
+    # this tracker's own doc updates all funnel through form_document_record(),
+    # which normalizes via the same function). A weaker/different
+    # normalization here (as the old _link_from_title did) can silently
+    # miss an already-known document -- e.g. a differently-cased namespace
+    # prefix ("File:" vs "file:") normalizes to a different string, so a
+    # title that IS already tracked looks unknown, and the resulting "create"
+    # mints a duplicate, ownerless Document (observed on commons.wikimedia.org,
+    # 2026-08-04, which is why normalize_url canonicalizes namespace case at all).
+    normalized_title = unquote(title).replace(" ", "_")
+    return normalize_url(f"{base_url}/wiki/{normalized_title}")
+
+
+class DocumentMap:
+    """
+    In-process cache mapping every known Document's canonical url to its
+    {title, id}, shared by every WikiDocTracker instance (one per wiki site)
+    so the (potentially large) full-table build happens once, not once per
+    site. Not persisted -- rebuilt from scratch each process lifetime, so it
+    can never silently drift out of sync with Documents across a restart the
+    way a persisted mirror could.
+
+    Built in batches across repeated refresh() calls rather than one long
+    blocking scan:
+      1. first call: snapshot every Documents id (self._db.get_all_ids), set
+         the scan cursor to 0.
+      2. each following call while the cursor hasn't reached the end of that
+         snapshot: read the next batch of (url, title, Id) by explicit id and
+         advance the cursor. Reading by a fixed, pre-captured id list (rather
+         than re-paginating a live, growing table) means a document created
+         mid-build can't cause a row to be skipped or double-counted the way
+         offset-based pagination against a mutating table could.
+      3. once the snapshot is fully drained: do an incremental refresh via the
+         BD:WDT moving-window view (same idea as the old _refresh_doc_titles)
+         to pick up documents created since the snapshot was taken, extend the
+         id list with them, and pin the cursor back at the end -- so every
+         call from here on lands in this branch. Returns True.
+
+    refresh() returns True only once the map is fully current (case 3);
+    False while still building (cases 1-2) or when it declines to do
+    anything this call (see thread-safety below). Callers are expected to
+    skip wiki-change processing entirely while refresh() returns False --
+    the conservative assumption this relies on is that the full build (a few
+    hundred thousand documents, done in ~10,000-id batches) completes in well
+    under a day, so nothing created during the build can have aged out of the
+    BD:WDT window by the time the first incremental refresh runs. Any wiki
+    edits that happen during the build aren't lost, just delayed: the
+    existing wiki-sentinel/window mechanism already tolerates catching up
+    over several heartbeats.
+
+    refresh() is safe to call from multiple threads at once (both
+    WikiDocTracker instances share one DocumentMap), but never blocks: if
+    another thread is already mid-refresh, it returns False immediately
+    rather than waiting, so a heartbeat is never held up by the other site's
+    tracker. In steady state this means an occasionally-contended tick just
+    skips that one cycle's wiki-change processing for whichever tracker lost
+    the race -- harmless, since the next heartbeat (300s later) tries again
+    and the sentinel/window mechanism tolerates the delay the same way it
+    tolerates any other startup or backlog delay.
+    """
+
+    def __init__(self, db):
+        self._db = db
+        self._lock = threading.Lock()
+        self._doc_ids = None       # None until the first refresh() call
+        self._known_ids = set()    # mirror of _doc_ids, for O(1) dedup
+        self._scan_cursor = None
+        self._doc_url = {}         # canonical url -> {"title":..., "id":...}
+        self._init_logged = False  # so the "doc map init done" log only fires once
+
+    @property
+    def size(self):
+        return len(self._doc_url)
+
+    @property
+    def build_complete(self):
+        return self._doc_ids is not None and self._scan_cursor == len(self._doc_ids)
+
+    def refresh(self):
+        if not self._lock.acquire(blocking=False):
+            return False
+        try:
+            return self._refresh_locked()
+        finally:
+            self._lock.release()
+
+    def _refresh_locked(self):
+        if self._doc_ids is None:
+            _logger.info("DocumentMap: fetching document ids...")
+            self._doc_ids = self._db.get_all_ids("Documents")
+            self._known_ids = set(self._doc_ids)
+            self._scan_cursor = 0
+            _logger.info(f"DocumentMap: id fetch done, {len(self._doc_ids)} document id(s) to load")
+            return False
+
+        if self._scan_cursor < len(self._doc_ids):
+            batch_ids = self._doc_ids[self._scan_cursor:self._scan_cursor + _DOCUMENT_MAP_ID_BATCH_SIZE]
+            records = self._db.read("Documents", batch_ids, fields=["url", "title", "Id"])
+            self._store_records(records)
+            self._scan_cursor += len(batch_ids)
+            _logger.info(f"DocumentMap: build progress {self._scan_cursor}/{len(self._doc_ids)}")
+            return False
+
+        self._incremental_refresh()
+        if not self._init_logged:
+            _logger.info(f"DocumentMap: doc map init done, {self.size} document(s) known")
+            self._init_logged = True
+        return True
+
+    def _store_records(self, records):
+        for rec in records:
+            url = rec.get("url")
+            title = rec.get("title")
+            if not url or not title:
+                continue
+            self._doc_url[normalize_url(url)] = {"title": title, "id": rec.get("Id")}
+
+    def _incremental_refresh(self):
+        cursor = None
+        new_ids = []
+        while True:
+            batch, cursor = self._db.scan(
+                "Documents",
+                cursor=cursor,
+                limit=1000,
+                view_name=_DOCUMENT_MAP_TABLE_VIEW,
+                fields=["title", "url", "Id"])
+            if not batch:
+                break
+            self._store_records(batch)
+            for rec in batch:
+                did = rec.get("Id")
+                if did is not None and did not in self._known_ids:
+                    self._known_ids.add(did)
+                    new_ids.append(did)
+            if not cursor:
+                break
+        if new_ids:
+            self._doc_ids.extend(new_ids)
+            _logger.info(f"DocumentMap: incremental refresh added {len(new_ids)} new document id(s)")
+        self._scan_cursor = len(self._doc_ids)
+
+    def check_titles(self, base_url, titles):
+        """Return {title: url} for every title in `titles` that resolves (via
+        base_url) to a url already present in the map."""
+        result = {}
+        for title in titles:
+            url = _canonical_doc_url(base_url, title)
+            if url in self._doc_url:
+                result[title] = url
+        return result
+
+
 class WikiDocTracker(HeartbeatManager):
     def __init__(
         self,
@@ -227,6 +387,7 @@ class WikiDocTracker(HeartbeatManager):
         spec=None,
         cutoff_time=None,
         change_window_s=_WIKI_CHANGE_EVENT_WINDOW,
+        doc_map=None,
     ):
         if spec is None:
             spec = WIKIMEDIA_COMMONS_DOC_TRACKER_SPEC
@@ -239,14 +400,15 @@ class WikiDocTracker(HeartbeatManager):
         self._namespace_id = lookup_namespace_id(self._namespace)
         self._kv = KeyValueStore(table_name=_WIKI_DOC_TRACKER_KV_TABLE)
 
-        self._doc_kv_namespace = f"{self._base_url}:{self._namespace}"
         self._sentinel_kv_namespace = f"{self._base_url}:{self._namespace}:SENTINELS"
 
         self._cutoff_time = _format_utc_z(cutoff_time) if cutoff_time else None
         self._change_window_s = int(change_window_s)
 
-        # In-memory doc index (normalized titles). None means "not loaded yet".
-        self._doc_map = None  # set[str] of normalized titles
+        # shared across every WikiDocTracker instance when passed in by the
+        # caller (see runtime.py); falls back to a private one so a tracker
+        # can still be constructed standalone (e.g. in tests).
+        self._doc_map = doc_map if doc_map is not None else DocumentMap(self._db)
 
         _logger.info(
             f"WikiDocTracker: base={self._base_url}, "
@@ -256,71 +418,7 @@ class WikiDocTracker(HeartbeatManager):
         super().__init__(interval=_WIKI_DOC_TRACKER_HEARTBEAT_INTERVAL)
 
     def _reset(self):
-        self._kv.remove_all(self._doc_kv_namespace)
         self._kv.remove_all(self._sentinel_kv_namespace)
-        self._doc_map = None
-
-    def _normalize_title(self, title):
-        return unquote(title).replace(" ", "_")
-
-    def _kv_key(self, normalized_title):
-        # form a fixed length key from the title, since raw title can exceed DDB key length limit
-        return hashlib.sha256(normalized_title.encode("utf-8")).hexdigest()
-
-    def _link_from_title(self, normalized_title):
-        return f"{self._base_url}/wiki/{normalized_title}"
-
-    def _ensure_doc_map(self):
-        if self._doc_map is None:
-            self._doc_map = {k for k, _ in self._kv.get_all(self._doc_kv_namespace)}
-            _logger.info(f"WikiDocTracker: loaded {len(self._doc_map)} doc titles into memory")
-
-    def _store_relevant_titles(self, records):
-        """
-        Store relevant titles in KV and update in-memory doc_map incrementally.
-        """
-        inserts = 0
-        for rec in records:
-            link = rec.get("url", "")
-            if not link or not link.startswith(self._base_url):
-                continue
-
-            title = rec.get("title")
-            if not title:
-                continue
-
-            nt = self._normalize_title(title)
-            kv_key = self._kv_key(nt)
-
-            if kv_key in self._doc_map:
-                continue
-
-            self._kv.insert(self._doc_kv_namespace, kv_key, "")
-            self._doc_map.add(kv_key)
-            inserts += 1
-
-        if inserts:
-            _logger.info(f"WikiDocTracker: inserted {inserts} new doc titles")
-
-    def _refresh_doc_titles(self):
-        if not self._db:
-            _logger.warning(f"WikiDocTracker: database unavailable - skipping document title refresh")
-            return
-        self._ensure_doc_map()
-
-        cursor = None
-        while True:
-            batch, cursor = self._db.scan(
-                "Documents",
-                cursor=cursor,
-                limit=100,
-                view_name=self._table_view,
-                fields=["title", "url", "CreatedAt"])
-            if not batch:
-                break
-            self._store_relevant_titles(batch)
-            if not cursor:
-                break
 
     def _get_wiki_sentinel(self):
         """
@@ -341,8 +439,6 @@ class WikiDocTracker(HeartbeatManager):
         self._kv.insert(self._sentinel_kv_namespace, _WIKI_SENTINEL, _format_utc_z(timestamp))
 
     def _get_wiki_changes(self, utc_start):
-        self._ensure_doc_map()
-
         start_dt = _parse_utc(utc_start)
         end_dt = min(start_dt + timedelta(seconds=self._change_window_s), utc_now_dt())
         utc_start_z = _format_utc_z(start_dt)
@@ -358,10 +454,11 @@ class WikiDocTracker(HeartbeatManager):
         if changes:
             _logger.info(f"WikiDocTracker ({self._base_url}): found {len(changes)} changes")
             newest_seen = max(v["timestamp"] for v in changes.values())
+            known = self._doc_map.check_titles(self._base_url, changes.keys())
             hits = {
-                self._normalize_title(title): changes[title]
+                title: {**changes[title], "url": known[title]}
                 for title in changes
-                if self._kv_key(self._normalize_title(title)) in self._doc_map
+                if title in known
             }
             return hits, newest_seen
         return None, utc_end_z
@@ -376,8 +473,12 @@ class WikiDocTracker(HeartbeatManager):
             _logger.warning(f"WikiDocTracker ({self._base_url}): database unavailable - skipping heartbeat processing")
             return
 
-        # Incremental doc discovery (slow-changing)
-        self._refresh_doc_titles()
+        # doc_map is shared with the other site's tracker; only proceed with
+        # wiki-change processing once it reports itself current (see
+        # DocumentMap docstring for why this is safe to skip otherwise).
+        if not self._doc_map.refresh():
+            _logger.info(f"WikiDocTracker ({self._base_url}): document map not yet current - skipping this cycle")
+            return
 
         # Scan wiki changes window and collect hits
         try:
@@ -389,21 +490,21 @@ class WikiDocTracker(HeartbeatManager):
             _logger.info(f"WikiDocTracker: initialized wiki sentinel to {last_sentinel}")
         _logger.info(
             f"WikiDocTracker: heartbeat start: wiki sentinel={last_sentinel}, "
-            f"docs={len(self._doc_map) if self._doc_map is not None else 0}"
+            f"docs={self._doc_map.size}"
         )
         hits, next_sentinel = self._get_wiki_changes(last_sentinel)
 
         # Process hits -> update doc records
         if hits:
             doc_updates = []
-            for nt, info in hits.items():
+            for title, info in hits.items():
                 doc_updates.append({
-                    "title": nt,
-                    "url": self._link_from_title(nt),
+                    "title": title,
+                    "url": info["url"],
                     "timestamp": info.get("timestamp"),
                     "user": info.get("user"),
                 })
-                _logger.info(f"WikiDocTracker ({self._base_url}): doc changed: {nt} timestamp={info['timestamp']} user={info.get('user')}")
+                _logger.info(f"WikiDocTracker ({self._base_url}): doc changed: {title} timestamp={info.get('timestamp')} user={info.get('user')}")
 
             if doc_updates:
                 self._update_doc_records(doc_updates)
