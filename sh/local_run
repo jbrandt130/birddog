@@ -3,7 +3,7 @@
 # Licensed under the MIT License. See LICENSE file in the project root.
 
 export BIRDDOG_USE_LOCAL_CACHE=True
-#export BIRDDOG_TRANSLATION_DEBUG=True
+export BIRDDOG_CLOUD_BASE_ID="$BIRDDOG_CLOUD_BASE_ID_STAGE"
 PORT=2003
 
 echo "!!! STARTING BIRDDOG IN DEBUG MODE !!!"

@@ -51,7 +51,7 @@ elif _NOCODB_RUN_HOSTED:
     _NOCODB_API_TOKEN   = os.environ["BIRDDOG_CLOUD_NOCODB_API_TOKEN"]
     _NOCODB_HOST        = "https://app.nocodb.com"
     _NOCODB_API_DELAY   = .25
-    _NOCODB_BATCH_SIZE  = 20
+    _NOCODB_BATCH_SIZE  = 100
     _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
     _logger.info(f"Using cloud hosted nocodb api: {_NOCODB_HOST}")
 else:
@@ -1511,6 +1511,10 @@ class NocoDBDatabase(Database):
                   single page of links is returned.
                 * If NocoDB returns a singular object with an "Id", that single Id
                   is returned on the first page only.
+            - An out-of-range offset (offset >= total linked records) is treated
+              as an empty last page rather than an error, since some NocoDB
+              backends (cloud) reject it with HTTP 422 ERR_INVALID_OFFSET_VALUE
+              instead of returning an empty list.
 
         Errors:
             - InvalidTableName
@@ -1533,7 +1537,23 @@ class NocoDBDatabase(Database):
         }
 
         with LogService("NocoDB", "scan_links") as log:
-            response = self._fetch(url, params=params, method="GET")
+            try:
+                response = self._fetch(url, params=params, method="GET")
+            except FailedIO as err:
+                # NocoDB Cloud rejects offset >= totalRows with HTTP 422
+                # ERR_INVALID_OFFSET_VALUE instead of returning an empty page
+                # (older self-hosted versions do the latter). This can happen
+                # even on a cursor we computed ourselves, e.g. if NocoDB
+                # reports isLastPage=False on what turns out to be an exact
+                # last full page, or a record was unlinked concurrently
+                # between the count and this fetch. Either way, "offset past
+                # the end" means no more records -- treat it as such rather
+                # than surfacing a fatal error.
+                cause = err.__cause__
+                resp = getattr(cause, "response", None)
+                if resp is not None and resp.status_code == 422 and "ERR_INVALID_OFFSET_VALUE" in (resp.text or ""):
+                    return [], None
+                raise
             log.size = json_size(response)
 
             page_info = response.get("pageInfo")

@@ -677,6 +677,36 @@ class TestDatabase(unittest.TestCase):
         self.assertIsInstance(record.get("children"), list)
         self.assertIn(child_id, record.get("children"))
 
+    def test_scan_links_treats_invalid_offset_as_end_of_page(self):
+        """
+        NocoDB Cloud rejects offset >= total linked records with HTTP 422
+        ERR_INVALID_OFFSET_VALUE instead of returning an empty page (which is
+        what self-hosted NocoDB does). scan_links() must treat that the same
+        way -- end of pagination, not a fatal error -- since it's reachable
+        in production whenever NocoDB reports isLastPage=False on what turns
+        out to be the last page.
+        """
+        import requests
+
+        # Warm the table/field id caches for real so scan_links's own lookups
+        # below don't go through the patched _fetch.
+        self.db._table_id("Pages")
+        self.db._field_id("Pages", "children")
+
+        resp = requests.Response()
+        resp.status_code = 422
+        resp._content = b'{"error":"ERR_INVALID_OFFSET_VALUE","message":"Offset value \'100\' is invalid"}'
+        http_err = requests.exceptions.HTTPError("HTTP 422: ...", response=resp)
+
+        def fake_fetch(*args, **kwargs):
+            raise FailedIO(http_err) from http_err
+
+        with patch.object(self.db, "_fetch", side_effect=fake_fetch):
+            link_ids, cursor = self.db.scan_links("Pages", "children", 1, cursor="100")
+
+        self.assertEqual(link_ids, [])
+        self.assertIsNone(cursor)
+
 
 if __name__ == "__main__":
     unittest.main()
