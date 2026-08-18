@@ -4,6 +4,7 @@
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import json
 import mimetypes
 import os
 import re
@@ -16,6 +17,7 @@ from datetime import datetime
 
 from birddog.abstract_database import (
     Database,
+    ConfigError,
     FailedIO,
     SchemaError,
     InvalidFieldName,
@@ -33,36 +35,48 @@ from birddog.log import get_logger, LogService
 _logger = get_logger()
 timer = FunctionTimer()
 
-_NOCODB_RUN_LOCAL       = os.environ.get("BIRDDOG_USE_LOCAL_NOCODB")
-_NOCODB_RUN_HOSTED      = os.environ.get("BIRDDOG_USE_CLOUD_NOCODB")
+_DB_CONFIG_PATH = "resources/db_config.json"
 
-if _NOCODB_RUN_LOCAL:
-    # use locally running nocodb
-    _NOCODB_BASE_ID     = "p79fvr9cjqgpv5n"
-    _NOCODB_API_TOKEN   = os.environ["NOCODB_API_TOKEN_LOCAL"]
-    _NOCODB_HOST        = "http://localhost:8080"
-    _NOCODB_API_DELAY   = .01
-    _NOCODB_BATCH_SIZE  = 100
-    _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
-    _logger.info(f"Using local nocodb api: {_NOCODB_HOST}")
-elif _NOCODB_RUN_HOSTED:
-    # use hosted nocodb on nocodb.com
-    _NOCODB_BASE_ID     = os.environ["BIRDDOG_CLOUD_BASE_ID"]
-    _NOCODB_API_TOKEN   = os.environ["BIRDDOG_CLOUD_NOCODB_API_TOKEN"]
-    _NOCODB_HOST        = "https://app.nocodb.com"
-    _NOCODB_API_DELAY   = .25
-    _NOCODB_BATCH_SIZE  = 100
-    _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
-    _logger.info(f"Using cloud hosted nocodb api: {_NOCODB_HOST}")
-else:
-    # use self-managed nocodb on aws
-    _NOCODB_BASE_ID     = os.environ["BIRDDOG_AWS_BASE_ID"]
-    _NOCODB_API_TOKEN   = os.environ["BIRDDOG_AWS_NOCODB_API_TOKEN"]
-    _NOCODB_HOST        = os.environ["BIRDDOG_AWS_NOCODB_HOST"]
-    _NOCODB_API_DELAY   = .1
-    _NOCODB_BATCH_SIZE  = 100
-    _NOCODB_EDIT_LINK_BATCH_SIZE  = 200
-    _logger.info(f"Using aws nocodb api: {_NOCODB_HOST}")
+def _load_db_config():
+    """
+    Select the active NocoDB environment via BIRDDOG_NOCODB_ENV (one of the
+    keys in _DB_CONFIG_PATH, e.g. LOCAL / AWS / CLOUD_STAGE / CLOUD_PROD) and
+    resolve its settings. Everything except the API token lives in the config
+    file; the token itself stays in an environment variable (named by the
+    config entry's "api_token_var") so secrets never land in a checked-in file.
+    """
+    with open(_DB_CONFIG_PATH, encoding="utf8") as f:
+        all_config = json.load(f)
+
+    env_name = os.environ.get("BIRDDOG_NOCODB_ENV")
+    if not env_name:
+        raise ConfigError(
+            f"BIRDDOG_NOCODB_ENV is not set. Must be one of: {', '.join(sorted(all_config))}"
+        )
+    config = all_config.get(env_name)
+    if config is None:
+        raise ConfigError(
+            f"BIRDDOG_NOCODB_ENV={env_name!r} is not a known environment "
+            f"(must be one of: {', '.join(sorted(all_config))})"
+        )
+
+    api_token_var = config["api_token_var"]
+    api_token = os.environ.get(api_token_var)
+    if not api_token:
+        raise ConfigError(
+            f"BIRDDOG_NOCODB_ENV={env_name!r} requires the environment variable "
+            f"{api_token_var!r} to hold the NocoDB API token, but it is not set"
+        )
+
+    return env_name, config, api_token
+
+_NOCODB_ENV_NAME, _NOCODB_CONFIG, _NOCODB_API_TOKEN = _load_db_config()
+_NOCODB_HOST                  = _NOCODB_CONFIG["host"]
+_NOCODB_BASE_ID               = _NOCODB_CONFIG["base_id"]
+_NOCODB_API_DELAY             = _NOCODB_CONFIG["api_delay"]
+_NOCODB_BATCH_SIZE            = _NOCODB_CONFIG["batch_size"]
+_NOCODB_EDIT_LINK_BATCH_SIZE  = _NOCODB_CONFIG["edit_link_batch_size"]
+_logger.info(f"Using {_NOCODB_ENV_NAME} nocodb api: {_NOCODB_HOST}")
 
 _WRITE_CHUNK_SIZE               = 500       # max records per reservation window
 _WRITE_RESERVATION_INTERVAL     = 30        # seconds a write reservation is held

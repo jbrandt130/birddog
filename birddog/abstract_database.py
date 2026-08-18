@@ -63,6 +63,12 @@ class FailedIO(DatabaseError):
     unknown depending on the backend. See method docstrings for details.
     """
 
+class ConfigError(DatabaseError):
+    """
+    Database configuration is missing or invalid: the selected environment is
+    unset/unknown, or the environment variable naming the API token is unset.
+    """
+
 # ---------------------------------------------------------------------------
 # Abstract Database class
 # ---------------------------------------------------------------------------
