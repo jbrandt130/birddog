@@ -475,9 +475,24 @@ class WikiDocTracker(HeartbeatManager):
 
         # doc_map is shared with the other site's tracker; only proceed with
         # wiki-change processing once it reports itself current (see
-        # DocumentMap docstring for why this is safe to skip otherwise).
+        # DocumentMap docstring for why this is safe to skip otherwise). A
+        # False here has two very different causes worth distinguishing in the
+        # log: the map is still (batch-)building, or it's already built and
+        # this cycle just lost the non-blocking lock race to the other
+        # tracker's own refresh -- the latter is harmless and self-resolves on
+        # this tracker's next heartbeat.
         if not self._doc_map.refresh():
-            _logger.info(f"WikiDocTracker ({self._base_url}): document map not yet current - skipping this cycle")
+            if self._doc_map.build_complete:
+                _logger.info(
+                    f"WikiDocTracker ({self._base_url}): document map already built "
+                    f"({self._doc_map.size} known) but busy with the other tracker's "
+                    f"refresh this instant - skipping this cycle, will retry next heartbeat"
+                )
+            else:
+                _logger.info(
+                    f"WikiDocTracker ({self._base_url}): document map still building "
+                    f"({self._doc_map.size} known so far) - skipping this cycle"
+                )
             return
 
         # Scan wiki changes window and collect hits

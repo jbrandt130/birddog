@@ -112,6 +112,22 @@ def _parse_retry_after(headers: Optional[Mapping[str, str]]) -> Optional[float]:
 #   Maximum number of concurrent in-flight requests allowed for this host.
 #   Implemented via a semaphore.
 #   This caps concurrency independently of rate (RPS).
+#
+# target_rps
+#   Optional long-term average rate cap (requests per second), enforced by a
+#   second, fixed-rate token bucket independent of the adaptive rate_rps/AIMD
+#   bucket above. Unlike max_rps (an instantaneous ceiling that AIMD is free
+#   to ramp up to and hold indefinitely), this bucket's refill rate never
+#   changes in response to server feedback -- it exists purely to bound
+#   sustained throughput against an external budget (e.g. a monthly API call
+#   quota) regardless of how generously the vendor's own rate limit behaves.
+#   None (default) disables this second gate entirely for the host.
+#
+# target_capacity
+#   Token bucket capacity (number of requests) for the target_rps budget
+#   bucket. Bounds how large a burst can be taken against the long-term
+#   average before throughput is clamped down to target_rps. Ignored when
+#   target_rps is None.
 
 @dataclass(frozen=True)
 class HostProfile:
@@ -141,6 +157,10 @@ class HostProfile:
 
     # bypass all throttling (rate + concurrency) for this host
     unthrottled: bool = False
+
+    # long-term average budget cap (independent of AIMD rate_rps); see above
+    target_rps: Optional[float] = None
+    target_capacity: float = 0.0
 
 # HostState field reference
 #
@@ -183,6 +203,11 @@ class HostProfile:
 #   Semaphore controlling maximum concurrent in-flight requests
 #   for this host.
 #   Acquired before rate limiting logic to prevent thread pileups.
+#
+# budget_tokens / budget_last_ts
+#   Token bucket state for the profile.target_rps long-term average cap.
+#   Mirrors tokens/last_ts but refills at the fixed target_rps rather than
+#   the adaptive rate_rps. Unused (stays at 0) when target_rps is None.
 
 
 @dataclass
@@ -203,6 +228,10 @@ class HostState:
     # actual throughput tracking
     completed: int = 0
     completed_since: float = field(default_factory=_now)
+
+    # long-term average budget bucket (see HostProfile.target_rps)
+    budget_tokens: float = 0.0
+    budget_last_ts: float = field(default_factory=_now)
 
 
 # ---------------------------------------------------------------------------
@@ -333,6 +362,7 @@ class AdaptiveThrottle:
                 tokens=prof.bucket_capacity,
                 last_increase_ts=_now(),
                 sem=threading.Semaphore(prof.max_in_flight),
+                budget_tokens=(prof.target_capacity if prof.target_rps is not None else 0.0),
             )
             self._hosts[host_key] = st
         return st
@@ -342,6 +372,15 @@ class AdaptiveThrottle:
         if dt > 0:
             st.tokens = min(st.profile.bucket_capacity, st.tokens + dt * st.rate_rps)
             st.last_ts = now
+
+    def _refill_budget(self, st: HostState, now: float) -> None:
+        target_rps = st.profile.target_rps
+        if target_rps is None:
+            return
+        dt = now - st.budget_last_ts
+        if dt > 0:
+            st.budget_tokens = min(st.profile.target_capacity, st.budget_tokens + dt * target_rps)
+            st.budget_last_ts = now
 
     # ---------------------------------------------------------------------
 
@@ -366,10 +405,24 @@ class AdaptiveThrottle:
                         sleep_s = st.blocked_until - now
                     else:
                         self._refill(st, now)
-                        if st.tokens >= 1.0:
+                        self._refill_budget(st, now)
+
+                        target_rps = st.profile.target_rps
+                        has_primary = st.tokens >= 1.0
+                        has_budget = target_rps is None or st.budget_tokens >= 1.0
+
+                        if has_primary and has_budget:
                             st.tokens -= 1.0
+                            if target_rps is not None:
+                                st.budget_tokens -= 1.0
                             return Lease(self, host_key)
-                        sleep_s = (1.0 - st.tokens) / max(st.rate_rps, 1e-9)
+
+                        waits = []
+                        if not has_primary:
+                            waits.append((1.0 - st.tokens) / max(st.rate_rps, 1e-9))
+                        if not has_budget:
+                            waits.append((1.0 - st.budget_tokens) / max(target_rps, 1e-9))
+                        sleep_s = max(waits)
 
                 if sleep_s > 0:
                     if self._sleep_jitter:
@@ -500,6 +553,8 @@ class AdaptiveThrottle:
                     "tokens": st.tokens,
                     "blocked_for_s": max(0.0, st.blocked_until - now),
                     "max_in_flight": st.profile.max_in_flight,
+                    "target_rps": st.profile.target_rps,
+                    "budget_tokens": (st.budget_tokens if st.profile.target_rps is not None else None),
                 }
                 for hk, st in self._hosts.items()
             }
@@ -521,6 +576,8 @@ class AdaptiveThrottle:
                 st = self._hosts[hk]
                 elapsed = now - st.completed_since
                 actual_rps = st.completed / max(elapsed, 1e-9)
+                target_rps = st.profile.target_rps
+                budget_s = (st.budget_tokens / target_rps) if target_rps else None
                 rows.append((
                     hk,
                     st.rate_rps,
@@ -528,21 +585,25 @@ class AdaptiveThrottle:
                     st.tokens,
                     max(0.0, st.blocked_until - now),
                     st.profile.max_in_flight,
+                    target_rps,
+                    budget_s,
                 ))
                 st.completed = 0
                 st.completed_since = now
 
         lines = ["service throttle report:"]
         lines.append(
-            "  {:<34} {:>8} {:>8} {:>8} {:>10} {:>12}".format(
-                "host_key", "cfg_rps", "act_rps", "tokens", "blocked_s", "max_in_flight"
+            "  {:<34} {:>8} {:>8} {:>8} {:>10} {:>12} {:>8} {:>10}".format(
+                "host_key", "cfg_rps", "act_rps", "tokens", "blocked_s", "max_in_flight", "tgt_rps", "budget_s"
             )
         )
-        lines.append("  " + "-" * 88)
-        for hk, cfg_rps, act_rps, tokens, blocked_s, max_in_flight in rows:
+        lines.append("  " + "-" * 102)
+        for hk, cfg_rps, act_rps, tokens, blocked_s, max_in_flight, target_rps, budget_s in rows:
+            tgt_str = f"{target_rps:.2f}" if target_rps else "-"
+            budget_str = f"{budget_s:.0f}" if budget_s is not None else "-"
             lines.append(
-                "  {:<34} {:>8.2f} {:>8.2f} {:>8.2f} {:>10.2f} {:>12d}".format(
-                    hk[:34], cfg_rps, act_rps, tokens, blocked_s, max_in_flight,
+                "  {:<34} {:>8.2f} {:>8.2f} {:>8.2f} {:>10.2f} {:>12d} {:>8} {:>10}".format(
+                    hk[:34], cfg_rps, act_rps, tokens, blocked_s, max_in_flight, tgt_str, budget_str,
                 )
             )
         return "\n".join(lines)
@@ -593,6 +654,14 @@ PROFILES: Dict[str, HostProfile] = {
     # NocoDB Cloud (hosted on nocodb.com)
     # Docs indicate 5 req/s per user; when exceeded, 429 and "wait ~30s".
     # We stay under the limit to reduce oscillation, ramp slowly, and back off hard on 429.
+    #
+    # Separately, the license caps us at 5M calls/month. That's a long-term
+    # average budget, not an instantaneous rate limit, so it's enforced by
+    # target_rps/target_capacity (a second, fixed-rate token bucket -- see
+    # HostProfile docs) rather than by max_rps/AIMD: target_rps=100/min lets
+    # this run 24/7 well within budget (~4.3M calls/month at full tilt) with
+    # target_capacity giving ~5 minutes of burst headroom before throughput
+    # is clamped down to the steady 100/min average.
     "nocodb.cloud:api": HostProfile(
         initial_rps=3.0, min_rps=0.2, max_rps=4.5, bucket_capacity=4.0,
         ai_step=0.25, increase_every_s=20.0,
@@ -600,6 +669,7 @@ PROFILES: Dict[str, HostProfile] = {
         transient_cooldown_s=(0.3, 0.9),
         burst_error_window_s=30.0, burst_error_threshold=3, burst_md=0.7, burst_cooldown_s=(2.0, 5.0),
         max_in_flight=4,
+        target_rps=100.0 / 60.0, target_capacity=500.0,
     ),
 }
 

@@ -374,5 +374,60 @@ class TestAdaptiveThrottle(unittest.TestCase):
         with started_lock:
             self.assertEqual(sorted(started), [1, 2, 3], msg=f"started={started}")
 
+    def test_budget_bucket_caps_long_term_average(self):
+        # Primary (AIMD) bucket is effectively unlimited; only the budget
+        # bucket (target_rps) should gate acquisition here.
+        profile = reqmod.HostProfile(
+            initial_rps=1000.0, min_rps=0.1, max_rps=1000.0, bucket_capacity=1000.0,
+            ai_step=0.0, increase_every_s=999999.0, md_429=0.5, md_transient=0.9,
+            transient_cooldown_s=(0.0, 0.0),
+            burst_error_window_s=30.0, burst_error_threshold=3,
+            burst_md=0.7, burst_cooldown_s=(0.0, 0.0),
+            max_in_flight=10,
+            target_rps=2.0, target_capacity=2.0,
+        )
+        th = reqmod.AdaptiveThrottle(
+            profiles={"example.com:api": profile},
+            default_profile=profile,
+            resolver=reqmod.HostKeyResolver(),
+            logger=self.logger,
+            sleep_jitter=0.0,
+        )
+
+        # Burst allowance (2 tokens) should be immediately available.
+        with th.acquire("https://example.com/x"):
+            pass
+        with th.acquire("https://example.com/x"):
+            pass
+        self.assertEqual(self.sleep_calls, [])
+
+        # HostState.budget_last_ts (like last_ts/completed_since) is seeded via
+        # field(default_factory=_now), which captures the real _now at class
+        # definition time and isn't affected by patching birddog.fetch._now in
+        # setUp. Harmless in production (nothing is patched there), but here it
+        # leaves the freshly-created state's clock out of sync with the fake
+        # clock this test drives -- resync it before exercising incremental
+        # refill so the elapsed-time math below is deterministic.
+        hk = th.key_from("https://example.com/x")
+        th._get_state(hk).budget_last_ts = self.t
+
+        # Budget exhausted -- next acquire must wait for the fixed target_rps
+        # refill, not the (effectively infinite) primary rate.
+        with th.acquire("https://example.com/x"):
+            pass
+        self.assertEqual(len(self.sleep_calls), 1)
+        self.assertAlmostEqual(self.sleep_calls[0], 0.5, places=3)  # 1 token / 2.0 rps
+
+    def test_budget_bucket_disabled_when_target_rps_unset(self):
+        hk = "example.com:api"
+        st = self.th._get_state(hk)
+        self.assertIsNone(st.profile.target_rps)
+        self.assertEqual(st.budget_tokens, 0.0)
+
+        # Should never gate on the (disabled) budget bucket.
+        with self.th.acquire("https://example.com/x"):
+            pass
+        self.assertEqual(self.sleep_calls, [])
+
 if __name__ == "__main__":
     unittest.main()
