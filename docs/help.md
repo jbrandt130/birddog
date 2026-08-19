@@ -33,22 +33,6 @@ On future visits, you will need your email and password to login. Your email is 
 
 If you forget your password, click "Forgot password?" below the login form and enter your email. Birddog will send you a password reset link by email.
 
-![Reset Password modal](images/reset_password_modal.png)
-
-## Your Profile
-
-![Profile Settings](images/profile_settings.png)
-
-The Profile tab lets you change your password at any time. Enter your current password along with the new password (twice, to confirm) and submit the form.
-
-## Archives
-
-![Archives tab](images/archives_tab.png)
-
-The Archives tab lists every archive Birddog knows about, with its title, a short label, and a description. Clicking anywhere on a row (other than its buttons) opens that archive in the Browse panel. The "View Source" button opens the archive directly on WikiSource in a new tab. This is the same list of archives offered when adding an archive to your watchlist or selecting one to browse.
-
-Editing the Label and Description fields is only available to admin users; a save button (enabled once you've made a change) appears in the last column for admins to commit edits to a row. Regular users see the label and description as read-only text.
-
 ## Add Archives to your Watchlist
 
 ![Add Archive](images/add_archive_1.png)
@@ -169,6 +153,20 @@ Text changes are shown in yellow. Text additions are in green. If you see a yell
 
 When comparing a page to a prior version, it is possible that there is no difference in the data that Birddog attends to. It could be that some other part of the page was changed, such as metadata. In this case, you will not see any highlighted changes on the page.
 
+
+## Your Profile
+
+![Profile Settings](images/profile_settings.png)
+
+The Profile tab lets you change your password at any time. Enter your current password along with the new password (twice, to confirm) and submit the form.
+
+## Archives
+
+![Archives tab](images/archives_tab.png)
+
+The Archives tab lists every archive Birddog knows about, with its title, a short label, and a description. Clicking anywhere on a row (other than its buttons) opens that archive in the Browse panel. The "View Source" button opens the archive directly on WikiSource in a new tab. This is the same list of archives offered when adding an archive to your watchlist or selecting one to browse.
+
+Editing the Label and Description fields is only available to admin users; a save button (enabled once you've made a change) appears in the last column for admins to commit edits to a row. Regular users see the label and description as read-only text.
 
 ## Diagnostics
 
