@@ -358,10 +358,18 @@ def _extract_links_from_wiki_parse(title, parse):
     # Embedded File:/Файл: links (e.g. [[File:foo.pdf|thumb]]) appear in parse["images"],
     # not parse["links"]. The API returns bare filenames (no namespace prefix).
     # Collect document-type files (PDF, DjVu, etc.) from there.
+    #
+    # This whole function only ever runs against uk.wikisource.org pages (via _get_links,
+    # which always hits wiki.API_URL), so the wiki's own canonical File-namespace title is
+    # always "Файл:", never the English "File:" (confirmed live: the MediaWiki API's
+    # query.normalized maps "File:X" -> "Файл:X" for this wiki). Stamping "File:" here
+    # produced a title that disagreed with the one _fetch_mediawiki_file_metadata later
+    # writes back from the API's own canonical title, and the two paths fought over the
+    # same Document row's title field on every update.
     for image_name in parse.get("images", []):
         doc_type = _sniff_suffix(image_name)
         if doc_type == "document":
-            title = image_name if _FILE_NS_RE.match(image_name) else f"File:{image_name}"
+            title = image_name if _FILE_NS_RE.match(image_name) else f"Файл:{image_name}"
             internal_links.append({
                 "title": title,
                 "doc_type": doc_type,
@@ -1533,32 +1541,38 @@ class DatabaseUpdateManager(TaskManager):
         _logger.info(f"DatabaseUpdateManager: page update subtask {subtask['task_id']}.{subtask['index']}")
         batch = subtask["payload"]
         titles = batch.get("titles", [])
-        updated = False
-        error = None
 
+        # deliberately not caught here: a failure in update_page_records (page
+        # writes, doc creation, and the doc_links relation that actually links
+        # them to their owning page) must propagate up to TaskManager's
+        # execute_subtask caller so the subtask is released and retried
+        # (bounded by _max_attempts), instead of being logged and marked
+        # "completed" anyway -- which is how an interrupted batch previously
+        # left newly-created Document rows permanently unlinked (see
+        # var/web.stdout.log, 2026-08-18: a deploy killed this call mid-batch,
+        # the exception was swallowed, and the subtask was never retried).
         try:
             updated = self._updater.update_page_records(titles, update_doc_metadata=False)
         except Exception as err:
             _logger.error(
                 f"DatabaseUpdateManager: exception during page record update: {err}, {batch}"
             )
-            error = str(err)
+            raise
 
-        if not error:
+        try:
+            self._update_doc_metadata(titles)
+        except Exception as err:
+            _logger.error(
+                f"DatabaseUpdateManager: exception during doc metadata update: {err}, {batch}"
+            )
+
+        if batch.get("deep"):
             try:
-                self._update_doc_metadata(titles)
+                self._start_child_page_update_task(titles)
             except Exception as err:
                 _logger.error(
-                    f"DatabaseUpdateManager: exception during doc metadata update: {err}, {batch}"
+                    f"DatabaseUpdateManager: exception during child page update task: {err}, {batch}"
                 )
-
-            if batch.get("deep"):
-                try:
-                    self._start_child_page_update_task(titles)
-                except Exception as err:
-                    _logger.error(
-                        f"DatabaseUpdateManager: exception during child page update task: {err}, {batch}"
-                    )
 
         subtask["payload"] = {
             "kind": batch.get("kind"),
@@ -1566,8 +1580,6 @@ class DatabaseUpdateManager(TaskManager):
             "titles": titles,
             "deep": batch.get("deep", False),
         }
-        if error:
-            subtask["payload"]["error"] = error
 
         self._update_progress(subtask["task_id"], len(titles))
 
@@ -1629,22 +1641,22 @@ class DatabaseUpdateManager(TaskManager):
         # always allowed, there was no guard yet) rather than silently reinterpreting
         # old, already-queued work as newly-restricted.
         allow_create = bool(batch.get("allow_create", True))
+        # deliberately not caught here -- same reasoning as
+        # _execute_page_update_subtask: let TaskManager's bounded retry
+        # (execute_subtask's caller) handle a transient failure instead of
+        # silently marking a failed batch "completed".
         try:
             updated = self._updater.update_doc_records(urls, update_doc_metadata=True, allow_create=allow_create)
-            subtask["payload"] = {
-                "kind": batch.get("kind"),
-                "updated": updated,
-                "urls": urls,
-            }
         except Exception as err:
             _logger.error(
                 f"DatabaseUpdateManager: exception during doc update subtask execution: {err}, {batch}"
             )
-            subtask["payload"] = {
-                "kind": batch.get("kind"),
-                "urls": urls,
-                "error": str(err),
-            }
+            raise
+        subtask["payload"] = {
+            "kind": batch.get("kind"),
+            "updated": updated,
+            "urls": urls,
+        }
         self._update_progress(subtask["task_id"], len(urls))
 
     # ------------------------------------------------------------------

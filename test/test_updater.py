@@ -359,6 +359,20 @@ class TestExtractLinksFromWikiParse(unittest.TestCase):
         result = _extract_links_from_wiki_parse("Test:Unrecognized/Root", parse)
         self.assertIsNone(result["parent"])
 
+    def test_bare_image_filename_gets_wikisource_canonical_namespace(self):
+        # parse["images"] entries are bare filenames with no namespace prefix at
+        # all (per MediaWiki's own API behavior). This function only ever runs
+        # against uk.wikisource.org pages, whose canonical File-namespace title
+        # is the localized "Файл:", not the English "File:" -- prefixing with
+        # "File:" here previously produced a title that disagreed with the one
+        # _fetch_mediawiki_file_metadata later writes back from the API, and the
+        # two paths fought over the same Document row's title on every update.
+        parse = {"images": ["Bare.pdf"]}
+        result = _extract_links_from_wiki_parse(self.TITLE, parse)
+        internal_titles = {item["title"] for item in result["internal_links"]}
+        self.assertIn("Файл:Bare.pdf", internal_titles)
+        self.assertNotIn("File:Bare.pdf", internal_titles)
+
 
 # ---------------------------------------------------------------------------
 # DB-backed helper functions (module level)
@@ -1082,7 +1096,13 @@ class TestExecutePageUpdateSubtask(unittest.TestCase):
         self.assertNotIn("error", subtask["payload"])
         self.assertEqual(self.progress_calls, [("t1", 2)])
 
-    def test_failure_path_records_error_and_skips_followups(self):
+    def test_failure_path_propagates_and_skips_followups(self):
+        # regression test: update_page_records failing must propagate out of
+        # execute_subtask so TaskManager's own retry logic (bounded by
+        # _max_attempts) sees it and releases the subtask for a retry, instead
+        # of it being logged and silently marked "completed" -- which is how
+        # an interrupted batch previously left newly-created Document rows
+        # permanently unlinked with no automatic retry.
         def boom(titles, update_doc_metadata):
             raise RuntimeError("network exploded")
 
@@ -1091,10 +1111,11 @@ class TestExecutePageUpdateSubtask(unittest.TestCase):
         self.manager._update_doc_metadata = lambda titles: followup_calls.append(titles)
 
         subtask = {"task_id": "t1", "index": 0, "payload": {"kind": "update_pages", "titles": ["A"]}}
-        self.manager._execute_page_update_subtask(subtask)
+        with self.assertRaises(RuntimeError):
+            self.manager._execute_page_update_subtask(subtask)
 
-        self.assertEqual(subtask["payload"]["error"], "network exploded")
         self.assertEqual(followup_calls, [])  # skipped since update_page_records failed
+        self.assertEqual(self.progress_calls, [])  # progress not recorded for a failed attempt
 
     def test_deep_batch_triggers_child_page_task(self):
         self.manager._updater = SimpleNamespace(
@@ -1126,16 +1147,19 @@ class TestExecuteDocUpdateSubtask(unittest.TestCase):
         self.assertNotIn("error", subtask["payload"])
         self.assertEqual(self.progress_calls, [("t1", 2)])
 
-    def test_failure_path(self):
+    def test_failure_path_propagates(self):
+        # regression test: same reasoning as page-update subtasks -- a failure
+        # here must propagate so TaskManager retries the subtask instead of
+        # silently marking a failed batch "completed".
         def boom(urls, update_doc_metadata, allow_create=False):
             raise RuntimeError("timeout")
 
         self.manager._updater = SimpleNamespace(update_doc_records=boom)
         subtask = {"task_id": "t1", "index": 0, "payload": {"kind": "update_docs", "urls": ["u1"]}}
-        self.manager._execute_doc_update_subtask(subtask)
+        with self.assertRaises(RuntimeError):
+            self.manager._execute_doc_update_subtask(subtask)
 
-        self.assertEqual(subtask["payload"]["error"], "timeout")
-        self.assertNotIn("updated", subtask["payload"])
+        self.assertEqual(self.progress_calls, [])  # progress not recorded for a failed attempt
 
     def test_allow_create_defaults_true_for_legacy_payload_missing_the_key(self):
         # a task queued before allow_create tagging existed has no such key in
