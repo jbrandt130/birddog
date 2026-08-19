@@ -1,6 +1,6 @@
-# Birddog
+# Birddog with Location Processing Tools
 
-Birddog is a web-based tool for navigating and translating Ukrainian archival documents. It supports structured browsing, revision history, side-by-side comparison, and batch translation using Google Cloud and OpenAI APIs.
+Birddog is a web-based tool for navigating and translating Ukrainian archival documents, enhanced with location processing capabilities for geospatial context in archival research.
 
 ## Features
 
@@ -8,132 +8,136 @@ Birddog is a web-based tool for navigating and translating Ukrainian archival do
 - Scrape metadata and revisions from government archives
 - Generate and manage tracking spreadsheets
 - Web UI for report browsing
+- 📍 Advanced location processing (new)
+  - Location matching against administrative hierarchies
+  - AI-powered location extraction from text descriptions
+  - Cyrillic text handling for Russian/Ukrainian place names
+  - Filtering by administrative level (e.g., villages vs. district centers)
 
-### 🗂️ Project Overview
+## Project Structure
 
 ```bash
 birddog/
 ├── birddog/              # Core application code
 ├── templates/            # Jinja2 HTML templates (Bootstrap-based)
 ├── static/               # Static Birddog client assets
-├── resources/            # Application data including archive list and spreadsheet templates
-├── test/                 # Unit tests
+├── resources/            # Application data including archive lists
+├── test/                 # Unit tests (in progress for location tools)
 ├── docs/                 # Project documentation
 ├── sh/                   # Shell scripts
 ├── notebooks/            # Jupyter notebooks
-└── README.md             # You're here
+└── research/             # Experimental and research tools
+    └── triage/           # Location processing pipeline
+        ├── locations/
+        │   ├── read_all_locations.py      # Location matching against population data
+        │   ├── file_location.py          # Document location identification
+        │   ├── extract_location_from_descriptors.py  # LLM-powered location extraction
+        │   └── deploy_modal.py           # Modal deployment for Qwen model (optional)
 ```
+
 ---
 
 ## 🚀 Quickstart Guide
 
-This guide helps you get started **locally** using the `local_run` script. No AWS setup required.
-
 ### ✅ Requirements
 
-- Python 3.12
+- Python 3.12+
 - `git`
-- Google Cloud Translate API key
-- [Optional] Jupyter for notebooks
+- Google Cloud Translate API key (for translation)
+- [Optional] Jupyter Notebooks
+- [Optional] Modal account (for deploying Qwen model)
 
----
-
-### 📦 1. Clone and set up the project
+### 📦 Install Dependencies
 
 ```bash
-git clone https://github.com/jbrandt130/birddog.git
-cd birddog
-python3.12 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
+# Install core dependencies
 pip install -r requirements.txt
+
+# Install additional dependencies for location tools
+pip install rapidfuzz modal  # Adds fuzzy matching and modal deployment capabilities
 ```
 
 ---
 
-### 🔐 2. Set Environment Variables
+## 🔐 Setup
 
-Set the following environment variables to configure Birddog.
+### 1. Environment Variables
 
-```
+Set these in your `.env` file or directly in your environment:
+
+```bash
 # Required for Flask session management
-BIRDDOG_SECRET_KEY=pick_something_unique
+BIRDDOG_SECRET_KEY=your_secret_key_here
 
-# Required to use Google for translation
-GOOGLE_TRANSLATE_API_KEY=your_api_key
-BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE=True
+# Required for Google Cloud Translation
+GOOGLE_TRANSLATE_API_KEY=your_google_api_key
+
+# For AI-powered location extraction
+HF_TOKEN=your_huggingface_token  # Free tier token works for basic use
+
+# Optional: Modal deployment URL (if using custom deployment)
+# MODAL_QWEN_URL=https://your-deployment.modal.run
 ```
 
-#### Translation Settings
+### 2. Translation Settings
 
-To run Birddog without invoking Google Cloud translation services (useful for debugging), 
-adjust the environment as follows:
-```
+To disable Google Cloud Translation (useful for debugging):
+```bash
 BIRDDOG_USE_GOOGLE_CLOUD_TRANSLATE=False
 BIRDDOG_TRANSLATION_DEBUG=True
 ```
 
-#### OPTIONAL: Password Recovery Settings
+---
 
-Birddog sends the user an encrypted token as part of the password recovery workflow. In
-order to send email, Birddog requires an SMTP server with valid credentials. These are set
-using the following environment variables:
-```
-BIRDDOG_SMTP_SERVER=smtp_server_address
-BIRDDOG_SMTP_PORT=smtp_port_number
-BIRDDOG_SMTP_USERNAME=valid_username
-BIRDDOG_SMTP_PASSWORD=valid_password
+## 📍 New: Location Processing Tools
+
+The `research/triage/locations` directory contains specialized tools for extracting and matching geographical locations from archival document descriptions:
+
+### 1. `read_all_locations.py`
+- Builds a comprehensive location dictionary from population registers and administrative hierarchies
+- Enables fuzzy matching of place names
+
+### 2. `file_location.py`
+- Combines location extraction, matching, and filtering
+- Returns only locations at the smallest administrative level (e.g., villages)
+
+### 3. `extract_location_from_descriptors.py`
+- Uses an AI model (Qwen/Qwen2.5-7B-Instruct) to extract locations from text
+- Requires Hugging Face token or Modal deployment
+
+### 4. `deploy_modal.py` (optional)
+- Deploys the Qwen model via Modal.ai for high-availability processing
+- Requires Modal account and API key setup
+
+---
+
+## 🧪 Example Usage
+
+From a Python interpreter:
+
+```python
+from research.triage.locations.file_location import get_doc_location
+
+# Get location IDs for a document (returns smallest administrative level matches)
+location_ids = get_doc_location(document_id=406970, only_smallest_locations=True)
 ```
 
 ---
 
-### ▶️ 3. Run the local dev server
+## 🧪 Testing (Currently Manual)
 
-```bash
-./sh/local_run
-```
-
-This launches the Flask development server with hot reload and debug logging. A few seconds after the app starts, the 
-Birddog client will be opened in the default browser. The app uses the local directory `.cache` to store
-persistent data for the app. This includes a page cache, user profile data, and databases.
+The location tools currently rely on manual testing via `if __name__ == "__main__":` blocks in each script. Consider adding formal unit tests to the `test/` directory in future development.
 
 ---
 
-### 🧪 4. Run tests and coverage
+## 📚 Next Steps
 
-To run unit tests:
+For developers:
 
-```bash
-python -m unittest
-```
-
-This runs all tests in the `tests/` directory from the project root — no discovery flags needed.
-
-To check test coverage:
-
-```bash
-./sh/coverage_report
-```
-
----
-
-### 📓 5. (Optional) Jupyter setup
-
-To work with notebooks:
-
-```bash
-python3.12 -m venv venv-jupyter
-source venv-jupyter/bin/activate
-pip install -r requirements.txt
-pip install notebook ipykernel
-./sh/lab
-```
-
----
-
-### ▶️ 6. (Optional) AWS setup
-
-Coming soon...
+1. Install dependencies including `pip install rapidfuzz modal`
+2. Set required environment variables
+3. Explore `research/triage/locations` tools in an interactive Python session
+4. Configure Modal deployment (optional) for production use
 
 ---
 
