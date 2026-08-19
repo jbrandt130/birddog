@@ -13,14 +13,16 @@ Birddog is a web-based navigator and translator for Ukrainian documents hosted o
 
 ## Navigating Birddog
 
+![Navigation bar](images/navbar.png)
+
 Once logged in, the navigation bar at the top of the page gives you access to:
 
 - **Home** — your watchlist and unresolved page changes (this is where you land after login).
 - **Browse** — the page viewer described in [Browse Archive Pages](#browse-archive-pages) below.
 - **Archives** — a master list of all archives Birddog knows about; see [Archives](#archives).
 - **Profile** — change your password; see [Your Profile](#your-profile).
-- **Help** — opens this document.
 - **Logs**, **Usage**, **DB Status** — diagnostic pages useful for troubleshooting; see [Diagnostics](#diagnostics).
+- **Help** — opens this document.
 
 ## Create Profile or Login
 
@@ -31,13 +33,21 @@ On future visits, you will need your email and password to login. Your email is 
 
 If you forget your password, click "Forgot password?" below the login form and enter your email. Birddog will send you a password reset link by email.
 
+![Reset Password modal](images/reset_password_modal.png)
+
 ## Your Profile
+
+![Profile Settings](images/profile_settings.png)
 
 The Profile tab lets you change your password at any time. Enter your current password along with the new password (twice, to confirm) and submit the form.
 
 ## Archives
 
-The Archives tab lists every archive Birddog knows about, with its title, a short label, and a description. Click a row to edit its label or description, and use the "View Source" link on a row to open that archive directly on WikiSource. This is the same list of archives offered when adding an archive to your watchlist or selecting one to browse.
+![Archives tab](images/archives_tab.png)
+
+The Archives tab lists every archive Birddog knows about, with its title, a short label, and a description. Clicking anywhere on a row (other than its buttons) opens that archive in the Browse panel. The "View Source" button opens the archive directly on WikiSource in a new tab. This is the same list of archives offered when adding an archive to your watchlist or selecting one to browse.
+
+Editing the Label and Description fields is only available to admin users; a save button (enabled once you've made a change) appears in the last column for admins to commit edits to a row. Regular users see the label and description as read-only text.
 
 ## Add Archives to your Watchlist
 
@@ -93,7 +103,13 @@ To stop comparing, open the dropdown and select "Stop Comparing".
 
 #### Page Description
 
-Below the page title is a collapsible box (click the circle icon next to the title to expand or collapse it) showing the page's description, dates, and, if one is available, a link to the associated source document. Like other page content, the description and document link are highlighted green or yellow when comparing to a prior version, to indicate they were added or changed.
+![Page description, collapsed](images/page_description_collapsed.png)
+
+Below the page title is a "+" button that expands a collapsible box showing the page's description, dates, and, if one is available, a link to the associated source document.
+
+![Page description, expanded](images/page_description_expanded.png)
+
+Once expanded, the "+" becomes a "−" button that collapses the box again. Like other page content, the description and document link are highlighted green or yellow when comparing to a prior version, to indicate they were added or changed.
 
 #### ![Breadcrumb](images/breadcrumb.png) The breadcrumb enables you to click on any of the parent page names to upward in the page hierarchy.
 
@@ -109,15 +125,19 @@ Note that the entire page is translated, which can take a long time for some pag
 
 #### ![Download](images/download.png) Download the Excel spreadsheet for this page.
 
-This opens an export dialog where you can pick the page type template, the table to export, and configure which columns are included, before downloading. If the page has not been translated, then the downloaded sheet will also not be translated. If you are viewing in comparison mode, then the downloaded spreadsheet will highlight the changes.
+![Export dialog](images/export_modal.png)
+
+This opens an export dialog where you choose a Page Type template, then map each export column (ID, Description, Date, etc.) to the corresponding source field, before downloading. If the page has not been translated, then the downloaded sheet will also not be translated. If you are viewing in comparison mode, then the downloaded spreadsheet will highlight the changes.
 
 #### ![Resolve](images/check_button.png) Resolve the update for this page (and any subsidiaries).
 
-#### Next Unresolved (arrow icon)
+#### ![Next Unresolved](images/next_unresolved_button.png) Next Unresolved
 
 Jumps directly to the next unresolved page, in the same order they appear in the [Unresolved Page Changes](#explore-unresolved-page-changes) list. This button is only enabled when there is a next unresolved page to go to.
 
 #### ![Upload](images/db_upload.png) Upload this page (and optionally any subsidiaries) to the database.
+
+![Database Upload confirmation](images/database_upload_modal.png)
 
 This button only appears when a database backend is configured for this deployment. It opens a confirmation dialog showing the page title and an "Include subordinate pages" checkbox; confirm to upload the page (and, if checked, its subordinate pages) to the database.
 
@@ -154,9 +174,21 @@ When comparing a page to a prior version, it is possible that there is no differ
 
 Three links in the nav bar open diagnostic pages in a new tab, mainly useful when troubleshooting:
 
-- **Logs** — recent service log entries.
-- **Usage** — a service usage dashboard.
-- **DB Status** — status of the database backend used for the [Upload to database](#browse-archive-pages) feature.
+- **Logs** — recent service log entries. Use the "Show latest" dropdown to choose how many entries to display, and click Refresh to pull the latest logs — the page does not update automatically.
+
+![Birddog Logs](images/logs.png)
+
+- **Usage** — a service usage dashboard, broken down by backend resource (translation, database, storage, etc.). Choose a time range, and optionally check "Summarize By Resource" for per-resource totals instead of a detailed breakdown.
+
+![Birddog Service Usage Summary](images/usage.png)
+
+Larger time ranges take longer to compute; the longest ranges can be slow enough to time out at the AWS level.
+
+- **DB Status** — a list of active database-upload tasks (from the [Upload to database](#browse-archive-pages) feature), each with its kind, description, size, progress, and whether it's a "deep" (page + subordinates) upload.
+
+![DB Status](images/db_status.png)
+
+Each task row has a Cancel button. **Only cancel a task if you know what you're doing** — cancelling an in-progress database upload partway through can leave the database in an inconsistent state.
 
 ## Questions?
 
