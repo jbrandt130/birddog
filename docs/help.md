@@ -7,9 +7,20 @@ Birddog is a web-based navigator and translator for Ukrainian documents hosted o
 ### Getting Started
 
 1. [Create a profile or log in](#create-profile-or-login)
-3. [Add archives to your watchlist](#add-archives-to-your-watchlist) (Birddog will notify you of new documents as they appear.)
-5. [Explore page change notifications](#explore-unresolved-page-changes)
-6. [Examine page details through the Browse panel](#browse-archive-pages)
+2. [Add archives to your watchlist](#add-archives-to-your-watchlist) (Birddog will notify you of new documents as they appear.)
+3. [Explore page change notifications](#explore-unresolved-page-changes)
+4. [Examine page details through the Browse panel](#browse-archive-pages)
+
+## Navigating Birddog
+
+Once logged in, the navigation bar at the top of the page gives you access to:
+
+- **Home** — your watchlist and unresolved page changes (this is where you land after login).
+- **Browse** — the page viewer described in [Browse Archive Pages](#browse-archive-pages) below.
+- **Archives** — a master list of all archives Birddog knows about; see [Archives](#archives).
+- **Profile** — change your password; see [Your Profile](#your-profile).
+- **Help** — opens this document.
+- **Logs**, **Usage**, **DB Status** — diagnostic pages useful for troubleshooting; see [Diagnostics](#diagnostics).
 
 ## Create Profile or Login
 
@@ -17,6 +28,16 @@ Birddog is a web-based navigator and translator for Ukrainian documents hosted o
 
 On your first visit, you need to create a profile by providing your name, email address, and password. 
 On future visits, you will need your email and password to login. Your email is your Birddog ID, and also will be needed if you ever forget your password.
+
+If you forget your password, click "Forgot password?" below the login form and enter your email. Birddog will send you a password reset link by email.
+
+## Your Profile
+
+The Profile tab lets you change your password at any time. Enter your current password along with the new password (twice, to confirm) and submit the form.
+
+## Archives
+
+The Archives tab lists every archive Birddog knows about, with its title, a short label, and a description. Click a row to edit its label or description, and use the "View Source" link on a row to open that archive directly on WikiSource. This is the same list of archives offered when adding an archive to your watchlist or selecting one to browse.
 
 ## Add Archives to your Watchlist
 
@@ -70,6 +91,10 @@ Compare to a prior version of the page by opening the dropdown and selecting a p
 
 To stop comparing, open the dropdown and select "Stop Comparing".
 
+#### Page Description
+
+Below the page title is a collapsible box (click the circle icon next to the title to expand or collapse it) showing the page's description, dates, and, if one is available, a link to the associated source document. Like other page content, the description and document link are highlighted green or yellow when comparing to a prior version, to indicate they were added or changed.
+
 #### ![Breadcrumb](images/breadcrumb.png) The breadcrumb enables you to click on any of the parent page names to upward in the page hierarchy.
 
 Note that the web page "Back" button currently navigates away from Birddog.
@@ -84,11 +109,17 @@ Note that the entire page is translated, which can take a long time for some pag
 
 #### ![Download](images/download.png) Download the Excel spreadsheet for this page.
 
-If the page has not been translated, then the downloaded sheet will also not be translated. If you are viewing in comparison mode, then the downloaded spreadsheet will highlight the changes.
+This opens an export dialog where you can pick the page type template, the table to export, and configure which columns are included, before downloading. If the page has not been translated, then the downloaded sheet will also not be translated. If you are viewing in comparison mode, then the downloaded spreadsheet will highlight the changes.
 
 #### ![Resolve](images/check_button.png) Resolve the update for this page (and any subsidiaries).
 
+#### Next Unresolved (arrow icon)
+
+Jumps directly to the next unresolved page, in the same order they appear in the [Unresolved Page Changes](#explore-unresolved-page-changes) list. This button is only enabled when there is a next unresolved page to go to.
+
 #### ![Upload](images/db_upload.png) Upload this page (and optionally any subsidiaries) to the database.
+
+This button only appears when a database backend is configured for this deployment. It opens a confirmation dialog showing the page title and an "Include subordinate pages" checkbox; confirm to upload the page (and, if checked, its subordinate pages) to the database.
 
 ### Badges
 
@@ -118,6 +149,14 @@ Text changes are shown in yellow. Text additions are in green. If you see a yell
 
 When comparing a page to a prior version, it is possible that there is no difference in the data that Birddog attends to. It could be that some other part of the page was changed, such as metadata. In this case, you will not see any highlighted changes on the page.
 
+
+## Diagnostics
+
+Three links in the nav bar open diagnostic pages in a new tab, mainly useful when troubleshooting:
+
+- **Logs** — recent service log entries.
+- **Usage** — a service usage dashboard.
+- **DB Status** — status of the database backend used for the [Upload to database](#browse-archive-pages) feature.
 
 ## Questions?
 
