@@ -1,25 +1,30 @@
+import os
+import re
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Literal
+from urllib.parse import parse_qs, quote, unquote, urlparse, urlunparse
+
+from openpyxl import load_workbook
+
 from birddog.abstract_database import InvalidFieldValue
 from birddog.database import Database, timer
-from birddog.database_updater import domain_from_url, form_document_record, normalize_url
+from birddog.database_updater import (
+    domain_from_url,
+    form_document_record,
+    normalize_url,
+)
 from birddog.log import get_logger
 from birddog.utility import utc_now_dt
 from birddog.wiki import (
     WIKI_NAMESPACE,
-    get_title,
     get_root_label,
-    parent_title,
+    get_title,
     page_label,
+    parent_title,
     sequential_page_label,
 )
-
-from datetime import datetime
-from openpyxl import load_workbook
-from pathlib import Path
-from typing import List, Any, Literal
-from urllib.parse import urlparse, parse_qs, urlunparse, unquote, quote
-import os
-import re
-import time
 
 _ENABLE_CONSOLE_HIGHLIGHTING = os.name == "nt"  # console output highlighting
 START_HDR_ROW = 5  #the headers are sometimes in row 5 and sometimes in row 6 or 7
@@ -66,8 +71,7 @@ def parent_title_no_ns(title, wiki_spreadsheet, archive_unit_name):
         result = parent_title(title)
         if not result:
             return ""
-        if result.startswith(_NS_PREFIX):
-            result = result[len(_NS_PREFIX):]
+        result = result.removeprefix(_NS_PREFIX)
         return result
     else:
         last_slash_pos = archive_unit_name.rfind('/')
@@ -123,8 +127,7 @@ def url_to_title(url: str) -> str:
         if "title" in params:
             result = params["title"][0]
             ns_prefix = f"{WIKI_NAMESPACE}:"
-            if result.startswith(ns_prefix):
-                result = result[len(ns_prefix):]
+            result = result.removeprefix(ns_prefix)
             return result
     if "redlink" in url:
         url = urlparse(url).path
@@ -327,10 +330,6 @@ def parse_http_list(s: str):
     # we also exclude commas followed by optional spaces and a Cyrillic character,
     # because that is what we have in cell 'B4', sheet 'fund 1517', spreadsheet DAKO-D-general-wiki-20260417.xlsx
     parts = re.split(r"\s*and\s*|,(?!_|[\t ]*[\u0400-\u04FF])|;", s)
-    #parts = re.split(r"\s*and\s*|,\s+(?=http)|;", s, flags=re.IGNORECASE)
-    #parts = re.split(r"\s*and\s*|,(?![\t ]*_)|;", s)
-    #parts = re.split(r"\s*and\s*|,(?![\t ]*[\u0400-\u04FF])|;", s)
-    #parts = re.split(r"\s*and\s*|,(?!_)|;", s)
     # Filter out empty strings (from consecutive separators)
     parts = [p.strip() for p in parts if p.strip()]
     parts = [canonical_wiki_url(p.strip()) for p in parts]
@@ -366,7 +365,7 @@ def get_cell_link_or_str(ws, cell_addr: str, import_message: str, check_contents
 
 def string_ends_with_file_ext(s: str):
     s = s.upper()
-    return s.endswith(".PDF") or s.endswith(".DJVU") or s.endswith(".ZIP")
+    return s.endswith((".PDF", ".DJVU", ".ZIP"))
 
 
 def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: str, only_check_link: bool):
@@ -477,7 +476,7 @@ def add_page(page: dict, page_table: dict) -> None:
     page["label"] = delete_part_between_hyphen_and_slash(page["label"])
 
     # ensure an entry exists for this URL
-    entry = page_table.setdefault(url, dict())
+    entry = page_table.setdefault(url, {})
     # update/merge keys
     entry.update(page)
 
@@ -508,7 +507,7 @@ def irregular_url(url: str) -> bool:
             'gov.ua/?page_id=' in url)
 
 
-def log_strange_parsing_result(ws, r, cell, subunits: List[str], url: str, wiki_spreadsheet: bool, level: str):
+def log_strange_parsing_result(ws, r, cell, subunits: list[str], url: str, wiki_spreadsheet: bool, level: str):
     match level:
         case "opus":
             lower_level = "case"
@@ -589,7 +588,7 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell, archive_latin_name) -> t
         archive_latin_name: Archive name in Latin letters, used for archive-specific parsing rules.
 
     Returns:
-        1) List[str]: List of parsed integers converted to strings
+        1) list[str]: List of parsed integers converted to strings
         2) str: the url from one of the two input cells.
     """
     value = fund_num_cell.value
@@ -817,8 +816,6 @@ def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cy
     comments = get_cell_value(ws["I2"])
     if not comments:
         comments = get_cell_value(ws["I3"])
-#    if comments:
-#        _logger.info(f"There is a comment: {comments}")
 
     return title, latin_title, url, import_message, comments
 
@@ -1812,7 +1809,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-R-wiki-20260801.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-D-wiki-20260723.xlsx"
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/AVPRI-wiki-20250501.xlsx"
     import_spreadsheet(filepath, True)
 #    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\16_07"
