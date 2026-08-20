@@ -528,19 +528,20 @@ def log_strange_parsing_result(ws, r, cell, subunits: List[str], url: str, wiki_
 
     match num_results:
         case 1:
-            #default result - check url sanity
             if wiki_spreadsheet and normalized_val not in url:
                 return lower_level
-                no_letters = re.sub(r"[A-Z-]", "", normalized_val)
-                if no_letters not in url:
-                    _logger.warning(f"In sheet='{ws.title}', row={r}, the URL {url} was supposed to include"
-                                    f" the {lower_level} number '{normalized_val}'")
+#                # default result - check url sanity
+#                no_letters = re.sub(r"[A-Z-]", "", normalized_val)
+#                if no_letters not in url:
+#                    _logger.warning(f"In sheet='{ws.title}', row={r}, the URL {url} was supposed to include"
+#                                    f" the {lower_level} number '{normalized_val}'")
 
         case 0:
-            if cell.value and len(str(cell.value)) > 0:
-                #otherwise, it is an empty cell - do nothing
-                _logger.warning(
-                    f"No URL found for the {lower_level} '{normalized_val}', sheet='{ws.title}', row={r} - skipping")
+            pass
+#            if cell.value and len(str(cell.value)) > 0:
+#                #otherwise, it is an empty cell - do nothing
+#                _logger.warning(
+#                    f"No URL found for the {lower_level} '{normalized_val}', sheet='{ws.title}', row={r} - skipping")
 
         case _:
             _logger.warning(f"Irregular {lower_level} number '{normalized_val}', sheet='{ws.title}', "
@@ -1453,8 +1454,8 @@ def normalize_doc_type(doc_type: str | None) -> str | None:
     return doc_type
 
 def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: str, case_num_col: str,
-                  change_date: str | None, comments_col: int, curr_import_message: Literal[
-                                                                                       '', 'Document without a page', 'Old case numbering', 'Other case numbering'] | Any,
+                  change_date: str | None, comments_col: int,
+                  curr_import_message: Literal['', 'Document without a page', 'Old case numbering', 'Other case numbering'] | Any,
                   curr_source_type, fund_name, label: str | Any, level, opus_name,
                   opus_title: str | None | Any, opus_url: str, page_table: dict[Any, Any] | Any, r: int, raw_url: str,
                   timestamp: str | None, title, wiki_spreadsheet, ws, language):
@@ -1462,12 +1463,14 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
     curr_import_message = check_url_sanity(raw_url, curr_import_message, wiki_spreadsheet,
                                            necessary_parts, ws.title, case_num_cell_addr)
 
-    comments_cell_addr = f"{chr(comments_col)}{r}"  # default f"G{r}"
-    processor_cell_addr1 = f"{chr(comments_col + 2)}{r}"  # default f"I{r}"
-    processor_cell_addr2 = f"{chr(comments_col + 5)}{r}"  # default f"L{r}"
-    pages_processed_cell_addr1 = f"{chr(comments_col + 3)}{r}"  # default f"J{r}"
-    pages_processed_cell_addr2 = f"{chr(comments_col + 6)}{r}"  # default f"M{r}"
-    when_transcribed_cell_addr = f"{chr(comments_col + 7)}{r}"  # default f"N{r}"
+    comments_cell_addr          = f"{chr(comments_col    )}{r}"  # default f"G{r}"
+    file_name_cell_addr1        = f"{chr(comments_col + 1)}{r}"  # default f"H{r}"
+    processor_cell_addr1        = f"{chr(comments_col + 2)}{r}"  # default f"I{r}"
+    pages_processed_cell_addr1  = f"{chr(comments_col + 3)}{r}"  # default f"J{r}"
+    file_name_cell_addr2        = f"{chr(comments_col + 4)}{r}"  # default f"K{r}"
+    processor_cell_addr2        = f"{chr(comments_col + 5)}{r}"  # default f"L{r}"
+    pages_processed_cell_addr2  = f"{chr(comments_col + 6)}{r}"  # default f"M{r}"
+    when_transcribed_cell_addr  = f"{chr(comments_col + 7)}{r}"  # default f"N{r}"
 
     description_col_offs = DESCRIPTION_COL_OFFS
     years_col_offs = YEARS_COL_OFFS
@@ -1511,6 +1514,7 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
         "import_message": curr_import_message,
         # the columns for the following cells are not fixed
         "comments": get_cell_value(ws[comments_cell_addr]),
+        "filename": combine_cell_value(ws[file_name_cell_addr1], ws[file_name_cell_addr2]),
         "processor": combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2]),
         "pages_processed": get_cell_int_value(ws[pages_processed_cell_addr1]) +
                            get_cell_int_value(ws[pages_processed_cell_addr2]),
@@ -1601,7 +1605,7 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
 
 def import_spreadsheet(sw_filepath, actually_write=True):
     db = Database()
-    workbook = load_workbook(sw_filepath)
+    workbook = load_workbook(sw_filepath, data_only=True)
     wiki_spreadsheet = "-wiki" in sw_filepath.lower()
     substring = "-archive"
     if wiki_spreadsheet:
@@ -1808,7 +1812,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAKO-D-fund280-wiki-20260629.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-R-wiki-20260801.xlsx"
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/AVPRI-wiki-20250501.xlsx"
     import_spreadsheet(filepath, True)
 #    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\16_07"
