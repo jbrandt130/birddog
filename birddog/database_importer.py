@@ -1523,8 +1523,7 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
 def normalize_process_code(process_code: str | None, import_message: str) -> tuple[str | None, str]:
     # Remove trailing tab ('\\t') from the given string if present.
     if process_code is not None:
-        if process_code.endswith('\t'):
-            process_code = process_code[:-1]
+        process_code = process_code.removesuffix('\t')
 
         valid_options = ["C1", "C2", "C3", "DP", "FX", "NO", "P1", "P2"]
         error_code = "E"
@@ -1809,7 +1808,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-R-wiki-20260801.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-D-wiki-20260723.xlsx"
     import_spreadsheet(filepath, True)
 #    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\16_07"
 #    process_dir(dir_path)
