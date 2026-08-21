@@ -18,7 +18,7 @@ from birddog.core import (
 from birddog.wiki import (
     WIKI_NAMESPACE,
     canonicalize_title,
-    parent_title,
+    literal_parent_title,
     title_in_scope,
     )
 from birddog.tracker import (
@@ -86,10 +86,7 @@ class PageLRU:
             self._lru[title] = page
 
             if not page.exists:
-                try:
-                    p_title = parent_title(title)
-                except ValueError:
-                    p_title = None
+                p_title = literal_parent_title(title)
                 if p_title:
                     _logger.info(f"PageLRU: evicting parent {p_title} due to nonexistent child {title}")
                     self.evict(p_title, runtime)
@@ -153,11 +150,7 @@ class PageUpdateManager(HeartbeatManager):
         for title, update in pending_updates:
             try:
                 update = json.loads(update)
-                try:
-                    parent_page_title = parent_title(title)
-                except ValueError as err:
-                    _logger.error(f"PageUpdateManager: unable to find parent of {title}. Skipping.")
-                    parent_page_title = None
+                parent_page_title = literal_parent_title(title)
 
                 if update.get("action") == "delete":
                     _logger.info(f"PageUpdateManager: page deleted: {title}")

@@ -24,7 +24,6 @@ from birddog.wiki import (
     page_label,
     get_title,
     classify_page,
-    parent_title,
     literal_parent_title,
     page_exists,
     HistoryLRU,
@@ -195,8 +194,7 @@ class Page:
     @property
     def parent(self):
         # literal title-path parent, so it stays consistent with .name
-        # (page_label()); this differs from the curated content-hierarchy
-        # parent that parent_title() computes for set_child_link_status()
+        # (page_label())
         parent = literal_parent_title(self._title)
         if not parent:
             return None
@@ -379,7 +377,7 @@ class Page:
         return page
 
     def set_child_link_status(self, child_title, link_status):
-        if parent_title(child_title) != self.title:
+        if literal_parent_title(child_title) != self.title:
             raise ValueError(f"set_child_link_status: invalid child title: {child_title}, parent={self.title}")
         parts = child_title.rsplit("/", 1)
         if len(parts) < 2:

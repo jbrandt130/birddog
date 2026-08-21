@@ -20,7 +20,7 @@ from birddog.wiki import (
     canonicalize_title,
     page_label,
     get_root_label,
-    parent_title,
+    literal_parent_title,
     sequential_page_label,
     page_kind,
     page_url_from_title,
@@ -323,18 +323,12 @@ def _parse_wiki_templates(parse):
         "years": dates.strip(),
     }
 
-def _safe_parent_title(title):
-    try:
-        return parent_title(title)
-    except ValueError:
-        return None
-
 def _extract_links_from_wiki_parse(title, parse):
     internal_links = []
     category_links = []
     children = []
     parent = None
-    parent_title_name = _safe_parent_title(title)
+    parent_title_name = literal_parent_title(title)
     for link in parse.get("links", []):
         other_title = link.get("*")
         if other_title:
@@ -349,7 +343,7 @@ def _extract_links_from_wiki_parse(title, parse):
                 parent = item
             elif _is_category_link(other_title):
                 category_links.append(item)
-            elif _safe_parent_title(item["title"]) == title:
+            elif literal_parent_title(item["title"]) == title:
                 children.append(item)
             else:
                 item["doc_type"] = _sniff_suffix(canonical_title)
