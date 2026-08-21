@@ -1,25 +1,30 @@
+import os
+import re
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Literal
+from urllib.parse import parse_qs, quote, unquote, urlparse, urlunparse
+
+from openpyxl import load_workbook
+
 from birddog.abstract_database import InvalidFieldValue
 from birddog.database import Database, timer
-from birddog.database_updater import domain_from_url, form_document_record, normalize_url
+from birddog.database_updater import (
+    domain_from_url,
+    form_document_record,
+    normalize_url,
+)
 from birddog.log import get_logger
 from birddog.utility import utc_now_dt
 from birddog.wiki import (
     WIKI_NAMESPACE,
-    get_title,
     get_root_label,
-    parent_title,
+    get_title,
     page_label,
+    parent_title,
     sequential_page_label,
 )
-
-from datetime import datetime
-from openpyxl import load_workbook
-from pathlib import Path
-from typing import List, Any, Literal
-from urllib.parse import urlparse, parse_qs, urlunparse, unquote, quote
-import os
-import re
-import time
 
 _ENABLE_CONSOLE_HIGHLIGHTING = os.name == "nt"  # console output highlighting
 START_HDR_ROW = 5  #the headers are sometimes in row 5 and sometimes in row 6 or 7
@@ -66,8 +71,7 @@ def parent_title_no_ns(title, wiki_spreadsheet, archive_unit_name):
         result = parent_title(title)
         if not result:
             return ""
-        if result.startswith(_NS_PREFIX):
-            result = result[len(_NS_PREFIX):]
+        result = result.removeprefix(_NS_PREFIX)
         return result
     else:
         last_slash_pos = archive_unit_name.rfind('/')
@@ -123,8 +127,7 @@ def url_to_title(url: str) -> str:
         if "title" in params:
             result = params["title"][0]
             ns_prefix = f"{WIKI_NAMESPACE}:"
-            if result.startswith(ns_prefix):
-                result = result[len(ns_prefix):]
+            result = result.removeprefix(ns_prefix)
             return result
     if "redlink" in url:
         url = urlparse(url).path
@@ -327,10 +330,6 @@ def parse_http_list(s: str):
     # we also exclude commas followed by optional spaces and a Cyrillic character,
     # because that is what we have in cell 'B4', sheet 'fund 1517', spreadsheet DAKO-D-general-wiki-20260417.xlsx
     parts = re.split(r"\s*and\s*|,(?!_|[\t ]*[\u0400-\u04FF])|;", s)
-    #parts = re.split(r"\s*and\s*|,\s+(?=http)|;", s, flags=re.IGNORECASE)
-    #parts = re.split(r"\s*and\s*|,(?![\t ]*_)|;", s)
-    #parts = re.split(r"\s*and\s*|,(?![\t ]*[\u0400-\u04FF])|;", s)
-    #parts = re.split(r"\s*and\s*|,(?!_)|;", s)
     # Filter out empty strings (from consecutive separators)
     parts = [p.strip() for p in parts if p.strip()]
     parts = [canonical_wiki_url(p.strip()) for p in parts]
@@ -366,7 +365,7 @@ def get_cell_link_or_str(ws, cell_addr: str, import_message: str, check_contents
 
 def string_ends_with_file_ext(s: str):
     s = s.upper()
-    return s.endswith(".PDF") or s.endswith(".DJVU") or s.endswith(".ZIP")
+    return s.endswith((".PDF", ".DJVU", ".ZIP"))
 
 
 def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: str, only_check_link: bool):
@@ -477,7 +476,7 @@ def add_page(page: dict, page_table: dict) -> None:
     page["label"] = delete_part_between_hyphen_and_slash(page["label"])
 
     # ensure an entry exists for this URL
-    entry = page_table.setdefault(url, dict())
+    entry = page_table.setdefault(url, {})
     # update/merge keys
     entry.update(page)
 
@@ -508,7 +507,7 @@ def irregular_url(url: str) -> bool:
             'gov.ua/?page_id=' in url)
 
 
-def log_strange_parsing_result(ws, r, cell, subunits: List[str], url: str, wiki_spreadsheet: bool, level: str):
+def log_strange_parsing_result(ws, r, cell, subunits: list[str], url: str, wiki_spreadsheet: bool, level: str):
     match level:
         case "opus":
             lower_level = "case"
@@ -528,19 +527,20 @@ def log_strange_parsing_result(ws, r, cell, subunits: List[str], url: str, wiki_
 
     match num_results:
         case 1:
-            #default result - check url sanity
             if wiki_spreadsheet and normalized_val not in url:
                 return lower_level
-                no_letters = re.sub(r"[A-Z-]", "", normalized_val)
-                if no_letters not in url:
-                    _logger.warning(f"In sheet='{ws.title}', row={r}, the URL {url} was supposed to include"
-                                    f" the {lower_level} number '{normalized_val}'")
+#                # default result - check url sanity
+#                no_letters = re.sub(r"[A-Z-]", "", normalized_val)
+#                if no_letters not in url:
+#                    _logger.warning(f"In sheet='{ws.title}', row={r}, the URL {url} was supposed to include"
+#                                    f" the {lower_level} number '{normalized_val}'")
 
         case 0:
-            if cell.value and len(str(cell.value)) > 0:
-                #otherwise, it is an empty cell - do nothing
-                _logger.warning(
-                    f"No URL found for the {lower_level} '{normalized_val}', sheet='{ws.title}', row={r} - skipping")
+            pass
+#            if cell.value and len(str(cell.value)) > 0:
+#                #otherwise, it is an empty cell - do nothing
+#                _logger.warning(
+#                    f"No URL found for the {lower_level} '{normalized_val}', sheet='{ws.title}', row={r} - skipping")
 
         case _:
             _logger.warning(f"Irregular {lower_level} number '{normalized_val}', sheet='{ws.title}', "
@@ -588,7 +588,7 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell, archive_latin_name) -> t
         archive_latin_name: Archive name in Latin letters, used for archive-specific parsing rules.
 
     Returns:
-        1) List[str]: List of parsed integers converted to strings
+        1) list[str]: List of parsed integers converted to strings
         2) str: the url from one of the two input cells.
     """
     value = fund_num_cell.value
@@ -816,8 +816,6 @@ def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cy
     comments = get_cell_value(ws["I2"])
     if not comments:
         comments = get_cell_value(ws["I3"])
-#    if comments:
-#        _logger.info(f"There is a comment: {comments}")
 
     return title, latin_title, url, import_message, comments
 
@@ -1453,8 +1451,8 @@ def normalize_doc_type(doc_type: str | None) -> str | None:
     return doc_type
 
 def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: str, case_num_col: str,
-                  change_date: str | None, comments_col: int, curr_import_message: Literal[
-                                                                                       '', 'Document without a page', 'Old case numbering', 'Other case numbering'] | Any,
+                  change_date: str | None, comments_col: int,
+                  curr_import_message: Literal['', 'Document without a page', 'Old case numbering', 'Other case numbering'] | Any,
                   curr_source_type, fund_name, label: str | Any, level, opus_name,
                   opus_title: str | None | Any, opus_url: str, page_table: dict[Any, Any] | Any, r: int, raw_url: str,
                   timestamp: str | None, title, wiki_spreadsheet, ws, language):
@@ -1462,12 +1460,14 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
     curr_import_message = check_url_sanity(raw_url, curr_import_message, wiki_spreadsheet,
                                            necessary_parts, ws.title, case_num_cell_addr)
 
-    comments_cell_addr = f"{chr(comments_col)}{r}"  # default f"G{r}"
-    processor_cell_addr1 = f"{chr(comments_col + 2)}{r}"  # default f"I{r}"
-    processor_cell_addr2 = f"{chr(comments_col + 5)}{r}"  # default f"L{r}"
-    pages_processed_cell_addr1 = f"{chr(comments_col + 3)}{r}"  # default f"J{r}"
-    pages_processed_cell_addr2 = f"{chr(comments_col + 6)}{r}"  # default f"M{r}"
-    when_transcribed_cell_addr = f"{chr(comments_col + 7)}{r}"  # default f"N{r}"
+    comments_cell_addr          = f"{chr(comments_col    )}{r}"  # default f"G{r}"
+    file_name_cell_addr1        = f"{chr(comments_col + 1)}{r}"  # default f"H{r}"
+    processor_cell_addr1        = f"{chr(comments_col + 2)}{r}"  # default f"I{r}"
+    pages_processed_cell_addr1  = f"{chr(comments_col + 3)}{r}"  # default f"J{r}"
+    file_name_cell_addr2        = f"{chr(comments_col + 4)}{r}"  # default f"K{r}"
+    processor_cell_addr2        = f"{chr(comments_col + 5)}{r}"  # default f"L{r}"
+    pages_processed_cell_addr2  = f"{chr(comments_col + 6)}{r}"  # default f"M{r}"
+    when_transcribed_cell_addr  = f"{chr(comments_col + 7)}{r}"  # default f"N{r}"
 
     description_col_offs = DESCRIPTION_COL_OFFS
     years_col_offs = YEARS_COL_OFFS
@@ -1511,6 +1511,7 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
         "import_message": curr_import_message,
         # the columns for the following cells are not fixed
         "comments": get_cell_value(ws[comments_cell_addr]),
+        "filename": combine_cell_value(ws[file_name_cell_addr1], ws[file_name_cell_addr2]),
         "processor": combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2]),
         "pages_processed": get_cell_int_value(ws[pages_processed_cell_addr1]) +
                            get_cell_int_value(ws[pages_processed_cell_addr2]),
@@ -1522,8 +1523,7 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
 def normalize_process_code(process_code: str | None, import_message: str) -> tuple[str | None, str]:
     # Remove trailing tab ('\\t') from the given string if present.
     if process_code is not None:
-        if process_code.endswith('\t'):
-            process_code = process_code[:-1]
+        process_code = process_code.removesuffix('\t')
 
         valid_options = ["C1", "C2", "C3", "DP", "FX", "NO", "P1", "P2"]
         error_code = "E"
@@ -1601,7 +1601,7 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
 
 def import_spreadsheet(sw_filepath, actually_write=True):
     db = Database()
-    workbook = load_workbook(sw_filepath)
+    workbook = load_workbook(sw_filepath, data_only=True)
     wiki_spreadsheet = "-wiki" in sw_filepath.lower()
     substring = "-archive"
     if wiki_spreadsheet:
@@ -1808,8 +1808,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAKO-D-fund280-wiki-20260629.xlsx"
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Wiki/AVPRI-wiki-20250501.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-D-wiki-20260723.xlsx"
     import_spreadsheet(filepath, True)
 #    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\16_07"
 #    process_dir(dir_path)
