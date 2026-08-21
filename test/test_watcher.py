@@ -108,6 +108,7 @@ class WatcherTestBase(unittest.TestCase):
             mock.patch.object(watcher_mod, "_watcher_kv", self.kv),
             mock.patch.object(watcher_mod, "CacheMissError", FakeCacheMissError),
             mock.patch.object(watcher_mod, "load_cached_object", side_effect=self.cache.load),
+            mock.patch.object(watcher_mod, "save_cached_object", side_effect=self.cache.save),
             mock.patch.object(watcher_mod, "remove_cached_object", side_effect=self.cache.remove),
         ]
         for p in self._patches:
@@ -530,14 +531,15 @@ class LegacyBlobLoadTests(unittest.TestCase):
 
 
 class LegacyBlobLazyMigrationTests(WatcherTestBase):
-    def test_ensure_migrated_transforms_legacy_blob_into_kv_rows_and_deletes_it(self):
+    def test_ensure_migrated_transforms_legacy_blob_into_kv_rows_and_quarantines_it(self):
         email, title = "legacy@example.com", "Архів:ДААРК"
         path = watcher_mod._watcher_cache_path(email, title)
-        self.cache.save({
+        blob = {
             "version": "v8", "include": [title], "exclude": [], "cutoff_date": "2025-01-01T00:00:00Z",
             "unresolved": {f"{title}/1": {"modified": "2026-01-01T00:00:00Z", "last_resolved": None}},
             "resolved": {f"{title}/2": [{"modified": "2025-06-01T00:00:00Z", "last_resolved": "2025-06-02T00:00:00Z"}]},
-        }, path)
+        }
+        self.cache.save(blob, path)
 
         watcher_mod._ensure_migrated(email, title, runtime=None)
 
@@ -550,13 +552,69 @@ class LegacyBlobLazyMigrationTests(WatcherTestBase):
             watcher_mod.get_resolved(email, title, f"{title}/2"),
             [{"modified": "2025-06-01T00:00:00Z", "last_resolved": "2025-06-02T00:00:00Z"}],
         )
+        # gone from its live lookup path -- can't be found (and its
+        # already-migrated history resurrected) by a later remove/re-add --
+        # but quarantined rather than deleted, as a recovery trail
         with self.assertRaises(FakeCacheMissError):
             self.cache.load(path)
+        quarantine_path = path.replace("watchers/", "watchers/_migrated/", 1)
+        self.assertEqual(self.cache.load(quarantine_path), blob)
 
     def test_ensure_migrated_is_a_no_op_for_a_brand_new_watch(self):
         watcher_mod._ensure_migrated("nobody@example.com", "Архів:ДААРК", runtime=None)
         with self.assertRaises(KeyError):
             watcher_mod.get_watcher("nobody@example.com", "Архів:ДААРК")
+
+    def test_ensure_migrated_merges_multiple_legacy_subarchive_blobs(self):
+        # Regression test for the real production bug (found 2026-08-21): a
+        # multi-subarchive archive like DAChgO ("D" and "R") had one legacy
+        # blob per subarchive, keyed by the old "ARCHIVEKEY-SUBARCHIVEKEY"
+        # address pair. The address-to-title redesign coarsened watchlist
+        # entries to the whole archive but never consolidated these blobs --
+        # so the first touch after that rollout hit a cache miss on the new
+        # title-keyed path and silently started over, discarding all
+        # resolved/unresolved history in both legacy blobs.
+        email, title = "multi@example.com", "Архів:ДАЧгО"
+        path_d = "watchers/multi@example.com/DACHGO-D.json"
+        path_r = "watchers/multi@example.com/DACHGO-R.json"
+        self.cache.save({
+            "version": "v7", "archive": "DACHGO", "subarchive": "D",
+            "cutoff_date": "2025-02-02T00:00:00Z", "last_checked_date": "2026-07-24T07:00:19Z",
+            "unresolved": {},
+            "resolved": {"DACHGO,D,151,1,85": [
+                {"modified": "2026-04-28T17:20:00Z", "last_resolved": "2026-04-29T15:05:00Z", "user": "Smaxims"},
+            ]},
+        }, path_d)
+        self.cache.save({
+            "version": "v7", "archive": "DACHGO", "subarchive": "R",
+            "cutoff_date": "2025-04-10T00:00:00Z", "last_checked_date": "2026-07-23T12:34:35Z",
+            "unresolved": {"DACHGO,R,Р-9022,1,151": {
+                "modified": "2026-06-10T11:40:00Z", "last_resolved": "2026-04-10T00:00:00Z", "user": "Smaxims",
+            }},
+            "resolved": {},
+        }, path_r)
+
+        watcher_mod._ensure_migrated(email, title, runtime=None)
+
+        header = watcher_mod.get_watcher(email, title)
+        self.assertEqual(header["include"], [title])
+        # oldest cutoff/last_checked across both merged blobs, not either one alone
+        self.assertEqual(header["cutoff_date"], "2025-02-02T00:00:00Z")
+        self.assertEqual(header["last_checked_date"], "2026-07-23T12:34:35Z")
+
+        self.assertEqual(
+            watcher_mod.get_resolved(email, title, "Архів:ДАЧгО/151/1/85"),
+            [{"modified": "2026-04-28T17:20:00Z", "last_resolved": "2026-04-29T15:05:00Z", "user": "Smaxims"}],
+        )
+        unresolved = watcher_mod.get_all_unresolved(email, title)
+        self.assertIn("Архів:ДАЧгО/Р-9022/1/151", unresolved)
+
+        # both legacy blobs consumed, not just one -- and quarantined, not deleted
+        for path in (path_d, path_r):
+            with self.assertRaises(FakeCacheMissError):
+                self.cache.load(path)
+            quarantine_path = path.replace("watchers/", "watchers/_migrated/", 1)
+            self.cache.load(quarantine_path)  # must not raise
 
     def test_check_watcher_migrates_legacy_blob_before_checking(self):
         email, title = "legacy2@example.com", "Архів:ДААРК"

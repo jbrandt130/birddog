@@ -14,9 +14,11 @@ from birddog.wiki import (
     page_title_from_address,
     title_in_scope,
     page_label,
+    ARCHIVES_BY_ROOT,
     )
 from birddog.cache import (
     load_cached_object,
+    save_cached_object,
     remove_cached_object,
     CacheMissError,
     )
@@ -45,6 +47,21 @@ def _watcher_cache_path(email, archive_title):
     # legacy (pre-KV) per-(user, watch) blob location; only ever read by the
     # one-time migration below, and by nothing else once migrated
     return f'watchers/{email}/{quote(archive_title, safe="")}.json'
+
+def _legacy_subarchive_cache_paths(email, archive_title):
+    # Before the address-to-title redesign, each subarchive of an archive
+    # (e.g. DACHGO's "D" and "R") had its own separate blob, keyed by the old
+    # "ARCHIVEKEY-SUBARCHIVEKEY" address pair rather than by title. Watchlist
+    # entries were coarsened to the whole archive (see _watch_title() in
+    # user.py) but nothing ever consolidated these per-subarchive blobs into
+    # the single new title-keyed one -- so a watch on a multi-subarchive
+    # archive silently lost all its resolved/unresolved history the first
+    # time it was touched after that rollout (found 2026-08-21, see the
+    # "Address-to-title watchlist redesign" memory for the fix history).
+    return [
+        f'watchers/{email}/{archive_key}-{subarchive_key}.json'
+        for archive_key, subarchive_key in ARCHIVES_BY_ROOT.get(archive_title, [])
+    ]
 
 # ---------------------------------------------------------------------
 # storage primitives -- header ("watcher" row: version/include/exclude/
@@ -298,13 +315,54 @@ def _ensure_migrated(email, archive_title, runtime):
     except KeyError:
         pass
 
-    path = _watcher_cache_path(email, archive_title)
-    try:
-        data = load_cached_object(path)
-    except CacheMissError:
-        return  # no legacy blob either -- brand new watch
+    # a multi-subarchive archive has one legacy blob per subarchive, plus
+    # (defensively) whatever may have been saved directly at the new
+    # title-keyed path in the window between the title-coarsening rollout
+    # and this KV migration -- gather and merge every one that exists rather
+    # than assuming a single source
+    candidate_paths = _legacy_subarchive_cache_paths(email, archive_title) + [
+        _watcher_cache_path(email, archive_title)
+    ]
 
-    header, resolved, unresolved = _load_legacy_blob(data, runtime=runtime)
+    loaded = []  # list of (path, raw_data, header, resolved, unresolved)
+    for path in candidate_paths:
+        try:
+            data = load_cached_object(path)
+        except CacheMissError:
+            continue
+        loaded.append((path, data, *_load_legacy_blob(data, runtime=runtime)))
+
+    if not loaded:
+        return  # no legacy blob anywhere -- brand new watch
+
+    header = {
+        "version": "v9",
+        "include": [archive_title],
+        "exclude": [],
+        # oldest across all merged sources, so check_watcher()'s next bounded
+        # scan re-covers any gap between the subarchives' differing
+        # last-checked cursors rather than silently skipping it
+        "cutoff_date": min(h["cutoff_date"] for _, _, h, _, _ in loaded),
+        "last_checked_date": min(h["last_checked_date"] for _, _, h, _, _ in loaded),
+    }
+
+    resolved = {}
+    for _, _, _, blob_resolved, _ in loaded:
+        for item, history in blob_resolved.items():
+            merged_history = resolved.setdefault(item, [])
+            for entry in history:
+                if entry not in merged_history:
+                    merged_history.append(entry)
+    for history in resolved.values():
+        history.sort(key=lambda e: (e.get("last_resolved") or "", e.get("modified") or ""))
+
+    unresolved = {}
+    for _, _, _, _, blob_unresolved in loaded:
+        for item, entry in blob_unresolved.items():
+            existing = unresolved.get(item)
+            if existing is None or (entry.get("modified") or "") > (existing.get("modified") or ""):
+                unresolved[item] = entry
+
     put_watcher(email, archive_title, header)
     # bulk writes: a long-lived watch can have accumulated thousands of
     # resolved/unresolved items over its history -- one row-per-call here
@@ -313,7 +371,21 @@ def _ensure_migrated(email, archive_title, runtime):
         _watcher_kv.insert_many(_resolved_ns(email, archive_title), {k: json.dumps(v) for k, v in resolved.items()})
     if unresolved:
         _watcher_kv.insert_many(_unresolved_ns(email, archive_title), {k: json.dumps(v) for k, v in unresolved.items()})
-    remove_cached_object(path)
+
+    # quarantine rather than delete: move each consumed blob out of every
+    # lookup path (so it can never be found -- and its already-migrated
+    # history resurrected -- by a later remove/re-add of this watch) while
+    # keeping a recovery copy in case a merge-logic bug is found later. Found
+    # necessary the hard way: this whole class of bug (2026-08-21, see the
+    # "Address-to-title watchlist redesign" memory) was a silent, undetected
+    # loss of exactly this kind of legacy data.
+    for path, data, _, _, _ in loaded:
+        quarantine_path = path.replace("watchers/", "watchers/_migrated/", 1)
+        save_cached_object(data, quarantine_path)
+        try:
+            remove_cached_object(path)
+        except CacheMissError:
+            pass
 
 # ---------------------------------------------------------------------
 # business logic (replaces ArchiveWatcher.check() / .resolve())
