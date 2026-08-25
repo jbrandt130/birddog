@@ -115,13 +115,32 @@ def put_resolved(email, archive_title, item_title, history):
 _DASH_CHARS = r"\-\u2010\u2011\u2012\u2013\u2014"
 _ALPHA_DASH = fr"[\p{{L}}{_DASH_CHARS}]*"
 _pattern = regex.compile(fr"^({_ALPHA_DASH})(\d+)({_ALPHA_DASH})$")
+_bare_label_pattern = regex.compile(fr"^([\p{{L}}{_DASH_CHARS}]+)$")
+
+def _group_key(prefix):
+    # "P-" (from "P-23") and "P" (the bare series header) must compare
+    # equal as a group key, so strip the trailing dash before grouping
+    return prefix.rstrip("-\u2010\u2011\u2012\u2013\u2014")
 
 def _parse_string(s):
     match = _pattern.fullmatch(s)
     if match:
         prefix, number, suffix = match.groups()
-        return (int(number), prefix, suffix)
-    return (float('inf'), s, '')
+        if prefix:
+            # a non-empty prefix (e.g. "P-23", "R-85") names a distinct
+            # labeled series, not a plain case number -- group all such
+            # prefixed keys after every plain-numbered key, rather than
+            # interleaving them by the raw magnitude of their embedded
+            # number (which put "P-23" before "280" solely because 23 < 280)
+            return (1, _group_key(prefix), int(number), suffix)
+        return (0, '', int(number), suffix)
+    bare = _bare_label_pattern.fullmatch(s)
+    if bare:
+        # a bare label with no number (e.g. "P", "R") is the header for
+        # that prefixed series -- sort it first within its group, ahead of
+        # every numbered member of the same series (e.g. before "P-23")
+        return (1, _group_key(bare.group(1)), -1, '')
+    return (2, s, 0, '')
 
 def _sort_keys(keys):
     return sorted(keys, key=_parse_string)

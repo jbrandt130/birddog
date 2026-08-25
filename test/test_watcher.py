@@ -129,10 +129,30 @@ class HelperFunctionTests(unittest.TestCase):
         self.assertLess(watcher_mod._parse_string("144"), watcher_mod._parse_string("144а"))
 
     def test_parse_string_non_numeric_sorts_last(self):
-        self.assertEqual(watcher_mod._parse_string("abc")[0], float('inf'))
+        self.assertGreater(watcher_mod._parse_string("abc"), watcher_mod._parse_string("999"))
+        self.assertGreater(watcher_mod._parse_string("abc"), watcher_mod._parse_string("P-999"))
 
     def test_sort_keys(self):
         self.assertEqual(watcher_mod._sort_keys(["10", "2", "1", "144а", "144"]), ["1", "2", "10", "144", "144а"])
+
+    def test_sort_keys_groups_prefixed_series_after_plain_numbers(self):
+        # a prefix like "P-"/"R-" names a distinct labeled series, not a
+        # plain case number -- these must sort as their own group after
+        # every plain-numbered key, not interleaved by raw magnitude (which
+        # would put "P-23" before "280" since 23 < 280)
+        self.assertEqual(
+            watcher_mod._sort_keys(["2", "4", "12", "P-23", "R-85", "R-127", "280", "215a", "230a"]),
+            ["2", "4", "12", "215a", "230a", "280", "P-23", "R-85", "R-127"],
+        )
+
+    def test_sort_keys_bare_label_heads_its_own_prefixed_series(self):
+        # a bare label like "P"/"R" (no digits) is the header of that
+        # prefixed series -- it must sort right before the series' own
+        # numbered members, not at the very end with unrelated fallback keys
+        self.assertEqual(
+            watcher_mod._sort_keys(["R-5634", "R-5333", "P", "R", "280"]),
+            ["280", "P", "R", "R-5333", "R-5634"],
+        )
 
     def test_make_tree_and_flatten_hierarchy(self):
         unresolved = {
