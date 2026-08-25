@@ -257,11 +257,12 @@ def _encode_record(table_schema, record):
 # note that relational links are not created in the new table
 
 _UIDT_SKIP_LIST = (
-    "Links", 
-    "ForeignKey", 
-    "Formula", 
-    "Lookup", 
-    "LinkToAnotherRecord", 
+    "ID",
+    "Links",
+    "ForeignKey",
+    "Formula",
+    "Lookup",
+    "LinkToAnotherRecord",
     "Rollup")
 
 def clone_table_schema(db1, table_name1, db2, table_name2):
@@ -300,8 +301,9 @@ def clone_table_schema(db1, table_name1, db2, table_name2):
 # intended for table bootstrapping only
 
 def copy_records(db1, table1, db2, table2):
+    cursor = None
     while True:
-        records, cursor = db1.scan(table1)
+        records, cursor = db1.scan(table1, cursor=cursor)
         records = db1.encode_records(table1, records)
         db2.write(table2, records, raw=True)
         if not cursor:
