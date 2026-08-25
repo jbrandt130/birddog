@@ -379,6 +379,48 @@ class CheckWatcherTests(WatcherTestBase):
         self.assertEqual(header["include"], [self.TITLE])
         self.assertEqual(header["last_checked_date"], "2025-01-01T00:00:00Z")
 
+    def test_check_auto_resolves_delete_action_instead_of_flagging_unresolved(self):
+        item = f"{self.TITLE}/100/1/5"
+        updates = {item: {"timestamp": "2026-08-05T10:27:02Z", "user": "Madvin", "action": "delete"}}
+        manager = FakePageUpdateManager(updates)
+
+        unresolved = self._check(manager)
+
+        self.assertNotIn(item, unresolved)
+        history = watcher_mod.get_resolved(self.EMAIL, self.TITLE, item)
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["modified"], "2026-08-05T10:27:02Z")
+        # stamped with the delete event's own timestamp, not "now"
+        self.assertEqual(history[0]["last_resolved"], "2026-08-05T10:27:02Z")
+        self.assertEqual(history[0]["user"], "Madvin")
+        self.assertTrue(history[0]["deleted"])
+
+    def test_check_clears_stale_unresolved_entry_when_delete_arrives_later(self):
+        item = f"{self.TITLE}/100/1/5"
+        manager = FakePageUpdateManager({item: {"timestamp": "2026-08-04T17:26:40Z", "user": "Smaxims", "action": "new"}})
+        unresolved = self._check(manager)
+        self.assertIn(item, unresolved)
+
+        manager2 = FakePageUpdateManager({item: {"timestamp": "2026-08-05T10:27:02Z", "user": "Madvin", "action": "delete"}})
+        unresolved = self._check(manager2)
+
+        self.assertNotIn(item, unresolved)
+        self.assertNotIn(item, watcher_mod.get_all_unresolved(self.EMAIL, self.TITLE))
+        history = watcher_mod.get_resolved(self.EMAIL, self.TITLE, item)
+        self.assertEqual(len(history), 1)
+        self.assertTrue(history[0]["deleted"])
+
+    def test_check_flags_restore_action_as_ordinary_unresolved_update(self):
+        item = f"{self.TITLE}/100/1/5"
+        updates = {item: {"timestamp": "2026-08-06T09:00:00Z", "user": "Madvin", "action": "restore"}}
+        manager = FakePageUpdateManager(updates)
+
+        unresolved = self._check(manager)
+
+        self.assertIn(item, unresolved)
+        self.assertEqual(unresolved[item]["modified"], "2026-08-06T09:00:00Z")
+        self.assertEqual(watcher_mod.get_resolved(self.EMAIL, self.TITLE, item), [])
+
 
 # ----------------------------------------------------------------------------
 # legacy blob migration

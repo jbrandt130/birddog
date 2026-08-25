@@ -418,6 +418,8 @@ def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=N
         resolved_by_item = {k: json.loads(v) for k, v in resolved_raw.items()}
 
         new_unresolved = {}
+        new_resolved = {}
+        deleted_items = []
         new_cutoff = header["last_checked_date"]
         for item, update in items.items():
             mod_date = update["timestamp"]
@@ -430,13 +432,34 @@ def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=N
             # live mod_date always reads as "newer" by a few seconds even
             # when it's the same edit
             if latest_resolved is None or mod_date[:16] > latest_resolved[:16]:
-                new_unresolved[item] = {
-                    "modified": mod_date,
-                    "last_resolved": resolved_history[-1]["last_resolved"] if resolved_history else header["cutoff_date"],
-                    "user": user,
-                }
+                if update.get("action") == "delete":
+                    # nothing left to review -- auto-resolve rather than
+                    # surfacing a dead page as a pending change (a "restore"
+                    # log action isn't special-cased, so an undeleted page
+                    # falls straight back into the normal unresolved path)
+                    resolved_history = resolved_history + [{
+                        "modified": mod_date,
+                        "last_resolved": mod_date,
+                        "user": user,
+                        "deleted": True,
+                    }]
+                    new_resolved[item] = resolved_history
+                    resolved_by_item[item] = resolved_history
+                    deleted_items.append(item)
+                else:
+                    new_unresolved[item] = {
+                        "modified": mod_date,
+                        "last_resolved": resolved_history[-1]["last_resolved"] if resolved_history else header["cutoff_date"],
+                        "user": user,
+                    }
         if new_unresolved:
             _watcher_kv.insert_many(_unresolved_ns(email, archive_title), {k: json.dumps(v) for k, v in new_unresolved.items()})
+        if new_resolved:
+            _watcher_kv.insert_many(_resolved_ns(email, archive_title), {k: json.dumps(v) for k, v in new_resolved.items()})
+        if deleted_items:
+            # in case a prior check already flagged this item unresolved
+            # before its delete event arrived
+            _watcher_kv.remove_many(_unresolved_ns(email, archive_title), deleted_items)
         header["last_checked_date"] = new_cutoff
 
     put_watcher(email, archive_title, header)
