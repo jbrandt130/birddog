@@ -129,10 +129,30 @@ class HelperFunctionTests(unittest.TestCase):
         self.assertLess(watcher_mod._parse_string("144"), watcher_mod._parse_string("144а"))
 
     def test_parse_string_non_numeric_sorts_last(self):
-        self.assertEqual(watcher_mod._parse_string("abc")[0], float('inf'))
+        self.assertGreater(watcher_mod._parse_string("abc"), watcher_mod._parse_string("999"))
+        self.assertGreater(watcher_mod._parse_string("abc"), watcher_mod._parse_string("P-999"))
 
     def test_sort_keys(self):
         self.assertEqual(watcher_mod._sort_keys(["10", "2", "1", "144а", "144"]), ["1", "2", "10", "144", "144а"])
+
+    def test_sort_keys_groups_prefixed_series_after_plain_numbers(self):
+        # a prefix like "P-"/"R-" names a distinct labeled series, not a
+        # plain case number -- these must sort as their own group after
+        # every plain-numbered key, not interleaved by raw magnitude (which
+        # would put "P-23" before "280" since 23 < 280)
+        self.assertEqual(
+            watcher_mod._sort_keys(["2", "4", "12", "P-23", "R-85", "R-127", "280", "215a", "230a"]),
+            ["2", "4", "12", "215a", "230a", "280", "P-23", "R-85", "R-127"],
+        )
+
+    def test_sort_keys_bare_label_heads_its_own_prefixed_series(self):
+        # a bare label like "P"/"R" (no digits) is the header of that
+        # prefixed series -- it must sort right before the series' own
+        # numbered members, not at the very end with unrelated fallback keys
+        self.assertEqual(
+            watcher_mod._sort_keys(["R-5634", "R-5333", "P", "R", "280"]),
+            ["280", "P", "R", "R-5333", "R-5634"],
+        )
 
     def test_make_tree_and_flatten_hierarchy(self):
         unresolved = {
@@ -378,6 +398,48 @@ class CheckWatcherTests(WatcherTestBase):
         header = watcher_mod.get_watcher(self.EMAIL, self.TITLE)
         self.assertEqual(header["include"], [self.TITLE])
         self.assertEqual(header["last_checked_date"], "2025-01-01T00:00:00Z")
+
+    def test_check_auto_resolves_delete_action_instead_of_flagging_unresolved(self):
+        item = f"{self.TITLE}/100/1/5"
+        updates = {item: {"timestamp": "2026-08-05T10:27:02Z", "user": "Madvin", "action": "delete"}}
+        manager = FakePageUpdateManager(updates)
+
+        unresolved = self._check(manager)
+
+        self.assertNotIn(item, unresolved)
+        history = watcher_mod.get_resolved(self.EMAIL, self.TITLE, item)
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["modified"], "2026-08-05T10:27:02Z")
+        # stamped with the delete event's own timestamp, not "now"
+        self.assertEqual(history[0]["last_resolved"], "2026-08-05T10:27:02Z")
+        self.assertEqual(history[0]["user"], "Madvin")
+        self.assertTrue(history[0]["deleted"])
+
+    def test_check_clears_stale_unresolved_entry_when_delete_arrives_later(self):
+        item = f"{self.TITLE}/100/1/5"
+        manager = FakePageUpdateManager({item: {"timestamp": "2026-08-04T17:26:40Z", "user": "Smaxims", "action": "new"}})
+        unresolved = self._check(manager)
+        self.assertIn(item, unresolved)
+
+        manager2 = FakePageUpdateManager({item: {"timestamp": "2026-08-05T10:27:02Z", "user": "Madvin", "action": "delete"}})
+        unresolved = self._check(manager2)
+
+        self.assertNotIn(item, unresolved)
+        self.assertNotIn(item, watcher_mod.get_all_unresolved(self.EMAIL, self.TITLE))
+        history = watcher_mod.get_resolved(self.EMAIL, self.TITLE, item)
+        self.assertEqual(len(history), 1)
+        self.assertTrue(history[0]["deleted"])
+
+    def test_check_flags_restore_action_as_ordinary_unresolved_update(self):
+        item = f"{self.TITLE}/100/1/5"
+        updates = {item: {"timestamp": "2026-08-06T09:00:00Z", "user": "Madvin", "action": "restore"}}
+        manager = FakePageUpdateManager(updates)
+
+        unresolved = self._check(manager)
+
+        self.assertIn(item, unresolved)
+        self.assertEqual(unresolved[item]["modified"], "2026-08-06T09:00:00Z")
+        self.assertEqual(watcher_mod.get_resolved(self.EMAIL, self.TITLE, item), [])
 
 
 # ----------------------------------------------------------------------------

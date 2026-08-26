@@ -107,13 +107,16 @@ class Test(unittest.TestCase):
         title = archive_root("DAKO", "D")
         self.addCleanup(watcher.remove_watcher, email, title)
 
-        self.assertFalse(watcher._watcher_kv.get_all(watcher._resolved_ns(email, title)))
-        unresolved = watcher.check_watcher(email, title, runtime, include=[title], cutoff_date="2025,03,01")
-        self.assertFalse(watcher._watcher_kv.get_all(watcher._resolved_ns(email, title)))
-        self.assertTrue(unresolved)
-        #print(unresolved)
         item = page_title_from_address(("DAKO", "D", "280", "2", "111"))
         #item = "DAKO-D/1455/1/169"
+        self.assertFalse(watcher._watcher_kv.get_all(watcher._resolved_ns(email, title)))
+        unresolved = watcher.check_watcher(email, title, runtime, include=[title], cutoff_date="2025,03,01")
+        # this item specifically shouldn't be auto-resolved -- note check_watcher()
+        # may now legitimately populate resolved_ns with unrelated deleted-page
+        # entries, so this no longer asserts the whole namespace stays empty
+        self.assertFalse(watcher.get_resolved(email, title, item))
+        self.assertTrue(unresolved)
+        #print(unresolved)
         self.assertTrue(item in unresolved)
         unresolved = watcher.resolve_watcher(email, title, item, runtime=runtime)
         self.assertFalse(item in unresolved)

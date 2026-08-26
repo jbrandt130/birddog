@@ -200,23 +200,24 @@ function get_resolve_info(page_title) {
 
 function get_next_unresolved_item(page_title) {
     const updates = window.unresolved_updates;
-    // first pass: look within current archive
+    // first pass: look within current archive. entries is already in the
+    // server's correct tree order (unresolved_tree()/_sort_keys() in
+    // watcher.py -- the same numeric-aware, prefix-grouped order the tree
+    // view renders in), so walk it by position instead of re-deriving
+    // "next" via plain lexicographic comparison on full title paths, which
+    // ignored that ordering entirely. If page_title isn't itself a node in
+    // the list (e.g. browsing a page with no unresolved status), fall back
+    // to the first unresolved entry in this archive.
     for (const prefix in updates) {
         if (page_title.startsWith(prefix)) {
             const entries = updates[prefix];
-            var candidate = null;
-            var candidate_obj = null;
-            for (let i = 0; i < entries.length; i++) {
-                const [title, obj] = entries[i];
-                if (title > page_title && obj.hasOwnProperty("modified")) {
-                    if (candidate == null || candidate > title) {
-                        candidate = title;
-                        candidate_obj = obj;
-                    }
+            const current_index = entries.findIndex(([title]) => title === page_title);
+            const start = current_index === -1 ? 0 : current_index + 1;
+            for (let i = start; i < entries.length; i++) {
+                const [, obj] = entries[i];
+                if (obj.hasOwnProperty("modified")) {
+                    return obj;
                 }
-            }
-            if (candidate_obj != null) {
-                return candidate_obj;
             }
         }
     }
@@ -1335,8 +1336,18 @@ function build_tree(data_list, watch_title) {
         const parts = path.split('/');
         let current = root;
         for (const part of parts) {
-            if (!current[part]) current[part] = {};
-                current = current[part];
+            if (!current[part]) {
+                current[part] = {};
+                // plain-object key enumeration always lists integer-index-like
+                // keys ("543", "2574") first in ascending numeric order, ahead
+                // of any other string key ("215a", "230a"), regardless of
+                // insertion order -- track the server's already-correct
+                // numeric-aware sort order (unresolved_tree()/_sort_keys() in
+                // watcher.py) explicitly so rendering doesn't get reshuffled
+                if (!current._order) current._order = [];
+                current._order.push(part);
+            }
+            current = current[part];
         }
         current._meta = meta;
         current._full_path = path;
@@ -1384,7 +1395,7 @@ async function resolve_page_update(title, item_title, deep=false) {
 
 function mark_resolved(node_id) {
     const node = node_map[node_id];
-    const has_children = Object.keys(node).some(key => !key.startsWith('_'));
+    const has_children = !!(node._order && node._order.length > 0);
     const full_path = node._full_path || name;
     const watch_title = node._watch_title;
     const confirm_message = has_children?
@@ -1429,7 +1440,7 @@ function render_node(name, node) {
     node._id = node_id;
     node_map[node_id] = node;
 
-    const has_children = Object.keys(node).some(key => !key.startsWith('_'));
+    const has_children = !!(node._order && node._order.length > 0);
     const meta = node._meta;
     const full_path = node._full_path || name;
     path_to_node[full_path] = node;
@@ -1497,9 +1508,8 @@ function render_node(name, node) {
         return `<li class="list-group-item">${row_layout}</li>`;
     }
 
-    const children_html = Object.entries(node)
-        .filter(([key]) => !key.startsWith('_'))
-        .map(([child_name, child_node]) => render_node(child_name, child_node))
+    const children_html = (node._order || [])
+        .map(child_name => render_node(child_name, node[child_name]))
         .join('');
 
     return `
@@ -1516,8 +1526,8 @@ function render_node(name, node) {
 
 
 function render_tree(tree) {
-    const top_level = Object.entries(tree)
-        .map(([name, node]) => render_node(name, node))
+    const top_level = (tree._order || [])
+        .map(name => render_node(name, tree[name]))
         .join('');
     return `<ul class="list-group">${top_level}</ul>`;
 }
