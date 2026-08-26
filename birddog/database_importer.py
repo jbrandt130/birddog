@@ -267,7 +267,7 @@ def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spr
     slash_post = archive_unit_name.find('/')
     necessary_part = archive_unit_name[slash_post + 1:] if slash_post != -1 else ''
 
-    contents = unquote(cell.value.strip())
+    contents = unquote(str(cell.value).strip())
     mess = ""  # default
     link = ""  # default
     if cell.hyperlink:
@@ -1650,6 +1650,11 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         "availability",
         "import_message",
         "last_imported",
+        "level",
+        "label",
+        "seq_label",
+        "root_label",
+        "years",
     }
 
     # Step 1: validate all page records, remove any invalid ones
@@ -1736,17 +1741,12 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 # quote for document titles that contain protected characters such as "?"
                 quoted_record = form_document_record(doc_link)
 
-                doc_payload = {}
+                doc_payload = {"page_description": page["description"]}
+
                 for joint_field in doc_and_page_fields:
                     if joint_field in page:
                         doc_payload[joint_field] = page[joint_field]
-
-                doc_payload["wiki"] = quoted_record["wiki"]
-                doc_payload["title"] = quoted_record["title"]
-                link = quoted_record["url"]
-                doc_payload["url"] = link
-                doc_payload["domain"] = quoted_record["domain"]
-                doc_payload["lookup_status"] = "invalid"
+                doc_payload.update(quoted_record)
 
                 relevant_page_data = inp_page_data[page["url"]]
                 for k in doc_only_fields:
@@ -1808,7 +1808,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-D-wiki-20260723.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAKO-R-wiki-20260627.xlsx"
     import_spreadsheet(filepath, True)
 #    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\16_07"
 #    process_dir(dir_path)
