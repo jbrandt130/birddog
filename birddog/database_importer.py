@@ -1757,6 +1757,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                     if doc_field in doc_payload and doc_payload[doc_field] is not None:
                         doc_payload[doc_field] = doc_payload[doc_field].strip().upper()
 
+                link = quoted_record["url"]
                 output_docs[link] = doc_payload
                 linked_docs = doc_link_dict.get(page["url"], [])
                 linked_docs.append(doc_payload)
@@ -1808,7 +1809,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAKO-R-wiki-20260627.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DALO-R-wiki-20260603.xlsx"
     import_spreadsheet(filepath, True)
 #    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\16_07"
 #    process_dir(dir_path)
