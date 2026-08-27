@@ -7,14 +7,6 @@
     "batch_size": 100,
     "edit_link_batch_size": 200
   },
-  "AWS": {
-    "host": "http://nocodb-env.eba-xhmfyydr.us-east-2.elasticbeanstalk.com",
-    "base_id": "prsjtz30iuhk88f",
-    "api_token_var": "BIRDDOG_AWS_NOCODB_API_TOKEN",
-    "api_delay": 0.1,
-    "batch_size": 100,
-    "edit_link_batch_size": 200
-  },
   "CLOUD_STAGE": {
     "host": "https://app.nocodb.com",
     "base_id": "phb0w28bqvl85ki",

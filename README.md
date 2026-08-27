@@ -43,7 +43,6 @@ birddog/
 ├── test/                    # Unit tests (unittest)
 ├── sh/                      # Dev/run/deploy shell scripts
 ├── nocodb-dev/               # Local NocoDB (Docker) setup for development
-├── deploy/nocodb-eb/          # Elastic Beanstalk deployment config for NocoDB
 ├── notebooks/                # Jupyter notebooks
 └── research/                  # Experimental tools
     └── triage/locations/       # Location processing pipeline
@@ -102,7 +101,6 @@ Connection settings for each deployment target live in `resources/db_config.json
 | Environment    | Purpose                              |
 |----------------|---------------------------------------|
 | `LOCAL`        | Docker-hosted NocoDB on your machine  |
-| `AWS`           | NocoDB running on Elastic Beanstalk   |
 | `CLOUD_STAGE`   | Hosted NocoDB Cloud, staging base     |
 | `CLOUD_PROD`    | Hosted NocoDB Cloud, production base  |
 
@@ -111,7 +109,7 @@ Each entry specifies the NocoDB host, base ID, request rate-limiting settings, a
 At runtime, Birddog selects an environment via:
 
 ```bash
-BIRDDOG_NOCODB_ENV=LOCAL   # one of: LOCAL, AWS, CLOUD_STAGE, CLOUD_PROD
+BIRDDOG_NOCODB_ENV=LOCAL   # one of: LOCAL, CLOUD_STAGE, CLOUD_PROD
 ```
 
 and expects the corresponding token environment variable to be set, per `resources/db_config.json`:
@@ -119,7 +117,6 @@ and expects the corresponding token environment variable to be set, per `resourc
 | `BIRDDOG_NOCODB_ENV` | Token env var                    |
 |-----------------------|------------------------------------|
 | `LOCAL`                | `NOCODB_API_TOKEN_LOCAL`           |
-| `AWS`                   | `BIRDDOG_AWS_NOCODB_API_TOKEN`     |
 | `CLOUD_STAGE` / `CLOUD_PROD` | `BIRDDOG_CLOUD_NOCODB_API_TOKEN` |
 
 #### Running NocoDB locally
@@ -203,37 +200,18 @@ See `docs/help.md` for an end-user walkthrough of the UI and `docs/birddog_api_r
 
 ## AWS Deployment
 
-Both Birddog and NocoDB deploy to AWS Elastic Beanstalk, managed via `sh/aws_run`. This requires the AWS CLI, the `eb` CLI, and an AWS profile named `birddog-admin` (`aws configure --profile birddog-admin`).
-
-### Birddog
+Birddog deploys to AWS Elastic Beanstalk, managed via `sh/aws_run`. This requires the AWS CLI, the `eb` CLI, and an AWS profile named `birddog-admin` (`aws configure --profile birddog-admin`).
 
 ```bash
 sh/aws_run init      # one-time: eb init for the birddog EB application
-sh/aws_run deploy     # create (if needed) the birddog-env environment, set env vars, deploy
-sh/aws_run redeploy    # deploy the current code to an existing environment
+sh/aws_run deploy     # create birddog-env if missing, (re-)apply env vars, deploy current code
 sh/aws_run setenv       # (re-)apply environment variables without deploying
 sh/aws_run status         # eb status
 sh/aws_run logs            # fetch EB logs, copies the web server log into ./var
 sh/aws_run terminate         # tear down the birddog-env environment
 ```
 
-`deploy`/`setenv` push `BIRDDOG_*` and `GOOGLE_TRANSLATE_API_KEY` env vars to the environment (values are read from your shell, so export them first — they are intentionally not stored in the script). This includes `BIRDDOG_NOCODB_ENV=CLOUD_STAGE` and `BIRDDOG_CLOUD_NOCODB_API_TOKEN`, i.e. the AWS-deployed Birddog app talks to hosted NocoDB Cloud by default, not the EB-hosted NocoDB below.
-
-### NocoDB (self-hosted on EB)
-
-NocoDB can alternatively be self-hosted on its own Elastic Beanstalk (Docker) environment, deployed from `deploy/nocodb-eb/` (contains `Dockerrun.aws.json` referencing the `nocodb/nocodb` image):
-
-```bash
-sh/aws_run nocodb-init         # one-time: eb init for the nocodb EB application
-sh/aws_run nocodb-deploy         # create (if needed) the nocodb-env environment and deploy
-sh/aws_run nocodb-redeploy         # deploy to an existing environment
-sh/aws_run nocodb-setenv            # (re-)apply NocoDB environment variables
-sh/aws_run nocodb-status              # eb status
-sh/aws_run nocodb-open                 # eb open
-sh/aws_run nocodb-terminate              # tear down the nocodb-env environment
-```
-
-This requires `NOCODB_NC_DB` to be set in your shell (a Postgres connection string, e.g. `pg://user:pass@host:5432/nocodb`) before running `nocodb-deploy`/`nocodb-setenv`. If Birddog should point at this self-hosted instance instead of NocoDB Cloud, set `BIRDDOG_NOCODB_ENV=AWS` (and `BIRDDOG_AWS_NOCODB_API_TOKEN`) when deploying Birddog.
+`deploy`/`setenv` push `BIRDDOG_*` and `GOOGLE_TRANSLATE_API_KEY` env vars to the environment (values are read from your shell, so export them first — they are intentionally not stored in the script). The deployed app talks to hosted NocoDB Cloud, selecting the target base via `BIRDDOG_NOCODB_ENV` (a key in `resources/db_config.json`). Pass `--stage` (default) or `--prod` before the command to choose it, e.g. `sh/aws_run --prod deploy`.
 
 `.ebextensions/01-root-volume.config` bumps the EB instance root volume to 30GB for the Birddog environment.
 
