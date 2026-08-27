@@ -36,6 +36,7 @@ from birddog.wiki import (
     deduplicate_archive_root_labels,
     mw_page_doc_url,
     mw_read_page,
+    get_all_pages,
     batch_fetch_document_links,
     check_page_changes,
     report_page_changes,
@@ -1296,6 +1297,24 @@ class TestDynamicArchiveRootRegistry(unittest.TestCase):
         entries = all_archive_roots()
         labels = [e["label"] for e in entries]
         self.assertEqual(labels, sorted(labels))
+
+
+# ── get_all_pages ───────────────────────────────────────────────────────────
+
+class TestGetAllPages(unittest.TestCase):
+    def _empty_response(self):
+        return {"query": {"allpages": []}}
+
+    def test_excludes_redirects(self):
+        # Regression for issue #135: a homoglyph-typo'd title (e.g. a Latin
+        # "H" where a Cyrillic "Н" was meant) left behind as a #REDIRECT
+        # stub after a rename must not be seeded into the tracker as if it
+        # were its own page -- mirrors get_recent_changes()'s rcshow=!redirect.
+        with patch("birddog.wiki.fetch_url",
+                   return_value=self._empty_response()) as mock_fetch:
+            get_all_pages()
+        params = mock_fetch.call_args.kwargs.get("params") or mock_fetch.call_args[1]["params"]
+        self.assertEqual(params.get("apfilterredir"), "nonredirects")
 
 
 # ── batch_fetch_document_links ────────────────────────────────────────────────

@@ -628,6 +628,11 @@ def get_all_pages(namespace=WIKI_NAMESPACE_ID, prefix=None, limit=500):
         "list": "allpages",
         "apnamespace": namespace,
         "aplimit": limit,
+        # matches get_recent_changes()'s rcshow=!redirect -- redirect stubs
+        # (e.g. homoglyph-typo'd titles left behind after a rename) aren't
+        # real content and shouldn't be seeded into the tracker as if they
+        # were their own page (issue #135).
+        "apfilterredir": "nonredirects",
     }
     if prefix:
         params["apprefix"] = prefix.replace(f"{WIKI_NAMESPACE}:", "")
