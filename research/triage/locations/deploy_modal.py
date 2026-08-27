@@ -5,7 +5,6 @@ volume = modal.Volume.from_name("qwen-model-cache", create_if_missing=True)
 MODEL_DIR = "/model-cache"
 MODEL_ID = "Qwen/Qwen2.5-7B-Instruct"
 
-
 # 2. Function to download model weights into the volume during image build
 def download_model():
     from huggingface_hub import snapshot_download
@@ -16,7 +15,6 @@ def download_model():
         # Ignore bulky safety checker/non-essential files if present
         ignore_patterns=["*.pt", "*.bin"],  # Uses .safetensors
     )
-
 
 # 3. Create image and execute pre-download step
 # Pin compatible versions of torch and vllm
@@ -32,7 +30,6 @@ vllm_image = (
 )
 
 app = modal.App("qwen-inference-service")
-
 
 @app.function(
     image=vllm_image,

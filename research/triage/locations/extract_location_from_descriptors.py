@@ -2,9 +2,11 @@
 import builtins
 import json
 import os
+import re
 from json import JSONDecodeError
 
 from openai import OpenAI
+from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field, ValidationError
 
 
@@ -62,37 +64,93 @@ def extract_locations(descriptors: list[str], api_token: str, debug_print:bool =
         api_key=api_token,
     )
 
+    # Define few-shot examples to teach the model trailing suffix distribution
+    FEW_SHOT_MESSAGES: list[ChatCompletionMessageParam] = [
+        {
+            "role": "user",
+            "content": "Analyze this list of descriptors: [\"case is based on claim of official of Kholm, Velikoluka, Zolotonosha, Kremenchuk districts\"]"
+        },
+        {
+            "role": "assistant",
+            "content": json.dumps({
+                "extracted_locations": [
+                    {
+                        "has_location": True,
+                        "locations": [
+                            "Kholm district",
+                            "Velikoluka district",
+                            "Zolotonosha district",
+                            "Kremenchuk district"
+                        ]
+                    }
+                ]
+            })
+        },
+        {
+            "role": "user",
+            "content": "Analyze this list of descriptors: [\"of Cherkasy, Chyhyryn, Kaniv counties\"]"
+        },
+        {
+            "role": "assistant",
+            "content": json.dumps({
+                "extracted_locations": [
+                    {
+                        "has_location": True,
+                        "locations": [
+                            "Cherkasy county",
+                            "Chyhyryn county",
+                            "Kaniv county"
+                        ]
+                    }
+                ]
+            })
+        },
+        {
+            "role": "user",
+            "content": "Analyze this list of descriptors: [\"of resolutions bishops Bohodukhiv, Chuhuiv. Clerical of Izium, Kupiansk counties.\"]"
+        },
+        {
+            "role": "assistant",
+            "content": json.dumps({
+                "extracted_locations": [
+                    {
+                        "has_location": True,
+                        "locations": [
+                            "Bohodukhiv",
+                            "Chuhuiv",
+                            "Izium county",
+                            "Kupiansk county"
+                        ]
+                    }
+                ]
+            })
+        }
+    ]
+
     system_prompt = (
         "You are a precise data extraction AI.\n"
-        "Analyze the provided JSON array of text descriptors and identify geographical locations.\n"
-        "CRITICAL EXTRACTION RULES:\n"
-        "1. Extract EVERY SINGLE individual item mentioned. Do not omit any items from lists or descriptions."
-        "If a descriptor contains multiple locations separated by commas, semicolons, or the word 'and', "
-        "treat each as a separate location and return a separate entry for each.\n"
-        "2. RETAIN SETTLEMENT SUFFIXES: Retain words like 'village', 'town', 'township', 'city', 'settlement', 'district', "
-        "'province', 'county', 'region', 'oblast', 'gubernia', 'uezd', 'volost', 'selsoviet' in the extracted name,"
-        "and omit 'of'. For example, 'city of Kiev' -> 'city Kiev', 'village of Sinyava' -> village Sinyava'.\n"
-        "3. STRIP INSTITUTION NAMES: Remove names like 'Roman Catholic Church', 'court', 'government', 'synagogue', "
-        "'statistical committee', 'economic council', 'council of ministers', 'ministry of statistics'."
-        " from the extracted name. For example, 'Chyhyryn provincial government' -> 'Chyhyryn province', "
-        "'Kyiv Roman Catholic Church' -> 'Kyiv'.\n"        
-        "4. If a descriptor mentions an institution, check if a city or town is mentioned "
-        "inside parentheses (e.g., in 'Central Archives... (Warsaw)', extract 'Warsaw').\n"
-        "5. Extract ONLY the valid localized geographical place name, ignoring surrounding text. Omit words like"
-        "'roads', 'bridges', 'military settlements', 'land'.\n"
-        "6. You must respond ONLY with a valid JSON object matching this schema:\n"
+        "Analyze the provided text array and extract every single geographical location mentioned.\n"
+        "CRITICAL RULES:\n"
+        "1. Extract EVERY individual mention separately. Do not skip any.\n"
+        "2. Retain settlement suffixes (e.g., 'village', 'town', 'district', 'province').\n"
+        "3. If a trailing suffix applies to a list of places (e.g., 'A, B, and C counties'), append the suffix to EACH individual location.\n"
+        "4. Do not include institutions, roads, or non-geographical features.\n"
+        "5. Return strictly valid JSON matching this schema:\n"
         f"{json.dumps(DocumentLocationsResponse.model_json_schema())}"
     )
+
     user_content = f"Analyze this list of descriptors: {json.dumps(descriptors)}"
 
-    # Call the free Hugging Face API
+    messages: list[ChatCompletionMessageParam] = [
+        {"role": "system", "content": system_prompt}
+    ]
+    messages.extend(FEW_SHOT_MESSAGES)
+    messages.append({"role": "user", "content": user_content})
+
     response = client.chat.completions.create(
         model="Qwen/Qwen2.5-7B-Instruct",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content},
-        ],
-        response_format={"type": "json_object"},  # Enforce valid JSON output
+        messages=messages,
+        response_format={"type": "json_object"},
         max_tokens=1000,
         temperature=0.1,
     )
@@ -125,13 +183,28 @@ def extract_locations(descriptors: list[str], api_token: str, debug_print:bool =
     # get rid of the substrings ' of '
     locations_as_strings = [text.replace(" of ", " ") if " of " in text else text for text in locations_as_strings]
 
+    # Deterministic cleanup: strip ordinal prefixes and common institution-related
+    # words that the LLM sometimes leaves in (e.g., "2nd Lityn
+    # District" -> "Lityn District"). This guards against the model
+    # drifting from the rules in the system prompt.
+    ordinal_pattern = re.compile(r"^\s*\d+(st|nd|rd|th)\s+", re.IGNORECASE)
+    cleaned: list[str] = []
+    for text in locations_as_strings:
+        # Strip ordinal prefix (e.g., "2nd ", "1st ").
+        text = ordinal_pattern.sub("", text)
+        # Collapse runs of whitespace introduced by removals.
+        text = re.sub(r"\s+", " ", text).strip()
+        if text:
+            cleaned.append(text)
+    locations_as_strings = cleaned
+
     # builtins.dict.fromkeys removes duplicates while keeping the original list order
     unique_locations = list(builtins.dict.fromkeys(locations_as_strings))
 
     if debug_print:
         msg = "Extracted locations: "
         for item in unique_locations:
-            msg = f"'{msg}{item}' "
+            msg = f"{msg}'{item}' "
         print(msg)
 
     return unique_locations
@@ -153,7 +226,7 @@ def check_and_trim_keywords(loc: str, keywords: list[str]) -> tuple[bool, str]:
     return False, loc
 
 
-def locations_to_admin_units(locations: list[str], debug_print:bool = False) -> list[builtins.dict]:
+def locations_to_admin_units(locations: list[str], debug_print:bool = False) -> tuple[list[builtins.dict], set, set]:
     """
     Function: locations_to_admin_units
 
@@ -180,50 +253,47 @@ def locations_to_admin_units(locations: list[str], debug_print:bool = False) -> 
                                  "administrative_level" (int): Hierarchical level where:
                                   0 = settlement (village, town, city, etc.)
                                   1 = district/county (sub-provincial administrative unit)
-                                  2 = province/governorate/oblast (provincial level)
+                                  2 = province/governorate/oblast/voivodeship (provincial level)
                              }
     """
-    province_keywords = ['province', 'governorate', 'oblast', 'gubernia']
-    suspicious_keywords = ['region'] # could be a district or a province
-    district_keywords = ['district', 'county', 'uezd', 'volost']
-    settlement_keywords = ['village', 'town', 'township', 'city', 'settlement', 'selsoviet']
+    province_keywords = ['province', 'provinces', 'governorate', 'oblast', 'gubernia', 'voivodeship',
+                         'region', 'regions', 'republic']
+    district_keywords = ['district', 'districts', 'county', 'counties', 'uezd', 'uyezd', 'volost', 'powiat', 'diocese']
+    settlement_keywords = ['village', 'villages', 'town', 'towns', 'township', 'city', 'cities',
+                           'settlement', 'selsoviet', 'precinct', 'precincts']
 
     admin_units = []
+    province_names = set()
+    district_names = set()
     for loc in locations:
         loc = loc.lower()
         # is it a province?
         (found, trimmed) = check_and_trim_keywords(loc, province_keywords)
         if found:
+            province_names.add(trimmed)
             admin_units.append({"location": trimmed, "administrative_level": 2})
             if debug_print:
                 print(f"'{loc}' identified as location '{trimmed}', level 'province'")
         else:
-            # is it either province or district? 
-            (found, trimmed) = check_and_trim_keywords(loc, suspicious_keywords)
+            # is it a district?
+            (found, trimmed) = check_and_trim_keywords(loc, district_keywords)
             if found:
-                # we treat suspicious as provinces
-                admin_units.append({"location": trimmed, "administrative_level": 2})
+                district_names.add(trimmed)
+                admin_units.append({"location": trimmed, "administrative_level": 1})
                 if debug_print:
-                    print(f"Location '{loc}' matches '{trimmed}', level 'province'")
+                    print(f"Location '{loc}' matches '{trimmed}', level 'district'")
             else:
-                # is it a district?
-                (found, trimmed) = check_and_trim_keywords(loc, district_keywords)
+                # it is a settlement
+                (found, trimmed) = check_and_trim_keywords(loc, settlement_keywords)
                 if found:
-                    admin_units.append({"location": trimmed, "administrative_level": 1})
+                    admin_units.append({"location": trimmed, "administrative_level": 0})
                     if debug_print:
-                        print(f"Location '{loc}' matches '{trimmed}', level 'district'")
+                        print(f"'Location '{loc}' matches '{trimmed}', level 'settlement'")
                 else:
-                    # it is a settlement
-                    (found, trimmed) = check_and_trim_keywords(loc, settlement_keywords)
-                    if found:
-                        admin_units.append({"location": trimmed, "administrative_level": 0})
-                        if debug_print:
-                            print(f"'Location '{loc}' matches '{trimmed}', level 'settlement'")
-                    else:
-                        admin_units.append({"location": loc, "administrative_level": 0})
-                        if debug_print:
-                            print(f"No keywords in the settlement name '{loc}'")
-    return admin_units
+                    admin_units.append({"location": loc, "administrative_level": 0})
+                    if debug_print:
+                        print(f"No keywords in the settlement name '{loc}'")
+    return admin_units, province_names, district_names
 
 
 if __name__ == "__main__":
