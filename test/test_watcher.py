@@ -441,6 +441,151 @@ class CheckWatcherTests(WatcherTestBase):
         self.assertEqual(unresolved[item]["modified"], "2026-08-06T09:00:00Z")
         self.assertEqual(watcher_mod.get_resolved(self.EMAIL, self.TITLE, item), [])
 
+    def test_check_auto_resolves_move_action_instead_of_flagging_unresolved(self):
+        # issue #136, step 2: a moved item (not the watch's own scope/key --
+        # that's a separate, not-yet-implemented case) has nothing left to
+        # review at its old title, same as a delete.
+        item = f"{self.TITLE}/100/1/5"
+        updates = {item: {
+            "timestamp": "2026-08-14T02:11:53Z",
+            "user": "Boh.val",
+            "action": "move",
+            "target_title": f"{self.TITLE}/100/1/5-new",
+        }}
+        manager = FakePageUpdateManager(updates)
+
+        unresolved = self._check(manager)
+
+        self.assertNotIn(item, unresolved)
+        history = watcher_mod.get_resolved(self.EMAIL, self.TITLE, item)
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["modified"], "2026-08-14T02:11:53Z")
+        # stamped with the move event's own timestamp, not "now"
+        self.assertEqual(history[0]["last_resolved"], "2026-08-14T02:11:53Z")
+        self.assertEqual(history[0]["user"], "Boh.val")
+        self.assertTrue(history[0]["moved"])
+        self.assertEqual(history[0]["target_title"], f"{self.TITLE}/100/1/5-new")
+        self.assertNotIn("deleted", history[0])
+
+    def test_check_clears_stale_unresolved_entry_when_move_arrives_later(self):
+        item = f"{self.TITLE}/100/1/5"
+        manager = FakePageUpdateManager({item: {"timestamp": "2026-08-04T17:26:40Z", "user": "Smaxims", "action": "new"}})
+        unresolved = self._check(manager)
+        self.assertIn(item, unresolved)
+
+        manager2 = FakePageUpdateManager({item: {
+            "timestamp": "2026-08-14T02:11:53Z", "user": "Boh.val", "action": "move",
+            "target_title": f"{self.TITLE}/100/1/5-new",
+        }})
+        unresolved = self._check(manager2)
+
+        self.assertNotIn(item, unresolved)
+        self.assertNotIn(item, watcher_mod.get_all_unresolved(self.EMAIL, self.TITLE))
+        history = watcher_mod.get_resolved(self.EMAIL, self.TITLE, item)
+        self.assertEqual(len(history), 1)
+        self.assertTrue(history[0]["moved"])
+
+    def test_check_flags_own_scope_move_as_marker_without_touching_other_pending_items(self):
+        # issue #136, step 3: a move of the watch's own scope/key -- as
+        # opposed to some item inside it -- is too destructive to retire
+        # silently. It must be surfaced as an added marker, not auto-resolved
+        # like an ordinary move, and every other pending item must be left
+        # completely alone so the user can still work through them.
+        other_item = f"{self.TITLE}/100/1/5"
+        new_title = "Архів:ДААРК-New"
+        updates = {
+            self.TITLE: {
+                "timestamp": "2026-06-14T10:01:37Z", "user": "Madvin",
+                "action": "move", "target_title": new_title,
+            },
+            other_item: {"timestamp": "2026-01-01T10:00:00Z", "user": "alice"},
+        }
+        manager = FakePageUpdateManager(updates)
+
+        unresolved = self._check(manager)
+
+        self.assertIn(self.TITLE, unresolved)
+        self.assertEqual(unresolved[self.TITLE]["moved_to"], new_title)
+        self.assertEqual(watcher_mod.get_watcher(self.EMAIL, self.TITLE)["moved_to"], new_title)
+        # not auto-resolved -- stays pending until the user deliberately
+        # resolves it (see ResolveMovedWatcherTests)
+        self.assertEqual(watcher_mod.get_resolved(self.EMAIL, self.TITLE, self.TITLE), [])
+
+        self.assertIn(other_item, unresolved)
+        self.assertNotIn("moved_to", unresolved[other_item])
+
+    def test_check_stops_scanning_once_moved_to_is_set(self):
+        updates = {
+            self.TITLE: {
+                "timestamp": "2026-06-14T10:01:37Z", "user": "Madvin",
+                "action": "move", "target_title": "Архів:ДААРК-New",
+            },
+        }
+        manager = FakePageUpdateManager(updates)
+
+        self._check(manager)  # first check: detects the move, freezes the watch
+        self._check(manager)  # second check: the old title is a dead redirect
+        # stub now -- nothing more will ever legitimately arrive, so this
+        # must not scan for updates again
+
+        self.assertEqual(len(manager.calls), 1)
+
+
+# ----------------------------------------------------------------------------
+# resolve_watcher() -- retiring a watch whose own scope moved
+#
+# issue #136, step 3: resolving the "moved" marker (keyed at the watch's own
+# title, same as check_watcher() writes it) is the user's deliberate signal
+# to retire the whole watch, not just clear one more pending item.
+
+class ResolveMovedWatcherTests(WatcherTestBase):
+    EMAIL = "moved@example.com"
+    TITLE = "Архів:ДААРК"
+    NEW_TITLE = "Архів:ДААРК-New"
+
+    def setUp(self):
+        super().setUp()
+        watcher_mod.put_watcher(self.EMAIL, self.TITLE, {
+            "include": [self.TITLE], "exclude": [],
+            "cutoff_date": "2025-01-01T00:00:00Z", "last_checked_date": "2026-06-14T10:01:37Z",
+            "moved_to": self.NEW_TITLE,
+        })
+        watcher_mod.put_unresolved(self.EMAIL, self.TITLE, self.TITLE, {
+            "modified": "2026-06-14T10:01:37Z", "last_resolved": "2025-01-01T00:00:00Z",
+            "user": "Madvin", "moved_to": self.NEW_TITLE,
+        })
+        # an ordinary, unrelated pending item -- must be resolvable
+        # independently, and must not itself trigger a teardown
+        self.other_item = f"{self.TITLE}/100/1/5"
+        watcher_mod.put_unresolved(self.EMAIL, self.TITLE, self.other_item, {
+            "modified": "2026-01-01T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z", "user": "alice",
+        })
+
+    def test_resolving_marker_retires_the_whole_watch(self):
+        result = watcher_mod.resolve_watcher(self.EMAIL, self.TITLE, self.TITLE)
+
+        self.assertEqual(result, {})
+        with self.assertRaises(KeyError):
+            watcher_mod.get_watcher(self.EMAIL, self.TITLE)
+        self.assertEqual(watcher_mod.get_all_unresolved(self.EMAIL, self.TITLE), {})
+        # the whole namespace is gone, including the unrelated item's history
+        self.assertEqual(watcher_mod.get_resolved(self.EMAIL, self.TITLE, self.other_item), [])
+
+    def test_resolving_an_unrelated_item_leaves_the_watch_and_marker_intact(self):
+        result = watcher_mod.resolve_watcher(self.EMAIL, self.TITLE, self.other_item)
+
+        self.assertNotIn(self.other_item, result)
+        self.assertIn(self.TITLE, result)  # marker still pending
+        header = watcher_mod.get_watcher(self.EMAIL, self.TITLE)
+        self.assertEqual(header["moved_to"], self.NEW_TITLE)
+
+    def test_deep_resolve_sweeping_in_the_marker_also_retires_the_watch(self):
+        result = watcher_mod.resolve_watcher(self.EMAIL, self.TITLE, self.TITLE, deep=True)
+
+        self.assertEqual(result, {})
+        with self.assertRaises(KeyError):
+            watcher_mod.get_watcher(self.EMAIL, self.TITLE)
+
 
 # ----------------------------------------------------------------------------
 # legacy blob migration

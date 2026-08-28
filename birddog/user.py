@@ -286,6 +286,17 @@ class User:
             _logger.info(f'Resolving {item_title}, deep={deep}, tree={tree}')
             unresolved = watcher.resolve_watcher(
                 self.email, title, item_title, runtime=self._runtime, deep=deep)
+            try:
+                watcher.get_watcher(self.email, title)
+            except KeyError:
+                # resolve_watcher() just retired this watch outright: its
+                # own scope moved and the "moved" marker was the item just
+                # resolved (issue #136). Drop the matching wl: watchlist
+                # entry the same way remove_from_watchlist() does, or it'd
+                # linger pointing at a watch that no longer exists.
+                if not _is_watchlist_migrated(self.email):
+                    _get_watchlist(self.email)  # fold in any un-migrated sibling entries first
+                _kv_store.remove(_watchlist_namespace(self.email), title)
 
         if tree:
             return watcher.unresolved_tree(unresolved)

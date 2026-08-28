@@ -198,6 +198,12 @@ class FakeWatcher:
         self.check_result = {"example": {"count": 1}}
         self.resolve_result = {}
         self.resolve_raises = None
+        # controls get_watcher(): True (default) means the watch still
+        # exists after a resolve, as it does for an ordinary item resolve.
+        # Tests simulate resolve_watcher() having retired the whole watch
+        # (issue #136, step 3 -- the "moved" marker was just resolved) by
+        # setting this False before calling User.resolve_item().
+        self.watcher_exists = True
 
     def check_watcher(self, email, archive_title, runtime, include, cutoff_date, exclude=None):
         self.check_calls.append((email, archive_title, runtime, include, cutoff_date, exclude))
@@ -208,6 +214,11 @@ class FakeWatcher:
         if self.resolve_raises:
             raise self.resolve_raises
         return self.resolve_result
+
+    def get_watcher(self, email, archive_title):
+        if not self.watcher_exists:
+            raise KeyError(archive_title)
+        return {"include": [archive_title]}
 
     def unresolved_tree(self, unresolved):
         return {"name": "root", "children": [{"name": k} for k in unresolved]}
@@ -400,6 +411,36 @@ class UserTest(unittest.TestCase):
         self.assertEqual(watch_title, title)
         self.assertEqual(item_title, f"{title}/1/2/3")
         self.assertTrue(deep)
+
+    def test_resolve_item_removes_watchlist_entry_when_watcher_is_retired(self):
+        # issue #136, step 3: resolve_watcher() tears down the whole watch
+        # when the "moved" marker gets resolved -- resolve_item() must then
+        # also drop the matching wl: watchlist entry, or it lingers pointing
+        # at a watch that no longer exists.
+        u = User(name="Test", email="retired@example.com", password="pw")
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
+        self.assertIn(title, u.get_watchlist())
+
+        self.watcher.resolve_result = {}
+        self.watcher.watcher_exists = False  # simulate resolve_watcher() having just retired it
+
+        u.resolve_item(title, title)  # resolving the marker (item == archive title)
+
+        self.assertNotIn(title, u.get_watchlist())
+
+    def test_resolve_item_keeps_watchlist_entry_when_watcher_still_exists(self):
+        u = User(name="Test", email="stillhere@example.com", password="pw")
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
+
+        self.watcher.resolve_result = {f"{title}/other": {"modified": "x"}}
+        # watcher_exists stays True (default) -- an ordinary resolve, the
+        # watch survives
+
+        u.resolve_item(title, f"{title}/1/2/3")
+
+        self.assertIn(title, u.get_watchlist())
 
     def test_user_to_dict_from_dict_and_save(self):
         u = User(name="Test", email="s@example.com", password="pw")

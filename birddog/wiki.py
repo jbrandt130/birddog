@@ -281,6 +281,25 @@ def update_archive_root(title, label=None, description=None):
         _archive_roots_cache[title] = updated
     return True
 
+def remove_archive_root(title):
+    """Drop an already-registered root's entry entirely -- used when the
+    title has moved (issue #136). There's nothing to repoint: the old title
+    can no longer be browsed to or freshly watched, and a redirect stub left
+    behind by the move is never rediscovered as a root by either crawl path
+    (get_all_pages()'s apfilterredir, get_recent_changes()'s rcshow=!redirect),
+    so it's safe to just delete this rather than merge/repoint anything onto
+    the new title -- that gets its own fresh registration organically the
+    next time discovery encounters it. Returns False (no-op) if the title
+    wasn't registered."""
+    title = canonicalize_title(title)
+    if _archive_roots_cache is None:
+        _load_archive_roots()
+    if title not in _archive_roots_cache:
+        return False
+    _archive_roots_kv.remove_if_exists(_ARCHIVE_ROOTS_NAMESPACE, title)
+    del _archive_roots_cache[title]
+    return True
+
 def all_archive_roots():
     """All discovered archive roots as {title, label, description, url},
     sorted by label. Excludes ROOT_HUB_TITLE itself -- it's reachable via the

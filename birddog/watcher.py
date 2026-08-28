@@ -422,6 +422,14 @@ def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=N
             "last_checked_date": cutoff_date,
         }
 
+    if header.get("moved_to"):
+        # this watch's own scope moved to a new title (issue #136) -- the
+        # old title is now just a redirect stub, so nothing will ever
+        # legitimately arrive here again. Return whatever's still pending
+        # unchanged (at minimum, the "moved" marker itself, set below the
+        # first time this was detected) rather than keep scanning forever.
+        return get_all_unresolved(email, archive_title)
+
     page_manager = runtime.update_manager
     # bounded to updates since the last check, so already-resolved edits
     # from prior cycles aren't handed back and re-evaluated forever
@@ -438,7 +446,7 @@ def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=N
 
         new_unresolved = {}
         new_resolved = {}
-        deleted_items = []
+        retired_items = []
         new_cutoff = header["last_checked_date"]
         for item, update in items.items():
             mod_date = update["timestamp"]
@@ -451,20 +459,47 @@ def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=N
             # live mod_date always reads as "newer" by a few seconds even
             # when it's the same edit
             if latest_resolved is None or mod_date[:16] > latest_resolved[:16]:
-                if update.get("action") == "delete":
-                    # nothing left to review -- auto-resolve rather than
-                    # surfacing a dead page as a pending change (a "restore"
-                    # log action isn't special-cased, so an undeleted page
-                    # falls straight back into the normal unresolved path)
-                    resolved_history = resolved_history + [{
+                action = update.get("action")
+                if action == "move" and item in header["include"]:
+                    # the watch's own scope itself moved, not just some item
+                    # inside it (issue #136) -- retiring the whole watch
+                    # silently is too destructive, so leave it fully intact
+                    # and navigable (every other pending item is untouched)
+                    # and just flag it dead via one added marker at the
+                    # moved title. Resolving that one marker (see
+                    # resolve_watcher()) is the user's deliberate signal to
+                    # actually retire the watch; check_watcher() stops
+                    # scanning this watch entirely once moved_to is set
+                    # (see the top of this function), since nothing more
+                    # will ever legitimately arrive at a dead redirect stub.
+                    target_title = update.get("target_title")
+                    header["moved_to"] = target_title
+                    new_unresolved[item] = {
+                        "modified": mod_date,
+                        "last_resolved": resolved_history[-1]["last_resolved"] if resolved_history else header["cutoff_date"],
+                        "user": user,
+                        "moved_to": target_title,
+                    }
+                elif action in ("delete", "move"):
+                    # nothing left to review at this title -- auto-resolve
+                    # rather than surfacing a dead/relocated page as a
+                    # pending change (a "restore" log action isn't
+                    # special-cased, so an undeleted page falls straight
+                    # back into the normal unresolved path below)
+                    resolved_entry = {
                         "modified": mod_date,
                         "last_resolved": mod_date,
                         "user": user,
-                        "deleted": True,
-                    }]
+                    }
+                    if action == "delete":
+                        resolved_entry["deleted"] = True
+                    else:
+                        resolved_entry["moved"] = True
+                        resolved_entry["target_title"] = update.get("target_title")
+                    resolved_history = resolved_history + [resolved_entry]
                     new_resolved[item] = resolved_history
                     resolved_by_item[item] = resolved_history
-                    deleted_items.append(item)
+                    retired_items.append(item)
                 else:
                     new_unresolved[item] = {
                         "modified": mod_date,
@@ -475,10 +510,10 @@ def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=N
             _watcher_kv.insert_many(_unresolved_ns(email, archive_title), {k: json.dumps(v) for k, v in new_unresolved.items()})
         if new_resolved:
             _watcher_kv.insert_many(_resolved_ns(email, archive_title), {k: json.dumps(v) for k, v in new_resolved.items()})
-        if deleted_items:
+        if retired_items:
             # in case a prior check already flagged this item unresolved
-            # before its delete event arrived
-            _watcher_kv.remove_many(_unresolved_ns(email, archive_title), deleted_items)
+            # before its delete/move event arrived
+            _watcher_kv.remove_many(_unresolved_ns(email, archive_title), retired_items)
         header["last_checked_date"] = new_cutoff
 
     put_watcher(email, archive_title, header)
@@ -487,7 +522,7 @@ def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=N
 def resolve_watcher(email, archive_title, item, runtime=None, deep=False):
     _ensure_migrated(email, archive_title, runtime)
     try:
-        get_watcher(email, archive_title)
+        header = get_watcher(email, archive_title)
     except KeyError:
         raise FileNotFoundError('No watcher found')
 
@@ -527,4 +562,14 @@ def resolve_watcher(email, archive_title, item, runtime=None, deep=False):
             history.append(entry)
             put_resolved(email, archive_title, item, history)
 
-    return get_all_unresolved(email, archive_title)
+    unresolved = get_all_unresolved(email, archive_title)
+    if header.get("moved_to") and archive_title not in unresolved:
+        # the "moved" marker (keyed at the watch's own title -- see
+        # check_watcher()) has just been resolved, singly or swept in by a
+        # deep resolve -- issue #136. Treat that as the user's deliberate
+        # signal to retire this watch outright, not just clear one more
+        # pending item: it can never receive anything new (its scope is a
+        # dead redirect stub), so there's nothing left for it to do.
+        remove_watcher(email, archive_title)
+        return {}
+    return unresolved

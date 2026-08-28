@@ -30,6 +30,7 @@ from birddog.wiki import (
     ROOT_HUB_TITLE,
     is_root_title,
     register_archive_root,
+    remove_archive_root,
     archive_root_label,
     all_archive_roots,
     refresh_curated_archive_root_labels,
@@ -1298,6 +1299,38 @@ class TestDynamicArchiveRootRegistry(unittest.TestCase):
         entries = all_archive_roots()
         labels = [e["label"] for e in entries]
         self.assertEqual(labels, sorted(labels))
+
+    def test_remove_archive_root_drops_a_registered_title(self):
+        # issue #136, step 3: the old title of a moved root archive is
+        # dropped outright, not repointed
+        register_archive_root(self._PROBE_TITLE, label="ProbeLabel")
+        self.assertEqual(archive_root_label(self._PROBE_TITLE), "ProbeLabel")
+
+        removed = remove_archive_root(self._PROBE_TITLE)
+
+        self.assertTrue(removed)
+        self.assertIsNone(archive_root_label(self._PROBE_TITLE))
+        self.assertNotIn(self._PROBE_TITLE, [e["title"] for e in all_archive_roots()])
+
+    def test_remove_archive_root_persists_across_a_fresh_cache_load(self):
+        import birddog.wiki as wiki_mod
+        register_archive_root(self._PROBE_TITLE, label="ProbeLabel")
+        remove_archive_root(self._PROBE_TITLE)
+
+        wiki_mod._archive_roots_cache = None  # force a reload from the KV store
+        self.assertIsNone(archive_root_label(self._PROBE_TITLE))
+
+    def test_remove_archive_root_is_a_no_op_for_an_unregistered_title(self):
+        self.assertFalse(remove_archive_root("Архів:__NeverRegistered__"))
+
+    def test_remove_archive_root_does_not_disturb_other_registrations(self):
+        other = "Архів:__RemoveProbeSibling__"
+        register_archive_root(self._PROBE_TITLE, label="ProbeLabel")
+        register_archive_root(other, label="SiblingLabel")
+
+        remove_archive_root(self._PROBE_TITLE)
+
+        self.assertEqual(archive_root_label(other), "SiblingLabel")
 
 
 # ── get_all_pages ───────────────────────────────────────────────────────────

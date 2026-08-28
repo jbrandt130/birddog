@@ -1448,9 +1448,18 @@ function render_node(name, node) {
     const modified = meta ? meta.modified : '';
     const last_resolved = meta ? meta.last_resolved : '';
     const page_title = meta ? meta.title : '';
+    const moved_to = meta ? meta.moved_to : '';
 
+    // a "moved_to" entry (issue #136) means this watch's own scope was
+    // moved on the wiki, not an ordinary content change -- resolving it
+    // retires the whole watch, so it needs to read very differently from a
+    // normal "Latest Update" line
     let update_text = '';
-    if (meta && meta.modified) {
+    let update_class = 'text-muted';
+    if (moved_to) {
+        update_text = `Archive moved to "${escape_attr(moved_to)}" -- resolving this removes it from your watchlist.`;
+        update_class = 'text-danger fw-semibold';
+    } else if (meta && meta.modified) {
         update_text = `Latest Update: ${format_date(meta.modified, false)}`;
         if (meta.user) {
             update_text += ` (user: ${meta.user})`;
@@ -1488,9 +1497,9 @@ function render_node(name, node) {
         : `<span class="tree-label" data-path="${full_path}">${display_name}</span>`;
 
     const meta_html = meta
-        ? `<div class="text-muted small">
-               <div>${update_text}</div>
-               <div>${resolved_text}</div>
+        ? `<div class="small">
+               <div class="${update_class}">${update_text}</div>
+               <div class="text-muted">${resolved_text}</div>
            </div>`
         : '';
 

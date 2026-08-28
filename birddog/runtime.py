@@ -20,6 +20,8 @@ from birddog.wiki import (
     canonicalize_title,
     literal_parent_title,
     title_in_scope,
+    is_root_title,
+    remove_archive_root,
     )
 from birddog.tracker import (
     PageTracker,
@@ -158,6 +160,24 @@ class PageUpdateManager(HeartbeatManager):
                     page_lru.evict(title, self._runtime)
                     if parent_page_title:
                         _logger.info(f"PageUpdateManager: evicting parent after deletion: {parent_page_title}")
+                        page_lru.evict(parent_page_title, self._runtime)
+                elif update.get("action") == "move":
+                    _logger.info(f"PageUpdateManager: page moved: {title} -> {update.get('target_title')}")
+                    if is_root_title(title):
+                        # this title's own archive-root registration (if any)
+                        # is dead -- issue #136. The destination gets its own
+                        # fresh registration organically the next time
+                        # discovery encounters it, so there's nothing to
+                        # repoint here, just drop the old one outright. This
+                        # runs once, system-wide, regardless of who (if
+                        # anyone) is watching it -- separate from any
+                        # per-user watcher's own handling of the same move.
+                        remove_archive_root(title)
+                    # old title is now just a redirect stub -- nothing left
+                    # worth serving from cache at either it or its parent
+                    page_lru = self._runtime.page_lru
+                    page_lru.evict(title, self._runtime)
+                    if parent_page_title:
                         page_lru.evict(parent_page_title, self._runtime)
                 else:
                     # This page may have just been created or edited.
