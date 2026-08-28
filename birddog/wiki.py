@@ -1627,7 +1627,9 @@ def get_recent_changes(
       - False: bias toward least-recently changed titles (scan oldest→newer)
 
     Returns:
-        dict: {title: {"timestamp": <utc>, "user": <user>, "action": <edit|new|delete|restore>}}
+        dict: {title: {"timestamp": <utc>, "user": <user>,
+                        "action": <edit|new|delete|restore|move>,
+                        "target_title": <new title, only for action=="move">}}
     """
     _FETCH_LIMIT = 500   # max results per query (non-bot)
 
@@ -1680,10 +1682,19 @@ def get_recent_changes(
             user = rc.get("user")
             rc_type = rc.get("type")
             action = rc.get("logaction") if rc_type == "log" else rc_type
+            # move's destination title -- the only bit of a move event that
+            # matters beyond the generic timestamp/user/action shape; every
+            # other action leaves this None
+            target_title = rc.get("logparams", {}).get("target_title") if action == "move" else None
 
             entry = latest_mods.get(title)
             if not entry or timestamp > entry["timestamp"]:
-                latest_mods[title] = {"timestamp": timestamp, "user": user, "action": action}
+                latest_mods[title] = {
+                    "timestamp": timestamp,
+                    "user": user,
+                    "action": action,
+                    "target_title": target_title,
+                }
 
         # Stop early if we've collected enough unique titles (your intended "limit")
         if limit and len(latest_mods) >= limit:

@@ -37,6 +37,7 @@ from birddog.wiki import (
     mw_page_doc_url,
     mw_read_page,
     get_all_pages,
+    get_recent_changes,
     batch_fetch_document_links,
     check_page_changes,
     report_page_changes,
@@ -1315,6 +1316,61 @@ class TestGetAllPages(unittest.TestCase):
             get_all_pages()
         params = mock_fetch.call_args.kwargs.get("params") or mock_fetch.call_args[1]["params"]
         self.assertEqual(params.get("apfilterredir"), "nonredirects")
+
+
+# ── get_recent_changes ──────────────────────────────────────────────────────
+
+class TestGetRecentChanges(unittest.TestCase):
+    def _response(self, rcs):
+        return {"query": {"recentchanges": rcs}}
+
+    def test_move_action_carries_target_title(self):
+        # issue #136: a move's destination (logparams.target_title) must
+        # survive into the returned entry so downstream move-handling can
+        # ever act on it -- previously silently discarded.
+        rcs = [{
+            "type": "log",
+            "title": "Архів:Проєкт_\"Інвентаріум\"",
+            "user": "Madvin",
+            "timestamp": "2026-06-14T10:01:37Z",
+            "logtype": "move",
+            "logaction": "move",
+            "logparams": {"target_ns": 116, "target_title": "Архів:Інвентаріум"},
+        }]
+        with patch("birddog.wiki.fetch_url", return_value=self._response(rcs)):
+            result = get_recent_changes()
+        entry = result["Архів:Проєкт_\"Інвентаріум\""]
+        self.assertEqual(entry["action"], "move")
+        self.assertEqual(entry["target_title"], "Архів:Інвентаріум")
+
+    def test_non_move_action_has_no_target_title(self):
+        rcs = [{
+            "type": "edit",
+            "title": "Архів:ДАКО/280/2",
+            "user": "someuser",
+            "timestamp": "2026-06-14T10:01:37Z",
+        }]
+        with patch("birddog.wiki.fetch_url", return_value=self._response(rcs)):
+            result = get_recent_changes()
+        entry = result["Архів:ДАКО/280/2"]
+        self.assertEqual(entry["action"], "edit")
+        self.assertIsNone(entry["target_title"])
+
+    def test_delete_action_has_no_target_title(self):
+        # a delete's logparams (if any) are unrelated to a move destination
+        rcs = [{
+            "type": "log",
+            "title": "Архів:ДААРК/NN/1/28",
+            "user": "Madvin",
+            "timestamp": "2026-06-09T00:00:00Z",
+            "logtype": "delete",
+            "logaction": "delete",
+        }]
+        with patch("birddog.wiki.fetch_url", return_value=self._response(rcs)):
+            result = get_recent_changes()
+        entry = result["Архів:ДААРК/NN/1/28"]
+        self.assertEqual(entry["action"], "delete")
+        self.assertIsNone(entry["target_title"])
 
 
 # ── batch_fetch_document_links ────────────────────────────────────────────────

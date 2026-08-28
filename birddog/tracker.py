@@ -64,6 +64,7 @@ class PageChangeLog:
                     "timestamp": update["timestamp"],
                     "user": update["user"],
                     "action": update.get("action"),
+                    "target_title": update.get("target_title"),
                 }
                 self._kv.insert(_TRACKER_KV_NS_CHANGE_LOG, title, json.dumps(entry))
                 self._changes[title] = entry

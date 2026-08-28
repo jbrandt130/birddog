@@ -113,6 +113,43 @@ class TestPageChangeLog(unittest.TestCase):
         self.assertEqual(got["PAGE:Y"]["timestamp"], "2025-06-02T00:00:00Z")
         self.assertEqual(got["PAGE:Y"]["user"], "bob")
 
+    def test_refresh_carries_target_title_through_for_move_actions(self):
+        # issue #136: a move's destination title (target_title) must survive
+        # PageChangeLog.refresh() into the stored entry, both in the
+        # in-memory cache and what's persisted to the KV store, or no
+        # downstream move-handling can ever see where the page went.
+        tracker = self.tracker
+        log = tracker.PageChangeLog()
+
+        recent_changes = {
+            "Archive:Old": {
+                "timestamp": "2026-06-14T10:01:37Z",
+                "user": "Madvin",
+                "action": "move",
+                "target_title": "Archive:New",
+            },
+            "Archive:Edited": {
+                "timestamp": "2026-06-14T10:01:37Z",
+                "user": "someone",
+                "action": "edit",
+            },
+        }
+        with mock.patch.object(tracker, "get_recent_changes", return_value=recent_changes), \
+             mock.patch.object(tracker, "canonicalize_title", side_effect=lambda t: t):
+            log.refresh()
+
+        got = log.get()
+        self.assertEqual(got["Archive:Old"]["target_title"], "Archive:New")
+        # an action with no target_title still gets the key, defaulted None,
+        # so downstream consumers never need a `.get()`-with-fallback dance
+        self.assertIsNone(got["Archive:Edited"]["target_title"])
+
+        # reload from the KV store to confirm it was actually persisted, not
+        # just held in the in-memory cache
+        log2 = tracker.PageChangeLog()
+        got2 = log2.get()
+        self.assertEqual(got2["Archive:Old"]["target_title"], "Archive:New")
+
     def test_refresh_with_empty_log_passes_none_cutoff(self):
         """refresh() on an empty log calls get_recent_changes with utc_start=None."""
         tracker = self.tracker
