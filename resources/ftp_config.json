@@ -1,0 +1,8 @@
+{
+    "host": "sftp.jewishgen.org",
+    "user": "jbrandt",
+    "password": "SFTP_PASSWORD",
+    "port": 22,
+    "heartbeat_interval": 60,
+    "scan_batch": 50
+}
