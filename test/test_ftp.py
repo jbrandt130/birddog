@@ -2,7 +2,7 @@
 # Licensed under the MIT License. See LICENSE file in the project root.
 
 """
-Hermetic unit tests for birddog.ftp.FTPSiteTracker.
+Hermetic unit tests for birddog.ftp.FTPSiteManager.
 
 The SFTP server and the NocoDB backend are both faked:
   - FakeSFTP serves a mutable directory tree; stat() of a directory reports the
@@ -14,18 +14,20 @@ The SFTP server and the NocoDB backend are both faked:
 No network, no paramiko connection.
 """
 
+import hashlib
 import json
 import os
 import stat
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
 from birddog.abstract_database import ConfigError
 from birddog import ftp
 from birddog.ftp import (
-    FTPSiteTracker, _join, _depth, _parent, _utc_mtime, _mtime_matches,
-    _load_ftp_config,
+    FTPSiteManager, _join, _depth, _parent, _utc_mtime, _mtime_matches,
+    _load_ftp_config, _content_fp, _fp_ftp, _fp_wiki, _parse_wiki_page_url,
 )
 
 
@@ -213,14 +215,16 @@ _ALL_DIR_PATHS = {"/Berdichev", "/Odessa", "/Berdichev/sub"}
 
 
 def _make_tracker(db, tree):
-    """Construct an FTPSiteTracker with config + connection stubbed out."""
+    """Construct an FTPSiteManager with config + connection stubbed out."""
     cfg = {
         "host": "h", "user": "u", "password": "pw-resolved", "port": 22,
         "heartbeat_interval": 60, "scan_batch": 50,
     }
     with patch.object(ftp, "_load_ftp_config", return_value=cfg):
-        tracker = FTPSiteTracker(db)
+        tracker = FTPSiteManager(db)
     tracker._sftp = FakeSFTP(tree)      # _ensure_connection() returns this as-is
+    tracker._connected_at = time.monotonic()
+    tracker._link_batch = 0            # these tests exercise the inventory sweep only
     return tracker
 
 
@@ -544,6 +548,323 @@ class TestConnectionErrors(unittest.TestCase):
         tracker = _make_tracker(FakeDB(), _TREE)
         tracker._db = None
         tracker.heartbeat()
+
+
+# ---------------------------------------------------------------------------
+# Fingerprint fakes + tests
+
+class _FakeFile:
+    def __init__(self, data):
+        self._d, self._p = data, 0
+
+    def read(self, n=-1):
+        if n is None or n < 0:
+            out, self._p = self._d[self._p:], len(self._d)
+        else:
+            out = self._d[self._p:self._p + n]
+            self._p += len(out)
+        return out
+
+    def seek(self, off, whence=0):
+        self._p = {0: off, 1: self._p + off, 2: len(self._d) + off}[whence]
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class _FakeFileSFTP:
+    def __init__(self, files):
+        self.files = files            # path -> bytes
+
+    def open(self, path, mode="rb"):
+        return _FakeFile(self.files[path])
+
+
+def _fake_fetch(imageinfo=None, blob=b""):
+    """A stand-in for birddog.fetch.fetch_url serving one wiki file."""
+    def _f(url, params=None, headers=None, return_json=False, content=False, **kw):
+        if return_json:                                   # imageinfo call
+            page = {"imageinfo": [imageinfo]} if imageinfo else {"missing": ""}
+            return {"query": {"pages": {"1": page}}}
+        spec = (headers or {}).get("Range", "").replace("bytes=", "")
+        if spec.startswith("-"):
+            return blob[-int(spec[1:]):]
+        lo, hi = spec.split("-")
+        return blob[int(lo):int(hi) + 1]
+    return _f
+
+
+def _sha(b):
+    return hashlib.sha1(b).hexdigest()
+
+
+class TestFingerprint(unittest.TestCase):
+    def test_content_fp_shape(self):
+        self.assertEqual(_content_fp(10, b"a", b"b"),
+                         f"10:{_sha(b'a')}:{_sha(b'b')}")
+
+    def test_fp_ftp_large_uses_head_and_tail(self):
+        n = ftp._FP_CHUNK
+        data = bytes(i % 256 for i in range(3 * n))            # > 2*_FP_CHUNK
+        sftp = _FakeFileSFTP({"/f.pdf": data})
+        fp = _fp_ftp(sftp, "/f.pdf", len(data))
+        self.assertEqual(fp, f"{len(data)}:{_sha(data[:n])}:{_sha(data[-n:])}")
+
+    def test_fp_ftp_small_hashes_whole_file_twice(self):
+        data = b"small pdf bytes"
+        sftp = _FakeFileSFTP({"/s.pdf": data})
+        fp = _fp_ftp(sftp, "/s.pdf", len(data))
+        self.assertEqual(fp, f"{len(data)}:{_sha(data)}:{_sha(data)}")
+
+    def test_fp_wiki_matches_fp_ftp_for_identical_bytes(self):
+        data = bytes((i * 7) % 256 for i in range(500000))
+        sftp = _FakeFileSFTP({"/f.pdf": data})
+        want = _fp_ftp(sftp, "/f.pdf", len(data))
+        fake = _fake_fetch(
+            imageinfo={"url": "https://upload.wikimedia.org/x/f.pdf",
+                       "size": len(data), "sha1": "irrelevant"},
+            blob=data,
+        )
+        with patch.object(ftp, "fetch_url", fake):
+            got = _fp_wiki("https://commons.wikimedia.org/wiki/File:f.pdf")
+        self.assertEqual(got, want)
+
+    def test_fp_wiki_none_for_non_wiki_url(self):
+        self.assertIsNone(
+            _fp_wiki("https://www.szukajwarchiwach.gov.pl/jednostka/123"))
+
+    def test_fp_wiki_none_when_file_missing(self):
+        with patch.object(ftp, "fetch_url", _fake_fetch(imageinfo=None)):
+            self.assertIsNone(
+                _fp_wiki("https://commons.wikimedia.org/wiki/File:gone.pdf"))
+
+    def test_fp_wiki_raises_when_fetch_fails(self):
+        def boom(*a, **k):
+            raise ftp.FetchUrlFailError("429 too many requests")
+        with patch.object(ftp, "fetch_url", boom):
+            with self.assertRaises(ftp._FingerprintUnavailable):
+                _fp_wiki("https://commons.wikimedia.org/wiki/File:x.pdf")
+
+    def test_parse_wiki_page_url(self):
+        self.assertEqual(
+            _parse_wiki_page_url("https://commons.wikimedia.org/wiki/File:A_b.pdf"),
+            ("commons.wikimedia.org", "File:A_b.pdf"))
+        self.assertEqual(                                     # percent-decoding
+            _parse_wiki_page_url("https://uk.wikisource.org/wiki/File:A%20b_%281%29.pdf"),
+            ("uk.wikisource.org", "File:A b_(1).pdf"))
+        self.assertEqual(
+            _parse_wiki_page_url("https://www.familysearch.org/ark:/1/2"),
+            (None, None))
+
+
+# ---------------------------------------------------------------------------
+# Relation-matching fake DB + tests
+
+class _MatchDB:
+    """Models 'FTP Repo' + 'Documents' + the m:m junction, for match tests."""
+    def __init__(self):
+        self.ftp = {}          # path -> row
+        self.docs = {}         # url -> row
+        self.links = set()     # (ftp_id, doc_id)
+        self._id = 1
+
+    def add_ftp(self, path, size, fp=None, mtime="2020-01-01 00:00:00+00:00"):
+        self.ftp[path] = {
+            "Id": self._id, "path": path, "size": size, "mtime": mtime,
+            "content_fp": fp, "match_checked": False,
+            "type": "file", "suffix": "pdf", "folder": "/x",
+        }
+        self._id += 1
+        return self.ftp[path]["Id"]
+
+    def add_doc(self, url, byte_size, fp=None):
+        self.docs[url] = {"Id": self._id, "url": url,
+                          "byte_size": byte_size, "content_fp": fp}
+        self._id += 1
+        return self.docs[url]["Id"]
+
+    # -- reads --
+    def scan(self, table, limit=100, cursor=None, where=None,
+             view_name=None, fields=None, raw=False, sort=None):
+        rows = list(self.ftp.values())
+        if view_name == ftp._FTP_MATCH_VIEW:
+            rows = [r for r in rows if not r["match_checked"]]
+        return [dict(r) for r in rows[:limit]], None
+
+    def scan_all(self, table, where=None, fields=None, sort=None, view_name=None):
+        src = self.docs if table == ftp._DOC_TABLE else self.ftp
+        rows = list(src.values())
+        if where:
+            f, op, v = where
+            assert op == "eq", op
+            rows = [r for r in rows if r.get(f) == v]
+        return [dict(r) for r in rows]
+
+    def read(self, table, ids, fields=None):
+        if isinstance(ids, (str, int)):
+            ids = [ids]
+        src = self.docs if table == ftp._DOC_TABLE else self.ftp
+        by_id = {r["Id"]: r for r in src.values()}
+        return [dict(by_id.get(i, {})) for i in ids]
+
+    def lookup(self, table, key_set):
+        assert table == ftp._DOC_TABLE
+        if isinstance(key_set, str):
+            key_set = {key_set}
+        return {k: self.docs[k]["Id"] for k in key_set if k in self.docs}
+
+    # -- writes --
+    def write(self, table, records):
+        if isinstance(records, dict):
+            records = [records]
+        src = self.docs if table == ftp._DOC_TABLE else self.ftp
+        key = "url" if table == ftp._DOC_TABLE else "path"
+        for rec in records:
+            src[rec[key]].update(rec)
+        return [src[rec[key]]["Id"] for rec in records]
+
+    # -- links (symmetric m:m) --
+    def get_links(self, table, field, rec_id):
+        if table == ftp._FTP_TABLE:
+            return sorted(d for (f, d) in self.links if f == rec_id)
+        return sorted(f for (f, d) in self.links if d == rec_id)
+
+    def create_links(self, table, field, rec_id, targets):
+        for t in targets:
+            self.links.add((rec_id, t) if table == ftp._FTP_TABLE else (t, rec_id))
+
+    def delete_links(self, table, field, rec_id, targets):
+        for t in targets:
+            self.links.discard((rec_id, t) if table == ftp._FTP_TABLE else (t, rec_id))
+
+
+def _match_tracker(db, files=None):
+    cfg = {"host": "h", "user": "u", "password": "pw", "port": 22,
+           "heartbeat_interval": 60, "scan_batch": 50, "link_batch": 100}
+    with patch.object(ftp, "_load_ftp_config", return_value=cfg):
+        mgr = FTPSiteManager(db)
+    mgr._sftp = _FakeFileSFTP(files or {})
+    mgr._connected_at = time.monotonic()
+    return mgr
+
+
+_BIG = bytes((i * 13) % 256 for i in range(400000))
+_BIG_FP = f"{len(_BIG)}:{_sha(_BIG[:ftp._FP_CHUNK])}:{_sha(_BIG[-ftp._FP_CHUNK:])}"
+
+
+class TestMatching(unittest.TestCase):
+    def test_links_doc_with_matching_fingerprint(self):
+        db = _MatchDB()
+        fid = db.add_ftp("/a/1.pdf", 500, fp="500:h:t")
+        did = db.add_doc("https://commons.wikimedia.org/wiki/File:x.pdf", 500, fp="500:h:t")
+        _match_tracker(db)._drain_match_queue()
+        self.assertIn((fid, did), db.links)
+        self.assertTrue(db.ftp["/a/1.pdf"]["match_checked"])
+
+    def test_no_link_when_fingerprint_differs(self):
+        db = _MatchDB()
+        fid = db.add_ftp("/a/1.pdf", 500, fp="500:h:t")
+        did = db.add_doc("https://commons.wikimedia.org/wiki/File:x.pdf", 500, fp="500:OTHER:t")
+        _match_tracker(db)._drain_match_queue()
+        self.assertEqual(db.links, set())
+        self.assertTrue(db.ftp["/a/1.pdf"]["match_checked"])
+
+    def test_one_doc_links_every_byte_identical_ftp_path(self):
+        db = _MatchDB()
+        f1 = db.add_ftp("/Cherkassy/8-1-1.pdf", 500, fp="500:h:t")
+        f2 = db.add_ftp("/Chigirin/8-1-1.pdf", 500, fp="500:h:t")
+        did = db.add_doc("https://commons.wikimedia.org/wiki/File:x.pdf", 500, fp="500:h:t")
+        _match_tracker(db)._drain_match_queue()
+        self.assertEqual(db.links, {(f1, did), (f2, did)})
+
+    def test_one_ftp_row_links_commons_and_wikisource(self):
+        db = _MatchDB()
+        fid = db.add_ftp("/a/1.pdf", 500, fp="500:h:t")
+        d1 = db.add_doc("https://commons.wikimedia.org/wiki/File:x.pdf", 500, fp="500:h:t")
+        d2 = db.add_doc("https://uk.wikisource.org/wiki/File:x.pdf", 500, fp="500:h:t")
+        _match_tracker(db)._drain_match_queue()
+        self.assertEqual(db.links, {(fid, d1), (fid, d2)})
+
+    def test_computes_ftp_fingerprint_when_missing(self):
+        db = _MatchDB()
+        fid = db.add_ftp("/a/big.pdf", len(_BIG), fp=None)
+        did = db.add_doc("https://commons.wikimedia.org/wiki/File:x.pdf",
+                         len(_BIG), fp=_BIG_FP)
+        mgr = _match_tracker(db, files={"/a/big.pdf": _BIG})
+        mgr._drain_match_queue()
+        self.assertEqual(db.ftp["/a/big.pdf"]["content_fp"], _BIG_FP)
+        self.assertIn((fid, did), db.links)
+
+    def test_computes_doc_fingerprint_via_wiki(self):
+        db = _MatchDB()
+        fid = db.add_ftp("/a/1.pdf", 500, fp="500:h:t")
+        did = db.add_doc("https://commons.wikimedia.org/wiki/File:x.pdf", 500, fp=None)
+        with patch.object(ftp, "_fp_wiki", return_value="500:h:t"):
+            _match_tracker(db)._drain_match_queue()
+        self.assertEqual(db.docs[list(db.docs)[0]]["content_fp"], "500:h:t")
+        self.assertIn((fid, did), db.links)
+
+    def test_row_stays_unchecked_when_wiki_fp_unavailable(self):
+        db = _MatchDB()
+        db.add_ftp("/a/1.pdf", 500, fp="500:h:t")
+        db.add_doc("https://commons.wikimedia.org/wiki/File:x.pdf", 500, fp=None)
+
+        def down(url):
+            raise ftp._FingerprintUnavailable("rate limited")
+
+        with patch.object(ftp, "_fp_wiki", down):
+            _match_tracker(db)._drain_match_queue()
+
+        self.assertFalse(db.ftp["/a/1.pdf"]["match_checked"])   # left for retry
+        self.assertEqual(db.links, set())                       # no conclusion drawn
+
+    def test_link_kept_when_a_candidate_cannot_be_fingerprinted(self):
+        db = _MatchDB()
+        fid = db.add_ftp("/a/1.pdf", 500, fp="500:h:t")
+        d1 = db.add_doc("https://commons.wikimedia.org/wiki/File:x.pdf", 500, fp="500:h:t")
+        d2 = db.add_doc("https://uk.wikisource.org/wiki/File:x.pdf", 500, fp=None)
+        db.links.add((fid, d1))                     # existing good link
+
+        def flaky(url):
+            if "wikisource" in url:
+                raise ftp._FingerprintUnavailable("down")
+            return "500:h:t"
+
+        with patch.object(ftp, "_fp_wiki", flaky):
+            _match_tracker(db)._drain_match_queue()
+
+        self.assertIn((fid, d1), db.links)          # not dropped on incomplete info
+        self.assertFalse(db.ftp["/a/1.pdf"]["match_checked"])
+
+    def test_stale_link_removed_when_fp_no_longer_matches(self):
+        db = _MatchDB()
+        fid = db.add_ftp("/a/1.pdf", 500, fp="500:h:t")
+        did = db.add_doc("https://commons.wikimedia.org/wiki/File:x.pdf", 500, fp="500:NOW:different")
+        db.links.add((fid, did))
+        _match_tracker(db)._drain_match_queue()
+        self.assertEqual(db.links, set())
+
+    def test_on_documents_changed_requeues_rows(self):
+        db = _MatchDB()
+        url = "https://commons.wikimedia.org/wiki/File:x.pdf"
+        fid_same = db.add_ftp("/a/1.pdf", 500, fp="500:h:t")
+        fid_old = db.add_ftp("/a/2.pdf", 999, fp="999:h:t")
+        did = db.add_doc(url, 500, fp="500:h:t")
+        db.ftp["/a/1.pdf"]["match_checked"] = True
+        db.ftp["/a/2.pdf"]["match_checked"] = True
+        db.links.add((fid_old, did))          # a stale link from before a size change
+
+        _match_tracker(db).on_documents_changed([{"url": url, "byte_size": 500}])
+
+        self.assertIsNone(db.docs[url]["content_fp"])          # forced re-fingerprint
+        self.assertFalse(db.ftp["/a/1.pdf"]["match_checked"])  # same-size candidate
+        self.assertFalse(db.ftp["/a/2.pdf"]["match_checked"])  # currently-linked (old size)
 
 
 if __name__ == "__main__":

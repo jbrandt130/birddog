@@ -627,6 +627,16 @@ PROFILES: Dict[str, HostProfile] = {
         transient_cooldown_s=(0.2, 0.6),
         max_in_flight=4,
     ),
+    # upload.wikimedia.org serves the original media files (byte-range reads for
+    # the FTP<->Documents fingerprint match). It answers 403 with a robot-policy
+    # message when pushed, so keep this conservative.
+    "upload.wikimedia.org:api": HostProfile(
+        initial_rps=1.0, min_rps=0.1, max_rps=4.0, bucket_capacity=3.0,
+        ai_step=0.10, increase_every_s=30.0,
+        md_429=0.5, md_transient=0.8,
+        transient_cooldown_s=(0.5, 1.5),
+        max_in_flight=2,
+    ),
     "translation.googleapis.com:api": HostProfile(
         initial_rps=2.0, min_rps=0.2, max_rps=20.0, bucket_capacity=5.0,
         ai_step=0.25, increase_every_s=20.0,
@@ -915,7 +925,10 @@ def fetch_url(
     """
 
     client = session or requests
-    hdrs = headers or _url_headers
+    # always carry the default User-Agent; a caller passing headers (e.g. a
+    # Range header) must not accidentally drop it - upload.wikimedia.org and
+    # others 403 a request with no UA.
+    hdrs = {**_url_headers, **(headers or {})}
 
     req = getattr(client, method.lower(), None)
     if req is None:

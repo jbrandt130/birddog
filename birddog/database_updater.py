@@ -1215,8 +1215,25 @@ class DatabaseUpdater:
 
         doc_ids = self._db.write("Documents", doc_update) if doc_update else []
         doc_records_changed = bool(doc_ids)
+        if doc_ids:
+            self._notify_ftp_manager(doc_update)
         _logger.info(f"Updater.update_doc_records {tid}: finished")
         return doc_records_changed
+
+    def _notify_ftp_manager(self, doc_update):
+        """
+        Tell the FTPSiteManager which Documents just changed so it can re-check
+        the Documents<->FTP Repo relation. Fires for every written record (not
+        just byte_size changes): an availability flip because a wiki file was
+        deleted or moved must also drop or re-evaluate the FTP-side links.
+        """
+        mgr = getattr(self._runtime, "ftp_manager", None) if self._runtime else None
+        if mgr is None or not doc_update:
+            return
+        try:
+            mgr.on_documents_changed(doc_update)
+        except Exception as e:
+            _logger.warning(f"Updater: ftp_manager.on_documents_changed failed: {e}")
 
     def get_docs_with_missing_metadata(self, limit=100):
         rec, _ = self._db.scan("Documents", view_name="BD:Missing Metadata", fields="url", limit=limit)

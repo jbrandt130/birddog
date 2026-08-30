@@ -41,9 +41,11 @@ from birddog.fetch import FetchUrlFailError
 _ENABLE_DB_SYNC = True
 _ENABLE_DB_HOUSEKEEPING = True
 _ENABLE_DOC_TRACKER = True
+_ENABLE_FTP_MANAGER = True
 if _ENABLE_DB_SYNC:
     from birddog.database_updater import DatabaseUpdater, DatabaseUpdateManager
     from birddog.database import Database
+    from birddog.ftp import FTPSiteManager
 
 from birddog.log import get_logger, ServiceLogger, EventLogger
 _logger = get_logger()
@@ -291,12 +293,21 @@ class Runtime:
                 self._commons_doc_tracker = None
                 self._wikisource_doc_tracker = None
 
+            self._ftp_manager = None
+            if _ENABLE_FTP_MANAGER:
+                try:
+                    self._ftp_manager = FTPSiteManager(self._database)
+                except Exception as err:
+                    # a missing/broken ftp_config must not take down the service
+                    _logger.warning(f"Runtime: FTP site manager disabled: {err}")
+
         else:
             self._database = None
             self._database_updater = None
             self._database_update_manager = None
             self._commons_doc_tracker = None
             self._wikisource_doc_tracker = None
+            self._ftp_manager = None
 
 
         self._killswitch = KillSwitch(self)
@@ -337,6 +348,8 @@ class Runtime:
                 self._commons_doc_tracker.start()
             if self._wikisource_doc_tracker:
                 self._wikisource_doc_tracker.start()
+            if self._ftp_manager:
+                self._ftp_manager.start()
             self._killswitch.start()
             self._state = "running"
 
@@ -352,6 +365,8 @@ class Runtime:
                 self._commons_doc_tracker.hold()
             if self._wikisource_doc_tracker:
                 self._wikisource_doc_tracker.hold()
+            if self._ftp_manager:
+                self._ftp_manager.hold()
             self._state = "paused"
 
     def unpause(self):
@@ -366,6 +381,8 @@ class Runtime:
                 self._commons_doc_tracker.release()
             if self._wikisource_doc_tracker:
                 self._wikisource_doc_tracker.release()
+            if self._ftp_manager:
+                self._ftp_manager.release()
             self._state = "running"
 
     def lookup_by_title(self, title):
@@ -452,4 +469,7 @@ class Runtime:
     @property
     def database_updater(self):
         return self._database_updater
-    
+
+    @property
+    def ftp_manager(self):
+        return self._ftp_manager
