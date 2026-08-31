@@ -1,4 +1,11 @@
 import os
+import sys
+
+# This explicitly adds your birddog root folder to the search path safely
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if root_path not in sys.path:
+    sys.path.insert(0, root_path)
+import random
 import re
 from typing import Any, cast
 
@@ -11,6 +18,12 @@ from read_all_locations import LocationMatcher
 from birddog.database import Database
 from birddog.log import get_logger
 from birddog.translate import translation
+
+
+def get_unique_random_integers(n, k):
+    """Returns a list of n unique random integers from 1 to k (inclusive)."""
+    random.seed()
+    return sorted(random.sample(range(1, k + 1), n))
 
 
 class FileLocationFinder:
@@ -68,10 +81,16 @@ class FileLocationFinder:
             "DAZKO":    {"location":"Uzhhorod", "cyrillic_abbr":"ДАЗкО", "location_id":"-1057311"},
             "DAZPO":    {"location":"Zaporozh'ye", "cyrillic_abbr":"ДАЗпО", "location_id":"-1060168"},
             "DISZMO":   {"location":"Ostrog", "cyrillic_abbr":"ДІСЗМО", "location_id":"-1049602"},
+            "GDA-MOD":  {"location":"Kyiv", "cyrillic_abbr":"ГДА МО", "location_id":"-1044367"},
+            "GDA-MVS":  {"location":"Kyiv", "cyrillic_abbr":"ГДА МВС", "location_id":"-1044367"},
+            "GDA-SSU":  {"location":"Kyiv", "cyrillic_abbr":"ГДА СБУ", "location_id":"-1044367"},
+            "GDA-SZRU": {"location":"Kyiv", "cyrillic_abbr":"ГДА СЗРУ", "location_id":"-1044367"},
             "ILNAN":    {"location":"Kyiv", "cyrillic_abbr":"Національний_музей_Тараса_Шевченка", "location_id":"-1044367"},
+            "IR-NBUV":  {"location":"Kyiv", "cyrillic_abbr":"ІР НБУВ", "location_id":"-1044367"},
             "KPDIMZ":   {"location":"Kamenets Podolskiy", "cyrillic_abbr":"Кам'янець-Подільський_державний_історичний_музей-заповідник", "location_id":"-1040849"},
             "KUIZA":    {"location":"Izmail", "cyrillic_abbr":"КУІзА", "location_id":"-1040491"},
             "NIAB":     {"location":"Minsk", "cyrillic_abbr":"НГАБ", "location_id":"-1946324"},
+            "NBUV":     {"location":"Kyiv", "cyrillic_abbr":"НБУВ", "location_id":"-1044367"},
             "OMELNIK":  {"location":"Kremenchuk", "cyrillic_abbr":"Трудовий_архів_виконавчого_комітету_Омельницької_сільської_ради_Кременчуцького_району_Полтавської_області", "location_id":"-1043663"},
             "OMR":      {"location":"Odesa", "cyrillic_abbr":"OMR", "location_id":"-1049092"},
             "ONU":      {"location":"Odesa", "cyrillic_abbr":"ОНУ", "location_id":"-1049092"},
@@ -81,6 +100,16 @@ class FileLocationFinder:
             "TSDAVO":   {"location":"Kyiv", "cyrillic_abbr":"ЦДАВО", "location_id":"-1044367"},
             "TSDIAL":   {"location":"Lviv", "cyrillic_abbr":"ЦДІАЛ", "location_id":"-1045268"}
         }
+
+    def find_archive_name_by_cyrillic_abbr(self, cyrillic_abbr: str) -> str | None:
+        """
+        Searches self._archive_locations for a matching 'cyrillic_abbr'
+        and returns the main key (e.g., 'AGAD') if found.
+        """
+        for key, data in self._archive_locations.items():
+            if data.get("cyrillic_abbr") == cyrillic_abbr:
+                return key
+        return None
 
     def get_doc_location(self, doc_id: int, only_smallest_locations: bool = True, debug_print: bool = False):
         """Identifies and returns the location ID for a given document.
@@ -206,6 +235,10 @@ class FileLocationFinder:
                 page_id = page.get("Id")
                 page_rec = cast(dict, self._db.read("Pages", page_id))
                 root_label = page_rec.get("root_label")
+                if root_label:
+                    # Splits at the first '-' and retains everything before it
+                    root_label = root_label.split("-", 1)[0]
+
                 if root_label in self._archive_locations:
                     archive_locs.append(self._archive_locations[root_label])
                 else:
@@ -226,64 +259,72 @@ class FileLocationFinder:
         return archive_locs
 
     def separate_region_centres(self, descriptions: set[str], debug_print: bool = False)-> tuple[set[str], list[dict]]:
+        all_words_to_delete = [
+            'court', 'Peace', 'Justice', 'Judicial', 'Investigative', 'Sentence', 'Sentences',
+            'the', 'statistical', 'economic', 'historical', 'philological', 'educational',
+            'committee', 'council', 'ministry', 'Office','Department', 'Community', 'Funds',
+            'State', 'Archive', 'Archives', 'ministers', 'University', 'institute', 'gymnasium',
+            'statistics', 'Conscription', 'branch', 'Agency', 'Society',
+            'council', 'councils', 'Judgment', 'Judgments', 'rural', "Men's", "Women's"]
+
+        # delete also the religious terms
+        religious_terms = ['Roman Catholic', 'churches', 'Church', 'synagogue', 'Jewish', 'Jews', 'rabbinate',
+                           'Spiritual', 'Theological', 'Seminary', 'Consistory', 'Orthodox', 'Assumption', 'deanery',
+                           'Trinity', 'Resurrection', 'Ascension', 'Intercession', 'Annunciation', 'Transfiguration']
+        all_words_to_delete.extend(religious_terms)
+
+        # delete also the documentation/archival terms
+        archival_noise = [
+            "Metric",
+            "Confessional",
+            "book",
+            "books",
+            "record",
+            "records",
+            "birth",
+            "marriage",
+            "death",
+            "file",
+            "files",
+            "folder",
+            "folders",
+            "document",
+            "documents",
+            "Decree",
+            "Decrees",
+            "journal",
+            "journals",
+            "magistrate",
+            "meeting",
+            "meetings",
+            "prior",
+            "to",
+            "after",
+            "year",
+            "years",
+            "century",
+        ]
+        all_words_to_delete.extend(archival_noise)
+        region_words = ["oblast", "province", "region", "voivodeship", "governorate"]
+
         descriptions_without_regions = set()
         region_centres = []
         for description in descriptions:
+            found_province = False
             for region, centre in self._regions_2_locations.items():
                 if contains_word(description, region):
+                    found_province = True
                     region_centres.append(centre)
                     if debug_print:
                         print(f"Description '{description}' identified as relating to the region with location "
                             f"'{centre['location']}', ID {centre['location_id']}")
                     break
 
-            description = remove_specific_word(description, region, False)
-            words_to_delete = ["oblast", "province", "region", "voivodeship", "governorate", 'gymnasium',
-                               'court', 'Peace', 'Justice', 'Judicial', 'Investigative', 'Sentence', 'Sentences',
-                               'the', 'statistical', 'economic', 'historical', 'philological', 'educational',
-                               'committee', 'council', 'ministry', 'Office','Department', 'Community', 'Funds',
-                               'State', 'Archives', 'deanery', 'ministers', 'University', 'institute',
-                               'statistics', 'Conscription', 'branch', 'Agency', 'Society',
-                               'council', 'councils', 'Judgment', 'Judgments', 'rural', "Men's", "Women's"]
+            words_to_delete = all_words_to_delete
+            if found_province:
+                description = remove_specific_word(description, region, False)
+                all_words_to_delete.extend(region_words)
 
-            # delete also the religious terms
-            religious_terms = ['Roman Catholic', 'churches', 'Church', 'synagogue', 'Jewish', 'Jews',
-                              'Spiritual', 'Theological', 'Seminary', 'Consistory', 'Orthodox', 'Assumption',
-                               'Trinity', 'Resurrection', 'Ascension', 'Intercession', 'Annunciation', 'Transfiguration']
-            words_to_delete.extend(religious_terms)
-
-            # delete also the documentation/archival terms
-            archival_noise = [
-                "Metric",
-                "Confessional",
-                "book",
-                "books",
-                "record",
-                "records",
-                "birth",
-                "marriage",
-                "death",
-                "file",
-                "files",
-                "folder",
-                "folders",
-                "document",
-                "documents",
-                "Decree",
-                "Decrees",
-                "journal",
-                "journals",
-                "magistrate",
-                "meeting",
-                "meetings",
-                "prior",
-                "to",
-                "after",
-                "year",
-                "years",
-                "century",
-            ]
-            words_to_delete.extend(archival_noise)
             description = remove_words_list(description, words_to_delete, True)
 
             description = replace_word(description, 'regional', 'region')
@@ -374,6 +415,13 @@ class FileLocationFinder:
         if debug_print:
             print(f"Found {len(descriptions)} descriptions {descriptions}")
         return descriptions, doc_archive_locs
+
+    def scan_database(self, **kwargs):
+        """Public wrapper to safely access the internal database scan."""
+        return self._db.scan(**kwargs)
+
+    def get_location_from_id(self, loc_id: str):
+        return self._matcher.location_name_dict.get(loc_id)
 
 
     def match_places_to_location_ids(self, doc_id: int, extracted_places: list[str],
@@ -537,13 +585,8 @@ if __name__ == "__main__":
 #    doc_id_ = 12953
 #    print(finder.get_doc_descriptions(doc_id_))
 
-#    doc_ids = [3367]
-    import random
-    def get_unique_random_integers(n, k):
-        """Returns a list of n unique random integers from 1 to k (inclusive)."""
-        random.seed()
-        return sorted(random.sample(range(1, k + 1), n))
-    doc_ids = get_unique_random_integers(20 ,37738)
+    doc_ids = [7544]
+#    doc_ids = get_unique_random_integers(20 ,37738)
 
     print(f"Document IDs to process: {doc_ids}")
     for doc_id_ in doc_ids:
