@@ -31,11 +31,7 @@ def extract_locations(descriptors: list[str], api_token: str, debug_print:bool =
 
     Sends a list of descriptor strings to the Qwen/Qwen2.5-7B-Instruct model
     via the OpenAI-compatible API and extracts geographical location mentions
-    (cities, towns, villages) from the text. The model applies specific rules:
-        - Strips adjectival suffixes (e.g., 'Skvirsky district' -> 'Skvir')
-        - Resolves district/province names to their capital city
-        - Removes settlement suffixes (village, town, city, etc.)
-        - Extracts every single location mentioned, including those in parentheses
+    (cities, towns, villages) from the text.
 
     Args:
         descriptors: List of text descriptors to analyze for locations.
@@ -260,7 +256,7 @@ def locations_to_admin_units(locations: list[str], debug_print:bool = False) -> 
                          'region', 'regions', 'republic']
     district_keywords = ['district', 'districts', 'county', 'counties', 'uezd', 'uyezd', 'volost', 'powiat', 'diocese']
     settlement_keywords = ['village', 'villages', 'town', 'towns', 'township', 'city', 'cities',
-                           'settlement', 'selsoviet', 'precinct', 'precincts']
+                           'settlement', 'selsoviet', 'precinct', 'precincts', 'Municipality']
 
     admin_units = []
     province_names = set()
