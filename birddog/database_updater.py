@@ -1223,7 +1223,7 @@ class DatabaseUpdater:
     def _notify_ftp_manager(self, doc_update):
         """
         Tell the FTPSiteManager which Documents just changed so it can re-check
-        the Documents<->FTP Repo relation. Fires for every written record (not
+        the Documents<->FTP Site relation. Fires for every written record (not
         just byte_size changes): an availability flip because a wiki file was
         deleted or moved must also drop or re-evaluate the FTP-side links.
         """

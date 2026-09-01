@@ -5,7 +5,7 @@
 FTPSiteManager - background inventory builder for the targeted SFTP repo.
 
 On each heartbeat the tracker pulls a batch of directory records from the
-"BD:Directories" view of the "FTP Repo" table (type == dir, sorted on CreatedAt),
+"BD:Directories" view of the "FTP Site" table (type == dir, sorted on CreatedAt),
 advancing an in-memory cursor. When the scan reaches the end of the view the
 cursor resets to the beginning, so the tracker cycles through the tree forever,
 first discovering it and then continuously refreshing it.
@@ -26,7 +26,7 @@ The root "/" is a normal row too (created by the bootstrap on an empty table),
 so it is scanned from the view and stat-checked once per sweep like any other
 directory; a top-level add or remove bumps its mtime and triggers a re-list.
 
-FTPSiteManager also maintains the many-to-many relation between "FTP Repo" PDF
+FTPSiteManager also maintains the many-to-many relation between "FTP Site" PDF
 rows and "Documents". Each heartbeat, after the inventory pass, it match-checks a
 slice of the "BD:Need Match Check" view: for a PDF row it computes a content
 fingerprint (size + sha1 of the first and last 64 KB, read over SFTP), finds
@@ -70,10 +70,10 @@ logging.getLogger("paramiko").setLevel(logging.WARNING)
 logging.getLogger("paramiko.transport").setLevel(logging.CRITICAL)
 
 _FTP_CONFIG_PATH        = "resources/ftp_config.json"
-_FTP_TABLE              = "FTP Repo"
-_FTP_LINK_FIELD         = "source_docs"      # FTP Repo -> Documents (m:m)
+_FTP_TABLE              = "FTP Site"
+_FTP_LINK_FIELD         = "source_docs"      # FTP Site -> Documents (m:m)
 _DOC_TABLE              = "Documents"
-_DOC_LINK_FIELD         = "ftp_items"        # Documents -> FTP Repo (m:m)
+_DOC_LINK_FIELD         = "ftp_items"        # Documents -> FTP Site (m:m)
 _FTP_DIR_VIEW           = "BD:Directories"
 _FTP_MATCH_VIEW         = "BD:Need Match Check"
 _KEEP_SUFFIXES          = frozenset({"pdf"})
@@ -524,7 +524,7 @@ class FTPSiteManager(HeartbeatManager):
         if self._cursor is None:
             self._end_sweep()
 
-        # maintain the Documents <-> FTP Repo relation for a slice of the
+        # maintain the Documents <-> FTP Site relation for a slice of the
         # "needs match check" backlog, on the same connection/thread.
         self._drain_match_queue()
 

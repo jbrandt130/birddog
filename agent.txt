@@ -1,0 +1,117 @@
+BD THOUGHTS
+
+A. Birddog Monitoring Agent
+
+    Duties:
+
+    1. Periodically (3-4x daily), wake up, check logs, look for anomalies.
+    2. If anomaly found, investigate, determine cause, propose solution.
+    3. Contact (email) developer (me) with issue summary and proposed solution. 
+    4. Await response, possibilities:
+        1. Approve: implement fix, test, deploy, push changes if any, monitor outcome.
+        2. Discuss: enter a dialog session to address the issue.
+        3. Dismiss: issue is dismissed with feedback.
+    5. Periodically (daily?) send BD activity summary.
+        - User activity
+        - Page table update summary
+        - Document table update summary
+        - FTP Site update summary
+        - Resource usage metrics (S3, DDB, Nocodb)
+        - AWS cost summary
+        - Anomaly report(s), if any
+
+    Meta questions:
+
+    1. How best to communicate?
+    2. Cost management
+    3. Security
+
+    Extra credit:
+
+    1. Propose new features, UX improvements, code review, security check, ... 
+    2. BD alarms to wake up the agent?
+
+B. Wiki change reporting filter:
+
+    Goal: Reduce overall BD alerts by filtering insignificant changes.
+
+    Categories of insignificant change:
+
+    1. Whitespace only
+    2. Metadata only
+    3. Category links only
+    4. No change to cached page content
+    5. Links unchanged
+    6. ...?
+
+    Implies that wikitext is retrieved for every watched page change.
+    Avoid over-reacting to high frequency updates.
+    Slow cycle across watchlists in background. 
+    Check each unchecked unresolved change that is older than e.g. 15 minutes.
+    Evaluate individually, relative to reference version (watchlist-specific).
+    Set flag on unresolved item if change is insignificant.
+    Insignificance check should be relatively simple set of rules - not LLM-based.
+    If new change comes in on an "insignificant" change, clear the flag.
+    UI toggle to hide all insignificant changes in watchlist view.
+    On deep resolve, subsidiary changes are resolved, even if insignificant.
+    If toggle is allowing insignificant changes to be shown,
+        A change flagged as "insignificant" has a checkbox/icon 
+        Ticking it clears the "insignificant" flag
+        Extra credit: 
+            cleared "insignificant" flags are fed back to improve the classifier 
+
+    Extra credit: What is a more effective UX for alert reporting and processing?
+
+C. Document Auto-Triage
+
+    Categories of "auto-triage":
+
+        1. Document source location
+        2. Document type (vital, census, ...)
+        3. Jewish priority
+        4. Cost/benefit estimate (i.e. dense/low yield vs. sparse/high yield)
+
+    Staged Structure:
+
+        1. Stage 1: Low-cost initial triage (classify or pass to next stage) using 
+            - pattern matching
+            - keywords
+            - simple metadata analysis
+            - context (opus, fond, archive)
+        2. Stage 2: LLM-backstop
+
+    LLM interface funneled through an "AIManager":
+        - singleton controls and throttles overall usage
+        - manages: 
+            - multiple contexts with cached prompts
+            - diverse models/services
+            - async request/response interface
+
+D. Metadata extraction
+
+    Goal is to extract Jewish genealogical records from archive documents.
+    Aim is high recall and precision.
+    Should also flag documents requiring deeper (human) review.
+    Architecture needs to allow for human feedback and improvement:
+        - e.g. subset of docs submitted to human review
+        - result of human review is fed back to extractor
+    Controllable cost (prioritize on high cost-benefit, throttle resource costs).
+    How many records to be stored - is nocodb too heavyweight? Should scale to 10M+.
+        - how about DDB cache backed by S3 long-term store? or just S3?
+    Metadata schema (need to get from Caitlin):
+        Name, date, location, record_type, related records, ...
+    Spreadsheet export for Joyce
+    Linkage to document db (document id)
+
+E. How to identify and link documents that are "nearly" similar?
+
+    Not byte-equal, but content equivalent...
+    Same number of pages?
+    Each page is visually equivalent (rate corresponding pages in relative quality?)
+        - what if a page is imaged differently, so perhaps having a different crop or background?
+    Handle case that documents have overlapping pages, but some independent pages
+    Deal with different document versions under the smae url (hence same Documents table record)
+
+F. Roles and Workflow:
+
+    ...
