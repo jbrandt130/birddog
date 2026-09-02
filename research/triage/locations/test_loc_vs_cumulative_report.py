@@ -137,8 +137,12 @@ class LocationPerformanceEvaluator:
             if doc_location_ids_set == cumulative_locations_ids_set:
                 msg = f"Record {file}, document ID {doc_id}, all locations coincide"
             else:
-                msg = (f"Record {file}, document ID {doc_id}, {len(cumulative_locations_ids_set)} "
-                       f"assumed locations: {cumulative_towns}, identified {len(doc_location_ids_set)}:")
+                msg = f"Record {file}, document ID {doc_id}, {len(cumulative_locations_ids_set)} assumed locations: "
+                for loc_id in cumulative_locations_ids_set:
+                    location = self.file_location_finder.get_location_from_id(str(loc_id))
+                    if location:
+                        msg = f"{msg} {location["main_name"]}"
+                msg = f"{msg}; identified {len(doc_location_ids_set)}:"
                 for loc_id in doc_location_ids_set:
                     location = self.file_location_finder.get_location_from_id(str(loc_id))
                     if location:
@@ -158,9 +162,15 @@ class LocationPerformanceEvaluator:
         rows = get_unique_random_integers(max_num_docs, self.total_data_rows)
         rows = [row + 1 for row in rows] # the first row is the header
         for row in rows:
-            file, town_list = self.get_file_towns_from_cumulative_report(row)
-            if file and town_list and (doc_id := self.get_doc_id(file)):
-                self.evaluate_on_one_doc(doc_id, town_list, file, skip_extraction, debug_print)
+            try:
+                file, town_list = self.get_file_towns_from_cumulative_report(row)
+                if file and town_list and (doc_id := self.get_doc_id(file)):
+                    print(f"Processing document number {self.num_evaluated_docs} with ID {doc_id}")
+                    self.evaluate_on_one_doc(doc_id, town_list, file, skip_extraction, debug_print)
+            except ValueError as err:
+                print(err)
+                continue
+
         self.print_statistics(max_num_docs)
 
 
@@ -208,9 +218,9 @@ class LocationPerformanceEvaluator:
 if __name__ == "__main__":
     report_path = r"C:\Users\user\PycharmProjects\birddog\research\triage\Cumulative Ukraine Research Report.xlsx"
     evaluator = LocationPerformanceEvaluator(report_path)
-#    cumulative_file = "ДААРК 142-1-129"
+    cumulative_file = "ЦДІАК 1167-1-132"
 #    print(evaluator.get_doc_id(cumulative_file))
-    evaluator.evaluate_location_extraction(600, False, True)
-#    file_, town_list_ = evaluator.get_file_towns_from_cumulative_report(1618)
+    evaluator.evaluate_location_extraction(200, False, True)
+#    file_, town_list_ = evaluator.get_file_towns_from_cumulative_report(5289)
 #    if file_ and town_list_ and (doc_id := evaluator.get_doc_id(file_)):
 #        evaluator.evaluate_on_one_doc(doc_id, town_list_, file_, False, True)

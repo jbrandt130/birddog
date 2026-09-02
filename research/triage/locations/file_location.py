@@ -26,6 +26,73 @@ def get_unique_random_integers(n, k):
     return sorted(random.sample(range(1, k + 1), n))
 
 
+def delete_nuisance_words(descriptions: set[str], debug_print: bool = False)-> set[str]:
+    all_words_to_delete = [
+        'court', 'Peace', 'Justice', 'Judicial', 'Investigative', 'Sentence', 'Sentences',
+        'the', 'statistical', 'economic', 'historical', 'philological', 'educational',
+        'committee', 'council', 'ministry', 'Office','Department', 'Community', 'Funds',
+        'State', 'Archive', 'Archives', 'ministers', 'University', 'institute', 'gymnasium',
+        'statistics', 'Conscription', 'branch', 'Agency', 'Society',
+        'council', 'councils', 'Judgment', 'Judgments', 'rural', "Men's", "Women's"]
+
+    # delete also the religious terms
+    religious_terms = ['Roman Catholic', 'churches', 'Church', 'synagogue', 'Jewish', 'Jews', 'rabbinate',
+                       'Spiritual', 'Theological', 'Seminary', 'Consistory', 'Orthodox', 'Assumption', 'deanery',
+                       'Trinity', 'Resurrection', 'Ascension', 'Intercession', 'Annunciation', 'Transfiguration']
+    all_words_to_delete.extend(religious_terms)
+
+    # delete also the documentation/archival terms
+    archival_noise = [
+        "after",
+        "birth",
+        "book",
+        "books",
+        "confessional",
+        "death",
+        "Decree",
+        "Decrees",
+        "divorce",
+        "document",
+        "documents",
+        "file",
+        "files",
+        "folder",
+        "folders",
+        "journal",
+        "journals",
+        "magistrate",
+        "marriage",
+        "matriculation",
+        "meeting",
+        "meetings",
+        "metric",
+        "prior",
+        "record",
+        "records",
+        "registry",
+        "to",
+        "year",
+        "years",
+    ]
+    all_words_to_delete.extend(archival_noise)
+
+    shortened_descriptions = set()
+    for description in descriptions:
+        description = remove_words_list(description, all_words_to_delete, True)
+
+        description = replace_word(description, 'regional', 'region')
+        description = replace_word(description, 'provincial', 'province')
+        description = description.replace(" of ", " ")
+        description = description.replace(" and ", ", ")
+
+        if debug_print:
+            print(f"Description shortened to '{description}'")
+
+        shortened_descriptions.add(description)
+
+    return shortened_descriptions
+
+
 class FileLocationFinder:
     def __init__(self, debug_print: bool = False):
         self._logger = get_logger()
@@ -43,6 +110,7 @@ class FileLocationFinder:
             "Ruthenia":         {"location":"Uzhhorod",     "location_id":"-1057311"},
             "Tavriya":          {"location":"Simferopol",   "location_id":"-1054041"},
             "Transcarpathia":   {"location":"Uzhhorod",     "location_id":"-1057311"},
+            "Ukraine":          {"location":"Kyiv",         "location_id":"-1044367"},
             "Volhynia":         {"location":"Lutsk",        "location_id":"-1045249"},
             "Volyn":            {"location":"Lutsk",        "location_id":"-1045249"},
             "Zakarpattia":      {"location":"Uzhhorod",     "location_id":"-1057311"}
@@ -135,7 +203,8 @@ class FileLocationFinder:
         hf_token = os.getenv("HF_TOKEN", "")  # For session management
 
         descriptions, doc_archive_locs = self.get_doc_descriptions(doc_id, debug_print)
-        descriptions, region_centres = self.separate_region_centres(descriptions, debug_print)
+        descriptions, region_centres = self.extract_region_centres(descriptions, debug_print)
+        descriptions = delete_nuisance_words(descriptions, debug_print)
         extracted_places = extract_locations(list(descriptions), hf_token, debug_print)
         identified_locations = self.match_places_to_location_ids(doc_id, extracted_places, debug_print)
 
@@ -258,86 +327,69 @@ class FileLocationFinder:
         )
         return archive_locs
 
-    def separate_region_centres(self, descriptions: set[str], debug_print: bool = False)-> tuple[set[str], list[dict]]:
-        all_words_to_delete = [
-            'court', 'Peace', 'Justice', 'Judicial', 'Investigative', 'Sentence', 'Sentences',
-            'the', 'statistical', 'economic', 'historical', 'philological', 'educational',
-            'committee', 'council', 'ministry', 'Office','Department', 'Community', 'Funds',
-            'State', 'Archive', 'Archives', 'ministers', 'University', 'institute', 'gymnasium',
-            'statistics', 'Conscription', 'branch', 'Agency', 'Society',
-            'council', 'councils', 'Judgment', 'Judgments', 'rural', "Men's", "Women's"]
 
-        # delete also the religious terms
-        religious_terms = ['Roman Catholic', 'churches', 'Church', 'synagogue', 'Jewish', 'Jews', 'rabbinate',
-                           'Spiritual', 'Theological', 'Seminary', 'Consistory', 'Orthodox', 'Assumption', 'deanery',
-                           'Trinity', 'Resurrection', 'Ascension', 'Intercession', 'Annunciation', 'Transfiguration']
-        all_words_to_delete.extend(religious_terms)
-
-        # delete also the documentation/archival terms
-        archival_noise = [
-            "Metric",
-            "Confessional",
-            "book",
-            "books",
-            "record",
-            "records",
-            "birth",
-            "marriage",
-            "death",
-            "file",
-            "files",
-            "folder",
-            "folders",
-            "document",
-            "documents",
-            "Decree",
-            "Decrees",
-            "journal",
-            "journals",
-            "magistrate",
-            "meeting",
-            "meetings",
-            "prior",
-            "to",
-            "after",
-            "year",
-            "years",
-            "century",
-        ]
-        all_words_to_delete.extend(archival_noise)
-        region_words = ["oblast", "province", "region", "voivodeship", "governorate"]
-
-        descriptions_without_regions = set()
-        region_centres = []
+    def extract_region_centres(self, descriptions: set[str], debug_print: bool = False)-> tuple[set[str], list[dict]]:
+        descriptions_after_extraction = []
+        total_region_centres = []
         for description in descriptions:
-            found_province = False
-            for region, centre in self._regions_2_locations.items():
-                if contains_word(description, region):
-                    found_province = True
-                    region_centres.append(centre)
-                    if debug_print:
-                        print(f"Description '{description}' identified as relating to the region with location "
-                            f"'{centre['location']}', ID {centre['location_id']}")
-                    break
+            description_after_extraction, region_centres = self.remove_sentences_with_words(description, debug_print)
+            descriptions_after_extraction.append(description_after_extraction)
+            total_region_centres.extend(region_centres)
 
-            words_to_delete = all_words_to_delete
-            if found_province:
-                description = remove_specific_word(description, region, False)
-                all_words_to_delete.extend(region_words)
+        descriptions_after_extraction = set(descriptions_after_extraction)
 
-            description = remove_words_list(description, words_to_delete, True)
+        return descriptions_after_extraction, total_region_centres
+        
+    def remove_sentences_with_words(self, text: str, debug_print: bool = False) -> tuple[str, list[dict]]:
+        target_words =  self._regions_2_locations.keys()
+        # Convert target words to lowercase for case-insensitive matching
+        words_to_check = {word.lower() for word in target_words}
 
-            description = replace_word(description, 'regional', 'region')
-            description = replace_word(description, 'provincial', 'province')
-            description = description.replace(" of ", " ")
-            description = description.replace(" and ", ", ")
+        # Split text by dots, preserving the dots in the list
+        sentences = re.split(r"(\.)", text)
 
-            if debug_print:
-                print(f"Description shortened to '{description}'")
+        cleaned_pieces = []
+        found_words = set()
 
-            descriptions_without_regions.add(description)
+        # Process sentences in pairs (the text and its trailing dot)
+        for i in range(0, len(sentences) - 1, 2):
+            sentence = sentences[i]
+            dot = sentences[i + 1]
 
-        return descriptions_without_regions, region_centres
+            # Clean sentence punctuation to isolate words
+            clean_words = set(re.findall(r"\b\w+\b", sentence.lower()))
+
+            # Find matches between this sentence and target words
+            matches = words_to_check.intersection(clean_words)
+
+            if matches:
+                found_words.update(matches)
+                if debug_print:
+                    print(f"Deleting the sentence: '{sentence}'")
+            else:
+                cleaned_pieces.append(sentence + dot)
+
+        # Handle any remaining text if the string did not end with a dot
+        if len(sentences) % 2 != 0 and sentences[-1]:
+            sentence = sentences[-1]
+            clean_words = set(re.findall(r"\b\w+\b", sentence.lower()))
+            matches = words_to_check.intersection(clean_words)
+            if matches:
+                found_words.update(matches)
+                if debug_print:
+                    print(f"Deleting the sentence: '{sentence}'")
+            else:
+                cleaned_pieces.append(sentence)
+
+        # Map lowercase found words back to their original casing from target_words
+        original_casing_found = [
+            word for word in target_words if word.lower() in found_words
+        ]
+
+        original_casing_found = set(original_casing_found)
+        region_centres = [self._regions_2_locations[key] for key in original_casing_found]
+        return "".join(cleaned_pieces).strip(), region_centres
+
 
     def get_doc_descriptions(self, doc_id: int, debug_print: bool = False)-> tuple[set[str], list[dict]]:
         """Retrieves and compiles descriptions and storage locations for a document.
@@ -585,9 +637,24 @@ if __name__ == "__main__":
 #    doc_id_ = 12953
 #    print(finder.get_doc_descriptions(doc_id_))
 
-    doc_ids = [7544]
+    doc_ids = [58857]
 #    doc_ids = get_unique_random_integers(20 ,37738)
 
     print(f"Document IDs to process: {doc_ids}")
     for doc_id_ in doc_ids:
         finder.get_doc_location(doc_id_, only_smallest_locations=False, debug_print=debug_print_)
+
+#    # --- Example Usage for remove_sentences_with_words ---
+#    text_sample = (
+#        "The quick brown fox jumps. The lazy dog sleeps. A beautiful day outside."
+#    )
+#    words_list = ["Dog", "fox", "cat"]
+
+#    cleaned_text, words_found = remove_sentences_with_words(text_sample, words_list)
+
+#    print("Cleaned Text:", repr(cleaned_text))
+#    print("Words Found :", words_found)
+
+# Output:
+# Cleaned Text: 'A beautiful day outside.'
+# Words Found : ['Dog', 'fox']

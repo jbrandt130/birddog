@@ -207,15 +207,18 @@ def extract_locations(descriptors: list[str], api_token: str, debug_print:bool =
 
 
 def check_and_trim_keywords(loc: str, keywords: list[str]) -> tuple[bool, str]:
-    # check keywords as prefixes
+    # Convert base location to lowercase for case-insensitive checking
+    loc_lower = loc.lower()
+
+    # Check keywords as prefixes
     for keyword in keywords:
-        if loc.startswith(keyword):
+        if loc_lower.startswith(keyword):
             trimmed = loc[len(keyword) + 1 :]
             return True, trimmed
 
-    # check keywords as suffixes
+    # Check keywords as suffixes
     for keyword in keywords:
-        if loc.endswith(keyword):
+        if loc_lower.endswith(keyword):
             trimmed = loc[: -(len(keyword) + 1)]
             return True, trimmed
 
@@ -252,11 +255,12 @@ def locations_to_admin_units(locations: list[str], debug_print:bool = False) -> 
                                   2 = province/governorate/oblast/voivodeship (provincial level)
                              }
     """
-    province_keywords = ['province', 'provinces', 'governorate', 'oblast', 'gubernia', 'voivodeship',
-                         'region', 'regions', 'republic']
+    # all these must be lowercase
+    province_keywords = ['governorate', 'gubernia', 'oblast', 'province', 'provinces',
+                         'region', 'regions', 'republic', 'voivodeship']
     district_keywords = ['district', 'districts', 'county', 'counties', 'uezd', 'uyezd', 'volost', 'powiat', 'diocese']
     settlement_keywords = ['village', 'villages', 'town', 'towns', 'township', 'city', 'cities',
-                           'settlement', 'selsoviet', 'precinct', 'precincts', 'Municipality']
+                           'settlement', 'selsoviet', 'precinct', 'precincts', 'municipality', 'mr.']
 
     admin_units = []
     province_names = set()
