@@ -1,3 +1,12 @@
+import sys
+
+import requests
+import urllib3
+
+# Forcefully patch the missing namespace back into the global requests module
+sys.modules['requests.packages'] = requests
+sys.modules['requests.packages.urllib3'] = urllib3
+
 import os
 import re
 import time
@@ -1775,7 +1784,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
     for page_url, linked_docs in doc_link_dict.items():
         page_id = page_dict[page_url]["Id"]
         page_title = page_dict[page_url]["title"]
-        linked_ids = [output_docs[d["url"]]["Id"] for d in doc_link_dict[page_url]]
+        linked_ids = [output_docs[d["url"]]["Id"] for d in linked_docs]
         _logger.info(f"Adding doc links for {page_title} ({page_id}): {linked_ids}")
         db.create_links(
             "Pages",
@@ -1809,7 +1818,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DALO-R-wiki-20260603.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DACHKO-D-wiki-20260628.xlsx" #DASO-R-wiki-20260604.xlsx"
     import_spreadsheet(filepath, True)
-#    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\16_07"
+#    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(dir_path)
