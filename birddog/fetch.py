@@ -673,7 +673,7 @@ PROFILES: Dict[str, HostProfile] = {
     # target_capacity giving ~5 minutes of burst headroom before throughput
     # is clamped down to the steady 100/min average.
     "nocodb.cloud:api": HostProfile(
-        initial_rps=3.0, min_rps=0.2, max_rps=4.5, bucket_capacity=4.0,
+        initial_rps=1.5, min_rps=0.2, max_rps=4.5, bucket_capacity=4.0,
         ai_step=0.25, increase_every_s=20.0,
         md_429=0.5, md_transient=0.9,
         transient_cooldown_s=(0.3, 0.9),
