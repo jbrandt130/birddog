@@ -11,6 +11,7 @@ from typing import Any, cast
 
 from extract_location_from_descriptors import (
     extract_locations,
+    extract_locations_batched,
     locations_to_admin_units,
 )
 from read_all_locations import LocationMatcher
@@ -94,7 +95,7 @@ def delete_nuisance_words(descriptions: set[str], debug_print: bool = False)-> s
 
 
 class FileLocationFinder:
-    def __init__(self, debug_print: bool = False):
+    def __init__(self):
         self._logger = get_logger()
         self._db = Database()
         self._file_path = "./research/triage/locations/jg_communities_data.xlsx"
@@ -277,6 +278,105 @@ class FileLocationFinder:
                 print(msg)
 
         return identified_locations
+
+    def get_doc_locations_batched(
+        self,
+        doc_ids: list[int],
+        batch_size: int = 20,
+        only_smallest_locations: bool = True,
+        debug_print: bool = False,
+    ) -> dict[int, list[str]]:
+        """Identifies locations for multiple documents in batched API calls.
+
+        Gathers descriptors for all doc_ids, sends them in batches of batch_size
+        to the AI model in a single call per batch, then dispatches results back
+        to each doc_id using the same matching logic as get_doc_location.
+
+        Args:
+            doc_ids: List of document IDs to process.
+            batch_size: Maximum number of documents per API call (default 20).
+            only_smallest_locations: Passed through to the per-doc location matching.
+            debug_print: Passed through to per-doc location matching.
+
+        Returns:
+            dict[int, list[str]]: mapping from doc_id to list of location IDs.
+        """
+        hf_token = os.getenv("HF_TOKEN", "")
+
+        # Step 1: Gather descriptors + archive locs + region centres for every doc upfront
+        # (avoids re-reading each doc twice)
+        per_doc_inputs: list[dict] = []
+        all_descr_lists: list[list[str]] = []
+        for doc_id in doc_ids:
+            descriptions, doc_archive_locs = self.get_doc_descriptions(doc_id, debug_print)
+            descriptions, region_centres = self.extract_region_centres(
+                descriptions, debug_print
+            )
+            cleaned = delete_nuisance_words(descriptions, debug_print)
+            per_doc_inputs.append({
+                "doc_archive_locs": doc_archive_locs,
+                "region_centres": region_centres,
+            })
+            all_descr_lists.append(list(cleaned))
+
+        # Step 2: Batched AI extraction — one call per batch_size docs
+        all_extracted = extract_locations_batched(
+            all_descr_lists, hf_token, batch_size=batch_size, debug_print=debug_print
+        )
+
+        # Step 3: Dispatch results back to each doc
+        def _freeze_dict(d):
+            return frozenset(
+                (k, frozenset(v) if isinstance(v, set) else v) for k, v in d.items()
+            )
+
+        results: dict[int, list[str]] = {}
+        for doc_id, extracted_places, doc_input in zip(
+            doc_ids, all_extracted, per_doc_inputs
+        ):
+            identified_locations = self.match_places_to_location_ids(
+                doc_id, extracted_places, debug_print
+            )
+
+            doc_archive_locs = doc_input["doc_archive_locs"]
+            region_centres = doc_input["region_centres"]
+
+            frozen_union = {_freeze_dict(d) for d in doc_archive_locs} | {
+                _freeze_dict(d) for d in region_centres
+            }
+            united_list = [dict(f_set) for f_set in frozen_union]
+
+            for location in united_list:
+                loc_id = location["location_id"]
+                location = self._matcher.location_name_dict.get(loc_id)
+                if location:
+                    location["administrative_level"] = 2
+                    location["loc_id"] = loc_id
+                    hashable_items = (
+                        (k, frozenset(v) if isinstance(v, set) else v)
+                        for k, v in location.items()
+                    )
+                    identified_locations.add(frozenset(hashable_items))
+
+            identified_locations_dict_list = [dict(f_set) for f_set in identified_locations]
+
+            if only_smallest_locations:
+                target_level = min(loc["administrative_level"] for loc in identified_locations_dict_list)
+                result = [dict_loc["loc_id"] for dict_loc in identified_locations_dict_list
+                    if dict_loc.get("administrative_level") == target_level]
+
+                if debug_print:
+                    names = [d.get("main_name") for d in identified_locations_dict_list
+                        if d.get("administrative_level") == target_level and d.get("main_name")]
+                    msg = "Most specific locations: " + " ".join(f"'{name}'" for name in names)
+                    print(msg)
+
+            else:
+                result = [dict_loc["loc_id"] for dict_loc in identified_locations_dict_list]
+
+            results[doc_id] = result
+
+        return results
 
     def get_archive_locations(self, archive_locs: list[dict], debug_print: bool, owning_pages: Any | None
     ) -> list[dict]:
@@ -633,28 +733,14 @@ def get_doc_record(db, doc_id):
 #testing
 if __name__ == "__main__":
     debug_print_ = True
-    finder = FileLocationFinder(debug_print_)
+    finder = FileLocationFinder()
 #    doc_id_ = 12953
 #    print(finder.get_doc_descriptions(doc_id_))
 
-    doc_ids = [58857]
+    doc_ids_ = [58857]
 #    doc_ids = get_unique_random_integers(20 ,37738)
 
-    print(f"Document IDs to process: {doc_ids}")
-    for doc_id_ in doc_ids:
+    print(f"Document IDs to process: {doc_ids_}")
+    for doc_id_ in doc_ids_:
         finder.get_doc_location(doc_id_, only_smallest_locations=False, debug_print=debug_print_)
 
-#    # --- Example Usage for remove_sentences_with_words ---
-#    text_sample = (
-#        "The quick brown fox jumps. The lazy dog sleeps. A beautiful day outside."
-#    )
-#    words_list = ["Dog", "fox", "cat"]
-
-#    cleaned_text, words_found = remove_sentences_with_words(text_sample, words_list)
-
-#    print("Cleaned Text:", repr(cleaned_text))
-#    print("Words Found :", words_found)
-
-# Output:
-# Cleaned Text: 'A beautiful day outside.'
-# Words Found : ['Dog', 'fox']

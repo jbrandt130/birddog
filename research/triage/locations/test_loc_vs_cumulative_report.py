@@ -135,7 +135,7 @@ class LocationPerformanceEvaluator:
 
         if debug_print:
             if doc_location_ids_set == cumulative_locations_ids_set:
-                msg = f"Record {file}, document ID {doc_id}, all locations coincide"
+                msg = f"Record {file}, document ID {doc_id}, all locations coincide: "
             else:
                 msg = f"Record {file}, document ID {doc_id}, {len(cumulative_locations_ids_set)} assumed locations: "
                 for loc_id in cumulative_locations_ids_set:
@@ -143,10 +143,10 @@ class LocationPerformanceEvaluator:
                     if location:
                         msg = f"{msg} {location["main_name"]}"
                 msg = f"{msg}; identified {len(doc_location_ids_set)}:"
-                for loc_id in doc_location_ids_set:
-                    location = self.file_location_finder.get_location_from_id(str(loc_id))
-                    if location:
-                        msg = f"{msg} {location["main_name"]}"
+            for loc_id in doc_location_ids_set:
+                location = self.file_location_finder.get_location_from_id(str(loc_id))
+                if location:
+                    msg = f"{msg} {location["main_name"]}"
             print(msg)
 
         intersection_set = doc_location_ids_set & cumulative_locations_ids_set
@@ -157,21 +157,114 @@ class LocationPerformanceEvaluator:
         self.total_num_extracted_locs += len(doc_location_ids_set)
         self.total_num_coinciding_locs += len(intersection_set)
 
-
-    def evaluate_location_extraction(self, max_num_docs:int, skip_extraction:bool = False, debug_print:bool = False):
+    def unique_random_integers(self, max_num_docs: int) -> list[int]:
         rows = get_unique_random_integers(max_num_docs, self.total_data_rows)
-        rows = [row + 1 for row in rows] # the first row is the header
+        rows = [row + 1 for row in rows]  # the first row is the header
+        return rows
+
+    def evaluate_location_extraction(
+        self,
+        rows: list[int],
+        skip_extraction: bool = False,
+        debug_print: bool = False,
+        batch_size: int = 20,
+    ):
+        max_num_docs = len(rows)
+        rows = [row + 1 for row in rows]  # the first row is the header
+
+        # Buffer: (row, file, town_list, doc_id) per document
+        pending: list[tuple[int, str, list[str], int]] = []
+        
+        msg = ''
+        if debug_print:
+            msg = 'Rows processed: '
         for row in rows:
             try:
                 file, town_list = self.get_file_towns_from_cumulative_report(row)
                 if file and town_list and (doc_id := self.get_doc_id(file)):
-                    print(f"Processing document number {self.num_evaluated_docs} with ID {doc_id}")
-                    self.evaluate_on_one_doc(doc_id, town_list, file, skip_extraction, debug_print)
+                    pending.append((row, file, town_list, doc_id))
+                    if debug_print:
+                        msg = f"{msg}{row}, "
             except ValueError as err:
                 print(err)
                 continue
 
+        if debug_print:
+            print(f"{msg}\nA total of {len(pending)}")
+
+        # Flush pending docs in batches
+        for flush_start in range(0, len(pending), batch_size):
+            chunk = pending[flush_start:flush_start + batch_size]
+            buffered_doc_ids = [item[3] for item in chunk]
+
+            # Batch-extract locations for all buffered docs
+            if not skip_extraction:
+                batch_results = self.file_location_finder.get_doc_locations_batched(
+                    buffered_doc_ids,
+                    batch_size=batch_size,
+                    only_smallest_locations=True,
+                    debug_print=debug_print,
+                )
+            else:
+                batch_results = {doc_id: [] for doc_id in buffered_doc_ids}
+
+            # Now evaluate each doc in this chunk using the batched result
+            for row, file, town_list, doc_id in chunk:
+                print(f"Processing document number {self.num_evaluated_docs} with ID {doc_id}")
+                # Swap in the batched result for the extraction step
+                self.evaluate_on_one_doc_from_batch(
+                    doc_id, town_list, file, batch_results.get(doc_id, []), debug_print
+                )
+
         self.print_statistics(max_num_docs)
+
+    def evaluate_on_one_doc_from_batch(
+        self,
+        doc_id: int,
+        cumulative_towns: list[str],
+        file: str,
+        doc_location_ids: list[str],
+        debug_print: bool,
+    ):
+        """Like evaluate_on_one_doc but takes doc_location_ids directly (already extracted)."""
+        cumulative_locations = self.file_location_finder.match_places_to_location_ids(
+            doc_id, cumulative_towns, debug_print)
+        cumulative_locations = [dict(f_set) for f_set in cumulative_locations]
+        cumulative_locations_ids = [loc["loc_id"] for loc in cumulative_locations]
+        cumulative_locations_ids_set = set(cumulative_locations_ids)
+        if len(cumulative_locations_ids_set) == 0:
+            print(f"None of the towns {cumulative_towns} for document {file} is contained in the JGDB")
+            return
+
+        doc_location_ids_set = set(doc_location_ids)
+        if doc_location_ids_set == cumulative_locations_ids_set:
+            self.num_docs_evaluated_correctly += 1
+        if cumulative_locations_ids_set.issubset(doc_location_ids_set):
+            self.num_docs_with_all_locations_found += 1
+
+        if debug_print:
+            if doc_location_ids_set == cumulative_locations_ids_set:
+                msg = f"Record {file}, document ID {doc_id}, all locations coincide: "
+            else:
+                msg = f"Record {file}, document ID {doc_id}, {len(cumulative_locations_ids_set)} assumed locations: "
+                for loc_id in cumulative_locations_ids_set:
+                    location = self.file_location_finder.get_location_from_id(str(loc_id))
+                    if location:
+                        msg = f"{msg} {location['main_name']}"
+                msg = f"{msg}; identified {len(doc_location_ids_set)}: "
+            for loc_id in doc_location_ids_set:
+                location = self.file_location_finder.get_location_from_id(loc_id)
+                if location:
+                    msg = f"{msg} {location['main_name']}"
+            print(msg)
+
+        intersection_set = doc_location_ids_set & cumulative_locations_ids_set
+
+        self.num_evaluated_docs += 1
+        self.total_num_cumulative_locs += len(set(cumulative_towns))
+        self.total_num_cumulative_locs_in_jgdb += len(cumulative_locations_ids_set)
+        self.total_num_extracted_locs += len(doc_location_ids_set)
+        self.total_num_coinciding_locs += len(intersection_set)
 
 
     def print_statistics(self, max_num_docs:int):
@@ -196,7 +289,6 @@ class LocationPerformanceEvaluator:
         record_id = None
         # get the first record with one of these labels
         for label in possible_labels:
-            records = []
             cursor = None
             while True:
                 records, cursor = self.file_location_finder.scan_database(
@@ -218,9 +310,14 @@ class LocationPerformanceEvaluator:
 if __name__ == "__main__":
     report_path = r"C:\Users\user\PycharmProjects\birddog\research\triage\Cumulative Ukraine Research Report.xlsx"
     evaluator = LocationPerformanceEvaluator(report_path)
-    cumulative_file = "ЦДІАК 1167-1-132"
+
+    debug_print_ = True
+    batch_size_ = 5
+#    rows_ = [64, 95, 155]
+    rows_ = evaluator.unique_random_integers(200)
+    evaluator.evaluate_location_extraction(rows_, False, debug_print_, batch_size_)
+#    cumulative_file = "ЦДІАК 1167-1-132"
 #    print(evaluator.get_doc_id(cumulative_file))
-    evaluator.evaluate_location_extraction(200, False, True)
 #    file_, town_list_ = evaluator.get_file_towns_from_cumulative_report(5289)
 #    if file_ and town_list_ and (doc_id := evaluator.get_doc_id(file_)):
 #        evaluator.evaluate_on_one_doc(doc_id, town_list_, file_, False, True)
