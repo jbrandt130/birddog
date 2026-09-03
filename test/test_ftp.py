@@ -417,6 +417,34 @@ class TestIncremental(unittest.TestCase):
         _run_until_stable(tracker)
         self.assertNotIn("/Odessa", tracker._sftp.calls)
 
+    def test_relist_skips_unchanged_files(self):
+        db = FakeDB()
+        tracker = _make_tracker(db, _TREE)
+        _run_until_stable(tracker)
+
+        # spy on every row handed to write()
+        orig = db.write
+        written = []
+
+        def spy(table, records):
+            rs = [records] if isinstance(records, dict) else records
+            written.extend(r["path"] for r in rs)
+            return orig(table, records)
+        db.write = spy
+
+        # adding a sibling bumps /Berdichev's mtime -> the dir is re-listed
+        tracker._sftp.set_children("/Berdichev", tracker._sftp.tree["/Berdichev"] + [
+            ("7-7-7.pdf", "file", 777, 250),
+        ])
+        _run_until_stable(tracker)
+
+        self.assertIn("/Berdichev/7-7-7.pdf", db.rows)     # new file written
+        self.assertIn("/Berdichev", tracker._sftp.calls)   # dir was re-listed
+        # the three unchanged PDFs already on record are not re-upserted
+        for p in ("/Berdichev/1-2-3.pdf", "/Berdichev/1-2-4.pdf",
+                  "/Berdichev/weird name (1).pdf"):
+            self.assertNotIn(p, written, f"unchanged file re-written: {p}")
+
     def test_root_relisted_only_when_it_changes(self):
         db = FakeDB()
         tracker = _make_tracker(db, _TREE)
@@ -643,6 +671,31 @@ class TestFingerprint(unittest.TestCase):
         with patch.object(ftp, "fetch_url", _fake_fetch(imageinfo=None)):
             self.assertIsNone(
                 _fp_wiki("https://commons.wikimedia.org/wiki/File:gone.pdf"))
+
+    def test_fp_wiki_uses_shared_repo_imageinfo_despite_missing(self):
+        # A Commons-hosted file referenced from another wiki (e.g. a
+        # uk.wikisource "Файл:" page) has no local description page, so
+        # imageinfo comes back with "missing" set AND usable file info.
+        data = bytes((i * 3) % 256 for i in range(400000))
+        sftp = _FakeFileSFTP({"/f.pdf": data})
+        want = _fp_ftp(sftp, "/f.pdf", len(data))
+
+        def fake(url, params=None, headers=None, return_json=False, **kw):
+            if return_json:
+                page = {"missing": "", "imagerepository": "shared",
+                        "imageinfo": [{"url": "https://upload.wikimedia.org/x/f.pdf",
+                                       "size": len(data), "sha1": "x"}]}
+                return {"query": {"pages": {"-1": page}}}
+            spec = (headers or {}).get("Range", "").replace("bytes=", "")
+            if spec.startswith("-"):
+                return data[-int(spec[1:]):]
+            lo, hi = spec.split("-")
+            return data[int(lo):int(hi) + 1]
+
+        with patch.object(ftp, "fetch_url", fake):
+            got = _fp_wiki(
+                "https://uk.wikisource.org/wiki/%D0%A4%D0%B0%D0%B9%D0%BB:f.pdf")
+        self.assertEqual(got, want)
 
     def test_fp_wiki_raises_when_fetch_fails(self):
         def boom(*a, **k):

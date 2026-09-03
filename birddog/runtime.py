@@ -50,6 +50,20 @@ if _ENABLE_DB_SYNC:
 from birddog.log import get_logger, ServiceLogger, EventLogger
 _logger = get_logger()
 
+# The wiki-change trackers - PageUpdateManager and the two WikiDocTrackers -
+# keep their "processed up to here" watermarks in a DynamoDB KV store that is
+# shared by every deployment in the AWS account, while their writes land in
+# whichever NocoDB base BIRDDOG_NOCODB_ENV selects. Running them against a
+# non-prod base advances that shared watermark past changes that were only
+# applied to the non-prod base, so prod then silently skips them. Gate them to
+# the prod base when running on AWS; local dev keeps its KV state in a private
+# SQLite file, so it is unaffected. (A longer-term fix is per-deployment KV
+# tables; until then this keeps stage/prod from diverging.)
+_WIKI_TRACKERS_ENABLED = (
+    detect_environment() != "aws"
+    or os.environ.get("BIRDDOG_NOCODB_ENV") == "CLOUD_PROD"
+)
+
 # ----------------------------------------------------------------------------
 # Page LRU memory cache
 
@@ -281,7 +295,7 @@ class Runtime:
             self._database_update_manager = DatabaseUpdateManager(
                 self, 
                 updater=self._database_updater)
-            if _ENABLE_DOC_TRACKER:
+            if _ENABLE_DOC_TRACKER and _WIKI_TRACKERS_ENABLED:
                 # shared by both trackers so the (potentially large) full-table
                 # build happens once, not once per wiki site.
                 shared_doc_map = DocumentMap(self._database)
@@ -292,6 +306,11 @@ class Runtime:
             else:
                 self._commons_doc_tracker = None
                 self._wikisource_doc_tracker = None
+                if _ENABLE_DOC_TRACKER and not _WIKI_TRACKERS_ENABLED:
+                    _logger.info(
+                        "Runtime: wiki doc trackers disabled - BIRDDOG_NOCODB_ENV "
+                        f"is {os.environ.get('BIRDDOG_NOCODB_ENV')!r}, not CLOUD_PROD"
+                    )
 
             self._ftp_manager = None
             if _ENABLE_FTP_MANAGER:
@@ -300,6 +319,8 @@ class Runtime:
                 except Exception as err:
                     # a missing/broken ftp_config must not take down the service
                     _logger.warning(f"Runtime: FTP site manager disabled: {err}")
+            else:
+                _logger.info("Runtime: FTP site manager disabled (_ENABLE_FTP_MANAGER=False)")
 
         else:
             self._database = None
@@ -339,7 +360,14 @@ class Runtime:
     def start(self):
         if self._state == "ready":
             _logger.info(f"Runtime starting...")
-            self._update_manager.start()
+            if _WIKI_TRACKERS_ENABLED:
+                self._update_manager.start()
+            else:
+                _logger.info(
+                    "Runtime: PageUpdateManager heartbeat disabled - wiki page "
+                    "updates and the shared tracker watermark are frozen on this "
+                    "base (get_updates() still serves the watchlist read-only)"
+                )
             if self._database_update_manager:
                 self._database_update_manager.start()
             if self.translation_enabled:

@@ -267,11 +267,15 @@ def _wiki_file_info(host, title):
 
     pages = (data.get("query") or {}).get("pages") or {}
     for page in pages.values():
-        if "missing" in page or "invalid" in page:
-            return _WIKI_GONE
+        # A file hosted on a shared repo (Commons) has no local description
+        # page, so a wiki that only *references* it reports "missing" while
+        # still returning usable imageinfo from the shared repo. Prefer the
+        # imageinfo; only conclude the file is gone when there is none.
         info = page.get("imageinfo")
         if info and info[0].get("url") and info[0].get("size") is not None:
             return info[0]["url"], info[0]["size"], info[0].get("sha1")
+        if "missing" in page or "invalid" in page:
+            return _WIKI_GONE
     raise _FingerprintUnavailable(f"imageinfo response had no usable file info for {title!r}")
 
 
@@ -908,13 +912,17 @@ class FTPSiteManager(HeartbeatManager):
                 "depth": _depth(full),
             }
 
-            # a PDF whose bytes may have changed (size or mtime moved) needs a
-            # fresh fingerprint and another match check.
             prev = existing_by_path.get(full)
-            if not is_dir and prev is not None and (
-                prev.get("size") != record["size"]
-                or not _mtime_matches(prev.get("mtime"), entry.st_mtime)
-            ):
+            if not is_dir and prev is not None and prev.get("type") == kind:
+                if (prev.get("size") == record["size"]
+                        and _mtime_matches(prev.get("mtime"), entry.st_mtime)):
+                    # unchanged file already on record - skip the redundant
+                    # upsert. The re-list was triggered by a sibling's change,
+                    # not this file's, and it is already in kept_paths so the
+                    # prune pass leaves it alone.
+                    continue
+                # size or mtime moved: the bytes may have changed, so force a
+                # fresh fingerprint and another match check.
                 record["content_fp"] = None
                 record["match_checked"] = False
 
@@ -943,7 +951,7 @@ class FTPSiteManager(HeartbeatManager):
 
         _logger.debug(
             f"FTPSiteManager: {dirpath} - {len(entries)} entries, "
-            f"{len(records)} kept, {len(prune_pairs)} to prune"
+            f"{len(records)} to upsert, {len(prune_pairs)} to prune"
         )
         return write_batch, prune_pairs, 0
 
