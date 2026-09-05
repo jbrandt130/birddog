@@ -982,7 +982,19 @@ class NocoDBDatabase(Database):
             else:
                 records = data.get("list", []) or []
                 page_info = data.get("pageInfo") or {}
-                is_last = bool(page_info.get("isLastPage")) or not records or len(records) < limit
+                if "isLastPage" in page_info:
+                    # Trust the server's own verdict. Needed because NocoDB
+                    # silently caps the real page size (observed: 100) below
+                    # a larger requested `limit`, so comparing len(records)
+                    # against `limit` misreads a capped-but-not-final page as
+                    # the last one and truncates the scan.
+                    is_last = bool(page_info["isLastPage"]) or not records
+                else:
+                    # No isLastPage to go on; fall back to comparing against
+                    # the actual per-page size the server used, if reported,
+                    # rather than the requested limit (see above).
+                    page_size = page_info.get("pageSize") or limit
+                    is_last = not records or len(records) < page_size
                 next_cursor = None if is_last else str(offset + len(records))
 
             if not raw:

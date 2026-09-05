@@ -3,6 +3,6 @@
     "user": "jbrandt",
     "password": "SFTP_PASSWORD",
     "port": 22,
-    "heartbeat_interval": 60,
+    "heartbeat_interval": 600,
     "scan_batch": 50
 }
