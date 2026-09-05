@@ -52,7 +52,26 @@ function init() {
   echo "Setup complete."
 }
 
+# Failsafe: only CLOUD_STAGE and CLOUD_PROD are valid targets for anything
+# pushed to EB. Without this, an ambient BIRDDOG_NOCODB_ENV left over from
+# local dev (e.g. "LOCAL") silently rides along into a deploy, since the
+# default above only kicks in when the var is unset -- exactly what caused
+# the 2026-09-05 crash loop (EB instance has no NOCODB_API_TOKEN_LOCAL, so
+# every gunicorn worker crashed on boot).
+function _require_valid_deploy_env() {
+  case "$BIRDDOG_NOCODB_ENV" in
+    CLOUD_STAGE|CLOUD_PROD) ;;
+    *)
+      echo "Refusing to deploy: BIRDDOG_NOCODB_ENV='$BIRDDOG_NOCODB_ENV' is not a valid EB target (only CLOUD_STAGE or CLOUD_PROD are)."
+      echo "This is usually an ambient BIRDDOG_NOCODB_ENV (e.g. 'LOCAL') left exported in your shell from local dev."
+      echo "Pass --stage or --prod explicitly to $0 to select a target regardless of your shell's environment."
+      exit 1
+      ;;
+  esac
+}
+
 function birddog_setenv() {
+  _require_valid_deploy_env
   echo "Setting environment variables (BIRDDOG_NOCODB_ENV=$BIRDDOG_NOCODB_ENV)..."
   eb setenv \
     AWS_DEFAULT_REGION="$REGION" \
