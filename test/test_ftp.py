@@ -445,6 +445,33 @@ class TestIncremental(unittest.TestCase):
                   "/Berdichev/weird name (1).pdf"):
             self.assertNotIn(p, written, f"unchanged file re-written: {p}")
 
+    def test_duplicate_filename_is_skipped_and_pruned(self):
+        db = FakeDB()
+        tracker = _make_tracker(db, _TREE)
+        _run_until_stable(tracker)
+
+        # jewishgen exposes four different files all named "39-2-1?.pdf"
+        # (illegal char mangled by the Windows/IIS backing store).
+        tracker._sftp.set_children("/Odessa", [
+            ("a.pdf", "file", 1, 400),
+            ("39-2-1?.pdf", "file", 95, 401),
+            ("39-2-1?.pdf", "file", 42, 402),
+            ("39-2-1?.pdf", "file", 250, 403),
+        ])
+        _run_until_stable(tracker)
+
+        self.assertIn("/Odessa/a.pdf", db.rows)
+        self.assertNotIn("/Odessa/39-2-1?.pdf", db.rows)   # never created
+
+        # and if a stale row already exists, the next sweep prunes it
+        db.write(ftp._FTP_TABLE, [{
+            "path": "/Odessa/39-2-1?.pdf", "folder": "/Odessa", "type": "file",
+            "suffix": "pdf", "size": 250, "match_checked": True,
+        }])
+        tracker._sftp._bump("/Odessa")
+        _run_until_stable(tracker)
+        self.assertNotIn("/Odessa/39-2-1?.pdf", db.rows)
+
     def test_root_relisted_only_when_it_changes(self):
         db = FakeDB()
         tracker = _make_tracker(db, _TREE)
@@ -609,9 +636,23 @@ class _FakeFile:
 class _FakeFileSFTP:
     def __init__(self, files):
         self.files = files            # path -> bytes
+        self.unopenable = set()       # paths listed by the server but not openable
+        self.alive = True             # False models a dropped socket
+        self.stat_calls = []
 
     def open(self, path, mode="rb"):
+        if path in self.unopenable:
+            # paramiko maps an unexpected SSH_FX status to a bare IOError; the
+            # jewishgen server does this for directory entries whose names hold
+            # an illegal char (e.g. "39-2-1?.pdf").
+            raise OSError("")
         return _FakeFile(self.files[path])
+
+    def stat(self, path):
+        self.stat_calls.append(path)
+        if not self.alive:
+            raise OSError("Socket is closed")
+        return None                   # _connection_alive() only checks for a raise
 
 
 def _fake_fetch(imageinfo=None, blob=b""):
@@ -876,6 +917,33 @@ class TestMatching(unittest.TestCase):
 
         self.assertFalse(db.ftp["/a/1.pdf"]["match_checked"])   # left for retry
         self.assertEqual(db.links, set())                       # no conclusion drawn
+
+    def test_unopenable_ftp_path_on_live_connection_is_marked_checked(self):
+        # jewishgen lists directory entries it will not open (illegal filename
+        # char). The open fails with a bare OSError - same shape as a dropped
+        # socket - so the drain loop used to reconnect on it forever and never
+        # clear the row. With a liveness probe it is treated as a per-path skip.
+        db = _MatchDB()
+        db.add_ftp("/Odessa/39-2-1?.pdf", 45098718, fp=None)
+        db.add_doc("https://commons.wikimedia.org/wiki/File:x.pdf", 45098718, fp="x:h:t")
+        mgr = _match_tracker(db, files={})
+        mgr._sftp.unopenable.add("/Odessa/39-2-1?.pdf")
+
+        mgr._drain_match_queue()
+
+        self.assertTrue(db.ftp["/Odessa/39-2-1?.pdf"]["match_checked"])
+        self.assertEqual(db.links, set())
+        self.assertIn("/", mgr._sftp.stat_calls)        # liveness was probed
+        self.assertIsNotNone(mgr._sftp)                  # no reconnect churn
+
+    def test_is_transport_error_uses_liveness_probe(self):
+        db = _MatchDB()
+        mgr = _match_tracker(db, files={})
+        mgr._sftp.alive = True
+        self.assertFalse(mgr._is_transport_error(OSError("")))
+        self.assertFalse(mgr._is_transport_error(FileNotFoundError(2, "nope")))
+        mgr._sftp.alive = False
+        self.assertTrue(mgr._is_transport_error(OSError("Socket is closed")))
 
     def test_link_kept_when_a_candidate_cannot_be_fingerprinted(self):
         db = _MatchDB()

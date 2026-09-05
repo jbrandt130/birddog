@@ -431,19 +431,41 @@ class FTPSiteManager(HeartbeatManager):
         self._sftp = None
         self._client = None
 
+    def _connection_alive(self):
+        """
+        True if the current SFTP channel still answers a trivial request.
+
+        This is the authority on whether an error was the socket dropping or
+        just a bad path: a dropped socket and a path the server enumerates but
+        refuses to open (an illegal filename char the host filesystem mangled -
+        jewishgen has directory entries literally named "39-2-1?.pdf" that
+        listdir returns but stat/open reject) both surface as a bare OSError.
+        Probing is cheaper than a needless reconnect and avoids an infinite
+        reconnect loop on such a row.
+        """
+        if self._sftp is None:
+            return False
+        try:
+            self._sftp.stat("/")
+            return True
+        except Exception:
+            return False
+
     def _is_transport_error(self, exc):
         """
         True if exc means the SFTP channel is unusable and must be rebuilt.
 
-        Only a genuinely per-path failure - a missing or forbidden path - is
-        survivable on the same connection. Everything else (a dropped socket
-        surfaces as OSError("Socket is closed"), a timeout, EOFError, or an
-        SSHException) needs a reconnect. The old transport.is_active() probe was
-        unreliable: after the peer closes the socket the transport thread can
-        still briefly report the channel as active, so a dead connection was
-        reused forever.
+        A missing or forbidden path is always survivable on the same connection.
+        Any other OSError/SSHException/EOFError is ambiguous - a dropped socket
+        surfaces as OSError("Socket is closed") but so does a server that
+        enumerates a path it cannot open - so the caller must confirm with
+        _connection_alive() before reconnecting. The old transport.is_active()
+        probe was unreliable: after the peer closes the socket the transport
+        thread can still briefly report the channel as active.
         """
-        return not isinstance(exc, (FileNotFoundError, PermissionError))
+        if isinstance(exc, (FileNotFoundError, PermissionError)):
+            return False
+        return not self._connection_alive()
 
     def stop(self):
         super().stop()
@@ -729,9 +751,12 @@ class FTPSiteManager(HeartbeatManager):
                         _logger.warning(f"FTPSiteManager: reconnect failed: {ce}")
                         break
                     continue
-                # missing file - mark it done, the sweep will prune the row
+                # missing / unopenable path on a live connection - mark it done
+                # so it leaves the queue; the sweep prunes the row if it is
+                # gone, or it stays as an unmatchable entry (e.g. a filename the
+                # server enumerates but cannot open).
                 _logger.warning(
-                    f"FTPSiteManager: match check skipped {path}: {e}"
+                    f"FTPSiteManager: match check skipped {path}: {e!r}"
                 )
                 pending.append({"path": path, "match_checked": True})
             except Exception as e:
@@ -869,6 +894,26 @@ class FTPSiteManager(HeartbeatManager):
 
         entries = sftp.listdir_attr(dirpath)
 
+        # A name the server exposes more than once in the same directory means
+        # its backing filesystem mangled an illegal character - jewishgen runs on
+        # Windows/IIS, and "/Odessa/39-2-1?.pdf" is four different files whose
+        # real names all collapse to one. None of the copies can be stat'd or
+        # opened by that name, so there is nothing birddog can do with them:
+        # drop every copy here so the row is pruned rather than endlessly
+        # re-queued for a match check that can never complete.
+        seen = set()
+        unrepresentable = set()
+        for e in entries:
+            if e.filename in seen:
+                unrepresentable.add(e.filename)
+            seen.add(e.filename)
+        if unrepresentable:
+            _logger.warning(
+                f"FTPSiteManager: {dirpath} - skipping {len(unrepresentable)} "
+                f"unrepresentable filename(s) (server lists duplicates): "
+                + ", ".join(sorted(unrepresentable))
+            )
+
         # snapshot the table's current record of this directory's children
         # BEFORE writing: needed so a dir -> file retype is still visible as
         # "dir" for pruning, and to spot a PDF whose size/mtime changed.
@@ -885,6 +930,8 @@ class FTPSiteManager(HeartbeatManager):
         for entry in entries:
             name = entry.filename
             if name in (".", "..") or name.startswith("."):
+                continue
+            if name in unrepresentable:
                 continue
             if stat.S_ISLNK(entry.st_mode):
                 continue
