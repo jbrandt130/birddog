@@ -156,7 +156,7 @@ class SQLLiteEventLogger(EventLogger):
             if isinstance(end_time, datetime):
                 end_time = end_time.isoformat()
             df = pd.read_sql_query(query, conn, params=(start_time, end_time))
-            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601")
             return df
 
     def truncate(self, cutoff):
@@ -220,7 +220,7 @@ class DynamoDBEventLogger(EventLogger):
 
         df = pd.DataFrame(items)
         if not df.empty:
-            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601")
         return df
 
     def _ensure_dynamodb_log_table(self, table_name=_DYNAMODB_TABLE_NAME):
@@ -531,7 +531,7 @@ class DynamoDBServiceLogger(ServiceLogger):
         df = pd.DataFrame(items)
         if not df.empty:
             # Normalize types/columns to match SQLite logger conventions
-            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601")
             if "size" in df.columns:
                 df["size"] = pd.to_numeric(df["size"], errors="coerce").fillna(0).astype("int64")
             else:
