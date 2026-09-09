@@ -21,25 +21,78 @@ from birddog.log import get_logger
 from birddog.translate import translation
 
 
+def chop_to_max_length(text, max_length):
+    # If the text is already short enough, return it immediately
+    if len(text) < max_length:
+        return text
+
+    # Loop and remove the last word until the string is short enough
+    while len(text) >= max_length and " " in text:
+        # rsplit(" ", 1) splits the text at the very LAST space into two parts,
+        # and we only keep the first part, effectively throwing away the last word.
+        text = text.rsplit(" ", 1)[0]
+
+        # Clean up any trailing spaces left behind before checking the length again
+        text = text.rstrip()
+
+    return text
+
+
+# Helper to recursively turn a dict (and any inner sets) into a hashable frozenset
+def freeze_dict(d):
+    return frozenset(
+        (k, frozenset(v) if isinstance(v, set) else v) for k, v in d.items()
+    )
+
+def has_positive_administrative_level(entry: frozenset) -> bool:
+    """Check whether a frozenset entry relates to a settlement."""
+    for k, v in entry:
+        if k == "administrative_level" and v > 0:
+            return True
+    return False
+
+def wrong_province(entry: frozenset, doc_archive_locs: list[dict]) -> bool:
+    """Check the location is within the archive province."""
+    for doc_archive_loc in doc_archive_locs:
+        province_capital_lower = doc_archive_loc["location"].lower()
+        for k, v in entry:
+            if k == "province_names":
+                for v1 in v:
+                    if v1.lower() == province_capital_lower:
+                        return False
+    return True
+
+
 def get_unique_random_integers(n, k):
     """Returns a list of n unique random integers from 1 to k (inclusive)."""
     random.seed()
     return sorted(random.sample(range(1, k + 1), n))
 
 
+def title_case_all_caps(text):
+    # This pattern finds words that are completely UPPERCASE (at least 2 letters long)
+    # It ensures they are bounded by your separators or the ends of the text.
+    pattern = r'(?:(?<=[ ,.;"])|^)[A-Z]{2,}(?=[ ,.;"]|$)'
+
+    # We use a lambda function to convert the matched word to title case (e.g., USHITSA -> Ushitsa)
+    return re.sub(pattern, lambda m: m.group(0).title(), text)
+
+
 def delete_nuisance_words(descriptions: set[str], debug_print: bool = False)-> set[str]:
     all_words_to_delete = [
         'court', 'Peace', 'Justice', 'Judicial', 'Investigative', 'Sentence', 'Sentences',
-        'the', 'statistical', 'economic', 'historical', 'philological', 'educational',
-        'committee', 'council', 'ministry', 'Office','Department', 'Community', 'Funds',
+        'the', 'statistical', 'economic', 'historical', 'philological', 'educational', 'medical',
+        'governmental', 'government', 'institution', 'institutions', 'official', 'officials',
+        'committee', 'ministry', 'Office','Department', 'Funds', 'council', 'councils', 'duma',
         'State', 'Archive', 'Archives', 'ministers', 'University', 'institute', 'gymnasium',
-        'statistics', 'Conscription', 'branch', 'Agency', 'Society',
-        'council', 'councils', 'Judgment', 'Judgments', 'rural', "Men's", "Women's"]
+        'statistics', 'Conscription', 'branch', 'Agency', 'Society', 'Community',
+        'Judgment', 'Judgments', 'rural', 'bourgeois', "Men's", "Women's"]
 
     # delete also the religious terms
-    religious_terms = ['Roman Catholic', 'churches', 'Church', 'synagogue', 'Jewish', 'Jews', 'rabbinate',
-                       'Spiritual', 'Theological', 'Seminary', 'Consistory', 'Orthodox', 'Assumption', 'deanery',
-                       'Trinity', 'Resurrection', 'Ascension', 'Intercession', 'Annunciation', 'Transfiguration']
+    religious_terms = ['Roman Catholic', 'churches', 'Church', 'synagogue', 'Jewish', 'Jews', 'rabbinate', 'synod',
+                       'Spiritual', 'Theological', 'Seminary', 'Consistory', 'Orthodox',
+                       'Assumption', 'deanery', 'clergy', 'Trinity',
+                       'Resurrection', 'Ascension', 'Intercession', 'Annunciation', 'Transfiguration']
     all_words_to_delete.extend(religious_terms)
 
     # delete also the documentation/archival terms
@@ -71,6 +124,8 @@ def delete_nuisance_words(descriptions: set[str], debug_print: bool = False)-> s
         "record",
         "records",
         "registry",
+        "register",
+        "registers",
         "to",
         "year",
         "years",
@@ -85,6 +140,28 @@ def delete_nuisance_words(descriptions: set[str], debug_print: bool = False)-> s
         description = replace_word(description, 'provincial', 'province')
         description = description.replace(" of ", " ")
         description = description.replace(" and ", ", ")
+        description = description.replace(" (", ", ")
+        description = description.replace(")", ", ")
+        description = description.replace(" M. ", " village ")
+        description = description.replace(" Mr. ", " village ")
+
+        # remove http links: this pattern finds "http" and matches all characters until it hits a space
+        description = re.sub(r"http\S*", "", description)
+
+        # We replace the found integers with an empty string
+        description = re.sub(r"(?:(?<=[ \-,.;])|^)\d+(?=[ \-,.;]|$)", "", description)
+
+        # We replace the found matches with an empty string
+        description = re.sub(r"(?:(?<=[ ,.;])|^)-[a-zA-Z](?=[ ,.;]|$)", "", description)
+
+        # do not allow all capital words - they too confuse the model
+        description = title_case_all_caps(description)
+
+        # We replace the duplicate commas with just a single comma
+        description = re.sub(r",[\s,]*,", ",", description)
+
+        max_length = 200
+        description = chop_to_max_length(description, max_length)
 
         if debug_print:
             print(f"Description shortened to '{description}'")
@@ -203,18 +280,35 @@ class FileLocationFinder:
             print(f"***** Looking for locations for document {doc_id} *****")
         hf_token = os.getenv("HF_TOKEN", "")  # For session management
 
-        descriptions, doc_archive_locs = self.get_doc_descriptions(doc_id, debug_print)
-        descriptions, region_centres = self.extract_region_centres(descriptions, debug_print)
-        descriptions = delete_nuisance_words(descriptions, debug_print)
-        extracted_places = extract_locations(list(descriptions), hf_token, debug_print)
-        identified_locations = self.match_places_to_location_ids(doc_id, extracted_places, debug_print)
+        priority1, priority2, doc_archive_locs = self.get_doc_descriptions(doc_id, debug_print)
+        priority1, region_centres_p1 = self.extract_region_centres(priority1, debug_print)
+        priority1 = delete_nuisance_words(priority1, debug_print)
 
-        # 1. Helper to recursively turn a dict (and any inner sets) into a hashable frozenset
-        def _freeze_dict(d):
-            return frozenset((k, frozenset(v) if isinstance(v, set) else v) for k, v in d.items())
+        # Try priority1 first
+        extracted_places_p1 = extract_locations(list(priority1), hf_token, debug_print)
+        identified_locations = self.match_places_to_location_ids(doc_id, extracted_places_p1, debug_print)
+
+        # Try priority2 if:
+        #   (a) identified_locations is empty, OR
+        #   (b) the administrative level is greater than 0, that is, it is a district or a province
+        no_settlements_found = all(has_positive_administrative_level(e) for e in identified_locations) \
+            if identified_locations else True
+
+        if no_settlements_found:
+            if priority2:
+                priority2, region_centres_p2 = self.extract_region_centres(priority2, debug_print)
+                priority2 = delete_nuisance_words(priority2, debug_print)
+                extracted_places_p2 = extract_locations(list(priority2), hf_token, debug_print)
+                identified_locations_p2 = self.match_places_to_location_ids(doc_id, extracted_places_p2, debug_print)
+                identified_locations |= identified_locations_p2
+                region_centres = region_centres_p1 + region_centres_p2
+            else:
+                region_centres = region_centres_p1
+        else:
+            region_centres = region_centres_p1
 
         # 2. Combine both lists of dicts safely by converting their contents to frozensets
-        frozen_union = {_freeze_dict(d) for d in doc_archive_locs} | {_freeze_dict(d) for d in region_centres}
+        frozen_union = {freeze_dict(d) for d in doc_archive_locs} | {freeze_dict(d) for d in region_centres}
 
         # 3. Reconstruct a list of normal mutable dictionaries for your loop to use
         united_list = [dict(f_set) for f_set in frozen_union]
@@ -288,9 +382,11 @@ class FileLocationFinder:
     ) -> dict[int, list[str]]:
         """Identifies locations for multiple documents in batched API calls.
 
-        Gathers descriptors for all doc_ids, sends them in batches of batch_size
-        to the AI model in a single call per batch, then dispatches results back
-        to each doc_id using the same matching logic as get_doc_location.
+        For each document, descriptions are split into priority1 (doc description,
+        page description, translated title parts) and priority2 (owning_pages /
+        storage unit descriptions). The AI extraction is run for priority1 always,
+        and priority2 is only consulted if at least one document has no identified
+        locations from priority1.
 
         Args:
             doc_ids: List of document IDs to process.
@@ -303,46 +399,86 @@ class FileLocationFinder:
         """
         hf_token = os.getenv("HF_TOKEN", "")
 
-        # Step 1: Gather descriptors + archive locs + region centres for every doc upfront
-        # (avoids re-reading each doc twice)
+        # Step 1: Gather descriptors + archive locs + region centres for every doc upfront.
+        # We now store two separate description lists per doc (priority1 and priority2).
         per_doc_inputs: list[dict] = []
-        all_descr_lists: list[list[str]] = []
+        all_p1_lists: list[list[str]] = []
+        all_p2_lists: list[list[str]] = []
         for doc_id in doc_ids:
-            descriptions, doc_archive_locs = self.get_doc_descriptions(doc_id, debug_print)
-            descriptions, region_centres = self.extract_region_centres(
-                descriptions, debug_print
-            )
-            cleaned = delete_nuisance_words(descriptions, debug_print)
+            if debug_print:
+                print(f"***** Processing descriptions for document {doc_id} *****")
+            priority1, priority2, doc_archive_locs = self.get_doc_descriptions(doc_id, debug_print)
+            priority1, region_centres_p1 = self.extract_region_centres(priority1, debug_print)
+            priority1 = delete_nuisance_words(priority1, debug_print)
+            priority2, region_centres_p2 = self.extract_region_centres(priority2, debug_print)
+            priority2 = delete_nuisance_words(priority2, debug_print)
+
             per_doc_inputs.append({
                 "doc_archive_locs": doc_archive_locs,
-                "region_centres": region_centres,
+                "region_centres": region_centres_p1 + region_centres_p2,
+                "has_priority2": bool(priority2),
             })
-            all_descr_lists.append(list(cleaned))
+            all_p1_lists.append(list(priority1))
+            all_p2_lists.append(list(priority2))
 
-        # Step 2: Batched AI extraction — one call per batch_size docs
-        all_extracted = extract_locations_batched(
-            all_descr_lists, hf_token, batch_size=batch_size, debug_print=debug_print
+        # Step 2: Batched AI extraction — priority1 first, then priority2 only if needed.
+        # Only run priority2 if at least one document has no priority1 results.
+        docs_needing_p2 = []
+        identified_locations_per_doc = []
+        all_extracted_p1 = extract_locations_batched(
+            all_p1_lists, hf_token, batch_size=batch_size, debug_print=debug_print
         )
-
-        # Step 3: Dispatch results back to each doc
-        def _freeze_dict(d):
-            return frozenset(
-                (k, frozenset(v) if isinstance(v, set) else v) for k, v in d.items()
-            )
-
-        results: dict[int, list[str]] = {}
-        for doc_id, extracted_places, doc_input in zip(
-            doc_ids, all_extracted, per_doc_inputs
-        ):
+        for doc_idx, doc_id in enumerate(doc_ids):
+            extracted_p1 = all_extracted_p1[doc_idx]
+            if debug_print and extracted_p1:
+                print(f"***** Extracted locations for document {doc_id}: {extracted_p1} *****")
             identified_locations = self.match_places_to_location_ids(
-                doc_id, extracted_places, debug_print
+                doc_id, extracted_p1, debug_print
             )
+            identified_locations_per_doc.append(identified_locations)
+            no_settlements_found = all(has_positive_administrative_level(e) or wrong_province(e, doc_archive_locs)
+                                       for e in identified_locations) if identified_locations else True
+            if no_settlements_found:
+                docs_needing_p2.append(doc_idx)
 
-            doc_archive_locs = doc_input["doc_archive_locs"]
-            region_centres = doc_input["region_centres"]
+        # Build priority2 lists only for those docs
+        if docs_needing_p2:
+            # Only include priority2 lists for docs that need it
+            filtered_p2_lists = [all_p2_lists[i] if i in docs_needing_p2 else [] for i in range(len(doc_ids))]
+            all_extracted_p2 = extract_locations_batched(
+                filtered_p2_lists, hf_token, batch_size=batch_size, debug_print=debug_print
+            )
+            for doc_idx, doc_id in enumerate(doc_ids):
+                extracted_p2 = all_extracted_p2[doc_idx]
+                if debug_print and extracted_p2:
+                    print(
+                        f"***** Second extraction for document {doc_id}: {extracted_p2} *****"
+                    )
+        else:
+            # No docs need fallback; create empty results of the right size
+            all_extracted_p2 = [[] for _ in doc_ids]
 
-            frozen_union = {_freeze_dict(d) for d in doc_archive_locs} | {
-                _freeze_dict(d) for d in region_centres
+        # Step 3: Dispatch results back to each doc with the priority fallback rule:
+        # try priority1; only fall back to priority2 if priority1 yielded nothing.
+        results: dict[int, list[str]] = {}
+        for doc_idx, doc_id in enumerate(doc_ids):
+            identified_locations = identified_locations_per_doc[doc_idx]
+
+            # Fallback: only consult priority2 if priority1 produced nothing
+            if not identified_locations and per_doc_inputs[doc_idx]["has_priority2"]:
+                extracted_p2 = all_extracted_p2[doc_idx] if all_extracted_p2 else []
+                if debug_print and extracted_p2:
+                    print(f"***** Second extracted locations for document {doc_id}: {extracted_p2} *****")
+                identified_locations_p2 = self.match_places_to_location_ids(
+                    doc_id, extracted_p2, debug_print
+                )
+                identified_locations |= identified_locations_p2
+
+            doc_archive_locs = per_doc_inputs[doc_idx]["doc_archive_locs"]
+            region_centres = per_doc_inputs[doc_idx]["region_centres"]
+
+            frozen_union = {freeze_dict(d) for d in doc_archive_locs} | {
+                freeze_dict(d) for d in region_centres
             }
             united_list = [dict(f_set) for f_set in frozen_union]
 
@@ -445,13 +581,13 @@ class FileLocationFinder:
         # Convert target words to lowercase for case-insensitive matching
         words_to_check = {word.lower() for word in target_words}
 
-        # Split text by dots, preserving the dots in the list
-        sentences = re.split(r"(\.)", text)
+        # Split text by dots, preserving the dots and semicolons in the list
+        sentences = re.split(r"(\.|\;)", text)
 
         cleaned_pieces = []
         found_words = set()
 
-        # Process sentences in pairs (the text and its trailing dot)
+        # Process sentences in pairs (the text and its trailing dot/semicolon)
         for i in range(0, len(sentences) - 1, 2):
             sentence = sentences[i]
             dot = sentences[i + 1]
@@ -469,7 +605,7 @@ class FileLocationFinder:
             else:
                 cleaned_pieces.append(sentence + dot)
 
-        # Handle any remaining text if the string did not end with a dot
+        # Handle any remaining text if the string did not end with a dot/semicolon
         if len(sentences) % 2 != 0 and sentences[-1]:
             sentence = sentences[-1]
             clean_words = set(re.findall(r"\b\w+\b", sentence.lower()))
@@ -491,8 +627,12 @@ class FileLocationFinder:
         return "".join(cleaned_pieces).strip(), region_centres
 
 
-    def get_doc_descriptions(self, doc_id: int, debug_print: bool = False)-> tuple[set[str], list[dict]]:
+    def get_doc_descriptions(self, doc_id: int, debug_print: bool = False) -> tuple[set[str], set[str], list[dict]]:
         """Retrieves and compiles descriptions and storage locations for a document.
+
+        Descriptions are split into two priority tiers:
+        - priority1: doc_description, page_description, translated_cyrillic, other_space_str
+        - priority2: owning_pages descriptions (traversed hierarchically)
 
         Args:
             doc_id (int): The unique identifier of the target document.
@@ -500,15 +640,18 @@ class FileLocationFinder:
                 records are missing. Defaults to False.
 
         Returns:
-            set: A set containing the main document description followed by the
-                storage unit locations/descriptions.
+            tuple[set[str], set[str], list[dict]]:
+                - priority1 descriptions (doc description, page description, translated title parts)
+                - priority2 descriptions (owning_pages / storage unit descriptions)
+                - doc_archive_locs (archive location dictionaries)
         """
         doc_rec = get_doc_record(self._db, doc_id)
         if not doc_rec:
             print(f"Could not find document with id {doc_id}")
-            return set(), []
+            return set(), set(), []
 
         doc_description = doc_rec.get("description")
+        doc_comments = doc_rec.get("comments")
         page_description = doc_rec.get("page_description")
         owning_pages = doc_rec.get("owning_pages")
 
@@ -535,21 +678,22 @@ class FileLocationFinder:
 
         doc_archive_locs = self.get_archive_locations(doc_archive_locs, debug_print, owning_pages)
 
-        descriptions = set()
+        priority1 = set()
+        priority2 = set()
 
-        # add document descriptions
+        # Priority 1: document-level descriptions
         if doc_description:
-            descriptions.add(doc_description)
+            priority1.add(doc_description)
+        if doc_comments:
+            priority1.add(doc_comments)
         if page_description:
-            descriptions.add(page_description)
-
-        # add document name
+            priority1.add(page_description)
         if other_space_str:
-            descriptions.add(other_space_str)
+            priority1.add(other_space_str)
         if translated_cyrillic:
-            descriptions.add(str(translated_cyrillic))
+            priority1.add(str(translated_cyrillic))
 
-        # adding storage unit (cases/opi/fund/archive) descriptions, starting from the cases
+        # Priority 2: owning_pages descriptions (storage units)
         while owning_pages:
             upper_level_pages = []
             for page in owning_pages:
@@ -557,16 +701,22 @@ class FileLocationFinder:
                 page_rec = cast(dict, self._db.read("Pages", page_id))
                 descr = page_rec.get("description")
                 if descr:
-                    descriptions.add(descr)
+                    priority2.add(descr)
                 upper_level_page = page_rec.get("parent")
                 if upper_level_page:
+                    if  any(ulp.get('Id') == page_id for ulp in upper_level_page):
+                        print(f"Error: the upper level page for page ID {page_id}, "
+                              f"title {page.get('title')} is this same page!!")
+                        upper_level_pages = []
+                        break
                     upper_level_pages.extend(upper_level_page)
 
             owning_pages = upper_level_pages
 
         if debug_print:
-            print(f"Found {len(descriptions)} descriptions {descriptions}")
-        return descriptions, doc_archive_locs
+            print(f"Priority1 descriptions ({len(priority1)}): {priority1}")
+            print(f"Priority2 descriptions ({len(priority2)}): {priority2}")
+        return priority1, priority2, doc_archive_locs
 
     def scan_database(self, **kwargs):
         """Public wrapper to safely access the internal database scan."""
@@ -734,13 +884,14 @@ def get_doc_record(db, doc_id):
 if __name__ == "__main__":
     debug_print_ = True
     finder = FileLocationFinder()
+    finder.get_doc_location(60426, only_smallest_locations=False, debug_print=True)
 #    doc_id_ = 12953
 #    print(finder.get_doc_descriptions(doc_id_))
 
-    doc_ids_ = [58857]
+#    doc_ids_ = [58857]
 #    doc_ids = get_unique_random_integers(20 ,37738)
 
-    print(f"Document IDs to process: {doc_ids_}")
-    for doc_id_ in doc_ids_:
-        finder.get_doc_location(doc_id_, only_smallest_locations=False, debug_print=debug_print_)
+#    print(f"Document IDs to process: {doc_ids_}")
+#    for doc_id_ in doc_ids_:
+#        finder.get_doc_location(doc_id_, only_smallest_locations=False, debug_print=debug_print_)
 
