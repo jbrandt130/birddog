@@ -67,7 +67,8 @@ batch_system_prompt = (
     "CRITICAL RULES:\n"
     "1. Output EXACTLY one 'PerDocExtraction' entry per document_index (0, 1, 2, ...).\n"
     "   If a document has no locations, output has_location=false and locations=[] for it.\n"
-    "2. Extract EVERY individual mention separately. Do not skip any.\n"
+    "2. Extract every DISTINCT location mentioned. Do not skip any, and do not\n"
+    "   list duplicates — if 'Chyhyryn district' appears 5 times, list it ONCE.\n"
     "3. Retain settlement suffixes (e.g., 'village', 'town', 'district', 'province').\n"
     "4. If a trailing suffix applies to a list of places (e.g., 'A, B, and C counties'),\n"
     "   append the suffix to EACH individual location.\n"
@@ -251,9 +252,6 @@ def _process_response(raw_json: dict, debug_print: bool = False) -> list[str]:
     for place_extraction in final_extracted:
         locations_as_strings.extend(place_extraction.locations)
 
-    # get rid of the substrings ' of '
-    locations_as_strings = [text.replace(" of ", " ") if " of " in text else text for text in locations_as_strings]
-
     # Deterministic cleanup: strip ordinal prefixes and common institution-related
     # words that the LLM sometimes leaves in (e.g., "2nd Lityn
     # District" -> "Lityn District"). This guards against the model
@@ -422,19 +420,25 @@ def extract_locations_batched(
         )
 
         # Compute max_tokens dynamically based on actual user content size.
-        # We use a chars/3.5 token estimate (closer to typical transformer
-        # behavior than chars/4). Worst case: English text = ~4 chars/token;
-        # code/JSON = ~3 chars/token. Use 3.5 as a safe middle ground.
+        # We use a chars/2 token estimate (overestimate to avoid context overflow).
+        # Worst case: English text = ~4 chars/token; code/JSON = ~3 chars/token.
+        # Overestimating input is safe — it just leaves less room for output.
         # Output is ~25-50 tokens per doc (2-5 locations + JSON framing).
         input_tokens_estimate = (len(batch_system_prompt) + sum(len(m["content"])
                                   for m in BATCH_FEW_SHOT_MESSAGES if isinstance(m["content"], str)) +
-                                  len(user_content)) // 3
+                                  len(user_content)) // 2
         # Reserve at least 300 tokens for output, cap output at what's available.
-        # Use 150 tokens/doc to handle verbose or redundant model output
-        # without getting truncated mid-string.
-        available_for_output = max(300, 4096 - input_tokens_estimate - 50)  # 50 token safety margin
-        per_doc_output_tokens = 150  # generous allowance
+        # Use 50 tokens/doc (very conservative) to handle verbose or redundant
+        # model output without getting truncated mid-string.
+        available_for_output = max(300, 4096 - input_tokens_estimate - 100)  # 100 token safety margin
+        per_doc_output_tokens = 50
         total_max_tokens = min(available_for_output, len(chunk) * per_doc_output_tokens)
+
+        # Hard safety cap: even if the estimate is wrong, ensure total tokens
+        # (estimated input + requested output) never exceeds the 4096 limit.
+        # Use chars/2 as worst-case input estimate for this cap.
+        hard_cap = max(100, 4096 - (len(user_content) // 2) - 100)
+        total_max_tokens = min(total_max_tokens, hard_cap)
 
         if debug_print:
             print(f"[batch {start}: {len(chunk)} docs] "
@@ -448,13 +452,29 @@ def extract_locations_batched(
         messages.append({"role": "user", "content": user_content})
 
         client = _make_client(api_token)
-        response = client.chat.completions.create(
-            model="Qwen/Qwen2.5-7B-Instruct",
-            messages=messages,
-            response_format={"type": "json_object"},
-            max_tokens=total_max_tokens,
-            temperature=0.1,
-        )
+
+        # Wrap the initial call in a retry loop to handle 400 BadRequestError
+        # (context window overflow) by reducing max_tokens and retrying.
+        response = None
+        attempt = 0
+        effective_max_tokens = total_max_tokens
+        while attempt < 3:
+            attempt += 1
+            try:
+                response = client.chat.completions.create(
+                    model="Qwen/Qwen2.5-7B-Instruct",
+                    messages=messages,
+                    response_format={"type": "json_object"},
+                    max_tokens=effective_max_tokens,
+                    temperature=0.1,
+                )
+                break  # success — exit retry loop
+            except Exception as e:
+                if "maximum context length" in str(e) and attempt < 3:
+                    effective_max_tokens = max(50, effective_max_tokens // 2)
+                    print(f"  (context overflow — retrying with max_tokens={effective_max_tokens})")
+                    continue
+                raise
 
         # Parse the batch response, with retry on truncation (finish_reason="length")
         parsed = None
@@ -466,6 +486,13 @@ def extract_locations_batched(
             retry_count += 1
 
             try:
+                if response is None:
+                    print(f"Error: No response object for batch starting at {start}")
+                    # Fill remaining with empty lists
+                    for i in range(start, min(start + batch_size, len(batches))):
+                        if all_results[i] is None:
+                            all_results[i] = []
+                    break  # exit retry loop — nothing more to try
                 content_str = response.choices[0].message.content
                 if not content_str:
                     print(f"Error: Received empty content from AI response for batch starting at {start} "
@@ -478,15 +505,22 @@ def extract_locations_batched(
                 raw_json = json.loads(content_str)
             except (JSONDecodeError, ValidationError) as e:
                 preview = (content_str or "")[:2000]
-                finish_reason = getattr(response.choices[0], "finish_reason", None)
+                finish_reason = (
+                    getattr(response.choices[0], "finish_reason", None)
+                    if response is not None else None
+                )
                 print(f"Error parsing batched AI response (attempt {retry_count}): {e}\n"
                       f"  finish_reason={finish_reason}\n"
                       f"  content_preview: {preview!r}")
                 # If truncated, retry with more output budget
                 if finish_reason == "length" and retry_count < max_retries:
                     extra_tokens = len(chunk) * per_doc_output_tokens + 50
+                    # Cap at 1000 to prevent the model from using the extra budget
+                    # to repeat more before truncating again (it will produce the same
+                    # output just longer, repeating the same location names).
                     new_total = min(total_max_tokens + extra_tokens,
-                                    4096 - input_tokens_estimate - 50)
+                                    max(100, 4096 - input_tokens_estimate - 50),
+                                    1000)
                     print(f"  (truncated — retrying with max_tokens={new_total})")
                     response = client.chat.completions.create(
                         model="Qwen/Qwen2.5-7B-Instruct",
@@ -509,11 +543,14 @@ def extract_locations_batched(
             except ValidationError as e:
                 # Schema validation failed. Check if we were truncated; if so,
                 # retry with more tokens before giving up.
-                finish_reason = getattr(response.choices[0], "finish_reason", None)
+                finish_reason = (
+                    getattr(response.choices[0], "finish_reason", None)
+                    if response is not None else None
+                )
                 if finish_reason == "length" and retry_count < max_retries:
                     extra_tokens = len(chunk) * per_doc_output_tokens + 50
                     new_total = min(total_max_tokens + extra_tokens,
-                                    4096 - input_tokens_estimate - 50)
+                                    max(100, 4096 - input_tokens_estimate - 50))
                     print(f"  (schema error / truncated — retrying with max_tokens={new_total})")
                     response = client.chat.completions.create(
                         model="Qwen/Qwen2.5-7B-Instruct",
