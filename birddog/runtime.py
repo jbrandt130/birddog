@@ -125,7 +125,12 @@ class PageLRU:
 
 class PageUpdateManager(HeartbeatManager):
     _PENDING_TITLE_UPDATES          = "pending_title_updates"
-    _HEARTBEAT_INTERVAL             = 60 * 2 # seconds
+    # Real wiki edits arrive sparsely (28h of CLOUD_PROD Pages history: median
+    # gap ~71min, p90 ~5.5h) -- 120s was tuned for when this heartbeat also
+    # drove DB housekeeping (now split out into HousekeepingManager, which
+    # keeps the tighter interval those queues need). Nothing else reads this
+    # tick that fast, so relax it to match observed edit frequency.
+    _HEARTBEAT_INTERVAL             = 60 * 5 # seconds
     _API_DELAY                      = 1 # seconds
     _TITLE_BATCH_SIZE               = max(int(_HEARTBEAT_INTERVAL / _API_DELAY + .5), 1)
 
@@ -158,11 +163,9 @@ class PageUpdateManager(HeartbeatManager):
         pending_updates = self._kv_store.get_all(self._PENDING_TITLE_UPDATES)
 
         # update database if updater is active
-        if self._runtime.database_update_enabled:
-            if pending_updates:
-                update_titles = [item[0] for item in pending_updates]
-                self._runtime.update_to_database(update_titles, deep=False)
-            self._runtime.run_database_housekeeping()
+        if self._runtime.database_update_enabled and pending_updates:
+            update_titles = [item[0] for item in pending_updates]
+            self._runtime.update_to_database(update_titles, deep=False)
 
         error_count = 0
         for title, update in pending_updates:
@@ -232,6 +235,28 @@ class PageUpdateManager(HeartbeatManager):
                     result[title] = update
         _logger.info(f"PageUpdateManager.get_updates: {len(result)} total updates")
         return result
+
+# ----------------------------------------------------------------------------
+# Database housekeeping (translation queue, doc metadata/lookups, dupe links)
+#
+# Split out from PageUpdateManager so its cadence isn't hostage to the wiki
+# page-poll interval (or vice versa): housekeeping's real constraint is the
+# shared NocoDB API budget, not MediaWiki's edit rate, and unlike page-polling
+# it drains queues (BD:Need Page Lookups, BD:Need Dupe Check,
+# BD:Missing Metadata, untranslated items) that are directly user-visible in
+# the UI. Kept at the same interval PageUpdateManager used to run it at
+# (proven in production to keep all of these queues drained to zero) -- tune
+# independently from here on.
+
+class HousekeepingManager(HeartbeatManager):
+    _HEARTBEAT_INTERVAL             = 60 * 2 # seconds
+
+    def __init__(self, runtime):
+        self._runtime = runtime
+        super().__init__(interval=HousekeepingManager._HEARTBEAT_INTERVAL)
+
+    def heartbeat(self):
+        self._runtime.run_database_housekeeping()
 
 # ----------------------------------------------------------------------------
 # Resource usage monitor
@@ -322,6 +347,9 @@ class Runtime:
             else:
                 _logger.info("Runtime: FTP site manager disabled (_ENABLE_FTP_MANAGER=False)")
 
+            self._housekeeping_manager = (
+                HousekeepingManager(self) if _ENABLE_DB_HOUSEKEEPING else None)
+
         else:
             self._database = None
             self._database_updater = None
@@ -329,6 +357,7 @@ class Runtime:
             self._commons_doc_tracker = None
             self._wikisource_doc_tracker = None
             self._ftp_manager = None
+            self._housekeeping_manager = None
 
 
         self._killswitch = KillSwitch(self)
@@ -378,6 +407,8 @@ class Runtime:
                 self._wikisource_doc_tracker.start()
             if self._ftp_manager:
                 self._ftp_manager.start()
+            if self._housekeeping_manager:
+                self._housekeeping_manager.start()
             self._killswitch.start()
             self._state = "running"
 
@@ -395,6 +426,8 @@ class Runtime:
                 self._wikisource_doc_tracker.hold()
             if self._ftp_manager:
                 self._ftp_manager.hold()
+            if self._housekeeping_manager:
+                self._housekeeping_manager.hold()
             self._state = "paused"
 
     def unpause(self):
@@ -411,6 +444,8 @@ class Runtime:
                 self._wikisource_doc_tracker.release()
             if self._ftp_manager:
                 self._ftp_manager.release()
+            if self._housekeeping_manager:
+                self._housekeeping_manager.release()
             self._state = "running"
 
     def lookup_by_title(self, title):
