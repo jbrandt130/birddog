@@ -8,6 +8,7 @@ sys.modules['requests.packages'] = requests
 sys.modules['requests.packages.urllib3'] = urllib3
 
 import os
+import random
 import re
 import time
 from datetime import datetime
@@ -17,14 +18,112 @@ from urllib.parse import parse_qs, quote, unquote, urlparse, urlunparse
 
 from openpyxl import load_workbook
 
-from birddog.abstract_database import InvalidFieldValue
+from birddog.abstract_database import FailedIO, InvalidFieldValue
+from birddog.log import get_logger
+
+
+def retry_on_transient_error(func, *args, max_retries=3, base_delay=2.0, max_delay=15.0, **kwargs):
+    """
+    Execute a function with exponential backoff retry for transient errors.
+
+    Args:
+        func: Function to execute
+        *args: Arguments to pass to func
+        max_retries: Maximum number of retry attempts (default 3)
+        base_delay: Base delay in seconds for exponential backoff (default 2.0)
+        max_delay: Maximum delay in seconds between retries (default 15.0)
+        **kwargs: Keyword arguments to pass to func
+
+    Returns:
+        The result of func if successful
+
+    Raises:
+        The last exception if all retries exhausted
+    """
+    logger = get_logger()
+    last_exception = None
+    for attempt in range(max_retries + 1):
+        try:
+            return func(*args, **kwargs)
+        except FailedIO as e:
+            last_exception = e
+            if attempt == max_retries:
+                logger.error(f"All {max_retries} retries exhausted for {func.__name__}: {e}")
+                raise
+
+            # Calculate delay with exponential backoff and jitter
+            delay = min(base_delay * (2 ** attempt), max_delay)
+            # Add jitter: random value between 0.5 * delay and 1.5 * delay
+            jittered_delay = delay * (0.5 + random.random())
+            logger.warning(f"Transient error in {func.__name__} (attempt {attempt + 1}/{max_retries + 1}): {e}. "
+                          f"Retrying in {jittered_delay:.1f}s...")
+            time.sleep(jittered_delay)
+        except Exception as e:
+            # For non-transient errors, don't retry
+            logger.error(f"Non-transient error in {func.__name__}: {e}")
+            raise
+
+    # This should never be reached, but just in case
+    assert last_exception is not None
+    raise last_exception
+
+
+def would_create_cycle(parent_url, child_url, page_dict, visited=None):
+    """
+    Check if linking parent_url -> child_url would create a cycle in the page hierarchy.
+    Returns True if a cycle would be created, False otherwise.
+
+    Args:
+        parent_url: URL of the proposed parent page
+        child_url: URL of the proposed child page
+        page_dict: Mapping of page URLs to page objects (each with 'parent_url' field)
+        visited: Set of URLs visited in the current traversal (for recursion)
+
+    Returns:
+        bool: True if linking would create a cycle, False otherwise
+    """
+    if visited is None:
+        visited = set()
+
+    # Base cases
+    if child_url in visited:
+        return True  # Cycle detected
+
+    if child_url == parent_url:
+        return True  # Self-link creates cycle
+
+    # Add current child to visited set for this traversal
+    visited.add(child_url)
+
+    # Get the child page to check its parent
+    child_page = page_dict.get(child_url)
+    if not child_page:
+        visited.discard(child_url)
+        return False  # Child page not found, no cycle possible
+
+    # Check child's parent recursively
+    child_parent_url = child_page.get("parent_url")
+    if child_parent_url:
+        # If the child's parent is the proposed parent, this link already exists
+        # (redundant, not a cycle). Only flag it as a cycle if we'd be linking
+        # to an ancestor other than the direct parent.
+        if child_parent_url == parent_url:
+            visited.discard(child_url)
+            return False
+
+        result = would_create_cycle(parent_url, child_parent_url, page_dict, visited.copy())
+        visited.discard(child_url)
+        return result
+
+    visited.discard(child_url)
+    return False  # No parent, so no cycle
+
 from birddog.database import Database, timer
 from birddog.database_updater import (
     domain_from_url,
     form_document_record,
     normalize_url,
 )
-from birddog.log import get_logger
 from birddog.utility import utc_now_dt
 from birddog.wiki import (
     WIKI_NAMESPACE,
@@ -73,6 +172,54 @@ else:
         GREEN = ""
 
 _logger = get_logger()
+
+
+def verify_opus_format(text: str):
+    """Allowed format: containing an integer followed by a hyphen.
+
+    - Returns tuple: (False, '0', '0') if not conforming.
+    - Returns tuple: (True, integer_str, rest_of_str_after_hyphen) if conforming.
+    - If the integer is preceded by a hyphen, the first returned string includes
+      the two symbols preceding that integer.
+    """
+    pattern = r"(?:^|(?<=[\s-]))(\d+)-(.*)$"
+
+    match = re.search(pattern, text)
+    if match:
+        str1 = match.group(1)
+        str2 = match.group(2)
+        start_pos = match.start(1)
+
+        # If the integer is preceded by a hyphen, include the 2 preceding symbols
+        if start_pos > 0 and text[start_pos - 1] == "-":
+            prefix = text[max(0, start_pos - 2) : start_pos]
+            str1 = prefix + str1
+
+        return True, str1, str2
+
+    return False, "0", "0"
+
+
+def verify_fond_format(text: str):
+    """
+    Allowed formats:
+    - a word consisting of letters, then a space, then one letter, then a hyphen, and then an integer
+    - a word with the space, or a letter with the hyphen, or both, may be absent
+    The letters may be Latin or Cyrillic.
+    If the string conforms to one of these formats, the function returns `True` and also
+    the integer that stands at the end of this string. Otherwise, the function returns `false` and 0.
+    """
+    # Pattern breakdown:
+    # 1. (?:([a-zA-Z\u0400-\u04FF]+) )? -> Optional initial word MUST be followed by a space
+    # 2. (?:([a-zA-Z\u0400-\u04FF])-?)? -> Optional single letter, optionally followed by a hyphen
+    # 3. (\d+)$                       -> Trailing integer
+
+    pattern = r"^(?:([a-zA-Z\u0400-\u04FF]+) )?(?:([a-zA-Z\u0400-\u04FF])-?)?(\d+)$"
+
+    match = re.match(pattern, text)
+    if match:
+        return True, int(match.group(3))
+    return False, 0
 
 
 def parent_title_no_ns(title, wiki_spreadsheet, archive_unit_name):
@@ -538,18 +685,9 @@ def log_strange_parsing_result(ws, r, cell, subunits: list[str], url: str, wiki_
         case 1:
             if wiki_spreadsheet and normalized_val not in url:
                 return lower_level
-#                # default result - check url sanity
-#                no_letters = re.sub(r"[A-Z-]", "", normalized_val)
-#                if no_letters not in url:
-#                    _logger.warning(f"In sheet='{ws.title}', row={r}, the URL {url} was supposed to include"
-#                                    f" the {lower_level} number '{normalized_val}'")
 
         case 0:
             pass
-#            if cell.value and len(str(cell.value)) > 0:
-#                #otherwise, it is an empty cell - do nothing
-#                _logger.warning(
-#                    f"No URL found for the {lower_level} '{normalized_val}', sheet='{ws.title}', row={r} - skipping")
 
         case _:
             _logger.warning(f"Irregular {lower_level} number '{normalized_val}', sheet='{ws.title}', "
@@ -965,12 +1103,6 @@ def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, she
         if not string_contains_part(url, sequence, wiki_spreadsheet):
             mess = (f"url {url} in cell {cell_address} in worksheet '{sheet_title}'"
                     f" was supposed to include '{sequence}'")
-#    else:
-#        for part in necessary_parts:
-#            if not string_contains_part(url, part, wiki_spreadsheet):
-#                mess = (f"url {url} in cell {cell_address} in worksheet '{sheet_title}'"
-#                       f" was supposed to include '{part}'")
-#                break
 
     if mess != "":
         _logger.warning(mess)
@@ -985,7 +1117,7 @@ def get_language(ws, cell_address):
         parts = re.split(r"[;,& ]+", language)
         # replace 'Russ' with 'Russian' in the resulting list
         language = ['Russian' if s == 'Russ' else s for s in parts]
-        _logger.warning(f"Found language {language}")
+        _logger.info(f"Found language {language}")
     return language
 
 
@@ -1183,6 +1315,8 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
         "comments": comments,
     }, page_table)
 
+    fund_dictionary = {}
+
     for r in range(7, ws.max_row + 1):
         fund_num_cell_addr = f"A{r}"
         fund_num_cell = ws[fund_num_cell_addr]
@@ -1207,6 +1341,10 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
                 if "archive" == level:
                     add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, archive_url, title,
                                            latin_title, url, source_type, r, page_table, change_date, timestamp)
+                    
+                    correct_format, fund_idx = verify_fond_format(fund_ids[0])
+                    if correct_format:
+                        fund_dictionary[fund_idx] = url
                 else:
                     curr_source_type, label = get_label_source_type(latin_title, source_type, title, wiki_spreadsheet)
                     language = get_language(ws, f"O{r}")
@@ -1220,7 +1358,7 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
                     add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_name, archive_url, title,
                                                latin_title, url, source_type, r, page_table, change_date, timestamp)
 
-    return page_table, archive_cyrillic_name, archive_url
+    return page_table, archive_cyrillic_name, archive_url, fund_dictionary
 
 
 def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id, fund_cyrillic_name,
@@ -1550,7 +1688,11 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
         page_table = {}
     hdr_row = 1
     archive_url = ''  #we assume the archive sheet is the first in the spreadshee
-    fund_url = ''  #we assume the opus sheets come after the corresponding fund sheet
+    fund_url = ''  #we assume the opus sheets come after the corresponding fund sheet -
+    # this is wrong for DAHEO-D-archive-20260321.xlsx
+    prev_fund_name = '-1'
+    fund_dictionary = {}
+
     for sheet in worksheets:
         try:
             _logger.info(f"processing worksheet: {sheet.title}")
@@ -1585,20 +1727,33 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
                 case 2:
                     fund_name = fund_opus_attributes[0]
                     opus_name = fund_opus_attributes[-1]
+                    if not fund_name:
+                        is_opus_format, fund_name, opus_name = verify_opus_format(sheet.title)
+                        if not is_opus_format:
+                            raise ValueError(f"Opus sheet name {sheet.title} is not of standard format")
+
+                    if fund_name != prev_fund_name:
+                        correct_format, fund_idx = verify_fond_format(fund_name)
+                        if not correct_format:
+                            raise ValueError(f"Fund name {fund_name} is not of standard format")
+
+                        fund_url = fund_dictionary.get(fund_idx)
+                        if not fund_url:
+                            raise ValueError(f"No URL for fund {fund_name}, sheet {sheet.title}")
+
                     page_table = process_opus_sheet(sheet, wiki_spreadsheet, archive_unit_name,
                                                     archive_unit_cyrillic_name, fund_name, opus_name, fund_url,
                                                     change_date_col, ref_date_col, page_table)
                 case 1:
                     fund_name = fund_opus_attributes[0]
+                    prev_fund_name = fund_name
                     page_table, fund_url = process_fund_sheet(sheet, wiki_spreadsheet, archive_url, archive_name,
                                                               fund_name, archive_unit_cyrillic_name, change_date_col,
                                                               ref_date_col, page_table)
                 case 0:
-                    page_table, archive_cyrillic_name, archive_url = process_archive_sheet(sheet, wiki_spreadsheet,
-                                                                                           archive_unit_name,
-                                                                                           archive_unit_cyrillic_name,
-                                                                                           change_date_col,
-                                                                                           ref_date_col, page_table)
+                    page_table, archive_cyrillic_name, archive_url, fund_dictionary = (
+                        process_archive_sheet(sheet, wiki_spreadsheet, archive_unit_name,
+                        archive_unit_cyrillic_name, change_date_col, ref_date_col, page_table))
                 case _:
                     raise ValueError(f"{num_attributes} for worksheet {sheet.title}")
 
@@ -1725,15 +1880,35 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 parent_page["child_ids"] = child_ids
 
     # Step 5: link parents to their children
+    # Build ID -> URL mapping for cycle detection
+    id_to_url = {page["Id"]: page["url"] for page in output_pages}
+
     for parent in parent_dict.values():
         child_ids = parent.get("child_ids")
         if child_ids:
-            _logger.info(f"Linking {len(child_ids)} children for {parent['title']}")
-            db.create_links(
-                "Pages",
-                "children",
-                parent["Id"],
-                child_ids)
+            parent_url = parent["url"]
+            # Filter out child IDs that would create cycles
+            safe_child_ids = []
+            for child_id in child_ids:
+                child_url = id_to_url.get(child_id)
+                if child_url and not would_create_cycle(parent_url, child_url, page_dict):
+                    safe_child_ids.append(child_id)
+                elif child_url:
+                    _logger.warning(f"Error - Skipping link that would create cycle: {parent_url} -> {child_url}")
+
+            if safe_child_ids:
+                _logger.info(f"Linking {len(safe_child_ids)} children for {parent['title']}")
+                try:
+                    retry_on_transient_error(
+                        db.create_links,
+                        "Pages",
+                        "children",
+                        parent["Id"],
+                        safe_child_ids)
+                except FailedIO as e:
+                    _logger.error(f"Failed to link children for {parent['title']} ({parent['Id']}): {e}")
+            else:
+                _logger.warning(f"Error - no safe children to link for {parent['title']} (all would create cycles)")
 
     # Step 6: create records for all linked docs
     output_docs = {}
@@ -1786,11 +1961,15 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         page_title = page_dict[page_url]["title"]
         linked_ids = [output_docs[d["url"]]["Id"] for d in linked_docs]
         _logger.info(f"Adding doc links for {page_title} ({page_id}): {linked_ids}")
-        db.create_links(
-            "Pages",
-            "doc_links",
-            page_id,
-            linked_ids)
+        try:
+            retry_on_transient_error(
+                db.create_links,
+                "Pages",
+                "doc_links",
+                page_id,
+                linked_ids)
+        except FailedIO as e:
+            _logger.error(f"Failed to link docs for {page_title} ({page_id}): {e}")
 
     timer.report()  # See average time spent in DB functions
 
@@ -1807,7 +1986,7 @@ def process_dir(dir_path, actually_write=True):
                 f.write(msg + "\n")
                 try:
                     import_spreadsheet(str(entry), actually_write)
-                except Exception as e:
+                except TypeError as e:
                     error_msg = f"Error processing {entry}: {e}\n"
                     f.write(error_msg)
                     _logger.info(f"{Fore.RED}{error_msg}{Fore.RESET}")
@@ -1818,7 +1997,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DACHKO-D-wiki-20260628.xlsx" #DASO-R-wiki-20260604.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAKIRO-D-wiki-20260827.xlsx"
     import_spreadsheet(filepath, True)
 #    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(dir_path)
