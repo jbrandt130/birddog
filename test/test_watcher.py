@@ -805,8 +805,10 @@ class LegacyBlobLazyMigrationTests(WatcherTestBase):
 
         header = watcher_mod.get_watcher(email, title)
         self.assertEqual(header["include"], [title])
-        # oldest cutoff/last_checked across both merged blobs, not either one alone
-        self.assertEqual(header["cutoff_date"], "2025-02-02T00:00:00Z")
+        # cutoff_date = NEWEST cutoff across the merged blobs (an abandoned
+        # subarchive stub must never drag the floor back); last_checked_date
+        # stays the OLDEST so the next scan still re-covers every gap
+        self.assertEqual(header["cutoff_date"], "2025-04-10T00:00:00Z")
         self.assertEqual(header["last_checked_date"], "2026-07-23T12:34:35Z")
 
         self.assertEqual(
@@ -822,6 +824,83 @@ class LegacyBlobLazyMigrationTests(WatcherTestBase):
                 self.cache.load(path)
             quarantine_path = path.replace("watchers/", "watchers/_migrated/", 1)
             self.cache.load(quarantine_path)  # must not raise
+
+    def test_ensure_migrated_dead_stub_does_not_drag_cutoff_or_last_checked_back(self):
+        # A subarchive blob with no resolved and no unresolved history is a
+        # dead stub -- a watch added long ago and never actually used. Its
+        # ancient cutoff/last_checked must be ignored entirely, or the
+        # merged watch's next scan re-surfaces years of already-reviewed
+        # history (jberland's empty "ДАМО/А" from 2024 dragged the whole
+        # ДАМО watch's floor back ~2 years; found 2026-09-10).
+        email, title = "stub@example.com", "Архів:ДАЧгО"
+        self.cache.save({
+            "version": "v7", "archive": "DACHGO", "subarchive": "D",
+            "cutoff_date": "2025-06-01T00:00:00Z", "last_checked_date": "2026-08-01T00:00:00Z",
+            "resolved": {"DACHGO,D,10,1,5": [
+                {"modified": "2025-07-01T00:00:00Z", "last_resolved": "2025-07-02T00:00:00Z"}]},
+            "unresolved": {},
+        }, "watchers/stub@example.com/DACHGO-D.json")
+        self.cache.save({
+            "version": "v7", "archive": "DACHGO", "subarchive": "A",
+            "cutoff_date": "2023-01-01T00:00:00Z", "last_checked_date": "2023-01-01T00:00:00Z",
+            "resolved": {}, "unresolved": {},
+        }, "watchers/stub@example.com/DACHGO-A.json")
+
+        watcher_mod._ensure_migrated(email, title, runtime=None)
+
+        header = watcher_mod.get_watcher(email, title)
+        self.assertEqual(header["cutoff_date"], "2025-06-01T00:00:00Z")
+        self.assertEqual(header["last_checked_date"], "2026-08-01T00:00:00Z")
+
+    def test_ensure_migrated_merged_watch_never_surfaces_a_title_below_a_source_cutoff(self):
+        # Invariant: after merging per-subarchive blobs, check_watcher()
+        # must not surface any title as unresolved that no source
+        # subarchive's own check would have surfaced. The old min(cutoff)
+        # broke this -- the merged floor dropped below the real
+        # subarchives' cutoffs and re-exposed everything under them
+        # (jberland's ДАМО/ДАВоО flood, 2026-09).
+        email, title = "inv@example.com", "Архів:ДАЧгО"
+        # D: real, recent cutoff.  R: real, older cutoff + stale last_checked.
+        self.cache.save({
+            "version": "v7", "archive": "DACHGO", "subarchive": "D",
+            "cutoff_date": "2025-06-01T00:00:00Z", "last_checked_date": "2026-08-01T00:00:00Z",
+            "resolved": {"DACHGO,D,10,1,5": [
+                {"modified": "2025-07-01T00:00:00Z", "last_resolved": "2025-07-02T00:00:00Z"}]},
+            "unresolved": {},
+        }, "watchers/inv@example.com/DACHGO-D.json")
+        self.cache.save({
+            "version": "v7", "archive": "DACHGO", "subarchive": "R",
+            "cutoff_date": "2025-01-01T00:00:00Z", "last_checked_date": "2025-03-01T00:00:00Z",
+            "resolved": {}, "unresolved": {"DACHGO,R,Р-9,1,7": {
+                "modified": "2026-05-01T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z"}},
+        }, "watchers/inv@example.com/DACHGO-R.json")
+
+        watcher_mod._ensure_migrated(email, title, runtime=None)
+        header = watcher_mod.get_watcher(email, title)
+        # cutoff = max(D, R) so nothing below either real cutoff can surface;
+        # last_checked = min(D, R) so the scan still re-covers R's gap
+        self.assertEqual(header["cutoff_date"], "2025-06-01T00:00:00Z")
+        self.assertEqual(header["last_checked_date"], "2025-03-01T00:00:00Z")
+
+        tracker = {
+            # D-space, edited BELOW D's own cutoff -> deliberately out of
+            # scope; the old min() floor (2025-01-01) would have re-surfaced it
+            "Архів:ДАЧгО/10/1/3":  {"timestamp": "2025-04-01T00:00:00Z"},
+            # D-space, at exactly the revision already resolved
+            "Архів:ДАЧгО/10/1/5":  {"timestamp": "2025-07-01T00:00:00Z"},
+            # D-space, a genuine new edit above the cutoff
+            "Архів:ДАЧгО/10/1/9":  {"timestamp": "2026-09-01T00:00:00Z"},
+            # carried over from R's unresolved
+            "Архів:ДАЧгО/Р-9/1/7": {"timestamp": "2026-05-01T00:00:00Z"},
+        }
+        unresolved = watcher_mod.check_watcher(
+            email, title, FakeRuntime(FakePageUpdateManager(tracker)),
+            include=[title], cutoff_date=header["cutoff_date"])
+
+        self.assertNotIn("Архів:ДАЧгО/10/1/3", unresolved)   # below D's cutoff -- the regression
+        self.assertNotIn("Архів:ДАЧгО/10/1/5", unresolved)   # already resolved at this revision
+        self.assertIn("Архів:ДАЧгО/10/1/9", unresolved)      # genuine new edit
+        self.assertIn("Архів:ДАЧгО/Р-9/1/7", unresolved)     # carried unresolved
 
     def test_check_watcher_migrates_legacy_blob_before_checking(self):
         email, title = "legacy2@example.com", "Архів:ДААРК"

@@ -354,15 +354,44 @@ def _ensure_migrated(email, archive_title, runtime):
     if not loaded:
         return  # no legacy blob anywhere -- brand new watch
 
+    # Blobs with no resolved and no unresolved history are dead stubs -- a
+    # watch added long ago and never actually used. Their cutoff /
+    # last_checked must NOT set the merged watch's floor. The original
+    # min() here let one abandoned subarchive stub (e.g. jberland's empty
+    # "ДАМО/А" watch from 2024, never re-checked) drag the whole merged
+    # watch's cutoff back ~2 years, so check_watcher()'s next scan
+    # re-surfaced every page below the *real* subarchives' cutoffs as
+    # "unresolved" (found 2026-09-10; see the "address-to-title watchlist
+    # redesign" memory).
+    active = [x for x in loaded if x[3] or x[4]]  # x[3] resolved, x[4] unresolved
+    date_sources = active or loaded
+
+    # cutoff_date = the NEWEST cutoff across the real source subarchives.
+    # This is the only choice that cannot re-surface a title that wasn't
+    # already unresolved in some source blob: any never-resolved item the
+    # next check surfaces then sits at mod_date > max(cutoff) >= its own
+    # subarchive's cutoff, i.e. it is genuinely in scope. (min() is what
+    # caused the mass false re-surfacing; a min(max(cutoff), min(last_checked))
+    # clamp still re-exposes a lagging subarchive's below-cutoff history --
+    # verified against jberland's real ДАВоО data.) The only thing this can
+    # miss is an in-scope unreviewed change in a subarchive whose own
+    # last_checked already trails max(cutoff) -- i.e. exactly the abandoned
+    # stubs, which by definition have ~no real activity.
+    #
+    # last_checked_date stays the OLDEST across the real sources, so the
+    # next bounded scan still re-covers every subarchive's gap. Anything
+    # that scan turns up below the (newer) cutoff is filtered out there and
+    # never surfaced -- so a stale source only costs a wider one-time
+    # catch-up scan, never a false unresolved item.
+    merged_cutoff = max(h["cutoff_date"] for _, _, h, _, _ in date_sources)
+    merged_last_checked = min(h["last_checked_date"] for _, _, h, _, _ in date_sources)
+
     header = {
         "version": "v9",
         "include": [archive_title],
         "exclude": [],
-        # oldest across all merged sources, so check_watcher()'s next bounded
-        # scan re-covers any gap between the subarchives' differing
-        # last-checked cursors rather than silently skipping it
-        "cutoff_date": min(h["cutoff_date"] for _, _, h, _, _ in loaded),
-        "last_checked_date": min(h["last_checked_date"] for _, _, h, _, _ in loaded),
+        "cutoff_date": merged_cutoff,
+        "last_checked_date": merged_last_checked,
     }
 
     resolved = {}
