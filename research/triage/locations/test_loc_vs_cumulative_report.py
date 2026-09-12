@@ -108,71 +108,6 @@ class LocationPerformanceEvaluator:
         possible_labels = [latin_archive_name + suffix + fund_slash_etc for suffix in suffixes]
         return possible_labels
 
-    def evaluate_on_one_doc(self, doc_id: int, cumulative_towns: list[str], file: str, 
-                            skip_extraction:bool = False, debug_print:bool = False):
-        # towns from the cumulative report to JG location IDs
-        cumulative_locations = self.file_location_finder.match_places_to_location_ids(
-            doc_id, cumulative_towns, debug_print)
-        # Convert the frozen sets to dictionaries
-        cumulative_locations = [dict(f_set) for f_set in cumulative_locations]
-        # get location IDs
-        cumulative_locations_ids = [loc["loc_id"] for loc in cumulative_locations]
-        cumulative_locations_ids_set = set(cumulative_locations_ids)
-        if 0 == len(cumulative_locations_ids_set):
-            print(f"None of the towns {cumulative_towns} for document {file} is contained in the JGDB")
-            return
-
-        if skip_extraction:
-            doc_location_ids = []
-        else:
-            doc_location_ids = self.file_location_finder.get_doc_location(doc_id,
-                only_smallest_locations=True, debug_print=debug_print)
-
-        doc_location_ids_set = set(doc_location_ids)
-        if doc_location_ids_set == cumulative_locations_ids_set:
-            self.num_docs_evaluated_correctly += 1
-        if cumulative_locations_ids_set.issubset(doc_location_ids_set):
-            self.num_docs_with_all_locations_found += 1
-
-        if debug_print:
-            if doc_location_ids_set == cumulative_locations_ids_set:
-                msg = f"Record {file}, document ID {doc_id}, all locations coincide: "
-                for loc_id in cumulative_locations_ids_set:
-                    location = self.file_location_finder.get_location_from_id(str(loc_id))
-                    if location:
-                        msg = f"{msg} {location["main_name"]}"
-            else:
-                msg = f"Record {file}, document ID {doc_id}, {len(cumulative_locations_ids_set)} assumed locations:"
-                for loc_id in cumulative_locations_ids_set:
-                    location = self.file_location_finder.get_location_from_id(str(loc_id))
-                    if location:
-                        msg = f"{msg} {location["main_name"]}"
-                msg = f"{msg}; identified {len(doc_location_ids_set)}:"
-                missing = cumulative_locations_ids_set - doc_location_ids_set
-                if missing:
-                    msg = f"{msg}; missing {len(missing)}:"
-                    for loc_id in missing:
-                        location = self.file_location_finder.get_location_from_id(str(loc_id))
-                        if location:
-                            msg = f"{msg} {location["main_name"]}"
-                extra = doc_location_ids_set - cumulative_locations_ids_set
-                if extra:
-                    msg = f"{msg}; extra {len(extra)}:"
-                    for loc_id in extra:
-                        location = self.file_location_finder.get_location_from_id(str(loc_id))
-                        if location:
-                            msg = f"{msg} {location["main_name"]}"
-
-            print(msg)
-
-        intersection_set = doc_location_ids_set & cumulative_locations_ids_set
-        
-        self.num_evaluated_docs += 1
-        self.total_num_cumulative_locs += len(set(cumulative_towns))
-        self.total_num_cumulative_locs_in_jgdb += len(cumulative_locations_ids_set)
-        self.total_num_extracted_locs += len(doc_location_ids_set)
-        self.total_num_coinciding_locs += len(intersection_set)
-
     def unique_random_integers(self, max_num_docs: int) -> list[int]:
         rows = get_unique_random_integers(max_num_docs, self.total_data_rows)
         return rows
@@ -226,16 +161,15 @@ class LocationPerformanceEvaluator:
                     debug_print=debug_print,
                 )
             else:
-                batch_results = {doc_id: [] for doc_id in buffered_doc_ids}
+                batch_results = {doc_id: ([], set()) for doc_id in buffered_doc_ids}
 
             # Now evaluate each doc in this chunk using the batched result
             for row, file, town_list, doc_id in chunk:
                 if debug_print:
                     print(f"Processing document number {self.num_evaluated_docs} with ID {doc_id}")
                 # Swap in the batched result for the extraction step
-                self.evaluate_on_one_doc_from_batch(
-                    row, doc_id, town_list, file, batch_results.get(doc_id, []), debug_print
-                )
+                self.evaluate_on_one_doc_from_batch(row, doc_id, town_list, file,
+                    batch_results.get(doc_id, [])[0], batch_results.get(doc_id, [])[1], debug_print)
 
         self.print_statistics(max_num_docs)
 
@@ -252,11 +186,12 @@ class LocationPerformanceEvaluator:
         cumulative_towns: list[str],
         file: str,
         doc_location_ids: list[str],
+        archive_locs: set[str],
         debug_print: bool,
     ):
-        """Like evaluate_on_one_doc but takes doc_location_ids directly (already extracted)."""
+        """takes doc_location_ids directly (already extracted)."""
         cumulative_locations = self.file_location_finder.match_places_to_location_ids(
-            doc_id, cumulative_towns, debug_print)
+            doc_id, cumulative_towns, archive_locs, debug_print)
         cumulative_locations = [dict(f_set) for f_set in cumulative_locations]
         cumulative_locations_ids = [loc["loc_id"] for loc in cumulative_locations]
         cumulative_locations_ids_set = set(cumulative_locations_ids)
@@ -359,13 +294,10 @@ if __name__ == "__main__":
     debug_print_ = True
     batch_size_ = 5
 
-#    rows_ = [2354]
-    rows_ = [68, 146, 158, 167, 192, 197, 379, 385, 386, 461, 502, 594, 630, 749, 825, 836, 843, 870, 886, 946, 957, 1413, 1435, 1487, 1512, 1562, 1565, 1601, 1610, 1616, 1714, 1787, 1814, 2014, 2022, 2321, 2329, 2354, 2383, 2526, 2596, 2611, 2622, 2715, 2749, 2800, 2828, 2847, 2983, 3058, 3113, 3202, 3209, 3314, 3340, 3379, 3434, 3442, 3517, 3602, 3878, 3880, 3900, 4242, 4335, 4365, 4382, 4835, 4993, 5011, 5281, 5336, 5488, 5521, 5537, 6020, 6081, 6096, 6162, 6163, 6283, 6315, 6378, 6435, 6451, 6469, 6522, 6548, 6791, 6796, 6840, 6854, 6861, 7081, 7084, 7106, 7148, 7159, 7228, 7249, 7345, 7388, 7389, 7515, 7662, 7674, 7689, 7946, 7997, 8208, 8312, 8320, 8351, 8372, 8495, 8498, 8594, 8611, 8714, 8737, 8771, 8959, 8975, 8984, 9012, 9024, 9096, 9097, 9101, 9145, 9156, 9167, 9176, 9214, 9226, 9351, 9497, 9507, 9524, 9598, 9633, 9691, 9817, 10845]
+#    rows_ = [9813]
+    rows_ = [3, 7, 186, 246, 261, 309, 615, 619, 629, 635, 689, 703, 707, 825, 849, 926, 1412, 1429, 1502, 1647, 1652, 1707, 1743, 1810, 1816, 1843, 2043, 2100, 2304, 2320, 2455, 2484, 2529, 2618, 2635, 2661, 2667, 2711, 2791, 2797, 2852, 2877, 2916, 2923, 3016, 3031, 3144, 3157, 3173, 3175, 3199, 3223, 3269, 3476, 3481, 3493, 3497, 3510, 3513, 3551, 3625, 3727, 3837, 3938, 3939, 3957, 4052, 4085, 4114, 4167, 4386, 4736, 5009, 5016, 5142, 5267, 5274, 5281, 5413, 5552, 5557, 5924, 6021, 6051, 6165, 6214, 6219, 6430, 6485, 6515, 6563, 6764, 6815, 6830, 6851, 6882, 6915, 6968, 7288, 7389, 7609, 7627, 7669, 7838, 7947, 7955, 8022, 8128, 8149, 8163, 8175, 8221, 8243, 8292, 8301, 8319, 8448, 8602, 8634, 8645, 8649, 8665, 8706, 8717, 8768, 8862, 8887, 9055, 9069, 9076, 9123, 9191, 9221, 9302, 9323, 9439, 9450, 9451, 9461, 9468, 9478, 9643, 9645, 9682, 9728, 9792, 9801, 9813, 10213]
 #    rows_ = evaluator.unique_random_integers(250)
 #    rows_ = [row + 1 for row in rows_]  # the first row is the header
     evaluator.evaluate_location_extraction(rows_, False, debug_print_, batch_size_)
 #    cumulative_file = "ЦДІАК 1167-1-132"
 #    print(evaluator.get_doc_id(cumulative_file))
-#    file_, town_list_ = evaluator.get_file_towns_from_cumulative_report(5289)
-#    if file_ and town_list_ and (doc_id := evaluator.get_doc_id(file_)):
-#        evaluator.evaluate_on_one_doc(doc_id, town_list_, file_, False, True)

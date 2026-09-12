@@ -10,7 +10,6 @@ import re
 from typing import Any, cast
 
 from extract_location_from_descriptors import (
-    extract_locations,
     extract_locations_batched,
     locations_to_admin_units,
 )
@@ -78,99 +77,6 @@ def title_case_all_caps(text):
     return re.sub(pattern, lambda m: m.group(0).title(), text)
 
 
-def delete_nuisance_words(descriptions: set[str], debug_print: bool = False)-> set[str]:
-    all_words_to_delete = [
-        'court', 'Peace', 'Justice', 'Judicial', 'Investigative', 'Sentence', 'Sentences',
-        'the', 'statistical', 'economic', 'historical', 'philological', 'educational', 'medical',
-        'governmental', 'government', 'institution', 'institutions', 'official', 'officials',
-        'committee', 'ministry', 'Office','Department', 'Funds', 'council', 'councils', 'duma',
-        'State', 'Archive', 'Archives', 'ministers', 'University', 'institute', 'gymnasium',
-        'statistics', 'Conscription', 'branch', 'Agency', 'Society', 'Community',
-        'Judgment', 'Judgments', 'rural', 'bourgeois', "Men's", "Women's"]
-
-    # delete also the religious terms
-    religious_terms = ['Roman Catholic', 'churches', 'Church', 'synagogue', 'Jewish', 'Jews', 'rabbinate', 'synod',
-                       'Spiritual', 'Theological', 'Seminary', 'Consistory', 'Orthodox',
-                       'Assumption', 'deanery', 'clergy', 'Trinity',
-                       'Resurrection', 'Ascension', 'Intercession', 'Annunciation', 'Transfiguration']
-    all_words_to_delete.extend(religious_terms)
-
-    # delete also the documentation/archival terms
-    archival_noise = [
-        "after",
-        "birth",
-        "book",
-        "books",
-        "confessional",
-        "death",
-        "Decree",
-        "Decrees",
-        "divorce",
-        "document",
-        "documents",
-        "file",
-        "files",
-        "folder",
-        "folders",
-        "journal",
-        "journals",
-        "magistrate",
-        "marriage",
-        "matriculation",
-        "meeting",
-        "meetings",
-        "metric",
-        "prior",
-        "record",
-        "records",
-        "registry",
-        "register",
-        "registers",
-        "to",
-        "year",
-        "years",
-    ]
-    all_words_to_delete.extend(archival_noise)
-
-    shortened_descriptions = set()
-    for description in descriptions:
-        description = remove_words_list(description, all_words_to_delete, True)
-
-        description = replace_word(description, 'regional', 'region')
-        description = replace_word(description, 'provincial', 'province')
-        description = description.replace(" of ", " ")
-        description = description.replace(" and ", ", ")
-        description = description.replace(" (", ", ")
-        description = description.replace(")", ", ")
-        description = description.replace(" M. ", " village ")
-        description = description.replace(" Mr. ", " village ")
-
-        # remove http links: this pattern finds "http" and matches all characters until it hits a space
-        description = re.sub(r"http\S*", "", description)
-
-        # We replace the found integers with an empty string
-        description = re.sub(r"(?:(?<=[ \-,.;])|^)\d+(?=[ \-,.;]|$)", "", description)
-
-        # We replace the found matches with an empty string
-        description = re.sub(r"(?:(?<=[ ,.;])|^)-[a-zA-Z](?=[ ,.;]|$)", "", description)
-
-        # do not allow all capital words - they too confuse the model
-        description = title_case_all_caps(description)
-
-        # We replace the duplicate commas with just a single comma
-        description = re.sub(r",[\s,]*,", ",", description)
-
-        max_length = 200
-        description = chop_to_max_length(description, max_length)
-
-        if debug_print:
-            print(f"Description shortened to '{description}'")
-
-        shortened_descriptions.add(description)
-
-    return shortened_descriptions
-
-
 class FileLocationFinder:
     def __init__(self):
         self._logger = get_logger()
@@ -179,6 +85,13 @@ class FileLocationFinder:
         self._matcher = LocationMatcher(self._file_path)
 
         self._regions_2_locations = {
+            "MW/Chernihiv":     {"location":"Chernihiv",    "location_id":"-1037057"},
+            "MW/Ekaterinoslav": {"location":"Dnipro",       "location_id":"-1037865"},
+            "MW/Kherson":       {"location":"Kherson",      "location_id":"-1041356"},
+            "MW/Kyiv":          {"location":"Kyiv",         "location_id":"-1044367"},
+            "MW/Poltava":       {"location":"Poltava",      "location_id":"-1051195"},
+            "MW/Vinnitsa":      {"location":"Vinnitsa",     "location_id":"-1058303"},
+            "MW/Yekaterinoslav":{"location":"Dnipro",       "location_id":"-1037865"},
             "Bessarabia":       {"location":"Chişinău",     "location_id":"-2276223"},
             "Bukovina":         {"location":"Chernivtsi",   "location_id":"-1037073"},
             "Moldavia":         {"location":"Chişinău",     "location_id":"-2276223"},
@@ -247,6 +160,208 @@ class FileLocationFinder:
             "TSDIAL":   {"location":"Lviv", "cyrillic_abbr":"ЦДІАЛ", "location_id":"-1045268"}
         }
 
+    def delete_nuisance_words(self, descriptions: set[str], debug_print: bool = False) -> set[str]:
+        all_words_to_delete = [
+            "court",
+            "Peace",
+            "Justice",
+            "Judicial",
+            "Investigative",
+            "Sentence",
+            "Sentences",
+            "the",
+            "statistical",
+            "economic",
+            "historical",
+            "philological",
+            "educational",
+            "medical",
+            "governmental",
+            "government",
+            "institution",
+            "institutions",
+            "official",
+            "officials",
+            "committee",
+            "ministry",
+            "Office",
+            "Department",
+            "Funds",
+            "council",
+            "councils",
+            "duma",
+            "State",
+            "Archive",
+            "Archives",
+            "ministers",
+            "University",
+            "institute",
+            "gymnasium",
+            "statistics",
+            "Conscription",
+            "branch",
+            "Agency",
+            "Society",
+            "Community",
+            "Judgment",
+            "Judgments",
+            "rural",
+            "bourgeois",
+            "Men's",
+            "Women's",
+            "station",
+            "accounting",
+            "counting",
+            "part"
+        ]
+
+        # delete also the religious terms
+        religious_terms = [
+            "Roman Catholic",
+            "churches",
+            "Church",
+            "synagogue",
+            "Jewish",
+            "Jews",
+            "rabbinate",
+            "synod",
+            "Spiritual",
+            "Theological",
+            "Seminary",
+            "Consistory",
+            "Orthodox",
+            "Assumption",
+            "deanery",
+            "clergy",
+            "parish",
+            "cemetery",
+            "suburb",
+            "suburbs",
+            "tserkovny",
+            "Trinity",
+            "Resurrection",
+            "Ascension",
+            "Intercession",
+            "Annunciation",
+            "Transfiguration",
+        ]
+        all_words_to_delete.extend(religious_terms)
+
+        # delete also the documentation/archival terms
+        archival_noise = [
+            "after",
+            "birth",
+            "book",
+            "books",
+            "census",
+            "confessional",
+            "death",
+            "Decree",
+            "Decrees",
+            "divorce",
+            "document",
+            "documents",
+            "enumeration",
+            "file",
+            "files",
+            "folder",
+            "folders",
+            "index",
+            "journal",
+            "journals",
+            "magistrate",
+            "marriage",
+            "matriculation",
+            "meeting",
+            "meetings",
+            "metric",
+            "Metrical",
+            "prior",
+            "record",
+            "records",
+            "registry",
+            "register",
+            "registers",
+            "to",
+            "year",
+            "years",
+        ]
+        all_words_to_delete.extend(archival_noise)
+
+        archive_abbreviations = list(self._archive_locations)
+        shortened_descriptions = set()
+        for description in descriptions:
+            description = remove_words_list(description, archive_abbreviations, False)
+
+            description = remove_words_list(description, all_words_to_delete, True)
+
+            description = replace_word(description, "regional", "region")
+            description = replace_word(description, "provincial", "province")
+            description = description.replace(" of ", " ")
+            description = description.replace(" and ", ", ")
+            description = description.replace(" (", ", ")
+            description = description.replace("-(", ", ")
+            description = description.replace(")", ", ")
+            description = description.replace(" M. ", " village ")
+            description = description.replace(" Mr. ", " village ")
+
+            # remove http links: this pattern finds "http" and matches all characters until it hits a space
+            description = re.sub(r"http\S*", "", description)
+
+            # We replace the found integers with an empty string
+            description = re.sub(r"(?:(?<=[ \-,.;])|^)\d+(?=[ \-,.;]|$)", "", description)
+
+            # We replace the found matches with an empty string
+            description = re.sub(r"(?:(?<=[ ,.;])|^)-[a-zA-Z](?=[ ,.;]|$)", "", description)
+
+            # Deletes ordinals like "12th", "2nd", "1st".
+            description = re.sub(r'\b\d+(?:st|nd|rd|th)\b', "", description)
+
+            # do not allow all capital words - they too confuse the model
+            description = title_case_all_caps(description)
+
+            # --- STEP 1: REMOVALS (Order matters!) ---
+            # 1. First, delete the single letters while they still have their dashes (e.g., "- B", "- M", "- D")
+            description = re.sub(r"-\s*[A-Z]\b", "", description)
+
+            # 2. Next, delete lonely dashes that sit before commas or semicolons
+            description = re.sub(r"-\s*,|-\s*(?=;)", "", description)
+
+            # 3. Finally, clear any remaining dashes that are directly preceded by a comma
+            description = re.sub(r",\s*-", ",", description)
+
+            # --- STEP 2: CLEANUP & PUNCTUATION ---
+            # Collapse multiple commas (like ", ,") into a single comma
+            description = re.sub(r"(,\s*)+,", ",", description)
+            # Collapse multiple dots (like ". .") into a single dot
+            description = re.sub(r"\.[\s.]*", ".", description)
+            # Collapse multiple semicolons (like "; ;") into a single semicolon
+            description = re.sub(r"(;\s*)+;", ";", description)
+            # Remove commas right before semicolons (like ", ;")
+            description = re.sub(r",\s*;", ";", description)
+            # Remove commas right before the closing quote (like ', "')
+            description = re.sub(r',\s*"', '"', description)
+
+            # --- STEP 3: BEAUTIFY SPACING ---
+            # Pull punctuation tight to the word behind it
+            description = re.sub(r"\s+,", ",", description)
+            description = re.sub(r"\s+;", ";", description)
+            # Add exactly one clean space AFTER commas and semicolons
+            description = re.sub(r",\s*", ", ", description)
+            description = re.sub(r";\s*", "; ", description)
+            # Standardize double spaces down to single spaces
+            description = re.sub(r" +", " ", description)
+
+            max_length = 200
+            description = chop_to_max_length(description, max_length)
+
+            if debug_print:
+                print(f"Description shortened to '{description}'")
+            if description:
+                shortened_descriptions.add(description)
+
+        return shortened_descriptions
+
     def find_archive_name_by_cyrillic_abbr(self, cyrillic_abbr: str) -> str | None:
         """
         Searches self._archive_locations for a matching 'cyrillic_abbr'
@@ -257,129 +372,13 @@ class FileLocationFinder:
                 return key
         return None
 
-    def get_doc_location(self, doc_id: int, only_smallest_locations: bool = True, debug_print: bool = False):
-        """Identifies and returns the location ID for a given document.
-
-        This function fetches descriptions associated with the document ID, extracts
-        geographical places from those descriptions using an AI token, and utilizes
-        a LocationMatcher to resolve and return the corresponding place ID.
-
-        Args:
-            doc_id (int): The unique identifier of the target document.
-            only_smallest_locations (bool, optional): If True, only the locations with
-                the smallest administrative rank are retained, for example, villages and not district centers.
-            debug_print (bool, optional): If True, outputs detailed logging messages
-                regarding the identified location name, and fallback logic.
-                Defaults to False.
-
-        Returns:
-            The list of location IDs: The identified place identifiers.
-                Returns None if no matching location can be determined.
-        """
-        if debug_print:
-            print(f"***** Looking for locations for document {doc_id} *****")
-        hf_token = os.getenv("HF_TOKEN", "")  # For session management
-
-        priority1, priority2, doc_archive_locs = self.get_doc_descriptions(doc_id, debug_print)
-        priority1, region_centres_p1 = self.extract_region_centres(priority1, debug_print)
-        priority1 = delete_nuisance_words(priority1, debug_print)
-
-        # Try priority1 first
-        extracted_places_p1 = extract_locations(list(priority1), hf_token, debug_print)
-        identified_locations = self.match_places_to_location_ids(doc_id, extracted_places_p1, debug_print)
-
-        # Try priority2 if:
-        #   (a) identified_locations is empty, OR
-        #   (b) the administrative level is greater than 0, that is, it is a district or a province
-        no_settlements_found = all(has_positive_administrative_level(e) for e in identified_locations) \
-            if identified_locations else True
-
-        if no_settlements_found:
-            if priority2:
-                priority2, region_centres_p2 = self.extract_region_centres(priority2, debug_print)
-                priority2 = delete_nuisance_words(priority2, debug_print)
-                extracted_places_p2 = extract_locations(list(priority2), hf_token, debug_print)
-                identified_locations_p2 = self.match_places_to_location_ids(doc_id, extracted_places_p2, debug_print)
-                identified_locations |= identified_locations_p2
-                region_centres = region_centres_p1 + region_centres_p2
-            else:
-                region_centres = region_centres_p1
-        else:
-            region_centres = region_centres_p1
-
-        # 2. Combine both lists of dicts safely by converting their contents to frozensets
-        frozen_union = {freeze_dict(d) for d in doc_archive_locs} | {freeze_dict(d) for d in region_centres}
-
-        # 3. Reconstruct a list of normal mutable dictionaries for your loop to use
-        united_list = [dict(f_set) for f_set in frozen_union]
-
-        for location in united_list:
-            loc_id = location["location_id"]
-            location = self._matcher.location_name_dict.get(loc_id)
-            if location:
-                location["administrative_level"] = 2
-                location["loc_id"] = loc_id
-                hashable_items = (
-                    (k, frozenset(v) if isinstance(v, set) else v)
-                    for k, v in location.items()
-                )
-                identified_locations.add(frozenset(hashable_items))
-
-        if not identified_locations:
-            return []
-
-        # Convert the frozenset to a dict
-        identified_locations_dict_list = [dict(f_set) for f_set in identified_locations]
-        
-        if only_smallest_locations:
-            target_level = min(loc["administrative_level"] for loc in identified_locations_dict_list)
-            result = []
-            msg = "Most specific locations:"
-            for dict_loc in identified_locations_dict_list:
-                if dict_loc.get("administrative_level") == target_level:
-                    result.append(dict_loc["loc_id"])
-                    main_name = dict_loc.get("main_name")
-                    if main_name is not None:
-                        msg = f"{msg} '{main_name}' "
-
-            if debug_print:
-                print(msg)
-            identified_locations = result
-        elif debug_print:
-            # print the list of locations according to the administrative level
-            settlements = [dict_loc for dict_loc in identified_locations_dict_list
-                           if dict_loc.get("administrative_level") == 0]
-            if len(settlements) > 0:
-                msg = "All locations, settlements: "
-                for dict_loc in settlements:
-                    msg = f"{msg} '{dict_loc.get("main_name")}' "
-                print(msg)
-                
-            districts = [dict_loc for dict_loc in identified_locations_dict_list
-                           if dict_loc.get("administrative_level") == 1]
-            if len(districts) > 0:
-                msg = "All locations, districts: "
-                for dict_loc in districts:
-                    msg = f"{msg} '{dict_loc.get("main_name")}' "
-                print(msg)
-
-            provinces = [dict_loc for dict_loc in identified_locations_dict_list
-                if dict_loc.get("administrative_level") == 2]
-            if len(provinces) > 0:
-                msg = "All locations, provinces: "
-                for dict_loc in provinces:
-                    msg = f"{msg} '{dict_loc.get('main_name')}' "
-                print(msg)
-
-        return identified_locations
-
     def get_doc_locations_batched(
         self,
         doc_ids: list[int],
         batch_size: int = 20,
         only_smallest_locations: bool = True,
         debug_print: bool = False,
-    ) -> dict[int, list[str]]:
+    ) -> dict[int, tuple[list[str], set[str]]]:
         """Identifies locations for multiple documents in batched API calls.
 
         For each document, descriptions are split into priority1 (doc description,
@@ -395,7 +394,7 @@ class FileLocationFinder:
             debug_print: Passed through to per-doc location matching.
 
         Returns:
-            dict[int, list[str]]: mapping from doc_id to list of location IDs.
+            dict[int, tuple[list[str], set[str]]]: mapping from doc_id to list of location IDs and archive locations.
         """
         hf_token = os.getenv("HF_TOKEN", "")
 
@@ -404,14 +403,16 @@ class FileLocationFinder:
         per_doc_inputs: list[dict] = []
         all_p1_lists: list[list[str]] = []
         all_p2_lists: list[list[str]] = []
+        doc_archive_locs_lists: dict = {}
         for doc_id in doc_ids:
             if debug_print:
                 print(f"***** Processing descriptions for document {doc_id} *****")
             priority1, priority2, doc_archive_locs = self.get_doc_descriptions(doc_id, debug_print)
+            doc_archive_locs_lists[doc_id] = {loc["location"] for loc in doc_archive_locs}
             priority1, region_centres_p1 = self.extract_region_centres(priority1, debug_print)
-            priority1 = delete_nuisance_words(priority1, debug_print)
+            priority1 = self.delete_nuisance_words(priority1, debug_print)
             priority2, region_centres_p2 = self.extract_region_centres(priority2, debug_print)
-            priority2 = delete_nuisance_words(priority2, debug_print)
+            priority2 = self.delete_nuisance_words(priority2, debug_print)
 
             per_doc_inputs.append({
                 "doc_archive_locs": doc_archive_locs,
@@ -433,7 +434,7 @@ class FileLocationFinder:
             if debug_print and extracted_p1:
                 print(f"***** Extracted locations for document {doc_id}: {extracted_p1} *****")
             identified_locations = self.match_places_to_location_ids(
-                doc_id, extracted_p1, debug_print
+                doc_id, extracted_p1, doc_archive_locs_lists.get(doc_id, set()), debug_print
             )
             identified_locations_per_doc.append(identified_locations)
             no_settlements_found = all(has_positive_administrative_level(e) or wrong_province(e, doc_archive_locs)
@@ -460,7 +461,7 @@ class FileLocationFinder:
 
         # Step 3: Dispatch results back to each doc with the priority fallback rule:
         # try priority1; only fall back to priority2 if priority1 yielded nothing.
-        results: dict[int, list[str]] = {}
+        results: dict[int, tuple[list[str], set[str]]] = {}
         for doc_idx, doc_id in enumerate(doc_ids):
             identified_locations = identified_locations_per_doc[doc_idx]
 
@@ -470,7 +471,7 @@ class FileLocationFinder:
                 if debug_print and extracted_p2:
                     print(f"***** Second extracted locations for document {doc_id}: {extracted_p2} *****")
                 identified_locations_p2 = self.match_places_to_location_ids(
-                    doc_id, extracted_p2, debug_print
+                    doc_id, extracted_p2, doc_archive_locs_lists.get(doc_id, set()), debug_print
                 )
                 identified_locations |= identified_locations_p2
 
@@ -510,7 +511,7 @@ class FileLocationFinder:
             else:
                 result = [dict_loc["loc_id"] for dict_loc in identified_locations_dict_list]
 
-            results[doc_id] = result
+            results[doc_id] = result, doc_archive_locs_lists[doc_id]
 
         return results
 
@@ -569,7 +570,8 @@ class FileLocationFinder:
         total_region_centres = []
         for description in descriptions:
             description_after_extraction, region_centres = self.remove_sentences_with_words(description, debug_print)
-            descriptions_after_extraction.append(description_after_extraction)
+            if description_after_extraction:
+                descriptions_after_extraction.append(description_after_extraction)
             total_region_centres.extend(region_centres)
 
         descriptions_after_extraction = set(descriptions_after_extraction)
@@ -608,7 +610,7 @@ class FileLocationFinder:
         # Handle any remaining text if the string did not end with a dot/semicolon
         if len(sentences) % 2 != 0 and sentences[-1]:
             sentence = sentences[-1]
-            clean_words = set(re.findall(r"\b\w+\b", sentence.lower()))
+            clean_words = set(re.findall(r"\b[\w/]+\b", sentence.lower()))
             matches = words_to_check.intersection(clean_words)
             if matches:
                 found_words.update(matches)
@@ -727,8 +729,37 @@ class FileLocationFinder:
 
 
     def match_places_to_location_ids(self, doc_id: int, extracted_places: list[str],
-                                     debug_print: bool) ->  set[frozenset[tuple[str, Any]]]:
+                                     doc_archive_locs: set[str], debug_print: bool) ->  set[frozenset[tuple[str, Any]]]:
+        """Resolve AI-extracted place names to canonical location records.
+
+        Takes raw location strings produced by the LLM extraction step and maps
+        each one to a location record in the reference database. Because the same
+        place name can appear in multiple districts or provinces, disambiguation
+        uses the administrative context (district/province names) that was also
+        extracted alongside the place name:
+
+        1. Prefer a candidate whose district matches an extracted district name.
+        2. Fall back to a candidate whose province matches an extracted province name.
+        3. As a last resort, take the first candidate ID.
+
+        Each resolved record is annotated with the extracted administrative_level
+        and loc_id, then stored as a hashable frozenset in the returned set.
+
+        Args:
+            doc_id: Document being processed (used for debug logging only).
+            extracted_places: Raw location name strings from the AI extraction step.
+            doc_archive_locs: Archive location for the archives this document relates to.
+            debug_print: If True, prints the resolved location for each match.
+
+        Returns:
+            A set of frozensets, each representing one identified location record
+            with keys like 'main_name', 'location_id', 'administrative_level',
+            and 'loc_id'.
+        """
         loc_admin_units, province_names, district_names = locations_to_admin_units(extracted_places, debug_print)
+        # add the archive location provinces
+        province_names = province_names | doc_archive_locs
+
         identified_locations = set()
     
         # Try to match all locations from each extraction
@@ -884,14 +915,8 @@ def get_doc_record(db, doc_id):
 if __name__ == "__main__":
     debug_print_ = True
     finder = FileLocationFinder()
-    finder.get_doc_location(60426, only_smallest_locations=False, debug_print=True)
+    finder.get_doc_locations_batched([60426], 1, only_smallest_locations=False, debug_print=True)
 #    doc_id_ = 12953
 #    print(finder.get_doc_descriptions(doc_id_))
 
-#    doc_ids_ = [58857]
-#    doc_ids = get_unique_random_integers(20 ,37738)
-
-#    print(f"Document IDs to process: {doc_ids_}")
-#    for doc_id_ in doc_ids_:
-#        finder.get_doc_location(doc_id_, only_smallest_locations=False, debug_print=debug_print_)
 
