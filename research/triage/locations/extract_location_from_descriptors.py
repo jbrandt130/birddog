@@ -43,7 +43,7 @@ class BatchDocumentLocationsResponse(BaseModel):
     extracted_locations: list[PerDocExtraction]
 
 
-# System prompt and few-shot examples shared by extract_locations and extract_locations_batched
+# System prompt and few-shot examples for extract_locations_batched
 system_prompt = (
     "You are a precise data extraction AI.\n"
     "Analyze the provided text array and extract every single geographical location mentioned.\n"
@@ -213,7 +213,7 @@ def _make_client(api_token: str) -> OpenAI:
 
 
 def _process_response(raw_json: dict, debug_print: bool = False) -> list[str]:
-    """Shared response processing logic for extract_locations and extract_locations_batched.
+    """ Response processing logic for extract_locations_batched.
 
     Tries the batched schema first (PerDocExtraction with document_index), then
     falls back to the legacy single-doc schema (LocationExtraction without
@@ -277,66 +277,6 @@ def _process_response(raw_json: dict, debug_print: bool = False) -> list[str]:
         print(msg)
 
     return unique_locations
-
-
-# 2. Define the extraction function
-def extract_locations(descriptors: list[str], api_token: str, debug_print:bool = False) -> list[str]:
-    """Extract geographical locations from text descriptors using an AI model.
-
-    Sends a list of descriptor strings to the Qwen/Qwen2.5-7B-Instruct model
-    via the OpenAI-compatible API and extracts geographical location mentions
-    (cities, towns, villages) from the text.
-
-    Args:
-        descriptors: List of text descriptors to analyze for locations.
-        api_token: API token for the inference service (Hugging Face or Modal).
-        debug_print: If True, prints extracted locations for debugging.
-
-    Returns:
-        List of unique, processed geographical location names as strings.
-    """
-    if not descriptors:
-        return []
-
-    client = _make_client(api_token)
-
-    user_content = f"Analyze this list of descriptors: {json.dumps(descriptors)}"
-
-    messages: list[ChatCompletionMessageParam] = [
-        {"role": "system", "content": system_prompt}
-    ]
-    messages.extend(FEW_SHOT_MESSAGES)
-    messages.append({"role": "user", "content": user_content})
-
-    response = client.chat.completions.create(
-        model="Qwen/Qwen2.5-7B-Instruct",
-        messages=messages,
-        response_format={"type": "json_object"},
-        max_tokens=1000,
-        temperature=0.1,
-    )
-
-    # Parse and validate the response
-    content_str: str | None = None
-    try:
-        # Get the string content safely
-        content_str = response.choices[0].message.content
-        if not content_str:
-            finish_reason = getattr(response.choices[0], "finish_reason", None)
-            print(f"Error: Received empty or missing content from AI response. "
-                  f"finish_reason={finish_reason}")
-            return []
-        raw_json = json.loads(content_str)
-    except (JSONDecodeError, ValidationError) as e:
-        preview = (content_str or "")[:2000]
-        finish_reason = getattr(response.choices[0], "finish_reason", None)
-        print(f"Error parsing AI response: {e}\n"
-              f"  finish_reason={finish_reason}\n"
-              f"  content_preview: {preview!r}")
-        return []
-
-    extracted = _process_response(raw_json, debug_print)
-    return extracted
 
 
 def check_and_trim_keywords(loc: str, keywords: list[str]) -> tuple[bool, str]:
@@ -630,26 +570,30 @@ def locations_to_admin_units(locations: list[str], debug_print:bool = False) -> 
     Parameters:
         locations (list[str]): List of raw location names extracted from document descriptions.
                               These names may include administrative suffixes like "province", "district",
-                              or settlement types, and are typically already processed by extract_locations().
+                              or settlement types, and are typically already processed by extract_locations_batched().
         debug_print (bool): If True, enables verbose console output showing the identification process,
                            including the original location name, trimmed name, and assigned administrative level.
 
     Returns:
-        list[builtins.dict]: A list of dictionaries where each dictionary represents an administrative unit
-                             with the following structure:
-                             {
-                                 "location" (str): The standardized location name with administrative
-                                                  suffix stripped (e.g., "kiev" instead of "kiev province"),
-                                 "administrative_level" (int): Hierarchical level where:
-                                  0 = settlement (village, town, city, etc.)
-                                  1 = district/county (sub-provincial administrative unit)
-                                  2 = province/governorate/oblast/voivodeship (provincial level)
-                             }
+        tuple[list[builtins.dict], set, set]: A tuple containing:
+            1. admin_units (list[builtins.dict]): A list of dictionaries where each dictionary represents an administrative unit
+                                                 with the following structure:
+                                                 {
+                                                     "location" (str): The standardized location name with administrative
+                                                                      suffix stripped (e.g., "kiev" instead of "kiev province"),
+                                                     "administrative_level" (int): Hierarchical level where:
+                                                      0 = settlement (village, town, city, etc.)
+                                                      1 = district/county (sub-provincial administrative unit)
+                                                      2 = province/governorate/oblast/voivodeship (provincial level)
+                                                 }
+            2. province_names (set): A set of standardized province-level location names (suffix stripped).
+            3. district_names (set): A set of standardized district-level location names (suffix stripped).
     """
     # all these must be lowercase
     province_keywords = ['governorate', 'gubernia', 'oblast', 'province', 'provinces',
-                         'region', 'regions', 'republic', 'voivodeship']
-    district_keywords = ['district', 'districts', 'county', 'counties', 'uezd', 'uyezd', 'volost', 'powiat', 'diocese']
+                         'region', 'regions', 'republic', 'voivodeship', 'Processed via', 'Listed @']
+    district_keywords = ['district', 'districts', 'county', 'counties', 'uezd', 'uyezd',
+                         'volost', 'vol.', 'powiat', 'diocese']
     settlement_keywords = ['village', 'villages', 'town', 'towns', 'township', 'city', 'cities',
                            'settlement', 'selsoviet', 'precinct', 'precincts', 'municipality', 'mr.']
 
@@ -703,8 +647,8 @@ if __name__ == "__main__":
         "Warszawa",
     ]
 
-    extracted_places = extract_locations(list_of_descriptors, api_token_)
+    extracted_places = extract_locations_batched([list_of_descriptors], api_token_, 1, True)
 
-    print(locations_to_admin_units(extracted_places))
+    print(locations_to_admin_units(extracted_places[0]))
     # Expected Output: [{'location': 'kamianets-podilskyi', 'administrative_level': 0}, {'location': 'kamianets-podilskyi', 'administrative_level': 1}, {'location': 'podilskyi', 'administrative_level': 2}, {'location': 'kamyanets', 'administrative_level': 0}, {'location': 'kamyanets', 'administrative_level': 1}, {'location': 'podilsk', 'administrative_level': 2}, {'location': 'khmelnytsky', 'administrative_level': 2}, {'location': 'białojezore', 'administrative_level': 0}, {'location': 'kiev', 'administrative_level': 2}, {'location': 'cherkasy', 'administrative_level': 1}, {'location': 'warsaw', 'administrative_level': 0}]
 
