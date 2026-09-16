@@ -1,5 +1,6 @@
 import os
 import sys
+import unicodedata
 
 # This explicitly adds your birddog root folder to the search path safely
 root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -19,6 +20,57 @@ from birddog.database import Database
 from birddog.log import get_logger
 from birddog.translate import translation
 
+_all_ukraine_locations = [
+    {"location": "Cherkasy",        "location_id": "-1037001"},
+    {"location": "Chernihiv",       "location_id": "-1037057"},
+    {"location": "Chernivtsi",      "location_id": "-1037073"},
+    {"location": "Dnipro",          "location_id": "-1037865"},
+    {"location": "Donetsk",         "location_id": "-1038078"},
+    {"location": "Ivano-Frankivsk", "location_id": "-1040327"},
+    {"location": "Kherson",         "location_id": "-1041356"},
+    {"location": "Khmelnytskyy",    "location_id": "-1041435"},
+    {"location": "Kharkiv",         "location_id": "-1041320"},
+    {"location": "Kyiv",            "location_id": "-1044367"},
+    {"location": "Kirovohrad",      "location_id": "-1041993"},
+    {"location": "Lviv",            "location_id": "-1045268"},
+    {"location": "Lutsk",           "location_id": "-1045249"},
+    {"location": "Odesa",           "location_id": "-1049092"},
+    {"location": "Poltava",         "location_id": "-1051195"},
+    {"location": "Rivne",           "location_id": "-1052476"},
+    {"location": "Simferopol",      "location_id": "-1054041"},
+    {"location": "Sumy",            "location_id": "-1055659"},
+    {"location": "Ternopil",        "location_id": "-1056204"},
+    {"location": "Zaporozh'ye",     "location_id": "-1060168"},
+    {"location": "Zhitomir",        "location_id": "-1060903"},
+]
+_podolia_locations = [
+                {"location": "Khmelnytskyy",    "location_id": "-1041435"},
+                {"location": "Vinnitsa",        "location_id": "-1058303"},
+                {"location": "Ternopil",        "location_id": "-1056204"},
+                {"location": "Odesa",           "location_id": "-1049092"},
+                {"location": "Cherkasy",        "location_id": "-1037001"},
+                {"location": "Kyiv",            "location_id": "-1044367"},
+            ]
+_volyn_locations = [
+                {"location": "Lutsk",           "location_id": "-1045249"},
+                {"location": "Rivne",           "location_id": "-1052476"},
+                {"location": "Zhitomir",        "location_id": "-1060903"},
+                {"location": "Khmelnytskyy",    "location_id": "-1041435"},
+                {"location": "Ternopil",        "location_id": "-1056204"},
+            ]
+_kiev_locations = [
+                {"location": "Kyiv",            "location_id": "-1044367"},
+                {"location": "Cherkasy",        "location_id": "-1037001"},
+                {"location": "Zhitomir",        "location_id": "-1060903"},
+                {"location": "Vinnitsa",        "location_id": "-1058303"},
+                {"location": "Kirovohrad",      "location_id": "-1041993"},
+            ]
+_chernigov_locations = [
+                {"location":"Chernihiv",        "location_id":"-1037057"},
+                {"location":"Poltava",          "location_id":"-1051195"},
+                {"location":"Kyiv",             "location_id":"-1044367"},
+                {"location":"Sumy",             "location_id":"-1055659"}
+            ]
 
 def chop_to_max_length(text, max_length):
     # If the text is already short enough, return it immediately
@@ -50,18 +102,6 @@ def has_positive_administrative_level(entry: frozenset) -> bool:
             return True
     return False
 
-def wrong_province(entry: frozenset, doc_archive_locs: list[dict]) -> bool:
-    """Check the location is within the archive province."""
-    for doc_archive_loc in doc_archive_locs:
-        province_capital_lower = doc_archive_loc["location"].lower()
-        for k, v in entry:
-            if k == "province_names":
-                for v1 in v:
-                    if v1.lower() == province_capital_lower:
-                        return False
-    return True
-
-
 def get_unique_random_integers(n, k):
     """Returns a list of n unique random integers from 1 to k (inclusive)."""
     random.seed()
@@ -82,83 +122,110 @@ class FileLocationFinder:
         self._logger = get_logger()
         self._db = Database()
         self._file_path = "./research/triage/locations/jg_communities_data.xlsx"
-        self._matcher = LocationMatcher(self._file_path)
 
         self._regions_2_locations = {
-            "MW/Chernihiv":     {"location":"Chernihiv",    "location_id":"-1037057"},
-            "MW/Ekaterinoslav": {"location":"Dnipro",       "location_id":"-1037865"},
-            "MW/Kherson":       {"location":"Kherson",      "location_id":"-1041356"},
-            "MW/Kyiv":          {"location":"Kyiv",         "location_id":"-1044367"},
-            "MW/Poltava":       {"location":"Poltava",      "location_id":"-1051195"},
-            "MW/Vinnitsa":      {"location":"Vinnitsa",     "location_id":"-1058303"},
-            "MW/Yekaterinoslav":{"location":"Dnipro",       "location_id":"-1037865"},
-            "Bessarabia":       {"location":"Chişinău",     "location_id":"-2276223"},
-            "Bukovina":         {"location":"Chernivtsi",   "location_id":"-1037073"},
-            "Moldavia":         {"location":"Chişinău",     "location_id":"-2276223"},
-            "Podilia":          {"location":"Khmelnytskyy", "location_id":"-1041435"},
-            "Podillia":         {"location":"Khmelnytskyy", "location_id":"-1041435"},
-            "Podolia":          {"location":"Khmelnytskyy", "location_id":"-1041435"},
-            "Ruthenia":         {"location":"Uzhhorod",     "location_id":"-1057311"},
-            "Tavriya":          {"location":"Simferopol",   "location_id":"-1054041"},
-            "Transcarpathia":   {"location":"Uzhhorod",     "location_id":"-1057311"},
-            "Ukraine":          {"location":"Kyiv",         "location_id":"-1044367"},
-            "Volhynia":         {"location":"Lutsk",        "location_id":"-1045249"},
-            "Volyn":            {"location":"Lutsk",        "location_id":"-1045249"},
-            "Zakarpattia":      {"location":"Uzhhorod",     "location_id":"-1057311"}
+            "MW/Chernigov":     [{"location": "Chernihiv", "location_id": "-1037057"}],
+            "MW/Chernihiv":     [{"location": "Chernihiv", "location_id": "-1037057"}],
+            "MW/Ekaterinoslav": [{"location": "Dnipro",     "location_id": "-1037865"}],
+            "MW/Kherson":       [{"location": "Kherson",    "location_id": "-1041356"}],
+            "MW/Kyiv":          _kiev_locations,
+            "MW/Podolia":       _podolia_locations,
+            "MW/Poltava":       [{"location": "Poltava",    "location_id": "-1051195"}],
+            "MW/Vinnitsa":      [{"location": "Vinnitsa",   "location_id": "-1058303"}],
+            "MW/Yekaterinoslav": [{"location": "Dnipro",    "location_id": "-1037865"}],
+            "Bessarabia":       [{"location": "Chişinău",   "location_id": "-2276223"}],
+            "Bukovina":         [{"location": "Chernivtsi", "location_id": "-1037073"}],
+            "CDIAK":            _all_ukraine_locations,
+            "Moldavia":         [{"location": "Chişinău",   "location_id": "-2276223"}],
+            "Podilia":          _podolia_locations,
+            "Podillia":         _podolia_locations,
+            "Podolia":          _podolia_locations,
+            "Ruthenia":         [{"location": "Uzhhorod",   "location_id": "-1057311"}],
+            "Taurida":          [{"location": "Simferopol", "location_id": "-1054041"}],
+            "Tavriya":          [{"location": "Simferopol", "location_id": "-1054041"}],
+            "Transcarpathia":   [{"location": "Uzhhorod",   "location_id": "-1057311"}],
+            "Ukraine":          _all_ukraine_locations,
+            "Volhynia":         _volyn_locations,
+            "Volyn":            _volyn_locations,
+            "Zakarpattia":      [{"location": "Uzhhorod",   "location_id": "-1057311"}],
         }
+        self._matcher = LocationMatcher(self._file_path, self._regions_2_locations)
 
         self._archive_locations = {
-            "AGAD":     {"location":"Warszawa", "cyrillic_abbr":"ГАДА", "location_id":"-534433"},
-            "AVPRI":    {"location":"Moscow", "cyrillic_abbr":"АВПРИ", "location_id":"-2960561"},
-            "CDIAK":    {"location":"Kyiv", "cyrillic_abbr":"ЦДІАК", "location_id":"-1044367"},
-            "DAARK":    {"location":"Simferopol", "cyrillic_abbr":"ДААРК", "location_id":"-1054041"},
-            "DACHGO":   {"location":"Chernihiv", "cyrillic_abbr":"ДАЧгО", "location_id":"-1037057"},
-            "DACHKO":   {"location":"Cherkasy", "cyrillic_abbr":"ДАЧкО", "location_id":"-1037001"},
-            "DACHVO":   {"location":"Chernivtsi", "cyrillic_abbr":"ДАЧвО", "location_id":"-1037073"},
-            "DADNO":    {"location":"Dnipro", "cyrillic_abbr":"ДАДнО", "location_id":"-1037865"},
-            "DADO":     {"location":"Donetsk", "cyrillic_abbr":"ДАДоО", "location_id":"-1038078"},
-            "DAHEO":    {"location":"Kherson", "cyrillic_abbr":"ДАХеО", "location_id":"-1041356"},
-            "DAHMO":    {"location":"Khmelnytskyy", "cyrillic_abbr":"ДАХмО", "location_id":"-1041435"},
-            "DAHO":     {"location":"Kharkiv", "cyrillic_abbr":"ДАХО", "location_id":"-1041320"},
-            "DAIFO":    {"location":"Ivano-Frankivsk", "cyrillic_abbr":"ДАІФО", "location_id":"-1040327"},
-            "DAK":      {"location":"Kyiv", "cyrillic_abbr":"ДАК", "location_id":"-1044367"},
-            "DAKIRO":   {"location":"Kirovohrad", "cyrillic_abbr":"ДАКрО", "location_id":"-1041993"},
-            "DAKO":     {"location":"Kyiv", "cyrillic_abbr":"ДАКО", "location_id":"-1044367"},
-            "DAKRE":    {"location":"Kremenchuk", "cyrillic_abbr":"Архівний_відділ_виконавчого_комітету_Кременчуцької_міської_ради", "location_id":"-1043663"},
-            "DALO":     {"location":"Lviv", "cyrillic_abbr":"ДАЛО", "location_id":"-1045268"},
-            "DALUO":    {"location":"Luhansk", "cyrillic_abbr":"ДАЛуО", "location_id":"-1045160"},
-            "DAMO":     {"location":"Mykolayiv", "cyrillic_abbr":"ДАМО", "location_id":"-1047257"},
-            "DAOO":     {"location":"Odesa", "cyrillic_abbr":"ДАОО", "location_id":"-1049092"},
-            "DAPO":     {"location":"Poltava", "cyrillic_abbr":"ДАПО", "location_id":"-1051195"},
-            "DARO":     {"location":"Rivne", "cyrillic_abbr":"ДАРО", "location_id":"-1052476"},
-            "DAS":      {"location":"Sevastopol", "cyrillic_abbr":"ДАС", "location_id":"-1053419"},
-            "DASO":     {"location":"Sumy", "cyrillic_abbr":"ДАСО", "location_id":"-1055659"},
-            "DATO":     {"location":"Ternopil", "cyrillic_abbr":"ДАТО", "location_id":"-1056204"},
-            "DAVIO":    {"location":"Vinnitsa", "cyrillic_abbr":"ДАВіО", "location_id":"-1058303"},
-            "DAVO":     {"location":"Lutsk", "cyrillic_abbr":"ДАВоО", "location_id":"-1045249"},
-            "DAZHO":    {"location":"Zhitomir", "cyrillic_abbr":"ДАЖО", "location_id":"-1060903"},
-            "DAZKO":    {"location":"Uzhhorod", "cyrillic_abbr":"ДАЗкО", "location_id":"-1057311"},
-            "DAZPO":    {"location":"Zaporozh'ye", "cyrillic_abbr":"ДАЗпО", "location_id":"-1060168"},
-            "DISZMO":   {"location":"Ostrog", "cyrillic_abbr":"ДІСЗМО", "location_id":"-1049602"},
-            "GDA-MOD":  {"location":"Kyiv", "cyrillic_abbr":"ГДА МО", "location_id":"-1044367"},
-            "GDA-MVS":  {"location":"Kyiv", "cyrillic_abbr":"ГДА МВС", "location_id":"-1044367"},
-            "GDA-SSU":  {"location":"Kyiv", "cyrillic_abbr":"ГДА СБУ", "location_id":"-1044367"},
-            "GDA-SZRU": {"location":"Kyiv", "cyrillic_abbr":"ГДА СЗРУ", "location_id":"-1044367"},
-            "ILNAN":    {"location":"Kyiv", "cyrillic_abbr":"Національний_музей_Тараса_Шевченка", "location_id":"-1044367"},
-            "IR-NBUV":  {"location":"Kyiv", "cyrillic_abbr":"ІР НБУВ", "location_id":"-1044367"},
-            "KPDIMZ":   {"location":"Kamenets Podolskiy", "cyrillic_abbr":"Кам'янець-Подільський_державний_історичний_музей-заповідник", "location_id":"-1040849"},
-            "KUIZA":    {"location":"Izmail", "cyrillic_abbr":"КУІзА", "location_id":"-1040491"},
-            "NIAB":     {"location":"Minsk", "cyrillic_abbr":"НГАБ", "location_id":"-1946324"},
-            "NBUV":     {"location":"Kyiv", "cyrillic_abbr":"НБУВ", "location_id":"-1044367"},
-            "OMELNIK":  {"location":"Kremenchuk", "cyrillic_abbr":"Трудовий_архів_виконавчого_комітету_Омельницької_сільської_ради_Кременчуцького_району_Полтавської_області", "location_id":"-1043663"},
-            "OMR":      {"location":"Odesa", "cyrillic_abbr":"OMR", "location_id":"-1049092"},
-            "ONU":      {"location":"Odesa", "cyrillic_abbr":"ОНУ", "location_id":"-1049092"},
-            "RGADA":    {"location":"Moscow", "cyrillic_abbr":"РДАДА", "location_id":"-2960561"},
-            "RGIA":     {"location":"Leningrad", "cyrillic_abbr":"РДІА", "location_id":"-2996338"},
-            "TSDAHOU":  {"location":"Kyiv", "cyrillic_abbr":"ЦДАГОУ", "location_id":"-1044367"},
-            "TSDAVO":   {"location":"Kyiv", "cyrillic_abbr":"ЦДАВО", "location_id":"-1044367"},
-            "TSDIAL":   {"location":"Lviv", "cyrillic_abbr":"ЦДІАЛ", "location_id":"-1045268"}
+            "AGAD":     {"cyrillic_abbr":"ГАДА",     "locations": [{"location":"Warszawa",         "location_id":"-534433"}]},
+            "AVPRI":    {"cyrillic_abbr":"АВПРИ",    "locations": [{"location":"Moscow",           "location_id":"-2960561"}]},
+            "CDIAK":    {"cyrillic_abbr":"ЦДІАК",    "locations": _all_ukraine_locations                                     },
+            "DAARK":    {"cyrillic_abbr":"ДААРК",    "locations": [{"location":"Simferopol",       "location_id":"-1054041"}]},
+            "DACHGO":   {"cyrillic_abbr":"ДАЧгО",    "locations": _chernigov_locations                                       },
+            "DACHKO":   {"cyrillic_abbr":"ДАЧкО",    "locations": [{"location":"Cherkasy",         "location_id":"-1037001"}]},
+            "DACHVO":   {"cyrillic_abbr":"ДАЧвО",    "locations": [{"location":"Chernivtsi",       "location_id":"-1037073"}]},
+            "DADNO":    {"cyrillic_abbr":"ДАДнО",    "locations": [{"location":"Dnipro",           "location_id":"-1037865"}]},
+            "DADO":     {"cyrillic_abbr":"ДАДоО",    "locations": [{"location":"Donetsk",          "location_id":"-1038078"}]},
+            "DAHEO":    {"cyrillic_abbr":"ДАХеО",    "locations": [{"location":"Kherson",          "location_id":"-1041356"}]},
+            "DAHMO":    {"cyrillic_abbr":"ДАХмО",    "locations": [{"location":"Khmelnytskyy",     "location_id":"-1041435"}]},
+            "DAHO":     {"cyrillic_abbr":"ДАХО",     "locations": [{"location":"Kharkiv",          "location_id":"-1041320"}]},
+            "DAIFO":    {"cyrillic_abbr":"ДАІФО",    "locations": [{"location":"Ivano-Frankivsk",  "location_id":"-1040327"}]},
+            "DAK":      {"cyrillic_abbr":"ДАК",      "locations": [{"location":"Kyiv",             "location_id":"-1044367"}]},
+            "DAKIRO":   {"cyrillic_abbr":"ДАКрО",    "locations": [{"location":"Kirovohrad",       "location_id":"-1041993"}]},
+            "DAKO":     {"cyrillic_abbr":"ДАКО",     "locations": _kiev_locations                                            },
+            "DAKRE":    {"cyrillic_abbr":"Архівний_відділ_виконавчого_комітету_Кременчуцької_міської_ради", "locations": [{"location":"Kremenchuk",       "location_id":"-1043663"}]},
+            "DALO":     {"cyrillic_abbr":"ДАЛО",     "locations": [{"location":"Lviv",             "location_id":"-1045268"}]},
+            "DALUO":    {"cyrillic_abbr":"ДАЛуО",    "locations": [{"location":"Luhansk",          "location_id":"-1045160"}]},
+            "DAMO":     {"cyrillic_abbr":"ДАМО",     "locations": [{"location":"Mykolayiv",        "location_id":"-1047257"}]},
+            "DAOO":     {"cyrillic_abbr":"ДАОО",     "locations": [{"location":"Odesa",            "location_id":"-1049092"}]},
+            "DAPO":     {"cyrillic_abbr":"ДАПО",     "locations": [{"location":"Poltava",          "location_id":"-1051195"}]},
+            "DARO":     {"cyrillic_abbr":"ДАРО",     "locations": [{"location":"Rivne",            "location_id":"-1052476"}]},
+            "DAS":      {"cyrillic_abbr":"ДАС",      "locations": [{"location":"Sevastopol",       "location_id":"-1053419"}]},
+            "DASO":     {"cyrillic_abbr":"ДАСО",     "locations": [{"location":"Sumy",             "location_id":"-1055659"}]},
+            "DATO":     {"cyrillic_abbr":"ДАТО",     "locations": [{"location":"Ternopil",         "location_id":"-1056204"}]},
+            "DAVIO":    {"cyrillic_abbr":"ДАВіО",    "locations": [{"location":"Vinnitsa",         "location_id":"-1058303"}]},
+            "DAVO":     {"cyrillic_abbr":"ДАВоО",    "locations": [{"location":"Lutsk",            "location_id":"-1045249"}]},
+            "DAZHO":    {"cyrillic_abbr":"ДАЖО",     "locations": [{"location":"Zhitomir",         "location_id":"-1060903"}]},
+            "DAZKO":    {"cyrillic_abbr":"ДАЗкО",    "locations": [{"location":"Uzhhorod",         "location_id":"-1057311"}]},
+            "DAZPO":    {"cyrillic_abbr":"ДАЗпО",    "locations": [{"location":"Zaporozh'ye",      "location_id":"-1060168"}]},
+            "DISZMO":   {"cyrillic_abbr":"ДІСЗМО",   "locations": [{"location":"Ostrog",           "location_id":"-1049602"}]},
+            "GDA-MOD":  {"cyrillic_abbr":"ГДА МО",   "locations": [{"location":"Kyiv",             "location_id":"-1044367"}]},
+            "GDA-MVS":  {"cyrillic_abbr":"ГДА МВС",  "locations": [{"location":"Kyiv",             "location_id":"-1044367"}]},
+            "GDA-SSU":  {"cyrillic_abbr":"ГДА СБУ",  "locations": [{"location":"Kyiv",             "location_id":"-1044367"}]},
+            "GDA-SZRU": {"cyrillic_abbr":"ГДА СЗРУ", "locations": [{"location":"Kyiv",             "location_id":"-1044367"}]},
+            "ILNAN":    {"cyrillic_abbr":"Національний_музей_Тараса_Шевченка", "locations": [{"location":"Kyiv",             "location_id":"-1044367"}]},
+            "IR-NBUV":  {"cyrillic_abbr":"ІР НБУВ",  "locations": [{"location":"Kyiv",             "location_id":"-1044367"}]},
+            "KPDIMZ":   {"cyrillic_abbr":"Кам'янець-Подільський_державний_історичний_музей-заповідник", "locations": [{"location":"Kamenets Podolskiy", "location_id":"-1040849"}]},
+            "KUIZA":    {"cyrillic_abbr":"КУІзА",    "locations": [{"location":"Izmail",           "location_id":"-1040491"}]},
+            "NIAB":     {"cyrillic_abbr":"НГАБ",     "locations": [{"location":"Minsk",            "location_id":"-1946324"}]},
+            "NBUV":     {"cyrillic_abbr":"НБУВ",     "locations": [{"location":"Kyiv",             "location_id":"-1044367"}]},
+            "OMELNIK":  {"cyrillic_abbr":"Трудовий_архів_виконавчого_комітету_Омельницької_сільської_ради_Кременчуцького_району_Полтавської_області", "locations": [{"location":"Kremenchuk",       "location_id":"-1043663"}]},
+            "OMR":      {"cyrillic_abbr":"OMR",      "locations": [{"location":"Odesa",            "location_id":"-1049092"}]},
+            "ONU":      {"cyrillic_abbr":"ОНУ",      "locations": [{"location":"Odesa",            "location_id":"-1049092"}]},
+            "RGADA":    {"cyrillic_abbr":"РДАДА",    "locations": [{"location":"Moscow",           "location_id":"-2960561"}]},
+            "RGIA":     {"cyrillic_abbr":"РДІА",     "locations": [{"location":"Leningrad",        "location_id":"-2996338"}]},
+            "TSDAHOU":  {"cyrillic_abbr":"ЦДАГОУ",   "locations": [{"location":"Kyiv",             "location_id":"-1044367"}]},
+            "TSDAVO":   {"cyrillic_abbr":"ЦДАВО",    "locations": [{"location":"Kyiv",             "location_id":"-1044367"}]},
+            "TSDIAL":   {"cyrillic_abbr":"ЦДІАЛ",    "locations": [{"location":"Lviv",             "location_id":"-1045268"}]}
         }
+
+    def needs_further_analysis(self, identified_location: frozenset, doc_archive_locs: list[dict]) -> bool:
+        return (has_positive_administrative_level(identified_location) or
+                self.wrong_province(identified_location, doc_archive_locs))
+
+    def wrong_province(self, entry: frozenset, doc_archive_locs: list[dict]) -> bool:
+        """Check the location is within the archive province."""
+        for doc_archive_loc in doc_archive_locs:
+            province_capital_lower = doc_archive_loc["location"].lower()
+            province_capital_loc_ids = self._matcher.find_location_id(
+                province_capital_lower
+            )
+            for k, v in entry:
+                if k == "province_names":
+                    for v1 in v:
+                        if v1.lower() == province_capital_lower:
+                            return False
+                        else:
+                            province_names_ids = self._matcher.find_location_id(v1.lower())
+                            if not set(province_capital_loc_ids).isdisjoint(province_names_ids):
+                                return False
+
+        return True
 
     def delete_nuisance_words(self, descriptions: set[str], debug_print: bool = False) -> set[str]:
         all_words_to_delete = [
@@ -224,6 +291,7 @@ class FileLocationFinder:
             "Jewish",
             "Jews",
             "rabbinate",
+            "Prayer",
             "synod",
             "Spiritual",
             "Theological",
@@ -233,7 +301,6 @@ class FileLocationFinder:
             "Assumption",
             "deanery",
             "clergy",
-            "parish",
             "cemetery",
             "suburb",
             "suburbs",
@@ -251,11 +318,14 @@ class FileLocationFinder:
         archival_noise = [
             "after",
             "birth",
+            "births",
             "book",
             "books",
             "census",
             "confessional",
             "death",
+            "deaths",
+            "deceased",
             "Decree",
             "Decrees",
             "divorce",
@@ -269,6 +339,8 @@ class FileLocationFinder:
             "index",
             "journal",
             "journals",
+            "Letter",
+            "Letters",
             "magistrate",
             "marriage",
             "matriculation",
@@ -282,7 +354,10 @@ class FileLocationFinder:
             "registry",
             "register",
             "registers",
+            "sheet",
+            "sheets",
             "to",
+            "tract",
             "year",
             "years",
         ]
@@ -297,16 +372,22 @@ class FileLocationFinder:
 
             description = replace_word(description, "regional", "region")
             description = replace_word(description, "provincial", "province")
+            description = replace_word(description, "parish", "village")
+            description = replace_word(description, "city", "town")
+            description = description.replace(" M. ", " village ")
+            description = description.replace(" Mr. ", " village ")
+            description = description.replace(" St. ", " village ")
             description = description.replace(" of ", " ")
             description = description.replace(" and ", ", ")
             description = description.replace(" (", ", ")
             description = description.replace("-(", ", ")
             description = description.replace(")", ", ")
-            description = description.replace(" M. ", " village ")
-            description = description.replace(" Mr. ", " village ")
 
             # remove http links: this pattern finds "http" and matches all characters until it hits a space
             description = re.sub(r"http\S*", "", description)
+
+            # replace words looking like ' -  334' with spaces
+            description = replace_hyphen_with_number(description)
 
             # We replace the found integers with an empty string
             description = re.sub(r"(?:(?<=[ \-,.;])|^)\d+(?=[ \-,.;]|$)", "", description)
@@ -408,15 +489,18 @@ class FileLocationFinder:
             if debug_print:
                 print(f"***** Processing descriptions for document {doc_id} *****")
             priority1, priority2, doc_archive_locs = self.get_doc_descriptions(doc_id, debug_print)
-            doc_archive_locs_lists[doc_id] = {loc["location"] for loc in doc_archive_locs}
+            doc_archive_locs_lists[doc_id] = [loc["location"] for loc in doc_archive_locs]
             priority1, region_centres_p1 = self.extract_region_centres(priority1, debug_print)
             priority1 = self.delete_nuisance_words(priority1, debug_print)
             priority2, region_centres_p2 = self.extract_region_centres(priority2, debug_print)
             priority2 = self.delete_nuisance_words(priority2, debug_print)
 
+            united_centre_list = region_centres_p1 + region_centres_p2 + doc_archive_locs
+            # remove duplicates
+            united_centre_list = [dict(t) for t in {tuple(sorted(d.items())) for d in united_centre_list}]
+            
             per_doc_inputs.append({
-                "doc_archive_locs": doc_archive_locs,
-                "region_centres": region_centres_p1 + region_centres_p2,
+                "united_centre_list": united_centre_list,
                 "has_priority2": bool(priority2),
             })
             all_p1_lists.append(list(priority1))
@@ -437,7 +521,7 @@ class FileLocationFinder:
                 doc_id, extracted_p1, doc_archive_locs_lists.get(doc_id, set()), debug_print
             )
             identified_locations_per_doc.append(identified_locations)
-            no_settlements_found = all(has_positive_administrative_level(e) or wrong_province(e, doc_archive_locs)
+            no_settlements_found = all(self.needs_further_analysis(e, per_doc_inputs[doc_idx]["united_centre_list"])
                                        for e in identified_locations) if identified_locations else True
             if no_settlements_found:
                 docs_needing_p2.append(doc_idx)
@@ -464,9 +548,10 @@ class FileLocationFinder:
         results: dict[int, tuple[list[str], set[str]]] = {}
         for doc_idx, doc_id in enumerate(doc_ids):
             identified_locations = identified_locations_per_doc[doc_idx]
+            united_centre_list = per_doc_inputs[doc_idx]["united_centre_list"]
 
             # Fallback: only consult priority2 if priority1 produced nothing
-            if not identified_locations and per_doc_inputs[doc_idx]["has_priority2"]:
+            if doc_idx in docs_needing_p2 and per_doc_inputs[doc_idx]["has_priority2"]:
                 extracted_p2 = all_extracted_p2[doc_idx] if all_extracted_p2 else []
                 if debug_print and extracted_p2:
                     print(f"***** Second extracted locations for document {doc_id}: {extracted_p2} *****")
@@ -475,25 +560,20 @@ class FileLocationFinder:
                 )
                 identified_locations |= identified_locations_p2
 
-            doc_archive_locs = per_doc_inputs[doc_idx]["doc_archive_locs"]
-            region_centres = per_doc_inputs[doc_idx]["region_centres"]
-
-            frozen_union = {freeze_dict(d) for d in doc_archive_locs} | {
-                freeze_dict(d) for d in region_centres
-            }
-            united_list = [dict(f_set) for f_set in frozen_union]
-
-            for location in united_list:
-                loc_id = location["location_id"]
-                location = self._matcher.location_name_dict.get(loc_id)
-                if location:
-                    location["administrative_level"] = 2
-                    location["loc_id"] = loc_id
-                    hashable_items = (
-                        (k, frozenset(v) if isinstance(v, set) else v)
-                        for k, v in location.items()
-                    )
-                    identified_locations.add(frozenset(hashable_items))
+            if not identified_locations:
+                for location in united_centre_list:
+                    loc_id = location["location_id"]
+                    location = self._matcher.location_name_dict.get(loc_id)
+                    if location:
+                        location["administrative_level"] = 2
+                        location["loc_id"] = loc_id
+                        hashable_items = (
+                            (k, frozenset(v) if isinstance(v, set) else v)
+                            for k, v in location.items()
+                        )
+                        identified_locations.add(frozenset(hashable_items))
+                        if only_smallest_locations:
+                            break
 
             identified_locations_dict_list = [dict(f_set) for f_set in identified_locations]
 
@@ -552,18 +632,25 @@ class FileLocationFinder:
                         print(f"Could not find root label {root_label}")
 
         # Removes duplicates by using the hashable representation as a temporary key
-        archive_locs = list(
-            {
-                (
-                    frozenset(loc["location_id"].items())
-                    if isinstance(loc["location_id"], dict)
-                    else loc["location_id"]
-                ): loc
-                for loc in archive_locs
-            }.values()
-        )
-        return archive_locs
+        seen = set()
+        unique_locs = []
+        for item in archive_locs:
+            if "locations" in item:
+                locs = item["locations"]
+                for loc in locs:
+                    loc_id = loc["location_id"]
+                    # Convert to frozenset if it is a dictionary, otherwise leave it as is
+                    key = (
+                        frozenset(loc_id.items())
+                        if isinstance(loc_id, dict)
+                        else loc_id
+                    )
 
+                    if key not in seen:
+                        seen.add(key)
+                        unique_locs.append(loc)
+
+        return unique_locs
 
     def extract_region_centres(self, descriptions: set[str], debug_print: bool = False)-> tuple[set[str], list[dict]]:
         descriptions_after_extraction = []
@@ -583,35 +670,24 @@ class FileLocationFinder:
         # Convert target words to lowercase for case-insensitive matching
         words_to_check = {word.lower() for word in target_words}
 
-        # Split text by dots, preserving the dots and semicolons in the list
-        sentences = re.split(r"(\.|\;)", text)
+        # Normalize Unicode
+        text = unicodedata.normalize("NFKC", text)
+        # Split text by dots and semicolons (delimiters consumed)
+        sentences = re.split(r"([.;])", text)
 
         cleaned_pieces = []
         found_words = set()
 
-        # Process sentences in pairs (the text and its trailing dot/semicolon)
-        for i in range(0, len(sentences) - 1, 2):
-            sentence = sentences[i]
-            dot = sentences[i + 1]
+        for sentence in sentences:
+            if not sentence.strip():
+                continue
 
-            # Clean sentence punctuation to isolate words
-            clean_words = set(re.findall(r"\b\w+\b", sentence.lower()))
+            # Clean sentence punctuation to isolate words (keep slashes)
+            clean_words = set(re.findall(r"\b[\w/]+\b", sentence.lower()))
 
             # Find matches between this sentence and target words
             matches = words_to_check.intersection(clean_words)
 
-            if matches:
-                found_words.update(matches)
-                if debug_print:
-                    print(f"Deleting the sentence: '{sentence}'")
-            else:
-                cleaned_pieces.append(sentence + dot)
-
-        # Handle any remaining text if the string did not end with a dot/semicolon
-        if len(sentences) % 2 != 0 and sentences[-1]:
-            sentence = sentences[-1]
-            clean_words = set(re.findall(r"\b[\w/]+\b", sentence.lower()))
-            matches = words_to_check.intersection(clean_words)
             if matches:
                 found_words.update(matches)
                 if debug_print:
@@ -625,7 +701,7 @@ class FileLocationFinder:
         ]
 
         original_casing_found = set(original_casing_found)
-        region_centres = [self._regions_2_locations[key] for key in original_casing_found]
+        region_centres = [item for key in original_casing_found for item in self._regions_2_locations[key]]
         return "".join(cleaned_pieces).strip(), region_centres
 
 
@@ -758,7 +834,7 @@ class FileLocationFinder:
         """
         loc_admin_units, province_names, district_names = locations_to_admin_units(extracted_places, debug_print)
         # add the archive location provinces
-        province_names = province_names | doc_archive_locs
+        province_names = province_names | set(doc_archive_locs)
 
         identified_locations = set()
     
@@ -897,6 +973,20 @@ def remove_specific_word(text: str, target_word: str, ignore_case: bool = True) 
     cleaned_text = re.sub(r"\s+", " ", cleaned_text).strip()
     return cleaned_text
 
+
+def replace_hyphen_with_number(text: str) -> str:
+    """Repeatedly removes or replaces hyphen-number patterns until none remain."""
+    pattern_start = r"^-\s*\d+"
+    pattern_after = r"(?<=[ ,.])-\s*\d+"
+
+    while True:
+        new_text = re.sub(pattern_start, "", text)
+        new_text = re.sub(pattern_after, " ", new_text)
+        if new_text == text:
+            break
+        text = new_text
+
+    return text
 
 def replace_word(text: str, w1: str, w2: str) -> str:
     # \b ensures we match 'w1' as a standalone word (separated by punctuation or spaces)

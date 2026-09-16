@@ -16,7 +16,7 @@ class LocationMatcher:
     Handles location ID lookups using similarity scoring against multiple name variants.
     """
 
-    def __init__(self, communities_file_path: str):
+    def __init__(self, communities_file_path: str, regions_2_locations: dict):
         """
         Populates location_name_dict from the main population register Excel file populations_file_path.
         - Handles main names and alternative names
@@ -64,8 +64,12 @@ class LocationMatcher:
                 district_names = {s.strip().lower() for s in district_names if s.strip() and s.strip().lower() != 'nan'}
 
                 # province names
-                province_names = [str(row["c1900_province"]), str(row["c1930_province"]),
+                c1900_province =  str(row["c1900_province"])
+                province_names = [c1900_province            , str(row["c1930_province"]),
                                   str(row["c1950_province"]), str(row["c2000_province"])]
+                if c1900_province in regions_2_locations:
+                    for item in regions_2_locations[c1900_province]:
+                        province_names.append(item["location"])
                 province_names = {s.strip().lower() for s in province_names if s.strip() and s.strip().lower() != 'nan'}
 
                 # Set the administrative_level. Possible values:
@@ -137,7 +141,7 @@ class LocationMatcher:
 
 if __name__ == "__main__":
     communities_file_path_ = "./research/triage/locations/jg_communities_data.xlsx"
-    matcher = LocationMatcher(communities_file_path_)
+    matcher = LocationMatcher(communities_file_path_, {})
 
     # Access the encapsulated dataset via the class instance
     loc_id_1 = '-1055659'
