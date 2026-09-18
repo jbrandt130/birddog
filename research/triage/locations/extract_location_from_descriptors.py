@@ -44,18 +44,6 @@ class BatchDocumentLocationsResponse(BaseModel):
 
 
 # System prompt and few-shot examples for extract_locations_batched
-system_prompt = (
-    "You are a precise data extraction AI.\n"
-    "Analyze the provided text array and extract every single geographical location mentioned.\n"
-    "CRITICAL RULES:\n"
-    "1. Extract EVERY individual mention separately. Do not skip any.\n"
-    "2. Retain settlement suffixes (e.g., 'village', 'town', 'district', 'province').\n"
-    "3. If a trailing suffix applies to a list of places (e.g., 'A, B, and C counties'), append the suffix to EACH individual location.\n"
-    "4. Do not include institutions, roads, or non-geographical features.\n"
-    "5. Return strictly valid JSON matching this schema:\n"
-    f"{json.dumps(DocumentLocationsResponse.model_json_schema())}"
-)
-
 # Batched system prompt: requires document_index in each PerDocExtraction
 batch_system_prompt = (
     "You are a precise data extraction AI.\n"
@@ -73,7 +61,10 @@ batch_system_prompt = (
     "4. If a trailing suffix applies to a list of places (e.g., 'A, B, and C counties'),\n"
     "   append the suffix to EACH individual location.\n"
     "5. Do not include institutions, roads, or non-geographical features.\n"
-    "6. Return strictly valid JSON matching this schema:\n"
+    "6. A descriptor may be a comma- or semicolon-delimited list of proper\n"
+    "   names with little or no surrounding prose — treat each such name as a\n"
+    "   separate geographical location.\n"
+    "7. Return strictly valid JSON matching this schema:\n"
     f"{json.dumps(BatchDocumentLocationsResponse.model_json_schema())}"
 )
 
