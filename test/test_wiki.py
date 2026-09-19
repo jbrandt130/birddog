@@ -42,6 +42,7 @@ from birddog.wiki import (
     batch_fetch_document_links,
     check_page_changes,
     report_page_changes,
+    page_significance,
     _normalize_link_title,
     _is_table,
     _extract_links,
@@ -911,6 +912,60 @@ class TestParseWikiText(unittest.TestCase):
         wt = "See also [[Архів:ДАЛО]] and [[Архів:ДААРК]] for related records."
         page = self._parse(wt)  # default page_title is a fond-level title
         self.assertEqual(page["tables"], [])
+
+
+# ── page_significance (issue #138) ───────────────────────────────────────────
+
+class TestPageSignificance(unittest.TestCase):
+    """
+    The four documented insignificant-change cases from issue #138, plus a
+    positive control confirming a real content change is never suppressed.
+    """
+
+    def _parse(self, wikitext, page_title="Архів:ДАВІО/175/1", title="ДАВІО/175/1"):
+        with patch("birddog.wiki._check_page_existence_chunked", return_value={}):
+            return _parse_wiki_text(wikitext, page_title, title, revid=None)
+
+    def _table_wt(self, cell, dates="1922-1957", extra=""):
+        return (
+            "{| class=\"wikitable\"\n"
+            "!№||Анотація||Крайні дати\n"
+            "|-\n"
+            f"|1||{cell}||{dates}\n"
+            "|}\n"
+            f"{extra}"
+        )
+
+    def test_whitespace_only_change_is_insignificant(self):
+        reference = self._parse(self._table_wt("Опис 1"))
+        page = self._parse(self._table_wt("Опис  1"))  # extra space
+        self.assertFalse(page_significance(page, reference))
+
+    def test_dash_variant_change_is_insignificant(self):
+        reference = self._parse(self._table_wt("Опис 1", dates="1922-1957"))
+        page = self._parse(self._table_wt("Опис 1", dates="1922–1957"))  # en dash
+        self.assertFalse(page_significance(page, reference))
+
+    def test_category_link_only_change_is_insignificant(self):
+        reference = self._parse(self._table_wt("Опис 1"))
+        page = self._parse(self._table_wt("Опис 1", extra="[[Категорія:Тест]]"))
+        self.assertFalse(page_significance(page, reference))
+
+    def test_link_display_text_relabel_is_insignificant(self):
+        wt = (
+            "{{Архіви/фонд\n"
+            " | назва = Foo\n"
+            " | примітки = [[c:File:scan.pdf|%s]]\n"
+            "}}"
+        )
+        reference = self._parse(wt % "прим 1")
+        page = self._parse(wt % "прим 2")
+        self.assertFalse(page_significance(page, reference))
+
+    def test_real_content_change_is_significant(self):
+        reference = self._parse(self._table_wt("Опис 1"))
+        page = self._parse(self._table_wt("Опис 2"))
+        self.assertTrue(page_significance(page, reference))
 
 
 # ── mw_read_page (mocked network) ────────────────────────────────────────────

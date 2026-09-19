@@ -154,7 +154,22 @@ class Page:
     def revert_to(self, date):
         """Revert page state to particular version date."""
         history = self.history(cutoff_date=date)
-        if not history:
+        # HistoryLRU._filter_with_fallback() (wiki.py) deliberately falls back
+        # to returning the oldest AVAILABLE version when none actually
+        # satisfies the cutoff (other callers, e.g. the /page history
+        # dropdown, want that leniency) -- so an empty result isn't the only
+        # way "nothing exists at or before date" shows up here; a non-empty
+        # result whose oldest entry is still newer than date means the same
+        # thing. A page whose *entire* history postdates the requested date
+        # (e.g. its watch's cutoff predates the page's own creation) is
+        # treated as effectively new relative to that date, regardless of how
+        # many revisions it has accumulated since -- the user has never seen
+        # any state of it, so diffing two unseen revisions against each other
+        # doesn't answer "what changed since I last looked", and could let
+        # the significance sweep wrongly mark brand-new content as
+        # insignificant if its early revisions happened to look cosmetic
+        # (see issue #138 UI investigation).
+        if not history or history[-1]['modified'] > date:
             _logger.info(f'No version exists on or before {date}')
             return None
         version = history[-1]
@@ -372,7 +387,16 @@ class Page:
     def compare(self, ref_date):
         page = self.detached_copy()
         reference = page.detached_copy()
-        reference.revert_to(ref_date)
+        if reference.revert_to(ref_date) is None:
+            # no version exists at or before ref_date (e.g. a brand-new page
+            # compared to a date before its creation) -- revert_to() leaves
+            # reference as an untouched copy of the current page in this
+            # case, so diffing against it would silently compare the page to
+            # itself and report a meaningless "no differences" rather than
+            # "nothing to compare against". Return page uncompared instead:
+            # no 'refmod' means the client renders it as a plain, non-
+            # comparison view (see issue #138's "NEW PAGE" badge fix).
+            return page
         check_page_changes(page, reference)
         return page
 

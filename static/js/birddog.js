@@ -8,6 +8,7 @@ var current_user            = null;
 var archives                = null;
 var watchlist               = null;
 var unresolved_updates      = {};
+var hide_insignificant      = false; // set from hide_insignificant_pref in on_loaded()
 
 const months                = [
     'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
@@ -198,6 +199,13 @@ function get_resolve_info(page_title) {
   return null;
 }
 
+function is_navigable_unresolved(obj) {
+    // a real entry (not a synthesized tree-path placeholder -- see
+    // is_real_entry()/prune_empty_nodes()) that isn't currently hidden by
+    // the issue #138 "hide minor changes" toggle
+    return obj.hasOwnProperty("modified") && !(hide_insignificant && obj.insignificant);
+}
+
 function get_next_unresolved_item(page_title) {
     const updates = window.unresolved_updates;
     // first pass: look within current archive. entries is already in the
@@ -215,7 +223,7 @@ function get_next_unresolved_item(page_title) {
             const start = current_index === -1 ? 0 : current_index + 1;
             for (let i = start; i < entries.length; i++) {
                 const [, obj] = entries[i];
-                if (obj.hasOwnProperty("modified")) {
+                if (is_navigable_unresolved(obj)) {
                     return obj;
                 }
             }
@@ -227,7 +235,7 @@ function get_next_unresolved_item(page_title) {
         if (page_title < prefix) {
             const entries = updates[prefix];
             for (const [title, obj] of entries) {
-                if (obj.hasOwnProperty("modified")) {
+                if (is_navigable_unresolved(obj)) {
                     return obj;
                 }
             }
@@ -238,7 +246,7 @@ function get_next_unresolved_item(page_title) {
     for (const prefix in updates) {
         const entries = updates[prefix];
         for (const [title, obj] of entries) {
-            if (obj.hasOwnProperty("modified")) {
+            if (is_navigable_unresolved(obj)) {
                 return obj;
             }
         }
@@ -673,7 +681,13 @@ function render_table(table_element, table_data, is_comparison) {
 // render a data page
 function render_page_data(data) {
     const false_comparison = 'refmod' in data && data.refmod >= data.lastmod
-    var is_comparison = 'refmod' in data && data.refmod != data.lastmod;
+    // a comparison happened whenever compare() was invoked at all (refmod is
+    // set) -- NOT only when the reference turns out to differ from lastmod.
+    // refmod === lastmod is exactly the "compared, found zero differences"
+    // case the no-differences-badge exists to report; excluding it here used
+    // to suppress that badge (and all edit-flag rendering) for precisely the
+    // page state it's meant to surface (found investigating issue #138).
+    var is_comparison = 'refmod' in data && !!data.refmod;
     var resolve_enable = needs_resolve(data);
 
     if (resolve_enable && data.lastmod == "") {
@@ -854,12 +868,21 @@ function render_page_data(data) {
 }
 
 function render_history(data) {
-    if (data.history.length <= 1) {
+    // "NEW PAGE" and "does a version dropdown make sense" are separate
+    // questions. NEW PAGE: either literally only one revision ever exists,
+    // or (issue #138) the entire history postdates whatever date was
+    // requested via ?compare= -- either way the user has never seen an
+    // earlier state via that automatic comparison. The dropdown itself only
+    // needs real history to exist (more than one revision) -- even when the
+    // automatic cutoff-based comparison found nothing, the user can still
+    // manually pick one of those real revisions to compare against.
+    const has_real_history = data.history.length > 1;
+    show_if('new-page-badge', !has_real_history || !!data.no_earlier_version);
+
+    if (!has_real_history) {
         hide('history-selection-box');
-        show('new-page-badge');
     } else {
         show('history-selection-box');
-        hide('new-page-badge');
 
         const selector = document.getElementById('version-select');
         const select_header = 'refmod' in data && data.refmod != null? 'Stop Comparing' : 'Select Version';
@@ -879,11 +902,27 @@ function render_history(data) {
             selector.appendChild(option);
         });
 
-        if ('refmod' in data) {
-            // Find the latest item <= refmod
-            const best_match = eligible_history.find(item => item.modified <= data.refmod);
-            if (best_match) {
-                selector.value = best_match.modified;
+        if ('refmod' in data && data.refmod) {
+            const exact_match = eligible_history.find(item => item.modified === data.refmod);
+            if (exact_match) {
+                selector.value = exact_match.modified;
+            } else {
+                // refmod doesn't match any distinct revision in history (e.g.
+                // it equals the current lastmod, or some other chain-gap
+                // anomaly -- see issue #138). Silently substituting the
+                // nearest older real revision would hide that mismatch, so
+                // surface the true value as its own flagged option instead
+                // of approximating it away.
+                console.warn(`render_history: refmod ${data.refmod} for ${data.title} does not match a distinct revision in history -- showing it as a flagged option instead of approximating`);
+                const anomaly_option = document.createElement('option');
+                anomaly_option.value = data.refmod;
+                anomaly_option.textContent = `${format_date(data.refmod)} *`;
+                anomaly_option.title = 'This reference date does not correspond to a distinct revision in this page\'s history.';
+                const insert_before = Array.from(selector.options).find(
+                    opt => opt.value && opt.value < data.refmod
+                );
+                selector.insertBefore(anomaly_option, insert_before || null);
+                selector.value = data.refmod;
             }
         }
     }
@@ -1333,6 +1372,7 @@ function needs_resolve(page) {
 function build_tree(data_list, watch_title) {
     const root = {};
     for (const [path, meta] of data_list) {
+        if (hide_insignificant && meta && meta.insignificant) continue;
         const parts = path.split('/');
         let current = root;
         for (const part of parts) {
@@ -1393,14 +1433,46 @@ async function resolve_page_update(title, item_title, deep=false) {
     }
 }
 
+function count_subsidiary_changes(watch_title, full_path) {
+    // counts every real unresolved entry (not a synthesized tree-path
+    // placeholder -- see is_real_entry()) that a deep resolve of full_path
+    // would sweep up, split out by how many are currently hidden as minor
+    // (issue #138) so the confirm dialog can disclose what's about to be
+    // cleared, including anything the toggle is hiding from view
+    const entries = unresolved_updates[watch_title] || [];
+    let total = 0, minor = 0;
+    for (const [path, meta] of entries) {
+        if (!is_real_entry(meta)) continue;
+        if (path === full_path || path.startsWith(full_path + "/")) {
+            total++;
+            if (meta.insignificant) minor++;
+        }
+    }
+    return { total, minor };
+}
+
 function mark_resolved(node_id) {
     const node = node_map[node_id];
     const has_children = !!(node._order && node._order.length > 0);
     const full_path = node._full_path || name;
     const watch_title = node._watch_title;
-    const confirm_message = has_children?
-        `${full_path} has unresolved subsidiary pages. Resolve all subsidiaries?` :
-        `Resolve ${full_path}?`;
+    const label = (node._meta && node._meta.label) || full_path;
+
+    let confirm_message;
+    if (has_children) {
+        const { total, minor } = count_subsidiary_changes(watch_title, full_path);
+        const change_word = total === 1 ? 'change' : 'changes';
+        // only call out minor items when the toggle is actually hiding them
+        // -- with it off, they're already visible in the tree like everything
+        // else, so a plain total is all that's meaningful here
+        const counts_text = (minor > 0 && hide_insignificant)
+            ? ` (${total} unresolved ${change_word}, including ${minor} minor and currently hidden)`
+            : ` (${total} unresolved ${change_word})`;
+        confirm_message = `${label} has unresolved subsidiary pages${counts_text}. Resolve all subsidiaries?`;
+    } else {
+        confirm_message = `Resolve ${label}?`;
+    }
+
     if (confirm(confirm_message)) {
         console.log('resolving all children');
     }
@@ -1541,8 +1613,34 @@ function render_tree(tree) {
     return `<ul class="list-group">${top_level}</ul>`;
 }
 
+function is_real_entry(meta) {
+    // unresolved_tree() (watcher.py) gives every node -- leaf or synthesized
+    // path placeholder -- a non-null meta with at least {title, label}, so
+    // meta truthiness alone can't tell them apart. A genuine unresolved item
+    // always carries 'modified'; a placeholder never does.
+    return !!(meta && meta.modified);
+}
+
+function prune_empty_nodes(node) {
+    // drop a folder left with no children (all hidden by the minor-changes
+    // toggle) and no unresolved status of its own, so it doesn't render as
+    // an empty, un-expandable row
+    if (!node._order) return;
+    node._order = node._order.filter(name => {
+        const child = node[name];
+        prune_empty_nodes(child);
+        const has_children = !!(child._order && child._order.length > 0);
+        if (!has_children && !is_real_entry(child._meta)) {
+            delete node[name];
+            return false;
+        }
+        return true;
+    });
+}
+
 function render_tree_to_dom(data_list, container_id, watch_title) {
     const tree = build_tree(data_list, watch_title);
+    prune_empty_nodes(tree);
     const html = render_tree(tree);
 
     const container = document.getElementById(container_id);
@@ -1639,6 +1737,48 @@ function render_unresolved_items() {
     });
 
     restore_expanded_nodes(container_id, expanded_paths);
+    update_hidden_count_badge();
+}
+
+// issue #138: count every unresolved item across all watchlists currently
+// flagged insignificant by the background sweep (birddog/significance.py)
+function count_hidden_items() {
+    let count = 0;
+    for (const key in unresolved_updates) {
+        for (const [, meta] of unresolved_updates[key]) {
+            if (meta && meta.insignificant) count++;
+        }
+    }
+    return count;
+}
+
+function update_hidden_count_badge() {
+    const badge = document.getElementById('hidden-count-badge');
+    if (!badge) return;
+    const hidden = count_hidden_items();
+    if (hide_insignificant && hidden > 0) {
+        badge.textContent = `${hidden} minor change${hidden === 1 ? '' : 's'} hidden`;
+        badge.classList.remove('d-none');
+    } else {
+        badge.classList.add('d-none');
+    }
+}
+
+async function on_hide_insignificant_toggle(checkbox) {
+    hide_insignificant = checkbox.checked;
+    try {
+        const response = await fetch('/preference/hide_insignificant', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: hide_insignificant }),
+        });
+        if (!response.ok) {
+            throw new Error(`Failed to save preference: ${response.statusText}`);
+        }
+    } catch (error) {
+        console.error('Failed to save hide_insignificant preference:', error);
+    }
+    render_unresolved_items();
 }
 
 function toggle_page_desc_icon(btn) {
@@ -2018,6 +2158,13 @@ async function on_loaded() {
         const input = document.getElementById('watchlistCutoffDate');
         input.max = today;  // only allow up to today
         input.min = "2000-01-01";  // hard-coded example start date
+
+        // issue #138: "hide minor changes" toggle, persisted server-side
+        hide_insignificant = !!hide_insignificant_pref;
+        const hide_insignificant_toggle = document.getElementById('hide-insignificant-toggle');
+        if (hide_insignificant_toggle) {
+            hide_insignificant_toggle.checked = hide_insignificant;
+        }
 
         // Populate the interface
         console.log("loading watchlist")

@@ -181,6 +181,7 @@ def login_required(f):
 def home():
     user_session = None
     start_title = None
+    hide_insignificant = False
     if runtime.state == "running":
         user_session = session.get('user')
         start_title = None
@@ -190,6 +191,7 @@ def home():
                 return error_response, status
             if user:
                 start_title = user.get_preference("last_page")
+                hide_insignificant = bool(user.get_preference("hide_insignificant", False))
                 # read live rather than trusting a role that may have been
                 # cached in the session cookie since login
                 user_session = {**user_session, 'role': user.role}
@@ -197,6 +199,7 @@ def home():
         'index.html',
         user=user_session,
         start_title=start_title,
+        hide_insignificant=hide_insignificant,
         runtime_state=runtime.state,
         database_available=runtime.database_update_enabled,
         debug=app.debug)
@@ -407,8 +410,15 @@ def page_data(user):
         return "Missing required parameter: 'title'", 400
     if page:
         ref_date = request.args.get('compare')
+        no_earlier_version = False
         if ref_date:
             page = page.compare(ref_date)
+            # Page.revert_to() (core.py) returns None -- so compare() leaves
+            # 'refmod' unset -- when the page's entire history postdates
+            # ref_date. That's treated as effectively new relative to the
+            # requested date (issue #138 UI investigation): tell the client
+            # so it shows "NEW PAGE" even though history.length may be > 1.
+            no_earlier_version = 'refmod' not in page.page
 
         # prevent mutation of page data in LRU/cache
         page_dict = deepcopy(page.page)
@@ -419,6 +429,7 @@ def page_data(user):
         page_dict['name'] = page.name
         page_dict['needs_translation'] = page.needs_translation
         page_dict['history'] = _compress_history(page.history(cutoff_date='2000'))
+        page_dict['no_earlier_version'] = no_earlier_version
 
         user.set_preference("last_page", page.title)
         return jsonify(page_dict), 200
@@ -587,6 +598,18 @@ def _format_watchlist(watchlist):
         }
         for title, v in watchlist.items()
     ]
+
+# Persist a single named user preference (e.g. the issue #138 "hide minor
+# changes" toggle). Generic by key, since User.get_preference()/set_preference()
+# already are -- avoids a one-off endpoint per new preference.
+@app.route('/preference/<key>', methods=['POST'])
+@login_required
+def set_user_preference(user, key):
+    data = request.json or {}
+    if 'value' not in data:
+        return jsonify({'error': "Missing required field: 'value'"}), 400
+    user.set_preference(key, data['value'])
+    return jsonify({'success': True}), 200
 
 # Get user's watchlist
 @app.route('/watchlist', methods=['GET'])

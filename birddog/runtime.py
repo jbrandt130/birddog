@@ -36,12 +36,14 @@ from birddog.store import KeyValueStore
 from birddog.env import detect_environment
 from birddog.utility import HeartbeatManager
 from birddog.fetch import FetchUrlFailError
+from birddog import significance
 
 #_ENABLE_DB_SYNC = os.environ.get("BIRDDOG_ENABLE_DB_SYNC", False)
 _ENABLE_DB_SYNC = True
 _ENABLE_DB_HOUSEKEEPING = True
 _ENABLE_DOC_TRACKER = True
 _ENABLE_FTP_MANAGER = True
+_ENABLE_SIGNIFICANCE_SWEEP = True
 if _ENABLE_DB_SYNC:
     from birddog.database_updater import DatabaseUpdater, DatabaseUpdateManager
     from birddog.database import Database
@@ -259,6 +261,24 @@ class HousekeepingManager(HeartbeatManager):
         self._runtime.run_database_housekeeping()
 
 # ----------------------------------------------------------------------------
+# Issue #138: alert significance sweep. Classifies unresolved watcher items as
+# cosmetic/insignificant in the background -- see significance.py for the
+# design. Runs independently of the DB-sync managers above: it only touches
+# the bd_watchers KV table and wiki page fetches, not NocoDB.
+
+class SignificanceSweepManager(HeartbeatManager):
+    _HEARTBEAT_INTERVAL = 60 * 5  # seconds -- matches PageUpdateManager's cadence
+
+    def __init__(self, runtime):
+        self._runtime = runtime
+        super().__init__(interval=SignificanceSweepManager._HEARTBEAT_INTERVAL)
+
+    def heartbeat(self):
+        examined = significance.sweep(self._runtime)
+        if examined:
+            _logger.info(f"SignificanceSweepManager: examined {examined} item(s)")
+
+# ----------------------------------------------------------------------------
 # Resource usage monitor
 
 _KILL_THRESHOLD_PATH = "resources/kill_thresholds.json"
@@ -359,6 +379,8 @@ class Runtime:
             self._ftp_manager = None
             self._housekeeping_manager = None
 
+        self._significance_manager = (
+            SignificanceSweepManager(self) if _ENABLE_SIGNIFICANCE_SWEEP else None)
 
         self._killswitch = KillSwitch(self)
         self.trim_logs()
@@ -409,6 +431,8 @@ class Runtime:
                 self._ftp_manager.start()
             if self._housekeeping_manager:
                 self._housekeeping_manager.start()
+            if self._significance_manager:
+                self._significance_manager.start()
             self._killswitch.start()
             self._state = "running"
 
@@ -428,6 +452,8 @@ class Runtime:
                 self._ftp_manager.hold()
             if self._housekeeping_manager:
                 self._housekeeping_manager.hold()
+            if self._significance_manager:
+                self._significance_manager.hold()
             self._state = "paused"
 
     def unpause(self):
@@ -446,6 +472,8 @@ class Runtime:
                 self._ftp_manager.release()
             if self._housekeeping_manager:
                 self._housekeeping_manager.release()
+            if self._significance_manager:
+                self._significance_manager.release()
             self._state = "running"
 
     def lookup_by_title(self, title):

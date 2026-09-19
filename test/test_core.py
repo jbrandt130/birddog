@@ -3,6 +3,7 @@ from copy import copy
 from urllib.parse import quote, unquote
 
 import unittest
+from unittest.mock import patch
 from birddog.wiki import ARCHIVE_BASE, ARCHIVE_BY_ADDRESS, canonicalize_title, lineage, archive_root, page_title_from_address
 from birddog.core import (
     Page,
@@ -169,6 +170,89 @@ class Test(unittest.TestCase):
             ancestry = lineage(title)
             for item in ancestry:
                 test_title(item, runtime)
+
+# ------------------ Page.compare() ------------------
+
+class PageCompareTests(unittest.TestCase):
+    """
+    Regression for issue #138 UI investigation: revert_to() leaves the
+    reference untouched (a copy of the current page) when no version exists
+    at or before the requested date -- e.g. comparing a brand-new page to a
+    date before its creation. compare() must not silently diff the page
+    against itself in that case (a meaningless "no differences"); it should
+    return the page uncompared (no 'refmod') instead.
+    """
+    def _make_page(self, lastmod="2026-08-19T23:00:38Z"):
+        with patch.object(Page, "_cache_load", return_value=True):
+            page = Page("Архів:ДАЖО/Д/999")
+        page._page = {
+            "title": {"uk": "T"},
+            "description": {"uk": "D"},
+            "notes": {},
+            "other_links": {},
+            "tables": [],
+            "lastmod": lastmod,
+            "link": "x",
+            "doc_link": "",
+        }
+        return page
+
+    def test_no_earlier_version_leaves_page_uncompared(self):
+        page = self._make_page()
+        with patch.object(Page, "revert_to", return_value=None):
+            result = page.compare("2020-01-01T00:00:00Z")
+        self.assertNotIn("refmod", result.page)
+        self.assertIsNone(result.page["title"].get("edit"))
+
+    def test_earlier_version_found_sets_refmod(self):
+        page = self._make_page()
+
+        def fake_revert_to(self_ref, date):
+            self_ref._page = {**self_ref._page, "lastmod": "2026-01-01T00:00:00Z"}
+            return self_ref
+
+        with patch.object(Page, "revert_to", fake_revert_to):
+            result = page.compare("2026-06-01T00:00:00Z")
+        self.assertEqual(result.page.get("refmod"), "2026-01-01T00:00:00Z")
+
+    def test_revert_to_rejects_history_fallback_newer_than_cutoff(self):
+        # regression: HistoryLRU._filter_with_fallback() (wiki.py) deliberately
+        # falls back to returning the oldest AVAILABLE version when nothing
+        # actually satisfies the cutoff (the /page history dropdown wants that
+        # leniency) -- revert_to() must not mistake that fallback result for a
+        # real match. A single-revision page reverted to a date before its
+        # only revision must return None, not that revision.
+        page = self._make_page(lastmod="2026-07-11T14:47:14Z")
+        single_revision_history = [{
+            "revid": 1, "modified": "2026-07-11T14:47:14Z", "link": "https://x?oldid=1",
+        }]
+        with patch.object(Page, "history", return_value=single_revision_history):
+            result = page.revert_to("2026-02-01T00:00:00Z")
+        self.assertIsNone(result)
+
+    def test_revert_to_rejects_multi_revision_page_entirely_after_cutoff(self):
+        # deliberate product decision: a page whose entire history postdates
+        # the requested date is treated as effectively new relative to that
+        # date, regardless of how many revisions it has accumulated since --
+        # not just the single-revision case
+        page = self._make_page(lastmod="2026-08-26T08:39:44Z")
+        history = [
+            {"revid": 3, "modified": "2026-08-26T08:39:44Z", "link": "https://x?oldid=3"},
+            {"revid": 2, "modified": "2026-08-20T00:00:00Z", "link": "https://x?oldid=2"},
+            {"revid": 1, "modified": "2026-08-15T00:00:00Z", "link": "https://x?oldid=1"},
+        ]
+        with patch.object(Page, "history", return_value=history):
+            result = page.revert_to("2026-08-01T00:00:00Z")  # before all 3 revisions
+        self.assertIsNone(result)
+
+    def test_revert_to_accepts_history_entry_at_or_before_cutoff(self):
+        page = self._make_page(lastmod="2026-07-11T14:47:14Z")
+        history = [{"revid": 1, "modified": "2026-01-01T00:00:00Z", "link": "https://x?oldid=1"}]
+        with patch.object(Page, "history", return_value=history), \
+             patch.object(Page, "_cache_load", return_value=True):
+            result = page.revert_to("2026-06-01T00:00:00Z")
+        self.assertIs(result, page)
+
 
 if __name__ == "__main__":
     unittest.main()

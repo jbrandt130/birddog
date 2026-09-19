@@ -9,6 +9,7 @@ import time
 import json
 import re
 import os
+import unicodedata
 from datetime import datetime
 from urllib.parse import quote, unquote, urlparse
 from itertools import islice
@@ -944,8 +945,11 @@ def _subtract_links(links, delta):
             for delta_link in link_list:
                 _safe_remove(links[key], delta_link)
 
-# Detect bare File:... or c:File:... patterns in template params
-_doc_file_pattern = re.compile(r'((?:c:)?File:[^<>\[\]\n]+)', re.IGNORECASE)
+# Detect bare File:... or c:File:... patterns in template params. Excludes '|'
+# so a piped wikilink (e.g. [[c:File:scan.pdf|display text]]) -- already
+# handled by the _extract_links() pass above -- isn't re-captured here with
+# its display text glued onto the file title.
+_doc_file_pattern = re.compile(r'((?:c:)?File:[^<>\[\]|\n]+)', re.IGNORECASE)
 
 def _extract_doc_links_from_template(template):
     """
@@ -1623,6 +1627,93 @@ def check_page_changes(page, reference, report=False):
 
     if report:
         report_page_changes(page)
+
+# -------------------------------------------------------------------------------
+# Issue #138: alert significance -- is a change worth surfacing to a watcher,
+# or is it cosmetic (whitespace, dash-variant, category-link-only, relabeled
+# link text)? Deliberately NOT a second diff implementation: normalizes text
+# and reuses check_page_changes's own table-row matching (by first-cell text)
+# so "significant" always means the same thing as "the UI ?compare= diff
+# would show something", after folding.
+
+_DASH_CODEPOINTS = "‐‑‒–—―−"
+_DASH_FOLD = str.maketrans({ord(c): '-' for c in _DASH_CODEPOINTS})
+_WHITESPACE_RUN = re.compile(r'\s+')
+
+_LINK_URL_KEYS = ("commons_links", "internal_links", "external_links")
+
+def _normalize_text(text):
+    """NFKC (folds NBSP etc. to plain space), fold dash variants to '-', collapse whitespace."""
+    if not text:
+        return ''
+    text = unicodedata.normalize('NFKC', text)
+    text = text.translate(_DASH_FOLD)
+    return _WHITESPACE_RUN.sub(' ', text).strip()
+
+def _text_item_equal(item1, item2):
+    return _normalize_text(get_text(item1)) == _normalize_text(get_text(item2))
+
+def _urls_excluding_categories(link_dict):
+    """commons/internal/external link URLs from a notes or other_links dict, excluding category_links."""
+    urls = []
+    for key in _LINK_URL_KEYS:
+        urls.extend((link_dict or {}).get(key) or [])
+    return frozenset(_normalize_text(url) for url in urls)
+
+def _table_row_changed(child, ref_child):
+    for cell, ref_cell in zip(child, ref_child):
+        if not _text_item_equal(cell.get("text"), ref_cell.get("text")):
+            return True
+        if (cell.get("link") or '') != (ref_cell.get("link") or ''):
+            return True
+    return False
+
+def _table_significant(table, ref_table):
+    ref_rows = {ref_child[0]["text"]["uk"]: ref_child for ref_child in ref_table.get("children", [])}
+    matched = 0
+    for child in table.get("children", []):
+        ref_child = ref_rows.get(child[0]["text"]["uk"])
+        if ref_child is None:
+            return True  # row added
+        matched += 1
+        if _table_row_changed(child, ref_child):
+            return True
+    return matched != len(ref_rows)  # a row went missing
+
+def page_significance(page, reference):
+    """
+    True if `page` differs from `reference` in a way a watcher should be told about,
+    after folding whitespace/dash variants and ignoring category-only link changes.
+    False means every difference is cosmetic -- never means there is no difference.
+    """
+    if not isinstance(page, dict):
+        page = page.page
+    if not isinstance(reference, dict):
+        reference = reference.page
+
+    for key in ('title', 'description', 'dates'):
+        if not _text_item_equal(page.get(key), reference.get(key)):
+            return True
+
+    if (page.get('doc_link') or '') != (reference.get('doc_link') or ''):
+        return True
+
+    if _urls_excluding_categories(page.get('notes')) != _urls_excluding_categories(reference.get('notes')):
+        return True
+    if _urls_excluding_categories(page.get('other_links')) != _urls_excluding_categories(reference.get('other_links')):
+        return True
+
+    ref_tables_by_name = {t["name"]: t for t in reference.get("tables", [])}
+    for table in page.get("tables", []):
+        ref_table = ref_tables_by_name.get(table["name"])
+        if ref_table is None:
+            if table.get("children"):
+                return True  # whole new table, non-empty
+            continue
+        if _table_significant(table, ref_table):
+            return True
+
+    return False
 
 # -------------------------------------------------------------------------------
 # Get most recent page modification dates within given namespace

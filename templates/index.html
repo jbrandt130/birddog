@@ -125,9 +125,16 @@
         </div>
       </div>
       <div id="unresolved-updates-container">
-        <button class="btn btn-primary" title="Check All Updates" onclick="check_all_watchlists();">
-          <i class="bi bi-arrow-clockwise"></i>
-        </button>
+        <div class="d-flex align-items-center gap-3 mb-2">
+          <button class="btn btn-primary" title="Check All Updates" onclick="check_all_watchlists();">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" id="hide-insignificant-toggle" onchange="on_hide_insignificant_toggle(this)">
+            <label class="form-check-label" for="hide-insignificant-toggle">Hide minor changes</label>
+          </div>
+          <span id="hidden-count-badge" class="text-muted small d-none"></span>
+        </div>
         <div style="max-height: 600px; overflow-y: auto;">
           <table class="table table-striped table-hover">
             <thead><tr><td>&nbsp;</td></tr></thead>
@@ -617,6 +624,7 @@
 <!-- Birddog JS -->
 <script>
   const start_title = {{ start_title | tojson }};
+  const hide_insignificant_pref = {{ hide_insignificant | tojson }};
 </script>
 <script src="static/js/birddog.js"></script>
 </body>

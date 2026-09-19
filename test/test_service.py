@@ -25,6 +25,7 @@ class _UserStub:
         self.name = name
         self.email = email
         self._pw = TEST_PASSWORD
+        self._preferences = {}
 
     # auth helpers used by service.Users.login
     def check_password(self, pw):
@@ -44,6 +45,13 @@ class _UserStub:
     # used by Users.create
     def save(self):
         return None
+
+    # used by / (home) and /preference/<key>
+    def get_preference(self, key, default_value=None):
+        return self._preferences.get(key, default_value)
+
+    def set_preference(self, key, value):
+        self._preferences[key] = value
 
 
 class TestServiceHelpers(unittest.TestCase):
@@ -266,6 +274,30 @@ class TestServiceRoutes(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["success"], True)
 
+    def test_set_user_preference(self):
+        self._login_session()
+        user = _UserStub()
+        service.users.lookup.return_value = user
+
+        # missing 'value'
+        resp = self.client.post("/preference/hide_insignificant", json={})
+        self.assertEqual(resp.status_code, 400)
+
+        # success
+        resp = self.client.post("/preference/hide_insignificant", json={"value": True})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["success"], True)
+        self.assertTrue(user.get_preference("hide_insignificant"))
+
+        # overwrite
+        resp = self.client.post("/preference/hide_insignificant", json={"value": False})
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(user.get_preference("hide_insignificant"))
+
+    def test_set_user_preference_requires_login(self):
+        resp = self.client.post("/preference/hide_insignificant", json={"value": True})
+        self.assertEqual(resp.status_code, 404)
+
     def test_reset_password_request_unknown_user_does_not_send(self):
         service.users.lookup.return_value = None
 
@@ -473,6 +505,71 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
             resp = self.client.post("/archives", json={"title": "Архів:ДАЛО", "label": "X", "description": "Y"})
         self.assertEqual(resp.status_code, 403)
         mock_update.assert_not_called()
+
+
+class TestPageDataNoEarlierVersion(unittest.TestCase):
+    """
+    /page?compare= 's 'no_earlier_version' flag (issue #138 UI investigation):
+    true whenever a comparison was requested but Page.compare() found nothing
+    to compare against (the page's entire history postdates the requested
+    date) -- lets the client show "NEW PAGE" even when history.length > 1.
+    """
+    TITLE = "Архів:ДАЖО/Д/999"
+
+    def setUp(self):
+        app.config["TESTING"] = True
+        app.secret_key = "test_secret"
+        service.serializer = URLSafeTimedSerializer(app.secret_key)
+        service.runtime = MagicMock(state="running")
+        service.users = MagicMock()
+        self.client = app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"email": TEST_EMAIL, "name": TEST_NAME}
+        user = MagicMock()
+        user.role = "user"
+        service.users.lookup.return_value = user
+
+    def _fake_page(self, page_dict):
+        page = MagicMock()
+        page.page = page_dict
+        page.title = self.TITLE
+        page.kind = "case"
+        page.name = "Д/999"
+        page.needs_translation = False
+        page.history.return_value = []
+        return page
+
+    def test_flagged_true_when_compare_finds_nothing(self):
+        head = {"title": {"uk": "T"}, "lastmod": "2026-08-26T08:39:44Z"}
+        compared = dict(head)  # no 'refmod' -- revert_to() found nothing
+        page = self._fake_page(head)
+        page.compare.return_value = self._fake_page(compared)
+        service.runtime.lookup_by_title.return_value = page
+
+        resp = self.client.get(f"/page?title={self.TITLE}&compare=2026-08-01T00:00:00Z")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.get_json()["no_earlier_version"])
+
+    def test_flagged_false_when_compare_succeeds(self):
+        head = {"title": {"uk": "T"}, "lastmod": "2026-08-26T08:39:44Z"}
+        compared = {**head, "refmod": "2026-01-01T00:00:00Z"}
+        page = self._fake_page(head)
+        page.compare.return_value = self._fake_page(compared)
+        service.runtime.lookup_by_title.return_value = page
+
+        resp = self.client.get(f"/page?title={self.TITLE}&compare=2026-01-01T00:00:00Z")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.get_json()["no_earlier_version"])
+
+    def test_flagged_false_when_no_compare_requested(self):
+        head = {"title": {"uk": "T"}, "lastmod": "2026-08-26T08:39:44Z"}
+        page = self._fake_page(head)
+        service.runtime.lookup_by_title.return_value = page
+
+        resp = self.client.get(f"/page?title={self.TITLE}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.get_json()["no_earlier_version"])
+        page.compare.assert_not_called()
 
 
 if __name__ == "__main__":

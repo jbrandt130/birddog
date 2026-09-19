@@ -248,6 +248,51 @@ class PrimitivesTests(WatcherTestBase):
 
 
 # ----------------------------------------------------------------------------
+# active-watch index (issue #138 significance sweep enumeration)
+
+class ActiveWatchIndexTests(WatcherTestBase):
+    def test_put_watcher_indexes_the_watch(self):
+        watcher_mod.put_watcher("a@example.com", "Архів:ДААРК", {"include": ["Архів:ДААРК"]})
+        self.assertEqual(
+            watcher_mod.get_all_active_watches(),
+            [{"email": "a@example.com", "title": "Архів:ДААРК"}])
+
+    def test_put_watcher_is_idempotent_in_the_index(self):
+        header = {"include": ["Архів:ДААРК"]}
+        watcher_mod.put_watcher("a@example.com", "Архів:ДААРК", header)
+        watcher_mod.put_watcher("a@example.com", "Архів:ДААРК", {**header, "last_checked_date": "2026-01-01"})
+        self.assertEqual(len(watcher_mod.get_all_active_watches()), 1)
+
+    def test_remove_watcher_deindexes_the_watch(self):
+        watcher_mod.put_watcher("a@example.com", "Архів:ДААРК", {"include": ["Архів:ДААРК"]})
+        watcher_mod.remove_watcher("a@example.com", "Архів:ДААРК")
+        self.assertEqual(watcher_mod.get_all_active_watches(), [])
+
+    def test_multiple_watches_all_indexed(self):
+        watcher_mod.put_watcher("a@example.com", "Архів:ДААРК", {"include": ["Архів:ДААРК"]})
+        watcher_mod.put_watcher("b@example.com", "Архів:ДАЖО", {"include": ["Архів:ДАЖО"]})
+        self.assertEqual(
+            {(w["email"], w["title"]) for w in watcher_mod.get_all_active_watches()},
+            {("a@example.com", "Архів:ДААРК"), ("b@example.com", "Архів:ДАЖО")})
+
+    def test_index_write_failure_does_not_block_put_watcher(self):
+        real_insert = self.kv.insert
+        def flaky_insert(namespace, key, value):
+            if namespace == watcher_mod._ACTIVE_NS:
+                raise Exception("kv down")
+            return real_insert(namespace, key, value)
+
+        with mock.patch.object(self.kv, "insert", side_effect=flaky_insert):
+            watcher_mod.put_watcher("a@example.com", "Архів:ДААРК", {"include": ["Архів:ДААРК"]})
+
+        # header write must have gone through despite the index write failing
+        self.assertEqual(
+            watcher_mod.get_watcher("a@example.com", "Архів:ДААРК"),
+            {"include": ["Архів:ДААРК"]})
+        self.assertEqual(watcher_mod.get_all_active_watches(), [])
+
+
+# ----------------------------------------------------------------------------
 # resolve_watcher()
 
 class ResolveWatcherTests(WatcherTestBase):

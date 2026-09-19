@@ -74,13 +74,44 @@ def get_watcher(email, archive_title):
     # raises KeyError if this watch has no header yet
     return json.loads(_watcher_kv.get(_watcher_ns(email), archive_title))
 
+# Issue #138: index of every (email, archive_title) with a live watcher header,
+# used by the significance sweep to enumerate the alert set without a KV-wide
+# scan. Maintained as a best-effort side effect of put_watcher()/remove_watcher()
+# (same pattern as PageTracker._discover_archive_roots) -- an index write failure
+# must never block the actual watcher read/write path. Populated lazily: a watch
+# created before this existed is indexed the next time it's touched (every
+# check_watcher() call ends in put_watcher()), so the sweep just doesn't cover it
+# until then -- safe, since an unswept alert simply keeps showing as significant.
+_ACTIVE_NS = "active"
+
+def _active_key(email, archive_title):
+    return f"{email}:{archive_title}"
+
+def _index_active_watch(email, archive_title):
+    try:
+        _watcher_kv.insert(_ACTIVE_NS, _active_key(email, archive_title),
+                            json.dumps({"email": email, "title": archive_title}))
+    except Exception:
+        _logger.exception(f"watcher: failed to index active watch {email}:{archive_title}")
+
+def _deindex_active_watch(email, archive_title):
+    try:
+        _watcher_kv.remove_if_exists(_ACTIVE_NS, _active_key(email, archive_title))
+    except Exception:
+        _logger.exception(f"watcher: failed to de-index active watch {email}:{archive_title}")
+
+def get_all_active_watches():
+    return [json.loads(v) for _, v in _watcher_kv.get_all(_ACTIVE_NS)]
+
 def put_watcher(email, archive_title, header):
     _watcher_kv.insert(_watcher_ns(email), archive_title, json.dumps(header))
+    _index_active_watch(email, archive_title)
 
 def remove_watcher(email, archive_title):
     _watcher_kv.remove_if_exists(_watcher_ns(email), archive_title)
     _watcher_kv.remove_all(_resolved_ns(email, archive_title))
     _watcher_kv.remove_all(_unresolved_ns(email, archive_title))
+    _deindex_active_watch(email, archive_title)
     try:
         remove_cached_object(_watcher_cache_path(email, archive_title))
     except CacheMissError:
