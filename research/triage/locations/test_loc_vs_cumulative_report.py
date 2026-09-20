@@ -148,7 +148,7 @@ class LocationPerformanceEvaluator:
                 continue
 
         if debug_print:
-            print(f"{msg}, a total of {len(rows_used)}")
+            print(f"{msg} a total of {len(rows_used)}")
 
         if skip_extraction:
             return
@@ -167,7 +167,7 @@ class LocationPerformanceEvaluator:
                     debug_print=debug_print,
                 )
             else:
-                batch_results = {doc_id: ([], set()) for doc_id in buffered_doc_ids}
+                batch_results = {doc_id: ([], [], []) for doc_id in buffered_doc_ids}
 
             # Now evaluate each doc in this chunk using the batched result
             for row, file, town_list, doc_id in chunk:
@@ -175,7 +175,8 @@ class LocationPerformanceEvaluator:
                     print(f"Processing document number {self.num_evaluated_docs} with ID {doc_id}")
                 # Swap in the batched result for the extraction step
                 self.evaluate_on_one_doc_from_batch(row, doc_id, town_list, file,
-                    batch_results.get(doc_id, [])[0], batch_results.get(doc_id, [])[1], debug_print)
+                    batch_results.get(doc_id, [])[0], batch_results.get(doc_id, [])[1],
+                    batch_results.get(doc_id, [])[2], debug_print)
 
         self.print_statistics(max_num_docs)
 
@@ -192,12 +193,13 @@ class LocationPerformanceEvaluator:
         cumulative_towns: list[str],
         file: str,
         doc_location_ids: list[str],
-        archive_locs: set[str],
+        archive_locs: list[dict],
+        extended_archive_locs: list[dict],
         debug_print: bool,
     ):
         """takes doc_location_ids directly (already extracted)."""
         cumulative_locations = self.file_location_finder.match_places_to_location_ids(
-            doc_id, cumulative_towns, archive_locs, debug_print)
+            doc_id, cumulative_towns, archive_locs, extended_archive_locs, debug_print)
         cumulative_locations = [dict(f_set) for f_set in cumulative_locations]
         cumulative_locations_ids = [loc["loc_id"] for loc in cumulative_locations]
         cumulative_locations_ids_set = set(cumulative_locations_ids)
@@ -300,9 +302,9 @@ if __name__ == "__main__":
     debug_print_ = True
     batch_size_ = 5
 
-#    rows_ = [9803]
-    rows_ = [32, 53, 117, 147, 156, 158, 266, 307, 317, 346, 368, 392, 526, 610, 655, 673, 778, 796, 824, 828, 835, 871, 1026, 1030, 1035, 1067, 1118, 1157, 1176, 1192, 1201, 1216, 1219, 1256, 1326, 1347, 1398, 1417, 1435, 1565, 1654, 1660, 1672, 1723, 1759, 1788, 1792, 1879, 2028, 2033, 2088, 2302, 2405, 2426, 2431, 2456, 2538, 2575, 2590, 2647, 2703, 2751, 2793, 2799, 2804, 2889, 2935, 2972, 3088, 3116, 3216, 3347, 3353, 3357, 3366, 3382, 3452, 3488, 3596, 3612, 3645, 3710, 3819, 3869, 3893, 3919, 4046, 4234, 4318, 4406, 4423, 4531, 4664, 4762, 4815, 4824, 4918, 4947, 4999, 5067, 5141, 5208, 5263, 5307, 5384, 5406, 5407, 5451, 5458, 5471, 5543, 5552, 5953, 5967, 5968, 6021, 6034, 6068, 6242, 6265, 6288, 6316, 6387, 6417, 6441, 6464, 6468, 6554, 6589, 6738, 6798, 6858, 6864, 6962, 6993, 7035, 7085, 7206, 7248, 7313, 7354, 7415, 7425, 7537, 7574, 7613, 7676, 7801, 7832, 7951, 7983, 8011, 8031, 8034, 8055, 8058, 8088, 8187, 8205, 8223, 8254, 8282, 8316, 8336, 8371, 8500, 8526, 8613, 8703, 8744, 8745, 8799, 8942, 8959, 8998, 9024, 9053, 9130, 9151, 9285, 9308, 9345, 9350, 9381, 9425, 9440, 9451, 9528, 9532, 9533, 9617, 9621, 9649, 9659, 9702, 9714, 9734, 9803, 9813, 9818, 9820, 9830, 9858, 10192, 10203]
-#    rows_ = evaluator.unique_random_integers(300)
+    rows_ = [838]
+#    rows_ = [21, 48, 119, 213, 297, 314, 397, 451, 457, 459, 615, 628, 644, 693, 696, 769, 838, 860, 867, 924, 1072, 1086, 1136, 1147, 1158, 1275, 1315, 1359, 1508, 1651, 1672, 1840, 1852, 2087, 2123, 2329, 2412, 2517, 2533, 2575, 2618, 2674, 2676, 2702, 2730, 2777, 2808, 2815, 2863, 2947, 3010, 3095, 3106, 3143, 3202, 3251, 3312, 3331, 3357, 3479, 3497, 3555, 3601, 3716, 3783, 3897, 4028, 4031, 4044, 4125, 4240, 4246, 4296, 4485, 4535, 4927, 5100, 5218, 5231, 5261, 5274, 5289, 5328, 5353, 5368, 5379, 5404, 5442, 5495, 5506, 5941, 6031, 6036, 6053, 6078, 6168, 6262, 6310, 6417, 6476, 6490, 6524, 6539, 6552, 6576, 6597, 6633, 6676, 6758, 6834, 6849, 6909, 6933, 6981, 7007, 7026, 7079, 7207, 7245, 7311, 7381, 7431, 7544, 7637, 7659, 7713, 7798, 7935, 7969, 8001, 8003, 8143, 8187, 8199, 8268, 8299, 8322, 8334, 8355, 8392, 8531, 8598, 8607, 8779, 8838, 9034, 9057, 9072, 9083, 9236, 9337, 9460, 9493, 9537, 9572, 9588, 9668, 9677, 9711, 9714, 9744, 9747, 9778, 9814, 10210, 10227, 10230, 10845]
+#    rows_ = evaluator.unique_random_integers(250)
 #    rows_ = [row + 1 for row in rows_]  # the first row is the header
     evaluator.evaluate_location_extraction(rows_, False, debug_print_, batch_size_)
 #    cumulative_file = "ЦДІАК W-1160-1-2"

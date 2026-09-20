@@ -16,13 +16,34 @@ class LocationMatcher:
     Handles location ID lookups using similarity scoring against multiple name variants.
     """
 
-    def __init__(self, communities_file_path: str, regions_2_locations: dict):
+    def __init__(self, communities_file_path: str, regions_2_locations: dict, all_ukraine_locations: list[dict]):
         """
         Populates location_name_dict from the main population register Excel file populations_file_path.
         - Handles main names and alternative names
         - Standardizes formatting
         - Sets default administrative level
         """
+        self._province_capital_ids = {
+            "Chernigov": -1037057,
+            "Ekaterinoslav": -1037865,
+            "Kharkov": -1041320,
+            "Kherson": -1041356,
+            "Kiev": -1044367,
+            "Lwow": -1045268,
+            "Nikolayev": -1047257,
+            "Nikolaiev": -1047257,
+            "Poltava": -1051195,
+            "Stanislawow": -1040327,
+            "Tarnopol": -1056204,
+            "LwÃ³w": -1045268,
+            "WoÅ‚yÅ„": -1045249,
+            "Vinnitsa": -1058303,
+        }
+
+        # add data from all_ukraine_locations to _province_capital_ids
+        for loc in all_ukraine_locations:
+            self._province_capital_ids[loc["location"]] = int(loc["location_id"])
+
         self.location_name_dict = {}
         self.names_with_location_ids = {}
 
@@ -70,7 +91,11 @@ class LocationMatcher:
                 if c1900_province in regions_2_locations:
                     for item in regions_2_locations[c1900_province]:
                         province_names.append(item["location"])
-                province_names = {s.strip().lower() for s in province_names if s.strip() and s.strip().lower() != 'nan'}
+                curr_province_capital_ids = {self._province_capital_ids[name] for name in province_names
+                                        if name in self._province_capital_ids}
+                # Extract all keys matching the values
+                province_names = {name.strip().lower() for name, pr_id in self._province_capital_ids.items()
+                    if pr_id in curr_province_capital_ids and name.strip() and name.strip().lower() != 'nan'}
 
                 # Set the administrative_level. Possible values:
                 # 2 - province capital, 1 - district capital, 0 - other
@@ -90,6 +115,7 @@ class LocationMatcher:
                     "main_name": main_name,
                     "district_names": district_names,
                     "province_names": province_names,
+                    "province_capital_ids": curr_province_capital_ids,
                     "administrative_level": administrative_level,
                 }
 
@@ -114,20 +140,26 @@ class LocationMatcher:
         # Set a threshold score (typically between 85 and 90 out of 100)
         threshold = 91 #88 # 93
         max_score = 0
+        seen = set()
+        matching_loc_ids = []
         best_name = ""
         for loc_name in self.names_with_location_ids:
             score = distance.JaroWinkler.similarity(place_to_search_lower, loc_name) * 100
+            loc_ids = self.names_with_location_ids.get(loc_name, [])
             if score > max_score:
                 max_score = score
                 best_name = loc_name
+            if score >= threshold:
+                for loc_id in loc_ids:
+                    if loc_id not in seen:
+                        matching_loc_ids.insert(0, loc_id)
+                        seen.add(loc_id)
 
         if max_score < threshold:
             if debug_print:
                 print(f"No match found for '{place_to_search}'. Maximum score: {max_score}, "
                       f"best candidate {best_name}")
-            matching_loc_ids = []
         else:
-            matching_loc_ids = self.names_with_location_ids.get(best_name, [])
             if debug_print:
                 msg = f"Location '{place_to_search}' is identified with score {max_score} as one of these locations: "
                 for loc_id in matching_loc_ids:
@@ -138,10 +170,10 @@ class LocationMatcher:
         return matching_loc_ids
 
 
-
 if __name__ == "__main__":
     communities_file_path_ = "./research/triage/locations/jg_communities_data.xlsx"
-    matcher = LocationMatcher(communities_file_path_, {})
+    from file_location import _all_ukraine_locations
+    matcher = LocationMatcher(communities_file_path_, {}, _all_ukraine_locations)
 
     # Access the encapsulated dataset via the class instance
     loc_id_1 = '-1055659'
