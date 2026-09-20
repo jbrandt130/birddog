@@ -1,7 +1,6 @@
 # The code below uses the free Inference Client to query Qwen/Qwen2.5-7B-Instruct. We use Pydantic directly to enforce the JSON structure so the model returns only valid data.
 import builtins
 import json
-import os
 import re
 from json import JSONDecodeError
 
@@ -68,69 +67,6 @@ batch_system_prompt = (
     f"{json.dumps(BatchDocumentLocationsResponse.model_json_schema())}"
 )
 
-FEW_SHOT_MESSAGES: list[ChatCompletionMessageParam] = [
-    {
-        "role": "user",
-        "content": "Analyze this list of descriptors: [\"case is based on claim of official of Kholm, Velikoluka, Zolotonosha, Kremenchuk districts\"]"
-    },
-    {
-        "role": "assistant",
-        "content": json.dumps({
-            "extracted_locations": [
-                {
-                    "has_location": True,
-                    "locations": [
-                        "Kholm district",
-                        "Velikoluka district",
-                        "Zolotonosha district",
-                        "Kremenchuk district"
-                    ]
-                }
-            ]
-        })
-    },
-    {
-        "role": "user",
-        "content": "Analyze this list of descriptors: [\"of Cherkasy, Chyhyryn, Kaniv counties\"]"
-    },
-    {
-        "role": "assistant",
-        "content": json.dumps({
-            "extracted_locations": [
-                {
-                    "has_location": True,
-                    "locations": [
-                        "Cherkasy county",
-                        "Chyhyryn county",
-                        "Kaniv county"
-                    ]
-                }
-            ]
-        })
-    },
-    {
-        "role": "user",
-        "content": "Analyze this list of descriptors: [\"of resolutions bishops Bohodukhiv, Chuhuiv. Clerical of Izium, Kupiansk counties.\"]"
-    },
-    {
-        "role": "assistant",
-        "content": json.dumps({
-            "extracted_locations": [
-                {
-                    "has_location": True,
-                    "locations": [
-                        "Bohodukhiv",
-                        "Chuhuiv",
-                        "Izium county",
-                        "Kupiansk county"
-                    ]
-                }
-            ]
-        })
-    }
-]
-
-
 # Batched few-shot examples: input is a flat list of descriptors from N documents,
 # output uses document_index to route each result back to the right document.
 BATCH_FEW_SHOT_MESSAGES: list[ChatCompletionMessageParam] = [
@@ -139,29 +75,36 @@ BATCH_FEW_SHOT_MESSAGES: list[ChatCompletionMessageParam] = [
         "content": (
             "Analyze these 2 documents and extract locations for each:\n"
             'Document 0: "Justice of the Peace of the 1st precinct of the Kamianets-Podilskyi Judicial and Peace District, Kamianets-Podilskyi, Kamianets-Podilskyi district, Podilskyi province"\n'
-            'Document 1: "Chapter XXV - Inventories of goods"'
-        )
+            'Document 1: "Chapter XXV - Inventories of goods"\n'
+            'Document 2: "Revision tale colony Efingar in Kherson district"'
+        ),
     },
     {
         "role": "assistant",
-        "content": json.dumps({
-            "extracted_locations": [
-                {
-                    "document_index": 0,
-                    "has_location": True,
-                    "locations": [
-                        "Kamianets-Podilskyi",
-                        "Kamianets-Podilskyi district",
-                        "Podilskyi province"
-                    ]
-                },
-                {
-                    "document_index": 1,
-                    "has_location": False,
-                    "locations": []
-                }
-            ]
-        })
+        "content": json.dumps(
+            {
+                "extracted_locations": [
+                    {
+                        "document_index": 0,
+                        "has_location": True,
+                        "locations": [
+                            "Kamianets-Podilskyi",
+                            "Kamianets-Podilskyi district",
+                            "Podilskyi province",
+                        ],
+                    },
+                    {"document_index": 1, "has_location": False, "locations": []},
+                    {
+                        "document_index": 2,
+                        "has_location": True,
+                        "locations": [
+                            "Efingar",
+                            "Kherson district",
+                        ],
+                    },
+                ]
+            }
+        ),
     },
     {
         "role": "user",
@@ -169,29 +112,31 @@ BATCH_FEW_SHOT_MESSAGES: list[ChatCompletionMessageParam] = [
             "Analyze these 2 documents and extract locations for each:\n"
             'Document 0: "Central Archives of Historical Records (Warsaw) (AGAD)"\n'
             'Document 1: "of Cherkasy, Chyhyryn, Kaniv counties"'
-        )
+        ),
     },
     {
         "role": "assistant",
-        "content": json.dumps({
-            "extracted_locations": [
-                {
-                    "document_index": 0,
-                    "has_location": True,
-                    "locations": ["Warsaw"]
-                },
-                {
-                    "document_index": 1,
-                    "has_location": True,
-                    "locations": [
-                        "Cherkasy county",
-                        "Chyhyryn county",
-                        "Kaniv county"
-                    ]
-                }
-            ]
-        })
-    }
+        "content": json.dumps(
+            {
+                "extracted_locations": [
+                    {
+                        "document_index": 0,
+                        "has_location": True,
+                        "locations": ["Warsaw"],
+                    },
+                    {
+                        "document_index": 1,
+                        "has_location": True,
+                        "locations": [
+                            "Cherkasy county",
+                            "Chyhyryn county",
+                            "Kaniv county",
+                        ],
+                    },
+                ]
+            }
+        ),
+    },
 ]
 
 
@@ -270,15 +215,16 @@ def _process_response(raw_json: dict, debug_print: bool = False) -> list[str]:
     return unique_locations
 
 
-def check_and_trim_keywords(loc: str, keywords: list[str]) -> tuple[bool, str]:
+def check_and_trim_keywords(loc: str, keywords: list[str], suffix_only: bool) -> tuple[bool, str]:
     # Convert base location to lowercase for case-insensitive checking
     loc_lower = loc.lower()
 
     # Check keywords as prefixes
-    for keyword in keywords:
-        if loc_lower.startswith(keyword):
-            trimmed = loc[len(keyword) + 1 :]
-            return True, trimmed
+    if not suffix_only:
+        for keyword in keywords:
+            if loc_lower.startswith(keyword):
+                trimmed = loc[len(keyword) + 1 :]
+                return True, trimmed
 
     # Check keywords as suffixes
     for keyword in keywords:
@@ -547,7 +493,10 @@ def extract_locations_batched(
     return [r if r is not None else [] for r in all_results]
 
 
-def locations_to_admin_units(locations: list[str], debug_print:bool = False) -> tuple[list[builtins.dict], set, set]:
+def locations_to_admin_units(
+        locations: list[str], province_keywords: list[str], district_keywords: list[str],
+        district_keywords_suffix_only: list[str], settlement_keywords: list[str],
+        debug_print:bool = False) -> tuple[list[builtins.dict], set, set]:
     """
     Function: locations_to_admin_units
 
@@ -562,6 +511,10 @@ def locations_to_admin_units(locations: list[str], debug_print:bool = False) -> 
         locations (list[str]): List of raw location names extracted from document descriptions.
                               These names may include administrative suffixes like "province", "district",
                               or settlement types, and are typically already processed by extract_locations_batched().
+        province_keywords (list[str]): list of lowercase province keywords
+        district_keywords (list[str]): list of lowercase district keywords
+        district_keywords_suffix_only (list[str]): list of lowercase district keywords as suffixes only
+        settlement_keywords (list[str]): list of lowercase settlement keywords
         debug_print (bool): If True, enables verbose console output showing the identification process,
                            including the original location name, trimmed name, and assigned administrative level.
 
@@ -580,21 +533,13 @@ def locations_to_admin_units(locations: list[str], debug_print:bool = False) -> 
             2. province_names (set): A set of standardized province-level location names (suffix stripped).
             3. district_names (set): A set of standardized district-level location names (suffix stripped).
     """
-    # all these must be lowercase
-    province_keywords = ['governorate', 'gubernia', 'oblast', 'province', 'provinces',
-                         'region', 'regions', 'republic', 'voivodeship', 'Processed via', 'Listed @']
-    district_keywords = ['district', 'districts', 'county', 'counties', 'uezd', 'uyezd',
-                         'volost', 'vol.', 'powiat', 'diocese']
-    settlement_keywords = ['village', 'villages', 'town', 'towns', 'township', 'city', 'cities',
-                           'settlement', 'selsoviet', 'precinct', 'precincts', 'municipality', 'mr.']
-
     admin_units = []
     province_names = set()
     district_names = set()
     for loc in locations:
         loc = loc.lower()
         # is it a province?
-        (found, trimmed) = check_and_trim_keywords(loc, province_keywords)
+        (found, trimmed) = check_and_trim_keywords(loc, province_keywords, False)
         if found:
             province_names.add(trimmed)
             admin_units.append({"location": trimmed, "administrative_level": 2})
@@ -602,7 +547,10 @@ def locations_to_admin_units(locations: list[str], debug_print:bool = False) -> 
                 print(f"'{loc}' identified as location '{trimmed}', level 'province'")
         else:
             # is it a district?
-            (found, trimmed) = check_and_trim_keywords(loc, district_keywords)
+            (found, trimmed) = check_and_trim_keywords(loc, district_keywords, False)
+            if not found:
+                # try suffix only
+                (found, trimmed) = check_and_trim_keywords(loc, district_keywords_suffix_only, True)
             if found:
                 district_names.add(trimmed)
                 admin_units.append({"location": trimmed, "administrative_level": 1})
@@ -610,7 +558,7 @@ def locations_to_admin_units(locations: list[str], debug_print:bool = False) -> 
                     print(f"Location '{loc}' matches '{trimmed}', level 'district'")
             else:
                 # it is a settlement
-                (found, trimmed) = check_and_trim_keywords(loc, settlement_keywords)
+                (found, trimmed) = check_and_trim_keywords(loc, settlement_keywords, False)
                 if found:
                     admin_units.append({"location": trimmed, "administrative_level": 0})
                     if debug_print:
@@ -620,26 +568,3 @@ def locations_to_admin_units(locations: list[str], debug_print:bool = False) -> 
                     if debug_print:
                         print(f"No keywords in the settlement name '{loc}'")
     return admin_units, province_names, district_names
-
-
-if __name__ == "__main__":
-    api_token_ = os.getenv("HF_TOKEN", "")
-
-    list_of_descriptors = [
-        "Case on Anna Grigorieva's claim against Franciszhin Shayts for 7 rubles 50 kopecks for service",
-        "Justice of the Peace of the 1st precinct of the Kamianets-Podilskyi Judicial and Peace District, Kamianets-Podilskyi, Kamianets-Podilskyi district, Podilskyi province",
-        "Justice of the Peace of the 1st District of the Kamyanets Judicial and Peace District, Kamyanets-Podilskyi, Kamyanets County, Podilsk Province",
-        "State Archives of Khmelnytsky region. Funds of the pre-Soviet period",
-        "Khmelnytskyy",
-        "Białojezore, Kiev Governorate, Cherkasy County",
-        "Chapter XXV - Inventories of goods",
-        "Radziwill Archive",
-        "Central Archives of Historical Records (Warsaw) (AGAD)",
-        "Warszawa",
-    ]
-
-    extracted_places = extract_locations_batched([list_of_descriptors], api_token_, 1, True)
-
-    print(locations_to_admin_units(extracted_places[0]))
-    # Expected Output: [{'location': 'kamianets-podilskyi', 'administrative_level': 0}, {'location': 'kamianets-podilskyi', 'administrative_level': 1}, {'location': 'podilskyi', 'administrative_level': 2}, {'location': 'kamyanets', 'administrative_level': 0}, {'location': 'kamyanets', 'administrative_level': 1}, {'location': 'podilsk', 'administrative_level': 2}, {'location': 'khmelnytsky', 'administrative_level': 2}, {'location': 'białojezore', 'administrative_level': 0}, {'location': 'kiev', 'administrative_level': 2}, {'location': 'cherkasy', 'administrative_level': 1}, {'location': 'warsaw', 'administrative_level': 0}]
-
