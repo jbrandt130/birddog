@@ -12,13 +12,18 @@ cosmetic (whitespace, dash-variant, category-link-only, relabeled link text).
   the global change path (PageUpdateManager) and never inline in the UI
   check -- bounded by watchlist breadth, not wiki edit volume.
 - The verdict is a pure in-process memoization (SignificanceLRU), keyed by
-  span; a restart just re-computes. The only durable output is
-  `insignificant` + `sig_span` on the unresolved KV row.
-- Fail-safe: `insignificant` is a positive assertion only this sweep ever
-  sets. Debounced, unclassifiable, errored, or stale-span items are simply
-  left untouched, which defaults to "shown as significant" wherever the UI
-  later reads this flag -- this can only fail to hide a change, never hide
-  one it didn't affirmatively clear.
+  span; a restart just re-computes. The only durable output is one of
+  `insignificant` / `new_page`, plus `sig_span`, on the unresolved KV row.
+- Fail-safe: `insignificant` and `new_page` are positive assertions only
+  this sweep ever sets. Debounced, unclassifiable, errored, or stale-span
+  items are simply left untouched, which defaults to "shown as significant"
+  wherever the UI later reads these flags -- this can only fail to hide a
+  change, never hide one it didn't affirmatively clear.
+- `new_page`: a page whose entire history postdates the span's `from_date`
+  (Page.revert_to() returns None) is treated as effectively new relative to
+  that date, regardless of how many revisions it has since accumulated --
+  the user has never seen any earlier state of it, so it's never eligible
+  for `insignificant` (there's nothing to diff against).
 """
 
 from datetime import datetime, timezone
@@ -86,9 +91,14 @@ def _classify(title, from_date, to_date, runtime):
     def compute():
         page = Page(title, runtime=runtime)
         reference = Page(title, runtime=runtime).revert_to(from_date)
-        if not page.exists or reference is None or not reference.exists:
-            # chain gap (deleted/moved/no earlier version) -- direct span
-            # compare isn't possible; don't cache a bogus verdict
+        if reference is None:
+            # no version exists at or before from_date -- effectively new
+            # relative to this span (see module docstring); distinct from
+            # the other chain-gap cases below, which stay plain None
+            return "new"
+        if not page.exists or not reference.exists:
+            # other chain gap (deleted page, etc.) -- direct span compare
+            # isn't possible; don't cache a bogus verdict
             return None
         return page_significance(page, reference)
     return _verdict_lru.lookup(title, from_date, to_date, compute)
@@ -105,8 +115,12 @@ def _classify_item(email, archive_title, item_title, entry, runtime):
     the rest of a large backlog -- see issue #138 sweep-progress bug.
     """
     span = (entry.get("last_resolved"), entry.get("modified"))
-    if entry.get("insignificant") and tuple(entry.get("sig_span") or ()) == span:
-        return False  # already classified for this exact span
+    already_classified = (
+        (entry.get("insignificant") or entry.get("new_page"))
+        and tuple(entry.get("sig_span") or ()) == span
+    )
+    if already_classified:
+        return False
 
     from_date, to_date = span
     if not from_date or not to_date:
@@ -114,13 +128,15 @@ def _classify_item(email, archive_title, item_title, entry, runtime):
 
     did_work = not _verdict_lru.contains(item_title, from_date, to_date)
     try:
-        significant = _classify(item_title, from_date, to_date, runtime)
+        verdict = _classify(item_title, from_date, to_date, runtime)
     except Exception:
         _logger.exception(f"significance: failed to classify {item_title} ({from_date} -> {to_date})")
         return did_work
 
-    if significant is None or significant:
+    if verdict is None or verdict is True:
         return did_work  # unclassifiable, or genuinely significant -- write nothing, stays visible
+
+    field = "new_page" if verdict == "new" else "insignificant"  # otherwise verdict is False
 
     # check_watcher()/resolve_watcher() may have moved this item on while we
     # were fetching pages over the network -- only stamp the verdict if it's
@@ -132,7 +148,7 @@ def _classify_item(email, archive_title, item_title, entry, runtime):
     if (current.get("last_resolved"), current.get("modified")) != span:
         return did_work
 
-    current["insignificant"] = True
+    current[field] = True
     current["sig_span"] = list(span)
     watcher.put_unresolved(email, archive_title, item_title, current)
     return did_work

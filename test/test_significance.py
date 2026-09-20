@@ -143,15 +143,15 @@ class ClassifyTests(unittest.TestCase):
         self.assertIsNone(result)
         mock_sig.assert_not_called()
 
-    def test_no_earlier_version_at_all_returns_none(self):
+    def test_no_earlier_version_at_all_returns_new(self):
         # Page.revert_to() returns None when history() finds nothing at or
-        # before the reference date
+        # before the reference date -- treated as "new" relative to this span
         head = FakePage(exists=True)
         make_page = mock.Mock(side_effect=[head, mock.Mock(revert_to=mock.Mock(return_value=None))])
         with mock.patch.object(significance, "Page", make_page), \
              mock.patch.object(significance, "page_significance") as mock_sig:
             result = significance._classify("Архів:ДААРК/no-earlier", "2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z", runtime=None)
-        self.assertIsNone(result)
+        self.assertEqual(result, "new")
         mock_sig.assert_not_called()
 
     def test_result_is_memoized_across_repeated_calls(self):
@@ -203,8 +203,25 @@ class ClassifyItemTests(SignificanceTestBase):
         # original fields preserved
         self.assertEqual(stored["user"], "x")
 
+    def test_new_page_stamps_flag_and_span_not_insignificant(self):
+        entry = self._entry()
+        watcher_mod.put_unresolved(self.EMAIL, self.TITLE, self.ITEM, entry)
+        with mock.patch.object(significance, "_classify", return_value="new"):
+            significance._classify_item(self.EMAIL, self.TITLE, self.ITEM, entry, runtime=None)
+        stored = watcher_mod.get_unresolved(self.EMAIL, self.TITLE, self.ITEM)
+        self.assertTrue(stored["new_page"])
+        self.assertNotIn("insignificant", stored)
+        self.assertEqual(stored["sig_span"], [entry["last_resolved"], entry["modified"]])
+
     def test_already_classified_for_same_span_skips_reclassification(self):
         entry = self._entry(insignificant=True, sig_span=["2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"])
+        watcher_mod.put_unresolved(self.EMAIL, self.TITLE, self.ITEM, entry)
+        with mock.patch.object(significance, "_classify") as mock_classify:
+            significance._classify_item(self.EMAIL, self.TITLE, self.ITEM, entry, runtime=None)
+        mock_classify.assert_not_called()
+
+    def test_already_new_page_for_same_span_skips_reclassification(self):
+        entry = self._entry(new_page=True, sig_span=["2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"])
         watcher_mod.put_unresolved(self.EMAIL, self.TITLE, self.ITEM, entry)
         with mock.patch.object(significance, "_classify") as mock_classify:
             significance._classify_item(self.EMAIL, self.TITLE, self.ITEM, entry, runtime=None)

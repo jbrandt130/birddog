@@ -347,6 +347,79 @@ class ResolveWatcherTests(WatcherTestBase):
 
 
 # ----------------------------------------------------------------------------
+# resolve_many() -- issue #138 Alerts-table bulk resolve. Deliberately
+# shallow: unlike resolve_watcher(deep=True), it never prefix-matches -- the
+# caller has already expanded a checkbox/range/subtree selection into an
+# explicit item list.
+
+class ResolveManyTests(WatcherTestBase):
+    EMAIL = "r@example.com"
+    TITLE = "Архів:ДААРК"
+
+    def setUp(self):
+        super().setUp()
+        watcher_mod.put_watcher(self.EMAIL, self.TITLE, {"include": [self.TITLE], "exclude": [], "cutoff_date": "2025-01-01T00:00:00Z", "last_checked_date": "2025-01-01T00:00:00Z"})
+        self.items = {
+            f"{self.TITLE}/100/1/5": {"modified": "2026-01-01T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z"},
+            f"{self.TITLE}/100/1/6": {"modified": "2026-01-02T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z"},
+            f"{self.TITLE}/200/1/5": {"modified": "2026-01-03T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z"},
+        }
+        for item, entry in self.items.items():
+            watcher_mod.put_unresolved(self.EMAIL, self.TITLE, item, dict(entry))
+
+    def test_resolve_raises_if_no_watcher(self):
+        with self.assertRaises(FileNotFoundError):
+            watcher_mod.resolve_many("nobody@example.com", self.TITLE, [f"{self.TITLE}/100/1/5"])
+
+    def test_resolve_many_moves_only_the_listed_items(self):
+        watcher_mod.resolve_many(self.EMAIL, self.TITLE, [
+            f"{self.TITLE}/100/1/5", f"{self.TITLE}/200/1/5",
+        ])
+
+        remaining = watcher_mod.get_all_unresolved(self.EMAIL, self.TITLE)
+        self.assertNotIn(f"{self.TITLE}/100/1/5", remaining)
+        self.assertNotIn(f"{self.TITLE}/200/1/5", remaining)
+        # not listed -- must be untouched despite sharing a prefix with a
+        # listed item (this is the behavior that distinguishes resolve_many()
+        # from resolve_watcher(deep=True)'s prefix match)
+        self.assertIn(f"{self.TITLE}/100/1/6", remaining)
+
+        today = utc_now_dt().strftime("%Y-%m-%d")
+        history = watcher_mod.get_resolved(self.EMAIL, self.TITLE, f"{self.TITLE}/100/1/5")
+        self.assertTrue(history[-1]["last_resolved"].startswith(today))
+        self.assertEqual(history[-1]["modified"], "2026-01-01T00:00:00Z")
+        self.assertTrue(watcher_mod.get_resolved(self.EMAIL, self.TITLE, f"{self.TITLE}/200/1/5"))
+
+    def test_resolve_many_ignores_unknown_items(self):
+        before = watcher_mod.get_all_unresolved(self.EMAIL, self.TITLE)
+        result = watcher_mod.resolve_many(self.EMAIL, self.TITLE, [f"{self.TITLE}/nope"])
+        self.assertEqual(result, before)
+
+    def test_resolve_many_empty_list_is_a_no_op(self):
+        before = watcher_mod.get_all_unresolved(self.EMAIL, self.TITLE)
+        result = watcher_mod.resolve_many(self.EMAIL, self.TITLE, [])
+        self.assertEqual(result, before)
+
+    def test_resolve_many_sweeping_in_the_marker_also_retires_the_watch(self):
+        # mirrors test_deep_resolve_sweeping_in_the_marker_also_retires_the_watch
+        # -- issue #136: resolving the watch's own "moved" marker item, even
+        # via the bulk path, must retire the whole watch
+        watcher_mod.put_watcher(self.EMAIL, self.TITLE, {
+            **watcher_mod.get_watcher(self.EMAIL, self.TITLE),
+            "moved_to": "Архів:ДАЛО",
+        })
+        watcher_mod.put_unresolved(self.EMAIL, self.TITLE, self.TITLE, {
+            "modified": "2026-01-04T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z", "moved_to": "Архів:ДАЛО",
+        })
+
+        result = watcher_mod.resolve_many(self.EMAIL, self.TITLE, [self.TITLE])
+
+        self.assertEqual(result, {})
+        with self.assertRaises(KeyError):
+            watcher_mod.get_watcher(self.EMAIL, self.TITLE)
+
+
+# ----------------------------------------------------------------------------
 # check_watcher()
 #
 # Regression coverage for the two bugs that let already-resolved edits get

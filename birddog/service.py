@@ -182,6 +182,7 @@ def home():
     user_session = None
     start_title = None
     hide_insignificant = False
+    landing_tab = 'alerts'
     if runtime.state == "running":
         user_session = session.get('user')
         start_title = None
@@ -192,6 +193,10 @@ def home():
             if user:
                 start_title = user.get_preference("last_page")
                 hide_insignificant = bool(user.get_preference("hide_insignificant", False))
+                # a first-time (or fully caught-up) user has nothing to see on
+                # Alerts yet -- land them on Watchlists instead so the empty
+                # state isn't the first thing they hit
+                landing_tab = 'alerts' if user.get_watchlist() else 'watchlists'
                 # read live rather than trusting a role that may have been
                 # cached in the session cookie since login
                 user_session = {**user_session, 'role': user.role}
@@ -200,6 +205,7 @@ def home():
         user=user_session,
         start_title=start_title,
         hide_insignificant=hide_insignificant,
+        landing_tab=landing_tab,
         runtime_state=runtime.state,
         database_available=runtime.database_update_enabled,
         debug=app.debug)
@@ -682,6 +688,40 @@ def resolve_update(user):
     except Exception:
         _logger.exception("Error during resolve")
         return jsonify({'error': 'Exception during resolve'}), 500
+
+@app.route('/resolve/batch', methods=['POST'])
+@login_required
+def resolve_batch(user):
+    # issue #138 Alerts-table bulk resolve: deliberately shallow -- no
+    # server-side path/prefix expansion, the client has already fully
+    # expanded its checkbox/range/subtree selection into this flat list
+    payload = request.get_json(silent=True) or {}
+    items = payload.get('items') or []
+    if not items:
+        return jsonify({'error': "Missing required field: 'items'"}), 400
+
+    tree = request.args.get('tree') is not None
+    by_watch = {}
+    for entry in items:
+        title = entry.get('title')
+        item_title = entry.get('item')
+        if not title or not item_title:
+            return jsonify({'error': "Each item requires 'title' and 'item'"}), 400
+        by_watch.setdefault(title, []).append(item_title)
+
+    _logger.info(f'resolve_batch: {len(items)} item(s) across {len(by_watch)} watch(es)')
+    try:
+        results = {title: user.resolve_many(title, item_titles, tree=tree)
+                   for title, item_titles in by_watch.items()}
+        return jsonify({'success': True, 'unresolved': results}), 200
+
+    except KeyError:
+        return jsonify({'error': 'Watchlist item not found'}), 404
+    except FileNotFoundError:
+        return jsonify({'error': 'No watcher found'}), 404
+    except Exception:
+        _logger.exception("Error during batch resolve")
+        return jsonify({'error': 'Exception during batch resolve'}), 500
 
 # ---- TRANSLATION MANAGEMENT -------------------------------------------------
 

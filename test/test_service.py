@@ -457,6 +457,63 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
         resp3 = self.client.get("/resolve?title=Архів:ДАЛО")
         self.assertEqual(resp3.status_code, 500)
 
+    def test_resolve_batch_requires_items(self):
+        self._mock_user()
+        resp = self.client.post("/resolve/batch", json={})
+        self.assertEqual(resp.status_code, 400)
+
+        resp2 = self.client.post("/resolve/batch", json={"items": []})
+        self.assertEqual(resp2.status_code, 400)
+
+    def test_resolve_batch_requires_title_and_item_per_entry(self):
+        self._mock_user()
+        resp = self.client.post("/resolve/batch", json={"items": [{"title": "Архів:ДАЛО"}]})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_resolve_batch_groups_by_title_and_merges_results(self):
+        user = self._mock_user()
+        user.resolve_many.side_effect = lambda title, items, tree=False: {"remaining": title}
+
+        resp = self.client.post("/resolve/batch", json={"items": [
+            {"title": "Архів:ДАЛО", "item": "Архів:ДАЛО/1"},
+            {"title": "Архів:ДАЛО", "item": "Архів:ДАЛО/2"},
+            {"title": "Архів:ДАЖО", "item": "Архів:ДАЖО/1"},
+        ]})
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["unresolved"], {
+            "Архів:ДАЛО": {"remaining": "Архів:ДАЛО"},
+            "Архів:ДАЖО": {"remaining": "Архів:ДАЖО"},
+        })
+
+        self.assertEqual(user.resolve_many.call_count, 2)
+        user.resolve_many.assert_any_call("Архів:ДАЛО", ["Архів:ДАЛО/1", "Архів:ДАЛО/2"], tree=False)
+        user.resolve_many.assert_any_call("Архів:ДАЖО", ["Архів:ДАЖО/1"], tree=False)
+
+    def test_resolve_batch_passes_tree_flag(self):
+        user = self._mock_user()
+        user.resolve_many.return_value = []
+        self.client.post("/resolve/batch?tree=1", json={"items": [{"title": "Архів:ДАЛО", "item": "Архів:ДАЛО/1"}]})
+        user.resolve_many.assert_called_once_with("Архів:ДАЛО", ["Архів:ДАЛО/1"], tree=True)
+
+    def test_resolve_batch_error_paths(self):
+        user = self._mock_user()
+        items = {"items": [{"title": "Архів:ДАЛО", "item": "Архів:ДАЛО/1"}]}
+
+        user.resolve_many.side_effect = KeyError("x")
+        resp = self.client.post("/resolve/batch", json=items)
+        self.assertEqual(resp.status_code, 404)
+
+        user.resolve_many.side_effect = FileNotFoundError()
+        resp2 = self.client.post("/resolve/batch", json=items)
+        self.assertEqual(resp2.status_code, 404)
+
+        user.resolve_many.side_effect = RuntimeError("boom")
+        resp3 = self.client.post("/resolve/batch", json=items)
+        self.assertEqual(resp3.status_code, 500)
+
     def test_archives_route_serves_dynamic_registry(self):
         self._mock_user()
         with patch("birddog.service.all_archive_roots", return_value=[{"title": "Архів:ДАЛО", "label": "DALO"}]):

@@ -633,3 +633,44 @@ def resolve_watcher(email, archive_title, item, runtime=None, deep=False):
         remove_watcher(email, archive_title)
         return {}
     return unresolved
+
+def resolve_many(email, archive_title, items, runtime=None):
+    # issue #138 Alerts-table bulk resolve: an explicit, already-expanded
+    # list of item titles under one watch (the client has already turned a
+    # checkbox/range/subtree selection into this flat list -- unlike
+    # resolve_watcher(deep=True), no server-side prefix matching happens
+    # here). Otherwise the same shallow-resolve-in-bulk shape as
+    # resolve_watcher()'s deep branch: three bulk KV calls instead of one
+    # round trip per item.
+    _ensure_migrated(email, archive_title, runtime)
+    try:
+        header = get_watcher(email, archive_title)
+    except KeyError:
+        raise FileNotFoundError('No watcher found')
+
+    now = utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ')
+    wanted = {canonicalize_title(i) for i in items}
+
+    matches = {
+        key: entry for key, entry in get_all_unresolved(email, archive_title).items()
+        if key in wanted
+    }
+    if matches:
+        resolved_raw = _watcher_kv.get_many(_resolved_ns(email, archive_title), list(matches.keys()))
+        resolved_by_item = {k: json.loads(v) for k, v in resolved_raw.items()}
+        new_resolved = {}
+        for key, entry in matches.items():
+            _logger.info(f'resolve_many: resolving {key}')
+            entry["last_resolved"] = now
+            history = resolved_by_item.get(key, [])
+            history.append(entry)
+            new_resolved[key] = history
+        _watcher_kv.remove_many(_unresolved_ns(email, archive_title), list(matches.keys()))
+        _watcher_kv.insert_many(_resolved_ns(email, archive_title), {k: json.dumps(v) for k, v in new_resolved.items()})
+
+    unresolved = get_all_unresolved(email, archive_title)
+    if header.get("moved_to") and archive_title not in unresolved:
+        # see resolve_watcher() above -- same watch-retirement case
+        remove_watcher(email, archive_title)
+        return {}
+    return unresolved

@@ -303,6 +303,28 @@ class User:
         else:
             return [{'name': k, **v} for k, v in unresolved.items()]
 
+    def resolve_many(self, title, item_titles, tree=False):
+        # issue #138 Alerts-table bulk resolve: item_titles is an explicit,
+        # already-expanded list (checkbox/range/subtree selection), all under
+        # this one watch -- see /resolve/batch, which groups a cross-watch
+        # selection by title before calling this once per watch
+        title = canonicalize_title(title)
+        with self._lock:
+            _logger.info(f'Resolving {len(item_titles)} item(s) in bulk under {title}')
+            unresolved = watcher.resolve_many(self.email, title, item_titles, runtime=self._runtime)
+            try:
+                watcher.get_watcher(self.email, title)
+            except KeyError:
+                # see resolve_item() above -- same watch-retirement case
+                if not _is_watchlist_migrated(self.email):
+                    _get_watchlist(self.email)
+                _kv_store.remove(_watchlist_namespace(self.email), title)
+
+        if tree:
+            return watcher.unresolved_tree(unresolved)
+        else:
+            return [{'name': k, **v} for k, v in unresolved.items()]
+
     def set_preference(self, key, value):
         with self._lock:
             _set_preference(self.email, key, value)

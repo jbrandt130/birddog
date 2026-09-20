@@ -9,6 +9,21 @@ var archives                = null;
 var watchlist               = null;
 var unresolved_updates      = {};
 var hide_insignificant      = false; // set from hide_insignificant_pref in on_loaded()
+// watch titles currently folded to a single group-header row in the alerts
+// table -- session-only UI state, deliberately not a persisted preference
+// (same treatment the old tree view gave its expanded/collapsed nodes)
+var collapsed_watches       = new Set();
+// issue #138 Stage 4: paths checked for bulk resolve. A checkbox's checked
+// state never changes just because its row stops being rendered (hidden by
+// the minor-changes toggle, or its watch collapsing) -- it persists here
+// across re-renders, same as the old tree's checked-independent-of-hidden
+// behavior confirmed during design. rendered_paths is rebuilt on every
+// render_unresolved_items() call and is exactly path_to_node's key set at
+// that moment; kept separately so update_bulk_bar() doesn't need to re-walk
+// unresolved_updates just to know what's currently on screen.
+var checked_paths           = new Set();
+var rendered_paths          = new Set();
+var last_checked_path       = null;
 
 const months                = [
     'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
@@ -201,13 +216,23 @@ function get_resolve_info(page_title) {
 
 function is_navigable_unresolved(obj) {
     // a real entry (not a synthesized tree-path placeholder -- see
-    // is_real_entry()/prune_empty_nodes()) that isn't currently hidden by
-    // the issue #138 "hide minor changes" toggle
+    // is_real_entry()) that isn't currently hidden by the issue #138
+    // "hide minor changes" toggle
     return obj.hasOwnProperty("modified") && !(hide_insignificant && obj.insignificant);
 }
 
 function get_next_unresolved_item(page_title) {
     const updates = window.unresolved_updates;
+    // archive order must match render_unresolved_items()'s on-screen order
+    // (sorted by displayed label), not object key insertion order -- which
+    // is actually nondeterministic here, since check_all_watchlists() fires
+    // one fetch per watch concurrently and each writes unresolved_updates[title]
+    // whenever its own request happens to resolve -- nor raw-title
+    // lexicographic order, which doesn't match the label sort either
+    const sorted_prefixes = Object.keys(updates).sort(
+        (a, b) => label_for_watch_title(a).localeCompare(label_for_watch_title(b))
+    );
+
     // first pass: look within current archive. entries is already in the
     // server's correct tree order (unresolved_tree()/_sort_keys() in
     // watcher.py -- the same numeric-aware, prefix-grouped order the tree
@@ -216,8 +241,11 @@ function get_next_unresolved_item(page_title) {
     // ignored that ordering entirely. If page_title isn't itself a node in
     // the list (e.g. browsing a page with no unresolved status), fall back
     // to the first unresolved entry in this archive.
-    for (const prefix in updates) {
+    let current_prefix_index = -1;
+    for (let p = 0; p < sorted_prefixes.length; p++) {
+        const prefix = sorted_prefixes[p];
         if (page_title.startsWith(prefix)) {
+            current_prefix_index = p;
             const entries = updates[prefix];
             const current_index = entries.findIndex(([title]) => title === page_title);
             const start = current_index === -1 ? 0 : current_index + 1;
@@ -227,23 +255,23 @@ function get_next_unresolved_item(page_title) {
                     return obj;
                 }
             }
+            break;
         }
     }
 
-    // second pass: look to lexically next archive
-    for (const prefix in updates) {
-        if (page_title < prefix) {
-            const entries = updates[prefix];
-            for (const [title, obj] of entries) {
-                if (is_navigable_unresolved(obj)) {
-                    return obj;
-                }
+    // second pass: look to the next archive in display order
+    const start_p = current_prefix_index === -1 ? 0 : current_prefix_index + 1;
+    for (let p = start_p; p < sorted_prefixes.length; p++) {
+        const entries = updates[sorted_prefixes[p]];
+        for (const [title, obj] of entries) {
+            if (is_navigable_unresolved(obj)) {
+                return obj;
             }
         }
     }
 
-    // third pass: look for first unresolved item
-    for (const prefix in updates) {
+    // third pass: wrap around to the first unresolved item overall
+    for (const prefix of sorted_prefixes) {
         const entries = updates[prefix];
         for (const [title, obj] of entries) {
             if (is_navigable_unresolved(obj)) {
@@ -313,6 +341,25 @@ function restore_scroll_position() {
         set_scroll_position(position);
         console.log(`Restored scroll position: ${page_name}: ${position}`);
     }
+}
+
+// Save/restore scroll position per top-level nav tab (Alerts, Watchlists,
+// Browse, ...) across tab switches, same mechanism as the browse-page memory
+// above. Bootstrap's tab component already fires hide.bs.tab (on the tab
+// being left, right before the new one shows) and shown.bs.tab (on the tab
+// now active, right after it shows) and both bubble, so one pair of
+// listeners on the nav container covers every tab with no per-tab wiring.
+const tab_scroll_positions = {};
+
+function init_tab_scroll_persistence() {
+    const nav = document.getElementById('nav-brand-tab');
+    if (!nav) return;
+    nav.addEventListener('hide.bs.tab', e => {
+        tab_scroll_positions[e.target.getAttribute('href')] = get_scroll_position();
+    });
+    nav.addEventListener('shown.bs.tab', e => {
+        set_scroll_position(tab_scroll_positions[e.target.getAttribute('href')] ?? 0);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -1174,18 +1221,22 @@ function render_watchlist() {
     const sorted_watchlist = [...watchlist].sort((a, b) => a.label.localeCompare(b.label));
 
     sorted_watchlist.forEach(item => {
+        // titles can contain characters (quotes, etc.) that are unsafe to
+        // splice into an inline onclick="fn('...')" string -- the row's own
+        // data-title (already escape_attr()'d) is the safe source of truth,
+        // read back via the delegated click handler below instead
         const row = `
             <tr data-title="${escape_attr(item.title)}">
                 <td>${item.label}</td>
                 <td>${format_date(item.last_checked_date)}</td>
                 <td>${format_date(item.cutoff_date)}</td>
                 <td>
-                    <button class="btn btn-primary" title="Check for Updates" onclick="check_watchlist('${item.title}')">
+                    <button class="btn btn-primary check-watchlist-btn" title="Check for Updates">
                         <i class="bi bi-arrow-clockwise"></i>
                     </button>
                 </td>
                 <td>
-                    <button class="btn btn-primary" title="Remove from Watchlist" onclick="remove_from_watchlist('${item.title}')">
+                    <button class="btn btn-primary remove-watchlist-btn" title="Remove from Watchlist">
                         <i class="bi bi-x-square"></i>
                     </button>
                 </td>
@@ -1195,7 +1246,7 @@ function render_watchlist() {
     });
 
     // scroll to top automatically
-    document.getElementById('nav-home').scrollTo({ top: 0, behavior: 'smooth' });
+    document.getElementById('nav-watchlists').scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 async function remove_from_watchlist(title) {
@@ -1352,9 +1403,14 @@ async function confirm_add_to_watchlist() {
 }
 
 // ---------------------------------------------------------------------------
-// UNRESOLVED UPDATES TREE NAVIGATOR
+// UNRESOLVED UPDATES NAVIGATOR
 
-var node_map = null;
+// path (full page title) -> the flattened row {path, watch_title, meta,
+// full_label} rendered for it, for browse-page lookups (needs_resolve(),
+// resolve_page()); populated by render_unresolved_items(). Only real,
+// currently-visible (not hidden-minor) entries are present -- consistent
+// with the tree view this replaced, which never gave a hidden-minor node a
+// resolve affordance either.
 var path_to_node = null;
 
 function page_path(page) {
@@ -1367,33 +1423,6 @@ function needs_resolve(page) {
     const path = page_path(page);
     //console.log('needs_resolve:', path);
     return path in path_to_node;
-}
-
-function build_tree(data_list, watch_title) {
-    const root = {};
-    for (const [path, meta] of data_list) {
-        if (hide_insignificant && meta && meta.insignificant) continue;
-        const parts = path.split('/');
-        let current = root;
-        for (const part of parts) {
-            if (!current[part]) {
-                current[part] = {};
-                // plain-object key enumeration always lists integer-index-like
-                // keys ("543", "2574") first in ascending numeric order, ahead
-                // of any other string key ("215a", "230a"), regardless of
-                // insertion order -- track the server's already-correct
-                // numeric-aware sort order (unresolved_tree()/_sort_keys() in
-                // watcher.py) explicitly so rendering doesn't get reshuffled
-                if (!current._order) current._order = [];
-                current._order.push(part);
-            }
-            current = current[part];
-        }
-        current._meta = meta;
-        current._full_path = path;
-        current._watch_title = watch_title;
-    }
-    return root;
 }
 
 function view_changes(page_title, modified, last_resolved) {
@@ -1433,55 +1462,18 @@ async function resolve_page_update(title, item_title, deep=false) {
     }
 }
 
-function count_subsidiary_changes(watch_title, full_path) {
-    // counts every real unresolved entry (not a synthesized tree-path
-    // placeholder -- see is_real_entry()) that a deep resolve of full_path
-    // would sweep up, split out by how many are currently hidden as minor
-    // (issue #138) so the confirm dialog can disclose what's about to be
-    // cleared, including anything the toggle is hiding from view
-    const entries = unresolved_updates[watch_title] || [];
-    let total = 0, minor = 0;
-    for (const [path, meta] of entries) {
-        if (!is_real_entry(meta)) continue;
-        if (path === full_path || path.startsWith(full_path + "/")) {
-            total++;
-            if (meta.insignificant) minor++;
-        }
-    }
-    return { total, minor };
-}
-
-function mark_resolved(node_id) {
-    const node = node_map[node_id];
-    const has_children = !!(node._order && node._order.length > 0);
-    const full_path = node._full_path || name;
-    const watch_title = node._watch_title;
-    const label = (node._meta && node._meta.label) || full_path;
-
-    let confirm_message;
-    if (has_children) {
-        const { total, minor } = count_subsidiary_changes(watch_title, full_path);
-        const change_word = total === 1 ? 'change' : 'changes';
-        // only call out minor items when the toggle is actually hiding them
-        // -- with it off, they're already visible in the tree like everything
-        // else, so a plain total is all that's meaningful here
-        const counts_text = (minor > 0 && hide_insignificant)
-            ? ` (${total} unresolved ${change_word}, including ${minor} minor and currently hidden)`
-            : ` (${total} unresolved ${change_word})`;
-        confirm_message = `${label} has unresolved subsidiary pages${counts_text}. Resolve all subsidiaries?`;
-    } else {
-        confirm_message = `Resolve ${label}?`;
-    }
-
-    if (confirm(confirm_message)) {
-        console.log('resolving all children');
-    }
-    else {
+function mark_resolved(watch_title, full_path, label) {
+    // the table shows one row per real unresolved item -- a row's own
+    // Resolve button now only ever resolves that one row (deep=false).
+    // Sweeping up a whole subtree in one action is Stage 4's job (bulk
+    // select + a per-row subtree quick-select), not an implicit side effect
+    // of resolving the row at the top of that subtree.
+    if (!confirm(`Resolve ${label}?`)) {
         console.log('resolve cancelled by user');
         return false;
     }
     console.log("Marking resolved:", watch_title, full_path);
-    resolve_page_update(watch_title, full_path, deep=has_children);
+    resolve_page_update(watch_title, full_path, deep=false);
     return true;
 }
 
@@ -1490,8 +1482,9 @@ function resolve_page() {
     const path = page_path(current_page);
     if (!path_to_node)
         return false;
-    const node = path_to_node[path];
-    if (mark_resolved(node._id)) {
+    const row = path_to_node[path];
+    if (!row) return false;
+    if (mark_resolved(row.watch_title, row.path, row.full_label)) {
         enable_if("resolve-btn", false);
         //show("next-unresolved-btn");
         hide('needs-resolve-badge');
@@ -1507,112 +1500,6 @@ function next_unresolved() {
     }
 }
 
-function render_node(name, node) {
-    const node_id = 'id_' + Math.random().toString(36).substring(2, 10);
-    node._id = node_id;
-    node_map[node_id] = node;
-
-    const has_children = !!(node._order && node._order.length > 0);
-    const meta = node._meta;
-    const full_path = node._full_path || name;
-    path_to_node[full_path] = node;
-
-    const modified = meta ? meta.modified : '';
-    const last_resolved = meta ? meta.last_resolved : '';
-    const page_title = meta ? meta.title : '';
-    const moved_to = meta ? meta.moved_to : '';
-
-    // a "moved_to" entry (issue #136) means this watch's own scope was
-    // moved on the wiki, not an ordinary content change -- resolving it
-    // retires the whole watch, so it needs to read very differently from a
-    // normal "Latest Update" line
-    let update_text = '';
-    let update_class = 'text-muted';
-    if (moved_to) {
-        update_text = `Archive moved to "${escape_attr(moved_to)}" -- resolving this removes it from your watchlist.`;
-        update_class = 'text-danger fw-semibold';
-    } else if (meta && meta.modified) {
-        update_text = `Latest Update: ${format_date(meta.modified, false)}`;
-        if (meta.user) {
-            update_text += ` (user: ${meta.user})`;
-        }
-    }
-    const resolved_text = meta && meta.last_resolved
-        ? `Last Resolved: ${format_date(meta.last_resolved, false)}`
-        : '';
-
-    const button_html = `
-        <button
-            class="btn btn-sm btn-primary view-changes-btn"
-            title="View Changes"
-            data-title="${escape_attr(page_title)}"
-            data-modified="${escape_attr(modified)}"
-            data-last-resolved="${escape_attr(last_resolved)}"
-        >
-          <i class="bi bi-eye"></i>
-        </button>
-        <button
-            class="btn btn-sm btn-primary mark-resolved-btn"
-            title="Mark Resolved"
-            data-node-id="${escape_attr(node_id)}"
-        >
-          <i class="bi bi-check-square"></i>
-        </button>
-    `;
-
-    const display_name = (meta && meta.label ? meta.label : name).replace("-_", "");
-    const name_html = has_children
-        ? `<a data-bs-toggle="collapse" href="#${node_id}" role="button" aria-expanded="false" aria-controls="${node_id}">
-                <i class="bi ${closed_icon} arrow" data-arrow="closed"></i>
-                <span class="tree-label ms-1" data-path="${full_path}">${display_name}</span>
-           </a>`
-        : `<span class="tree-label" data-path="${full_path}">${display_name}</span>`;
-
-    const meta_html = meta
-        ? `<div class="small">
-               <div class="${update_class}">${update_text}</div>
-               <div class="text-muted">${resolved_text}</div>
-           </div>`
-        : '';
-
-    const row_layout = `
-        <div class="d-flex align-items-center justify-content-between">
-          <div class="d-flex flex-column flex-grow-1">
-            ${name_html}
-            ${meta_html}
-          </div>
-          <div class="ms-3">${button_html}</div>
-        </div>
-    `;
-
-    if (!has_children) {
-        return `<li class="list-group-item">${row_layout}</li>`;
-    }
-
-    const children_html = (node._order || [])
-        .map(child_name => render_node(child_name, node[child_name]))
-        .join('');
-
-    return `
-        <li class="list-group-item">
-          ${row_layout}
-          <div class="collapse ms-3 mt-1" id="${node_id}">
-            <ul class="list-group">
-              ${children_html}
-            </ul>
-          </div>
-        </li>
-    `;
-}
-
-
-function render_tree(tree) {
-    const top_level = (tree._order || [])
-        .map(name => render_node(name, tree[name]))
-        .join('');
-    return `<ul class="list-group">${top_level}</ul>`;
-}
-
 function is_real_entry(meta) {
     // unresolved_tree() (watcher.py) gives every node -- leaf or synthesized
     // path placeholder -- a non-null meta with at least {title, label}, so
@@ -1621,105 +1508,154 @@ function is_real_entry(meta) {
     return !!(meta && meta.modified);
 }
 
-function prune_empty_nodes(node) {
-    // drop a folder left with no children (all hidden by the minor-changes
-    // toggle) and no unresolved status of its own, so it doesn't render as
-    // an empty, un-expandable row
-    if (!node._order) return;
-    node._order = node._order.filter(name => {
-        const child = node[name];
-        prune_empty_nodes(child);
-        const has_children = !!(child._order && child._order.length > 0);
-        if (!has_children && !is_real_entry(child._meta)) {
-            delete node[name];
-            return false;
-        }
-        return true;
-    });
+function get_watch_cutoff(watch_title) {
+    const entry = watchlist && watchlist.find(w => w.title === watch_title);
+    return entry ? entry.cutoff_date : '';
 }
 
-function render_tree_to_dom(data_list, container_id, watch_title) {
-    const tree = build_tree(data_list, watch_title);
-    prune_empty_nodes(tree);
-    const html = render_tree(tree);
-
-    const container = document.getElementById(container_id);
-    const wrapper = document.createElement('div'); // Optional: separates each tree visually
-    //wrapper.classList.add('mb-3');
-    wrapper.innerHTML = html;
-    const tr = document.createElement('tr');
-    const td = document.createElement('td');
-    td.appendChild(wrapper);
-    //td.innerHTML = html;
-    tr.appendChild(td);
-    container.appendChild(tr);
-
-    // Attach arrow toggles and label click handlers as before...
-    wrapper.querySelectorAll('.collapse').forEach(collapse => {
-        collapse.addEventListener('show.bs.collapse', e => {
-            const arrow = wrapper.querySelector(`a[href="#${collapse.id}"] .arrow`);
-            if (arrow) {
-                arrow.classList.remove(closed_icon);
-                arrow.classList.add(open_icon);
-            }
-        });
-        collapse.addEventListener('hide.bs.collapse', e => {
-            const arrow = wrapper.querySelector(`a[href="#${collapse.id}"] .arrow`);
-            if (arrow) {
-                arrow.classList.remove(open_icon);
-                arrow.classList.add(closed_icon);
-            }
-        });
-    });
-
-    wrapper.querySelectorAll('.tree-label').forEach(label => {
-        label.addEventListener('click', e => {
-          const path = label.getAttribute('data-path');
-          console.log('Node clicked:', path);
-          wrapper.querySelectorAll('.tree-label').forEach(el => el.classList.remove('selected'));
-          label.classList.add('selected');
-      });
-    });
+function group_counts(data_list) {
+    // counts every real unresolved entry for a watch regardless of the
+    // hide-minor toggle or collapse state -- a stable summary a collapsed
+    // group's header can show without needing to be rebuilt when either
+    // toggles
+    let total = 0, new_count = 0, minor_count = 0;
+    for (const [, meta] of data_list) {
+        if (!is_real_entry(meta)) continue;
+        total++;
+        if (meta.new_page) new_count++;
+        if (meta.insignificant) minor_count++;
+    }
+    return { total, new_count, minor_count };
 }
 
-function get_expanded_nodes(container_id) {
-    const expanded = [];
-    document.querySelectorAll(`#${container_id} .collapse.show`).forEach(el => {
-        const trigger = document.querySelector(`a[href="#${el.id}"] .tree-label`);
-        if (trigger) {
-            expanded.push(trigger.getAttribute('data-path'));
-        }
-    });
-    return expanded;
+function group_header_html(watch_title, counts) {
+    const collapsed = collapsed_watches.has(watch_title);
+    const summary_parts = [`${counts.total} unresolved`];
+    if (counts.new_count) summary_parts.push(`${counts.new_count} new`);
+    if (counts.minor_count) summary_parts.push(`${counts.minor_count} minor`);
+
+    return `
+        <tr class="table-light">
+          <td></td>
+          <td colspan="5">
+            <button
+                type="button"
+                class="btn btn-sm btn-link text-decoration-none text-start p-0 w-100 d-flex align-items-center gap-2 group-toggle-btn"
+                data-watch-title="${escape_attr(watch_title)}"
+            >
+              <i class="bi ${collapsed ? 'bi-chevron-right' : 'bi-chevron-down'}"></i>
+              <strong>${escape_attr(label_for_watch_title(watch_title))}</strong>
+              <span class="text-muted small">${escape_attr(summary_parts.join(' · '))}</span>
+            </button>
+          </td>
+          <td class="text-nowrap">
+            <button
+                type="button"
+                class="btn btn-sm btn-outline-secondary alert-subtree-select-btn"
+                title="Select all of ${escape_attr(label_for_watch_title(watch_title))}"
+                data-select-prefix="${escape_attr(watch_title)}"
+            >
+              <i class="bi bi-check2-square"></i>
+            </button>
+          </td>
+        </tr>
+    `;
 }
 
-function restore_expanded_nodes(container_id, expanded_paths) {
-    const container = document.getElementById(container_id);
-    if (!container) return;
+function flatten_alert_rows(data_list, watch_title) {
+    // unresolved_tree() (watcher.py) emits one record per path level, parent
+    // before its children -- every real item's ancestor placeholders (each
+    // carrying its own latinized 'label' for that single path segment, see
+    // _gen_title() in watcher.py) therefore always appear earlier in
+    // data_list, so a first pass can build a path -> segment-label lookup
+    // that a second pass uses to assemble each real item's full breadcrumb
+    // label (e.g. "DAKO / 132 / 4a") without a tree structure at all.
+    const label_by_path = {};
+    for (const [path, meta] of data_list) {
+        label_by_path[path] = meta && meta.label;
+    }
 
-    expanded_paths.forEach(path => {
-        const label = container.querySelector(`.tree-label[data-path="${path}"]`);
-        if (label) {
-            const link = label.closest('a');
-            if (link && link.getAttribute('href')?.startsWith('#')) {
-                const collapse_id = link.getAttribute('href').slice(1);
-                const collapse_el = document.getElementById(collapse_id);
-                if (collapse_el) {
-                    const collapse = new bootstrap.Collapse(collapse_el, { toggle: false });
-                    collapse.show();
-                }
-            }
+    const rows = [];
+    for (const [path, meta] of data_list) {
+        if (!is_real_entry(meta)) continue;
+        // hidden-minor entries are excluded here, at the source, the same as
+        // the tree view this replaced -- they never got a resolve
+        // affordance from the browse page either (see path_to_node)
+        if (hide_insignificant && meta.insignificant) continue;
+        let acc = '';
+        const segments = [];
+        for (const part of path.split('/')) {
+            acc = acc ? `${acc}/${part}` : part;
+            segments.push(label_by_path[acc] ?? part);
         }
-    });
+        rows.push({ path, watch_title, meta, full_label: segments.join(' / ') });
+    }
+    return rows;
+}
+
+function alert_row_html(row) {
+    const { path, watch_title, meta, full_label } = row;
+    const modified = meta.modified || '';
+    const last_resolved = meta.last_resolved || '';
+    const cutoff = get_watch_cutoff(watch_title);
+    const checked = checked_paths.has(path);
+
+    let badges = '';
+    if (meta.new_page) badges += ' <span class="badge bg-success">NEW</span>';
+    if (meta.insignificant) badges += ' <span class="badge bg-secondary">MINOR</span>';
+
+    // a "moved_to" entry (issue #136) means this watch's own scope was
+    // moved on the wiki, not an ordinary content change -- resolving it
+    // retires the whole watch, so it needs to read very differently from a
+    // normal alert row
+    const label_html = meta.moved_to
+        ? `${escape_attr(full_label)} <span class="text-danger small">(archive moved to "${escape_attr(meta.moved_to)}" -- resolving removes it from your watchlist)</span>`
+        : escape_attr(full_label);
+
+    // a subtree quick-select button only makes sense when this row has a
+    // parent within its own watch to select alongside it (a bare watch-root
+    // row's equivalent is the group header's own select-all-of-archive
+    // button, see group_header_html())
+    const parent_path = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : null;
+    const subtree_btn = parent_path
+        ? `<button
+               type="button"
+               class="btn btn-sm btn-link p-0 ms-1 alert-subtree-select-btn"
+               title="Select this and everything under ${escape_attr(parent_path)}"
+               data-select-prefix="${escape_attr(parent_path)}"
+           >
+             <i class="bi bi-diagram-3"></i>
+           </button>`
+        : '';
+
+    return `
+        <tr class="${checked ? 'table-active' : ''}" data-path="${escape_attr(path)}" data-modified="${escape_attr(modified)}" data-last-resolved="${escape_attr(last_resolved)}">
+          <td class="select-col"><input type="checkbox" class="form-check-input row-select-checkbox" data-path="${escape_attr(path)}" ${checked ? 'checked' : ''}></td>
+          <td>${label_html}${badges}${subtree_btn}</td>
+          <td>${modified ? format_date(modified, false) : ''}</td>
+          <td>${escape_attr(meta.user || '')}</td>
+          <td>${last_resolved ? format_date(last_resolved, false) : ''}</td>
+          <td>${cutoff ? format_date(cutoff, false) : ''}</td>
+          <td class="text-nowrap">
+            <button
+                class="btn btn-sm btn-primary mark-resolved-btn"
+                title="Mark Resolved"
+                data-watch-title="${escape_attr(watch_title)}"
+                data-path="${escape_attr(path)}"
+                data-label="${escape_attr(full_label)}"
+            >
+              <i class="bi bi-check-square"></i>
+            </button>
+          </td>
+        </tr>
+    `;
 }
 
 function render_unresolved_items() {
-    const container_id = 'tree-container';
-    const expanded_paths = get_expanded_nodes(container_id);
-
-    node_map = {};
+    const tbody = document.getElementById('alerts-table-body');
     path_to_node = {};
-    document.getElementById(container_id).innerHTML = '';
+    rendered_paths = new Set();
+    tbody.innerHTML = '';
 
     // Sort by each entry's displayed (latinized) label, not the raw
     // Cyrillic watch title, so the on-screen order matches what's shown
@@ -1728,16 +1664,47 @@ function render_unresolved_items() {
     );
     console.log(`render_unresolved_items: sorted_keys=${sorted_keys}`);
 
+    const rows_html = [];
     sorted_keys.forEach(key => {
-        const item = unresolved_updates[key];
-        // only render if there are unresolved items for this archive
-        if (Object.keys(item).length > 0) {
-            render_tree_to_dom(item, 'tree-container', key);
+        const data_list = unresolved_updates[key];
+        // flatten_alert_rows() already excludes hidden-minor entries (see its
+        // own comment) -- path_to_node stays scoped to exactly what's
+        // currently visible-or-collapsed, same as before groups existed. A
+        // watch left with nothing visible (e.g. every item is minor and the
+        // toggle is hiding them) renders no header at all, matching the old
+        // tree view's pruning of an all-hidden branch.
+        const rows = flatten_alert_rows(data_list, key);
+        rows.forEach(row => { path_to_node[row.path] = row; });
+        if (rows.length === 0) return;
+
+        // the header's own summary counts every real entry regardless of the
+        // hide-minor toggle, so it stays a stable, informative total even
+        // while some of this watch's rows are filtered out below
+        rows_html.push(group_header_html(key, group_counts(data_list)));
+        if (!collapsed_watches.has(key)) {
+            rows.forEach(row => {
+                rendered_paths.add(row.path);
+                rows_html.push(alert_row_html(row));
+            });
         }
     });
+    tbody.innerHTML = rows_html.join('');
 
-    restore_expanded_nodes(container_id, expanded_paths);
+    // drop any checked path that no longer exists anywhere (resolved via
+    // another path -- a single-row resolve, the Browse-tab button, or a
+    // previous bulk resolve) -- but keep one that's merely hidden right now
+    // by the minor-changes toggle or a collapsed watch, matching the
+    // checked-state-persists-independent-of-hidden decision
+    const all_real_paths = new Set();
+    for (const key in unresolved_updates) {
+        for (const [path, meta] of unresolved_updates[key]) {
+            if (is_real_entry(meta)) all_real_paths.add(path);
+        }
+    }
+    checked_paths.forEach(p => { if (!all_real_paths.has(p)) checked_paths.delete(p); });
+
     update_hidden_count_badge();
+    update_bulk_bar();
 }
 
 // issue #138: count every unresolved item across all watchlists currently
@@ -1779,6 +1746,108 @@ async function on_hide_insignificant_toggle(checkbox) {
         console.error('Failed to save hide_insignificant preference:', error);
     }
     render_unresolved_items();
+}
+
+// ---------------------------------------------------------------------------
+// ALERTS TABLE BULK RESOLVE (issue #138 Stage 4)
+//
+// Selection state (checked_paths) lives independently of what's currently
+// rendered -- a checkbox's checked state never changes just because its row
+// stops being displayed (minor-hide toggle, or its watch collapsing). The
+// bulk bar discloses whenever the checked set includes rows not currently
+// on screen, rather than silently including or silently dropping them.
+
+function set_row_checked(path, checked) {
+    if (checked) checked_paths.add(path); else checked_paths.delete(path);
+    const cb = document.querySelector(`#alerts-table-body .row-select-checkbox[data-path="${CSS.escape(path)}"]`);
+    if (cb) {
+        cb.checked = checked;
+        cb.closest('tr').classList.toggle('table-active', checked);
+    }
+}
+
+function sync_select_all_checkbox() {
+    const select_all_cb = document.getElementById('select-all-alerts');
+    if (!select_all_cb) return;
+    const boxes = Array.from(document.querySelectorAll('#alerts-table-body .row-select-checkbox'));
+    const checked_count = boxes.filter(cb => cb.checked).length;
+    select_all_cb.checked = boxes.length > 0 && checked_count === boxes.length;
+    select_all_cb.indeterminate = checked_count > 0 && checked_count < boxes.length;
+}
+
+function update_bulk_bar() {
+    const total = checked_paths.size;
+    const hidden = Array.from(checked_paths).filter(p => !rendered_paths.has(p)).length;
+    show_if('bulk-resolve-bar', total > 0);
+    if (total > 0) {
+        document.getElementById('bulk-selected-count').textContent = total;
+        document.getElementById('bulk-hidden-note').textContent = hidden > 0 ? ` (${hidden} hidden)` : '';
+    }
+    sync_select_all_checkbox();
+}
+
+function clear_bulk_selection() {
+    checked_paths.forEach(path => set_row_checked(path, false));
+    checked_paths.clear();
+    last_checked_path = null;
+    update_bulk_bar();
+}
+
+function select_subtree(prefix) {
+    // path_to_node covers every currently-visible-per-minor-filter row
+    // regardless of collapse state (see render_unresolved_items()), so this
+    // reaches into a collapsed watch's rows too -- set_row_checked() only
+    // touches the DOM for a path that actually has a rendered checkbox,
+    // and otherwise just records the selection for the bulk bar to disclose
+    // as hidden. A minor-hidden row still isn't reachable this way, same as
+    // everywhere else hidden-minor rows are excluded.
+    Object.keys(path_to_node).forEach(path => {
+        if (path === prefix || path.startsWith(prefix + '/')) {
+            set_row_checked(path, true);
+        }
+    });
+    update_bulk_bar();
+}
+
+async function resolve_selected() {
+    if (checked_paths.size === 0) return;
+
+    const items = [];
+    checked_paths.forEach(path => {
+        const row = path_to_node[path];
+        if (row) items.push({ title: row.watch_title, item: path });
+    });
+    if (items.length === 0) return;
+
+    const hidden = Array.from(checked_paths).filter(p => !rendered_paths.has(p)).length;
+    const hidden_text = hidden > 0 ? ` (including ${hidden} hidden)` : '';
+    if (!confirm(`Resolve ${items.length} selected item(s)${hidden_text}?`)) return;
+
+    try {
+        const response = await fetch('/resolve/batch?tree=1', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items }),
+        });
+        if (!response.ok) {
+            if (response.status === 404) {
+                alert('Your session may have expired. Please log in again.');
+                location.reload();
+                return;
+            }
+            throw new Error(`Failed to resolve: ${response.statusText}`);
+        }
+        const data = await response.json();
+        Object.entries(data.unresolved).forEach(([title, unresolved]) => {
+            unresolved_updates[title] = unresolved;
+        });
+        checked_paths.clear();
+        last_checked_path = null;
+        render_unresolved_items();
+    } catch (error) {
+        console.error('Error during batch resolve:', error);
+        alert('Failed to resolve selected items.');
+    }
 }
 
 function toggle_page_desc_icon(btn) {
@@ -1895,36 +1964,95 @@ async function on_loaded() {
         const watchlist_body = document.getElementById('watchlist-body');
         watchlist_body.addEventListener('click', (event) => {
             const row = event.target.closest('tr');
-            if (row && !event.target.closest('button')) {
-                const title = row.dataset.title;
-                if (title) {
-                    console.log(`browse: ${title}`)
-                    // load the selected page
-                    load_page_by_title(title);
-                    // Switch to the browse tab
-                    show_tab('nav-browse-tab');
-                }
+            if (!row) return;
+            const title = row.dataset.title;
+            if (!title) return;
+
+            if (event.target.closest('.check-watchlist-btn')) {
+                check_watchlist(title);
+                return;
+            }
+            if (event.target.closest('.remove-watchlist-btn')) {
+                remove_from_watchlist(title);
+                return;
+            }
+            if (!event.target.closest('button')) {
+                console.log(`browse: ${title}`)
+                // load the selected page
+                load_page_by_title(title);
+                // Switch to the browse tab
+                show_tab('nav-browse-tab');
             }
         });
 
-        // ------------------ UNRESPOLVED UPDATES TREE COONTROL HANDLER ------------------
-        const tree_container = document.getElementById('tree-container');
-        tree_container.addEventListener("click", (e) => {
-            const view_btn = e.target.closest(".view-changes-btn");
-            if (view_btn) {
-                view_changes(
-                    view_btn.dataset.title,
-                    view_btn.dataset.modified,
-                    view_btn.dataset.lastResolved
-                );
+        // ------------------ ALERTS TABLE CONTROL HANDLER ------------------
+        const alerts_table_body = document.getElementById('alerts-table-body');
+        alerts_table_body.addEventListener("click", (e) => {
+            if (e.target.classList.contains("row-select-checkbox")) {
+                const cb = e.target;
+                const path = cb.dataset.path;
+                if (e.shiftKey && last_checked_path !== null) {
+                    const boxes = Array.from(document.querySelectorAll('#alerts-table-body .row-select-checkbox'));
+                    const from_index = boxes.findIndex(b => b.dataset.path === last_checked_path);
+                    const to_index = boxes.findIndex(b => b.dataset.path === path);
+                    if (from_index !== -1 && to_index !== -1) {
+                        const [start, end] = [from_index, to_index].sort((a, b) => a - b);
+                        for (let i = start; i <= end; i++) {
+                            set_row_checked(boxes[i].dataset.path, cb.checked);
+                        }
+                    }
+                } else {
+                    set_row_checked(path, cb.checked);
+                }
+                last_checked_path = path;
+                update_bulk_bar();
+                return;
+            }
+
+            const subtree_btn = e.target.closest(".alert-subtree-select-btn");
+            if (subtree_btn) {
+                select_subtree(subtree_btn.dataset.selectPrefix);
+                return;
+            }
+
+            const group_btn = e.target.closest(".group-toggle-btn");
+            if (group_btn) {
+                const watch_title = group_btn.dataset.watchTitle;
+                if (collapsed_watches.has(watch_title)) collapsed_watches.delete(watch_title);
+                else collapsed_watches.add(watch_title);
+                render_unresolved_items();
                 return;
             }
 
             const mark_btn = e.target.closest(".mark-resolved-btn");
             if (mark_btn) {
-                mark_resolved(mark_btn.dataset.nodeId);
+                mark_resolved(mark_btn.dataset.watchTitle, mark_btn.dataset.path, mark_btn.dataset.label);
+                return;
+            }
+
+            // clicking the row body anywhere else (label text, a badge,
+            // blank cell space) views that item's changes -- there's no
+            // separate eye button; this is the only way to trigger it.
+            // Mirrors the watchlist table's row-click-to-browse fallback.
+            // Header rows carry no data-path, so a click on empty header
+            // space is correctly a no-op here.
+            const row = e.target.closest("tr");
+            if (row && row.dataset.path) {
+                view_changes(row.dataset.path, row.dataset.modified, row.dataset.lastResolved);
             }
         });
+
+        document.getElementById('select-all-alerts')?.addEventListener('change', function() {
+            const checked = this.checked;
+            document.querySelectorAll('#alerts-table-body .row-select-checkbox').forEach(cb => {
+                set_row_checked(cb.dataset.path, checked);
+            });
+            last_checked_path = null;
+            update_bulk_bar();
+        });
+
+        document.getElementById('bulk-clear-btn')?.addEventListener('click', clear_bulk_selection);
+        document.getElementById('bulk-resolve-btn')?.addEventListener('click', resolve_selected);
 
         // ------------------ CHANGE PASSWORD HANDLER ------------------
         // handler for change password form
@@ -2190,6 +2318,7 @@ async function on_loaded() {
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM fully loaded and parsed');
+    init_tab_scroll_persistence();
     on_loaded();
 });
 

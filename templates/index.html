@@ -64,8 +64,9 @@
 
     <div class="collapse navbar-collapse justify-content-between" id="navbarNavAltMarkup">
       <div class="navbar-nav">
-        <a class="nav-link active" id="nav-home-tab" data-bs-toggle="tab" href="#nav-home" role="tab">Home</a>
+        <a class="nav-link {{ 'active' if landing_tab != 'watchlists' else '' }}" id="nav-home-tab" data-bs-toggle="tab" href="#nav-home" role="tab">Alerts</a>
         {% if user %}
+          <a class="nav-link {{ 'active' if landing_tab == 'watchlists' else '' }}" id="nav-watchlists-tab" data-bs-toggle="tab" href="#nav-watchlists" role="tab">Watchlists</a>
           <a class="nav-link" id="nav-browse-tab" data-bs-toggle="tab" href="#nav-browse" role="tab">Browse</a>
           <a class="nav-link" id="nav-archives-tab" data-bs-toggle="tab" href="#nav-archives" role="tab">Archives</a>
           <a class="nav-link" id="nav-profile-tab" data-bs-toggle="tab" href="#nav-profile" role="tab">Profile</a>
@@ -92,11 +93,11 @@
 
 <div class="container px-3 tab-content mt-4">
 
-<!-- Home Panel -->
-<div class="tab-pane fade show active" id="nav-home" role="tabpanel">
+<!-- Alerts Panel -->
+<div class="tab-pane fade {{ 'show active' if landing_tab != 'watchlists' else '' }}" id="nav-home" role="tabpanel">
 
   {% if user %}
-  <!-- Home screen if user is logged in -->
+  <!-- Alerts screen if user is logged in -->
   <div id="user-data" data-user='{{ user | tojson | safe }}'></div> <!-- store user data -->
   <h2>Welcome, {{ user.name }}!</h2>
   
@@ -135,10 +136,27 @@
           </div>
           <span id="hidden-count-badge" class="text-muted small d-none"></span>
         </div>
+        <div id="bulk-resolve-bar" class="alert alert-primary d-none d-flex align-items-center gap-3 py-2 px-3 mb-2" role="alert">
+          <span><strong id="bulk-selected-count">0</strong> selected<span id="bulk-hidden-note" class="text-muted"></span></span>
+          <div class="ms-auto d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="bulk-clear-btn">Clear</button>
+            <button type="button" class="btn btn-sm btn-primary" id="bulk-resolve-btn">Resolve Selected</button>
+          </div>
+        </div>
         <div style="max-height: 600px; overflow-y: auto;">
           <table class="table table-striped table-hover">
-            <thead><tr><td>&nbsp;</td></tr></thead>
-            <tbody id="tree-container">
+            <thead>
+              <tr>
+                <th class="select-col"><input type="checkbox" class="form-check-input" id="select-all-alerts" title="Select all"></th>
+                <th>Label</th>
+                <th>Timestamp</th>
+                <th>User</th>
+                <th>Last Resolved</th>
+                <th>Cutoff</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="alerts-table-body">
               <!-- Rows populated dynamically -->
             </tbody>
           </table>
@@ -156,6 +174,67 @@
     icon.classList.toggle('bi-plus-circle-fill', !isExpanded);
   }
 </script>
+
+  </div>
+
+  {% elif runtime_state != 'running' %}
+
+<h2>Sorry! Birddog is currently unavailable. Please try again later or contact the administrator.</h2>
+
+  {% else %}
+
+<!-- Alerts screen if user is not logged in -->
+<h2>Welcome to Birddog!</h2>
+<div class="row">
+  <!-- Login Form -->
+  <div class="col-md-6">
+    <h3>Login</h3>
+    <form id="loginForm">
+      <div class="mb-3">
+        <input type="email" class="form-control" id="loginEmail" placeholder="Email" required>
+      </div>
+      <div class="mb-3 position-relative">
+        <input type="password" class="form-control pe-5" id="loginPassword" placeholder="Password" required>
+        <span id="toggleLoginPassword" style="position:absolute;top:50%;right:10px;transform:translateY(-50%);cursor:pointer;color:#6c757d;">
+          <i class="bi bi-eye" id="toggleLoginPasswordIcon"></i>
+        </span>
+      </div>
+      <button type="submit" class="btn btn-primary">Login</button>
+      <div class="mt-2">
+        <button type="button" class="btn btn-link p-0" data-bs-toggle="modal" data-bs-target="#resetPasswordModal">
+          Forgot password?
+        </button>
+      </div>
+    </form>
+    <div id="loginError" class="text-danger mt-2"></div>
+  </div>
+
+  <!-- Signup Form -->
+  <div class="col-md-6">
+    <h3>Create a Profile</h3>
+    <form id="signupForm">
+      <div class="mb-3">
+        <input type="text" class="form-control" id="signupName" placeholder="Name" required>
+      </div>
+      <div class="mb-3">
+        <input type="email" class="form-control" id="signupEmail" placeholder="Email" required>
+      </div>
+      <div class="mb-3">
+        <input type="password" class="form-control" id="signupPassword" placeholder="Password" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Sign Up</button>
+    </form>
+    <div id="signupError" class="text-danger mt-2"></div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+</div>
+
+<!-- Watchlists Panel -->
+<div class="tab-pane fade {{ 'show active' if landing_tab == 'watchlists' else '' }}" id="nav-watchlists" role="tabpanel">
+  <div class="container mt-4">
 
    <!-- Watchlist Section -->
 <div class="card mb-4">
@@ -206,61 +285,8 @@
     icon.classList.toggle('bi-plus-circle-fill', !isExpanded);
   }
 </script>
+
   </div>
-
-  {% elif runtime_state != 'running' %}
-
-<h2>Sorry! Birddog is currently unavailable. Please try again later or contact the administrator.</h2>
-
-  {% else %}
-
-<!-- Home screen if user is not logged in -->
-<h2>Welcome to Birddog!</h2>
-<div class="row">
-  <!-- Login Form -->
-  <div class="col-md-6">
-    <h3>Login</h3>
-    <form id="loginForm">
-      <div class="mb-3">
-        <input type="email" class="form-control" id="loginEmail" placeholder="Email" required>
-      </div>
-      <div class="mb-3 position-relative">
-        <input type="password" class="form-control pe-5" id="loginPassword" placeholder="Password" required>
-        <span id="toggleLoginPassword" style="position:absolute;top:50%;right:10px;transform:translateY(-50%);cursor:pointer;color:#6c757d;">
-          <i class="bi bi-eye" id="toggleLoginPasswordIcon"></i>
-        </span>
-      </div>
-      <button type="submit" class="btn btn-primary">Login</button>
-      <div class="mt-2">
-        <button type="button" class="btn btn-link p-0" data-bs-toggle="modal" data-bs-target="#resetPasswordModal">
-          Forgot password?
-        </button>
-      </div>
-    </form>
-    <div id="loginError" class="text-danger mt-2"></div>
-  </div>
-
-  <!-- Signup Form -->
-  <div class="col-md-6">
-    <h3>Create a Profile</h3>
-    <form id="signupForm">
-      <div class="mb-3">
-        <input type="text" class="form-control" id="signupName" placeholder="Name" required>
-      </div>
-      <div class="mb-3">
-        <input type="email" class="form-control" id="signupEmail" placeholder="Email" required>
-      </div>
-      <div class="mb-3">
-        <input type="password" class="form-control" id="signupPassword" placeholder="Password" required>
-      </div>
-      <button type="submit" class="btn btn-primary">Sign Up</button>
-    </form>
-    <div id="signupError" class="text-danger mt-2"></div>
-  </div>
-</div>
-{% endif %}
-</div>
-
 </div>
 
 <!-- User Profile Panel -->
