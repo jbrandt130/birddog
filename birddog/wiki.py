@@ -1286,8 +1286,12 @@ def mw_page_doc_url(page):
     if file_doc:
         return expand_link_target(file_doc, page["title"]["uk"])
 
-    # 2) Explicit commons links from template notes (e.g. [[c:File:...]])
-    links = page.get("notes", {}).get("commons_links", [])
+    # 2) Explicit commons/external links from template notes (e.g. [[c:File:...]],
+    #    or a bare URL in a header-template parameter like link_arc=...)
+    links = (
+        page.get("notes", {}).get("commons_links", [])
+        + page.get("notes", {}).get("external_links", [])
+    )
     links = [link for link in links if _included_link(link)]
     if links:
         return links[0]

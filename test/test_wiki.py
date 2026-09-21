@@ -358,6 +358,35 @@ class TestMwPageDocUrl(unittest.TestCase):
         )
         self.assertIsNone(mw_page_doc_url(page))
 
+    def test_prefers_notes_external_link(self):
+        # A bare URL in a header-template parameter (e.g. link_arc=...) is
+        # captured as notes.external_links, not notes.commons_links.
+        url = "https://e-resource.tsdavo.gov.ua/inventories/70/"
+        page = self._page(notes={"external_links": [url]})
+        self.assertEqual(mw_page_doc_url(page), url)
+
+    def test_notes_external_link_beats_unrelated_leftover_external(self):
+        # Regression for issue #41: a page's own header link (in
+        # notes.external_links, from a template parameter like link_arc)
+        # must win over an unrelated external link left over elsewhere on
+        # the page, e.g. a per-case "digitized file" footnote buried in a
+        # table's notes column.
+        header_url = "https://e-resource.tsdavo.gov.ua/inventories/70/"
+        footnote_url = "https://e-resource.tsdavo.gov.ua/files/47880/"
+        page = self._page(
+            notes={"external_links": [header_url]},
+            external=[footnote_url],
+        )
+        self.assertEqual(mw_page_doc_url(page), header_url)
+
+    def test_notes_commons_takes_priority_over_notes_external(self):
+        commons_url = "https://commons.wikimedia.org/wiki/File:doc.pdf"
+        external_url = "https://example.gov.ua/inventories/1/"
+        page = self._page(
+            notes={"commons_links": [commons_url], "external_links": [external_url]},
+        )
+        self.assertEqual(mw_page_doc_url(page), commons_url)
+
 
 # ── _is_table ─────────────────────────────────────────────────────────────────
 
