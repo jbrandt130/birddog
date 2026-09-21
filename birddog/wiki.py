@@ -899,6 +899,12 @@ def expand_link_target(link_target, page_title):
     # collapse multiple slashes to single slashes
     link_target = re.sub(r'//+', '/', link_target)
 
+    # an all-slash target (e.g. "[[/]]" or "[[//]]") is a subpage link with
+    # no subpage name -- finding-aid tables use this as a placeholder for
+    # "no case file page", not a link back to the current page
+    if link_target.strip("/") == "":
+        return None
+
     # split the page_title into components
     base_parts = page_title.strip("/").split("/")
     target_parts = link_target.strip("/").split("/")
@@ -1325,7 +1331,8 @@ def _extract_table(table_code, page_title, page_links, all_page_links):
                 _safe_remove(page_links["internal_links"], link_target)
                 if not link_target.startswith("#"):
                     link = expand_link_target(link_target, page_title)
-                    all_page_links.add(link)
+                    if link:
+                        all_page_links.add(link)
             else:
                 # External links as fallback
                 ext_links = cell_wikicode.filter_external_links()
@@ -1472,8 +1479,10 @@ def _parse_wiki_text(wikitext, page_title, title, revid=None):
             # synthesize a table from list of links to subpages
             for link_target in sub_pages:
                 link = expand_link_target(link_target, page_title)
-                all_page_links.add(link)
                 _safe_remove(page_links["internal_links"], link_target)
+                if not link:
+                    continue
+                all_page_links.add(link)
                 if link_target.startswith("/"):
                     display = link_target.strip("./ ")
                 else:

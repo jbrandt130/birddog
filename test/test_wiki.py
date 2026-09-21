@@ -215,6 +215,17 @@ class TestExpandLinkTarget(unittest.TestCase):
         path = result.replace(f"{ARCHIVE_BASE}/wiki/", "")
         self.assertNotIn("//", path)
 
+    def test_empty_double_slash_returns_none(self):
+        # [[//]] is a subpage link with no subpage name (used in finding-aid
+        # tables as a "no case file" placeholder) -- must not resolve back
+        # to the current page (issue #142)
+        result = expand_link_target("//", self.PAGE)
+        self.assertIsNone(result)
+
+    def test_empty_single_slash_returns_none(self):
+        result = expand_link_target("/", self.PAGE)
+        self.assertIsNone(result)
+
     def test_base_url_present(self):
         result = expand_link_target("SomePage", self.PAGE)
         self.assertTrue(result.startswith(ARCHIVE_BASE))
@@ -694,6 +705,15 @@ class TestExtractTable(unittest.TestCase):
         result, _ = self._run("!H\n|-\n|A")
         self.assertIn("header", result)
         self.assertIn("children", result)
+
+    def test_empty_subpage_link_yields_no_link(self):
+        # [[//]] placeholder rows (no case file page) must not resolve to
+        # a link back to the current page (issue #142)
+        content = "!№\n|-\n|[[//]]||Name||0"
+        result, all_links = self._run(content)
+        child = result["children"][0][0]
+        self.assertIsNone(child["link"])
+        self.assertEqual(all_links, set())
 
 
 # ── _normalize_child_link_positions ───────────────────────────────────────────
