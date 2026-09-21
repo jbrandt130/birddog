@@ -250,6 +250,8 @@ def replace_with_translit(s: str, ukr_start: int, ukr_count: int) -> str:
         curr_posit += 1
     return result + s[curr_posit:]
 
+_UA_SINGLE_LETTER = re.compile(rf"^{UA_LETTER}$")
+
 def form_text_item(source_text):
     """Form a multilingual text item from a fragment of text.
     A text item is a dict containing keys "uk" and "en", representing the
@@ -257,6 +259,9 @@ def form_text_item(source_text):
     If the input text is numeric or is English, then both language versions
     will be the same. If the first character is a Ukrainian one followed by hyphen and numerals,
     the Ukrainian character is replaced by the Latin transliteration in the English version.
+    A lone Ukrainian letter (e.g. a single-letter subarchive code like "П") is transliterated
+    directly rather than left for machine translation, which is unreliable on single letters and
+    can confuse visually/phonetically similar letters (e.g. "П" mistranslated as "R" -- issue #141).
     Otherwise, the English version of the text will be left empty.
     """
     result = { 'uk': source_text }
@@ -268,6 +273,8 @@ def form_text_item(source_text):
         result['en'] = replace_with_translit(source_text, len(source_text) - 1, 1)
     elif (res := find_digits_around_ukrainian(source_text))[0] >= 0:
         result['en'] = replace_with_translit(source_text, res[0], res[1])
+    elif _UA_SINGLE_LETTER.match(source_text):
+        result['en'] = translit_ukrainian_char(source_text)
     return result
 
 def equal_text(item1, item2):
