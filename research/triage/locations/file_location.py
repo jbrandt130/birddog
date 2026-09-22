@@ -663,7 +663,7 @@ class FileLocationFinder:
         batch_size: int = 20,
         only_smallest_locations: bool = True,
         debug_print: bool = False,
-    ) -> dict[int, tuple[list[str], list[dict], list[list[dict]]]]:
+    ) -> dict[int, tuple[list[str], list[dict], list[list[dict]], set[str]]]:
         """Identifies locations for multiple documents in batched API calls.
 
         For each document, descriptions are split into priority1 (doc description,
@@ -719,6 +719,7 @@ class FileLocationFinder:
         # Only run priority2 if at least one document has no priority1 results.
         docs_needing_p2 = []
         identified_locations_per_doc = []
+        district_names_per_doc = [set()] * len(doc_ids)
         all_extracted_p1 = self._location_extractor.extract_locations_batched(
             all_p1_lists, batch_size=batch_size, debug_print=debug_print
         )
@@ -726,9 +727,12 @@ class FileLocationFinder:
             extracted_p1 = all_extracted_p1[doc_idx]
             if debug_print and extracted_p1:
                 print(f"***** Extracted locations for document {doc_id}: {extracted_p1} *****")
-            identified_locations = self.match_places_to_location_ids(doc_id, extracted_p1,
-                doc_archive_locs_lists.get(doc_id, []), per_doc_inputs[doc_idx]["additional_centers"], debug_print)
+            district_names = district_names_per_doc[doc_idx]
+            identified_locations, district_names = self.match_places_to_location_ids(doc_id,
+                extracted_p1, doc_archive_locs_lists.get(doc_id, []),
+                per_doc_inputs[doc_idx]["additional_centers"], district_names, debug_print)
             identified_locations_per_doc.append(identified_locations)
+            district_names_per_doc[doc_idx] = district_names
             no_settlements_found = all(needs_further_analysis(e)
                                        for e in identified_locations) if identified_locations else True
             if no_settlements_found:
@@ -747,14 +751,17 @@ class FileLocationFinder:
                 extracted_p2 = all_extracted_p2[doc_idx]
                 if debug_print and extracted_p2:
                     print(f"***** Second extraction for document {doc_id}: {extracted_p2} *****")
-                    identified_locations_p2 = self.match_places_to_location_ids(doc_id, extracted_p2,
-                        doc_archive_locs_lists.get(doc_id, []), per_doc_inputs[doc_idx]["additional_centers"], debug_print)
+                    district_names = district_names_per_doc[doc_idx]
+                    identified_locations_p2, district_names = self.match_places_to_location_ids(doc_id,
+                        extracted_p2, doc_archive_locs_lists.get(doc_id, []),
+                        per_doc_inputs[doc_idx]["additional_centers"], district_names, debug_print)
                     identified_locations |= identified_locations_p2
                     identified_locations_per_doc[doc_idx] = identified_locations
+                    district_names_per_doc[doc_idx] = district_names # include those from priority1
 
         # Step 3: Dispatch results back to each doc with the priority fallback rule:
         # try priority1; only fall back to priority2 if priority1 yielded nothing.
-        results: dict[int, tuple[list[str], list[dict], list[list[dict]]]] = {}
+        results: dict[int, tuple[list[str], list[dict], list[list[dict]], set[str]]] = {}
         for doc_idx, doc_id in enumerate(doc_ids):
             identified_locations = identified_locations_per_doc[doc_idx]
             if not identified_locations:
@@ -797,7 +804,8 @@ class FileLocationFinder:
             else:
                 result = [dict_loc["loc_id"] for dict_loc in identified_locations_dict_list]
 
-            results[doc_id] = result, doc_archive_locs_lists[doc_id], per_doc_inputs[doc_idx]["additional_centers"]
+            results[doc_id] = (result, doc_archive_locs_lists[doc_id],
+                               per_doc_inputs[doc_idx]["additional_centers"], district_names_per_doc[doc_idx])
 
         return results
 
@@ -1035,7 +1043,8 @@ class FileLocationFinder:
 
 
     def match_places_to_location_ids(self, doc_id: int, extracted_places: list[str], doc_archive_locs: list[dict],
-            additional_centers: list[list[dict]], debug_print: bool) ->  set[frozenset[tuple[str, Any]]]:
+            additional_centers: list[list[dict]], additional_districts: set[str], 
+            debug_print: bool) ->  tuple[set[frozenset[tuple[str, Any]]], set[str]]:
         """Resolve AI-extracted place names to canonical location records.
 
         Takes raw location strings produced by the LLM extraction step and maps
@@ -1066,6 +1075,8 @@ class FileLocationFinder:
         loc_admin_units, found_province_names, district_names = locations_to_admin_units(extracted_places,
             self._province_keywords, self._district_keywords,
             self._district_keywords_suffix_only, self._settlement_keywords, debug_print)
+        # add the previously known districts
+        district_names |= additional_districts
         # add the archive location provinces
         archive_loc_ids = {loc["location_id"] for loc in doc_archive_locs}
         additional_centre_ids = [{loc["location_id"] for loc in item} for item in additional_centers]
@@ -1151,7 +1162,7 @@ class FileLocationFinder:
                     try:
                         location = copy.deepcopy(location)
                         location.pop("province_capital_ids_array", None)
-                        location.pop("district_names", None)
+                        location.pop("district_names", None) # these were arrays
                         location.pop("province_names", None)
     
                         location["administrative_level"] = loc_admin_unit["administrative_level"]
@@ -1173,7 +1184,7 @@ class FileLocationFinder:
                         print(f"TypeError in match_places_to_location_ids for location {location}")
                         raise  # re-raise the same exception
 
-        return identified_locations
+        return identified_locations, district_names
 
 
 def separate_words_by_cyrillic(file_string):
