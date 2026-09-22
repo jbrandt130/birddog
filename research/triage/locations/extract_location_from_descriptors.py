@@ -1,6 +1,7 @@
 # The code below uses the free Inference Client to query Qwen/Qwen2.5-7B-Instruct. We use Pydantic directly to enforce the JSON structure so the model returns only valid data.
 import builtins
 import json
+import os
 import re
 from json import JSONDecodeError
 
@@ -10,7 +11,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 
 # 1. Define the data structure to capture location hierarchy
-class LocationExtraction(BaseModel):
+class ExtractedLocation(BaseModel):
     has_location: bool = Field(
         description="True if the text contains any geographical location, city, region, or country. False otherwise."
     )
@@ -21,7 +22,7 @@ class LocationExtraction(BaseModel):
 
 
 class DocumentLocationsResponse(BaseModel):
-    extracted_locations: list[LocationExtraction]
+    extracted_locations: list[ExtractedLocation]
 
 
 class PerDocExtraction(BaseModel):
@@ -140,14 +141,6 @@ BATCH_FEW_SHOT_MESSAGES: list[ChatCompletionMessageParam] = [
 ]
 
 
-def _make_client(api_token: str) -> OpenAI:
-    """Create an OpenAI-compatible API client for the Qwen inference service."""
-    return OpenAI(
-        base_url="https://ztatyan--qwen-inference-service-serve.modal.run/v1",
-        api_key=api_token,
-    )
-
-
 def _process_response(raw_json: dict, debug_print: bool = False) -> list[str]:
     """ Response processing logic for extract_locations_batched.
 
@@ -234,263 +227,297 @@ def check_and_trim_keywords(loc: str, keywords: list[str], suffix_only: bool) ->
 
     return False, loc
 
-
-# 3. Batched extraction: N descriptors in 1 API call
-def extract_locations_batched(
-    batches: list[list[str]],          # list of descriptor lists, one per document
-    api_token: str,
-    batch_size: int | None = None,     # if None, batches = all descriptors in 1 call
-    debug_print: bool = False,
-) -> list[list[str]]:
+class LocationExtractor:
     """
-    Extract geographical locations from many documents in batched API calls.
-
-    Each element of `batches` is a list of descriptor strings for one document.
-    The function sends at most `batch_size` documents per API call (default: all
-    in one call). Returns a list of location lists, preserving order matching
-    `batches`.
-
-    IMPORTANT: This model has a 4096 total token context window. The function
-    automatically caps batch_size to stay within context limits and reduces
-    max_tokens to leave room for output.
-
-    Returns:
-        list[list[str]]: outer list indexed by document number, inner list is
-        the extracted locations for that document (unique, cleaned, deduped).
+    Main class that combines population and tree location data for fuzzy location matching.
+    Handles location ID lookups using similarity scoring against multiple name variants.
     """
-    if not batches:
-        return []
 
-    # If batch_size not set, default to all in one call
-    if batch_size is None:
-        batch_size = len(batches)
+    def __init__(self, provider: str = "modal"):
+        """
+        setting the model and provider link
+        """
+        match provider:
+            case "modal":
+                self._provider_url = "https://ztatyan--qwen-inference-service-serve.modal.run/v1"
+                self._provider_api_key = os.getenv("HF_TOKEN", "")
+                self._model = "Qwen/Qwen2.5-7B-Instruct"
+            case "groq":
+                self._provider_url = "https://api.groq.com/openai/v1"
+                self._provider_api_key = os.getenv("GROQ_LOCATION_KEY", "")
+                self._model = "qwen/qwen3.8-27b"  # Updated to the current active free-tier ID
+            case _:
+                raise ValueError(f"Invalid provider {provider}")
 
-    # Token budget plan for the 4096 context:
-    # - Fixed overhead: ~700 tokens (system prompt + few-shot examples)
-    # - User content: variable (depends on descriptor lengths)
-    # - Output: must leave room
-    #
-    # We measure the user content after building it for each chunk, then size
-    # max_tokens to fit. For Qwen2.5-7B-Instruct, the model context is 4096.
+        self._client: OpenAI | None = None  # initialized on the first location extraction
 
-    # Conservative initial cap on batch size to avoid context overflow.
-    # Each document needs enough output budget for its locations, even if the
-    # model is verbose or repeats entries.
-    MAX_BATCH_SIZE = 10
-    batch_size = min(batch_size, MAX_BATCH_SIZE)
-
-    all_results: list[list[str] | None] = [None] * len(batches)
-
-    # Process each batch chunk
-    for start in range(0, len(batches), batch_size):
-        chunk = batches[start:start + batch_size]
-
-        # Build the user content: one block per document, all descriptors grouped
-        # so the model produces exactly one result entry per document_index.
-        doc_blocks = []
-        for doc_idx, descr_list in enumerate(chunk):
-            descs = "\n".join(f"  - {json.dumps(d)}" for d in descr_list)
-            doc_blocks.append(f"Document {doc_idx}:\n{descs}")
-        user_content = (
-            f"Analyze the following {len(chunk)} documents and extract "
-            f"locations for each:\n" + "\n".join(doc_blocks)
+    def make_client(self) -> OpenAI:
+        """Create an OpenAI-compatible API client for the Qwen inference service."""
+        if not self._client:
+            self._client = OpenAI(
+            base_url=self._provider_url,
+            api_key=self._provider_api_key,
         )
+        return self._client
 
-        # Compute max_tokens dynamically based on actual user content size.
-        # We use a chars/2 token estimate (overestimate to avoid context overflow).
-        # Worst case: English text = ~4 chars/token; code/JSON = ~3 chars/token.
-        # Overestimating input is safe — it just leaves less room for output.
-        # Output is ~25-50 tokens per doc (2-5 locations + JSON framing).
-        input_tokens_estimate = (len(batch_system_prompt) + sum(len(m["content"])
-                                  for m in BATCH_FEW_SHOT_MESSAGES if isinstance(m["content"], str)) +
-                                  len(user_content)) // 2
-        # Reserve at least 300 tokens for output, cap output at what's available.
-        # Use 50 tokens/doc (very conservative) to handle verbose or redundant
-        # model output without getting truncated mid-string.
-        available_for_output = max(300, 4096 - input_tokens_estimate - 100)  # 100 token safety margin
-        per_doc_output_tokens = 50
-        total_max_tokens = min(available_for_output, len(chunk) * per_doc_output_tokens)
 
-        # Hard safety cap: even if the estimate is wrong, ensure total tokens
-        # (estimated input + requested output) never exceeds the 4096 limit.
-        # Use chars/2 as worst-case input estimate for this cap.
-        hard_cap = max(100, 4096 - (len(user_content) // 2) - 100)
-        total_max_tokens = min(total_max_tokens, hard_cap)
+    # Batched extraction: N descriptors in 1 API call
+    def extract_locations_batched(self,
+        batches: list[list[str]],          # list of descriptor lists, one per document
+        batch_size: int | None = None,     # if None, batches = all descriptors in 1 call
+        debug_print: bool = False,
+    ) -> list[list[str]]:
+        """
+        Extract geographical locations from many documents in batched API calls.
 
-        if debug_print:
-            print(f"[batch {start}: {len(chunk)} docs] "
-                  f"input≈{input_tokens_estimate} tokens, "
-                  f"max_tokens={total_max_tokens}")
+        Each element of `batches` is a list of descriptor strings for one document.
+        The function sends at most `batch_size` documents per API call (default: all
+        in one call). Returns a list of location lists, preserving order matching
+        `batches`.
 
-        messages: list[ChatCompletionMessageParam] = [
-            {"role": "system", "content": batch_system_prompt}
-        ]
-        messages.extend(BATCH_FEW_SHOT_MESSAGES)
-        messages.append({"role": "user", "content": user_content})
+        IMPORTANT: This model has a 4096 total token context window. The function
+        automatically caps batch_size to stay within context limits and reduces
+        max_tokens to leave room for output.
 
-        client = _make_client(api_token)
+        Returns:
+            list[list[str]]: outer list indexed by document number, inner list is
+            the extracted locations for that document (unique, cleaned, deduped).
+        """
+        if not batches:
+            return []
 
-        # Wrap the initial call in a retry loop to handle 400 BadRequestError
-        # (context window overflow) by reducing max_tokens and retrying.
-        response = None
-        attempt = 0
-        effective_max_tokens = total_max_tokens
-        while attempt < 3:
-            attempt += 1
-            try:
-                response = client.chat.completions.create(
-                    model="Qwen/Qwen2.5-7B-Instruct",
-                    messages=messages,
-                    response_format={"type": "json_object"},
-                    max_tokens=effective_max_tokens,
-                    temperature=0.1,
-                )
-                break  # success — exit retry loop
-            except Exception as e:
-                if "maximum context length" in str(e) and attempt < 3:
-                    effective_max_tokens = max(50, effective_max_tokens // 2)
-                    print(f"  (context overflow — retrying with max_tokens={effective_max_tokens})")
-                    continue
-                raise
+        # If batch_size not set, default to all in one call
+        if batch_size is None:
+            batch_size = len(batches)
 
-        # Parse the batch response, with retry on truncation (finish_reason="length")
-        parsed = None
-        content_str: str | None = None
-        retry_count = 0
-        max_retries = 3  # try a couple of times with increased tokens
+        # Token budget plan for the 4096 context:
+        # - Fixed overhead: ~700 tokens (system prompt + few-shot examples)
+        # - User content: variable (depends on descriptor lengths)
+        # - Output: must leave room
+        #
+        # We measure the user content after building it for each chunk, then size
+        # max_tokens to fit. For Qwen2.5-7B-Instruct, the model context is 4096.
 
-        while retry_count < max_retries:
-            retry_count += 1
+        # Conservative initial cap on batch size to avoid context overflow.
+        # Each document needs enough output budget for its locations, even if the
+        # model is verbose or repeats entries.
+        MAX_BATCH_SIZE = 10
+        batch_size = min(batch_size, MAX_BATCH_SIZE)
 
-            try:
-                if response is None:
-                    print(f"Error: No response object for batch starting at {start}")
-                    # Fill remaining with empty lists
+        all_results: list[list[str] | None] = [None] * len(batches)
+
+        # Process each batch chunk
+        for start in range(0, len(batches), batch_size):
+            chunk = batches[start:start + batch_size]
+
+            # Build the user content: one block per document, all descriptors grouped
+            # so the model produces exactly one result entry per document_index.
+            doc_blocks = []
+            for doc_idx, descr_list in enumerate(chunk):
+                descs = "\n".join(f"  - {json.dumps(d)}" for d in descr_list)
+                doc_blocks.append(f"Document {doc_idx}:\n{descs}")
+            user_content = (
+                f"Analyze the following {len(chunk)} documents and extract "
+                f"locations for each:\n" + "\n".join(doc_blocks)
+            )
+
+            # Compute max_tokens dynamically based on actual user content size.
+            # We use a chars/2 token estimate (overestimate to avoid context overflow).
+            # Worst case: English text = ~4 chars/token; code/JSON = ~3 chars/token.
+            # Overestimating input is safe — it just leaves less room for output.
+            # Output is ~25-50 tokens per doc (2-5 locations + JSON framing).
+            input_tokens_estimate = (len(batch_system_prompt) + sum(len(m["content"])
+                                      for m in BATCH_FEW_SHOT_MESSAGES if isinstance(m["content"], str)) +
+                                      len(user_content)) // 2
+            # Reserve at least 300 tokens for output, cap output at what's available.
+            # Use 50 tokens/doc (very conservative) to handle verbose or redundant
+            # model output without getting truncated mid-string.
+            available_for_output = max(300, 4096 - input_tokens_estimate - 100)  # 100 token safety margin
+            per_doc_output_tokens = 50
+            total_max_tokens = min(available_for_output, len(chunk) * per_doc_output_tokens)
+
+            # Hard safety cap: even if the estimate is wrong, ensure total tokens
+            # (estimated input + requested output) never exceeds the 4096 limit.
+            # Use chars/2 as worst-case input estimate for this cap.
+            hard_cap = max(100, 4096 - (len(user_content) // 2) - 100)
+            total_max_tokens = min(total_max_tokens, hard_cap)
+
+            if debug_print:
+                print(f"[batch {start}: {len(chunk)} docs] "
+                      f"input≈{input_tokens_estimate} tokens, "
+                      f"max_tokens={total_max_tokens}")
+
+            messages: list[ChatCompletionMessageParam] = [
+                {"role": "system", "content": batch_system_prompt}
+            ]
+            messages.extend(BATCH_FEW_SHOT_MESSAGES)
+            messages.append({"role": "user", "content": user_content})
+
+            client = self.make_client()
+            if not client:
+                raise ValueError("OpenAI client was not initialized")
+
+            # Wrap the initial call in a retry loop to handle 400 BadRequestError
+            # (context window overflow) by reducing max_tokens and retrying.
+            response = None
+            attempt = 0
+            effective_max_tokens = total_max_tokens
+            while attempt < 3:
+                attempt += 1
+                try:
+                    response = client.chat.completions.create(
+                        model=self._model,
+                        messages=messages,
+                        response_format={"type": "json_object"},
+                        max_tokens=effective_max_tokens,
+                        temperature=0.1,
+                    )
+                    break  # success — exit retry loop
+                except Exception as e:
+                    if "maximum context length" in str(e) and attempt < 3:
+                        effective_max_tokens = max(50, effective_max_tokens // 2)
+                        print(f"  (context overflow — retrying with max_tokens={effective_max_tokens})")
+                        continue
+                    raise
+
+            # Parse the batch response, with retry on truncation (finish_reason="length")
+            parsed = None
+            content_str: str | None = None
+            retry_count = 0
+            max_retries = 3  # try a couple of times with increased tokens
+
+            while retry_count < max_retries:
+                retry_count += 1
+
+                try:
+                    if response is None:
+                        print(f"Error: No response object for batch starting at {start}")
+                        # Fill remaining with empty lists
+                        for i in range(start, min(start + batch_size, len(batches))):
+                            if all_results[i] is None:
+                                all_results[i] = []
+                        break  # exit retry loop — nothing more to try
+                    content_str = response.choices[0].message.content
+                    if not content_str:
+                        print(f"Error: Received empty content from AI response for batch starting at {start} "
+                              f"(finish_reason={response.choices[0].finish_reason})")
+                        # Fill remaining with empty lists
+                        for i in range(start, min(start + batch_size, len(batches))):
+                            if all_results[i] is None:
+                                all_results[i] = []
+                        break  # exit retry loop — nothing more to try
+                    raw_json = json.loads(content_str)
+                except (JSONDecodeError, ValidationError) as e:
+                    preview = (content_str or "")[:2000]
+                    finish_reason = (
+                        getattr(response.choices[0], "finish_reason", None)
+                        if response is not None else None
+                    )
+                    print(f"Error parsing batched AI response (attempt {retry_count}): {e}\n"
+                          f"  finish_reason={finish_reason}\n"
+                          f"  content_preview: {preview!r}")
+                    # If truncated, retry with more output budget
+                    if finish_reason == "length" and retry_count < max_retries:
+                        extra_tokens = len(chunk) * per_doc_output_tokens + 50
+                        # Cap at 1000 to prevent the model from using the extra budget
+                        # to repeat more before truncating again (it will produce the same
+                        # output just longer, repeating the same location names).
+                        new_total = min(total_max_tokens + extra_tokens,
+                                        max(100, 4096 - input_tokens_estimate - 50),
+                                        1000)
+                        print(f"  (truncated — retrying with max_tokens={new_total})")
+                        response = client.chat.completions.create(
+                            model=self._model,
+                            messages=messages,
+                            response_format={"type": "json_object"},
+                            max_tokens=new_total,
+                            temperature=0.1,
+                        )
+                        continue  # re-run the while loop with more tokens
+                    # Otherwise (parse error or max_retries exhausted): give up
                     for i in range(start, min(start + batch_size, len(batches))):
                         if all_results[i] is None:
                             all_results[i] = []
-                    break  # exit retry loop — nothing more to try
-                content_str = response.choices[0].message.content
-                if not content_str:
-                    print(f"Error: Received empty content from AI response for batch starting at {start} "
-                          f"(finish_reason={response.choices[0].finish_reason})")
-                    # Fill remaining with empty lists
+                    break  # exit retry loop
+
+                # Successfully parsed JSON — validate against schema
+                try:
+                    parsed = BatchDocumentLocationsResponse(**raw_json)
+                    break  # success — exit retry loop
+                except ValidationError as e:
+                    # Schema validation failed. Check if we were truncated; if so,
+                    # retry with more tokens before giving up.
+                    finish_reason = (
+                        getattr(response.choices[0], "finish_reason", None)
+                        if response is not None else None
+                    )
+                    if finish_reason == "length" and retry_count < max_retries:
+                        extra_tokens = len(chunk) * per_doc_output_tokens + 50
+                        new_total = min(total_max_tokens + extra_tokens,
+                                        max(100, 4096 - input_tokens_estimate - 50))
+                        print(f"  (schema error / truncated — retrying with max_tokens={new_total})")
+                        response = client.chat.completions.create(
+                            model=self._model,
+                            messages=messages,
+                            response_format={"type": "json_object"},
+                            max_tokens=new_total,
+                            temperature=0.1,
+                        )
+                        continue
+                    print(f"Error constructing BatchDocumentLocationsResponse (after {retry_count} retries): {e}")
                     for i in range(start, min(start + batch_size, len(batches))):
                         if all_results[i] is None:
                             all_results[i] = []
-                    break  # exit retry loop — nothing more to try
-                raw_json = json.loads(content_str)
-            except (JSONDecodeError, ValidationError) as e:
-                preview = (content_str or "")[:2000]
-                finish_reason = (
-                    getattr(response.choices[0], "finish_reason", None)
-                    if response is not None else None
-                )
-                print(f"Error parsing batched AI response (attempt {retry_count}): {e}\n"
-                      f"  finish_reason={finish_reason}\n"
-                      f"  content_preview: {preview!r}")
-                # If truncated, retry with more output budget
-                if finish_reason == "length" and retry_count < max_retries:
-                    extra_tokens = len(chunk) * per_doc_output_tokens + 50
-                    # Cap at 1000 to prevent the model from using the extra budget
-                    # to repeat more before truncating again (it will produce the same
-                    # output just longer, repeating the same location names).
-                    new_total = min(total_max_tokens + extra_tokens,
-                                    max(100, 4096 - input_tokens_estimate - 50),
-                                    1000)
-                    print(f"  (truncated — retrying with max_tokens={new_total})")
-                    response = client.chat.completions.create(
-                        model="Qwen/Qwen2.5-7B-Instruct",
-                        messages=messages,
-                        response_format={"type": "json_object"},
-                        max_tokens=new_total,
-                        temperature=0.1,
-                    )
-                    continue  # re-run the while loop with more tokens
-                # Otherwise (parse error or max_retries exhausted): give up
+                    break  # exit retry loop
+
+            # Assign each document's locations to the correct result slot.
+            # IMPORTANT: document_index is chunk-relative (0..len(chunk)-1).
+            # We must map it to the global position via (start + chunk_index).
+            ordinal_pattern = re.compile(r"^\s*\d+(st|nd|rd|th)\s+", re.IGNORECASE)
+
+            # If the retry loop never produced a valid parsed response, fill the
+            # remaining slots with empty lists and skip result assignment.
+            if parsed is None:
                 for i in range(start, min(start + batch_size, len(batches))):
                     if all_results[i] is None:
                         all_results[i] = []
-                break  # exit retry loop
-
-            # Successfully parsed JSON — validate against schema
-            try:
-                parsed = BatchDocumentLocationsResponse(**raw_json)
-                break  # success — exit retry loop
-            except ValidationError as e:
-                # Schema validation failed. Check if we were truncated; if so,
-                # retry with more tokens before giving up.
-                finish_reason = (
-                    getattr(response.choices[0], "finish_reason", None)
-                    if response is not None else None
-                )
-                if finish_reason == "length" and retry_count < max_retries:
-                    extra_tokens = len(chunk) * per_doc_output_tokens + 50
-                    new_total = min(total_max_tokens + extra_tokens,
-                                    max(100, 4096 - input_tokens_estimate - 50))
-                    print(f"  (schema error / truncated — retrying with max_tokens={new_total})")
-                    response = client.chat.completions.create(
-                        model="Qwen/Qwen2.5-7B-Instruct",
-                        messages=messages,
-                        response_format={"type": "json_object"},
-                        max_tokens=new_total,
-                        temperature=0.1,
-                    )
-                    continue
-                print(f"Error constructing BatchDocumentLocationsResponse (after {retry_count} retries): {e}")
-                for i in range(start, min(start + batch_size, len(batches))):
-                    if all_results[i] is None:
-                        all_results[i] = []
-                break  # exit retry loop
-
-        # Assign each document's locations to the correct result slot.
-        # IMPORTANT: document_index is chunk-relative (0..len(chunk)-1).
-        # We must map it to the global position via (start + chunk_index).
-        ordinal_pattern = re.compile(r"^\s*\d+(st|nd|rd|th)\s+", re.IGNORECASE)
-
-        # If the retry loop never produced a valid parsed response, fill the
-        # remaining slots with empty lists and skip result assignment.
-        if parsed is None:
-            for i in range(start, min(start + batch_size, len(batches))):
-                if all_results[i] is None:
-                    all_results[i] = []
-            continue
-
-        for item in parsed.extracted_locations:
-            # Convert chunk-relative index → global index
-            global_idx = start + item.document_index
-
-            if not item.has_location or not item.locations:
-                # Document had no locations — fill slot if not already filled
-                if 0 <= global_idx < len(batches) and all_results[global_idx] is None:
-                    all_results[global_idx] = []
                 continue
 
-            # Clean locations for this document: ' of ', ordinals, dedupe
-            cleaned = []
-            for loc in item.locations:
-                loc = (loc.replace(" of ", " ") if " of " in loc else loc)
-                loc = ordinal_pattern.sub("", loc)
-                loc = re.sub(r"\s+", " ", loc).strip()
-                if loc:
-                    cleaned.append(loc)
+            for item in parsed.extracted_locations:
+                # Convert chunk-relative index → global index
+                global_idx = start + item.document_index
 
-            if 0 <= global_idx < len(batches):
-                slot = all_results[global_idx]
-                if slot is None:
-                    all_results[global_idx] = cleaned
+                if not item.has_location or not item.locations:
+                    # Document had no locations — fill slot if not already filled
+                    if 0 <= global_idx < len(batches) and all_results[global_idx] is None:
+                        all_results[global_idx] = []
+                    continue
+
+                # Clean locations for this document: ' of ', ordinals, dedupe
+                cleaned = []
+                for loc in item.locations:
+                    loc = (loc.replace(" of ", " ") if " of " in loc else loc)
+                    loc = ordinal_pattern.sub("", loc)
+                    loc = re.sub(r"\s+", " ", loc).strip()
+                    if loc:
+                        cleaned.append(loc)
+
+                if 0 <= global_idx < len(batches):
+                    slot = all_results[global_idx]
+                    if slot is None:
+                        all_results[global_idx] = cleaned
+                    else:
+                        # Merge and dedupe
+                        slot.extend(cleaned)
+                        all_results[global_idx] = list(
+                            builtins.dict.fromkeys(slot)
+                        )
                 else:
-                    # Merge and dedupe
-                    slot.extend(cleaned)
-                    all_results[global_idx] = list(
-                        builtins.dict.fromkeys(slot)
-                    )
-            else:
-                print(f"Warning: global_idx {global_idx} out of range (max {len(batches)-1})")
+                    print(f"Warning: global_idx {global_idx} out of range (max {len(batches)-1})")
 
-    # Ensure all slots are filled (in case some batches failed), and return
-    # as list[list[str]] — pyrefly can't track the in-place None→[] fill above.
-    return [r if r is not None else [] for r in all_results]
+        # Ensure all slots are filled (in case some batches failed), and return
+        # as list[list[str]] — pyrefly can't track the in-place None→[] fill above.
+        return [r if r is not None else [] for r in all_results]
 
 
 def locations_to_admin_units(

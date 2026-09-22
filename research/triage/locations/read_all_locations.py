@@ -78,7 +78,7 @@ class LocationMatcher:
                     for item in regions_2_locations[c1900_province]:
                         province_names.append(item["location"])
                 curr_province_capital_ids = {
-                        int(loc_id)
+                        loc_id
                         for name in province_names
                         if name in self._province_capital_ids
                         for loc_id in self._province_capital_ids[name]
@@ -88,9 +88,9 @@ class LocationMatcher:
                 province_capital_ids_array = [set(), set(), set(), set()]
                 for col_idx in range(4):
                     name = province_cols[col_idx]
-                    province_capital_ids_array[col_idx] = {int(loc_id) for loc_id in self._province_capital_ids.get(name, [])}
+                    province_capital_ids_array[col_idx] = {loc_id for loc_id in self._province_capital_ids.get(name, [])}
                 if province_cols[0] in regions_2_locations:
-                    province_capital_ids_array[0] |= {int(prov["location_id"]) for prov in regions_2_locations[province_cols[0]]}
+                    province_capital_ids_array[0] |= {prov["location_id"] for prov in regions_2_locations[province_cols[0]]}
                 province_capital_ids_array = [item for item in province_capital_ids_array if item]
                 province_capital_ids_array = sorted(province_capital_ids_array, key=len)
 
@@ -127,7 +127,7 @@ class LocationMatcher:
                 continue
 
 
-    def find_location_id(self, place_to_search: str, debug_print: bool = False) -> list[int]:
+    def find_location_id(self, place_to_search: str, debug_print: bool = False) -> list[str]:
         """
         Finds the best matching location ID using Jaro-Winkler similarity scoring.
         - Normalizes and standardizes search term
@@ -143,8 +143,8 @@ class LocationMatcher:
         # Set a threshold score (typically between 85 and 90 out of 100)
         threshold = 91 #88 # 93
         max_score = 0
-        seen = set()
-        matching_loc_ids = []
+        seen: set[str] = set()
+        matching_locs_with_scores: list[tuple[str, float]] = []
         best_name = ""
         for loc_name in self.names_with_location_ids:
             score = distance.JaroWinkler.similarity(place_to_search_lower, loc_name) * 100
@@ -155,8 +155,12 @@ class LocationMatcher:
             if score >= threshold:
                 for loc_id in loc_ids:
                     if loc_id not in seen:
-                        matching_loc_ids.insert(0, loc_id)
+                        matching_locs_with_scores.append((loc_id, score))
                         seen.add(loc_id)
+
+        # sort by descending score
+        matching_locs_with_scores.sort(key=lambda x: x[1], reverse=True)
+        matching_ids = [x[0] for x in matching_locs_with_scores]
 
         if max_score < threshold:
             if debug_print:
@@ -165,12 +169,12 @@ class LocationMatcher:
         else:
             if debug_print:
                 msg = f"Location '{place_to_search}' is identified with score {max_score} as one of these locations: "
-                for loc_id in matching_loc_ids:
-                    loc = self.location_name_dict.get(loc_id)
+                for match in matching_locs_with_scores:
+                    loc = self.location_name_dict.get(match[0])
                     if loc:
-                        msg = f"{msg} (loc_id={loc_id}, name={loc.get('main_name')}) "
+                        msg = f"{msg} (loc_id={match[0]}, name={loc.get('main_name')}) "
                 print(msg)
-        return matching_loc_ids
+        return matching_ids
 
 
 if __name__ == "__main__":

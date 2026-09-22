@@ -15,7 +15,7 @@ import re
 from typing import Any, cast
 
 from extract_location_from_descriptors import (
-    extract_locations_batched,
+    LocationExtractor,
     locations_to_admin_units,
 )
 from read_all_locations import LocationMatcher
@@ -243,10 +243,11 @@ def needs_further_analysis(identified_location: frozenset) -> bool:
 
 
 class FileLocationFinder:
-    def __init__(self):
+    def __init__(self, provider: str = "modal"):
         self._logger = get_logger()
         self._db = Database()
         self._file_path = "./research/triage/locations/jg_communities_data.xlsx"
+        self._location_extractor = LocationExtractor(provider)
 
         # all these must be lowercase
         self._province_keywords = [
@@ -681,8 +682,6 @@ class FileLocationFinder:
             dict[int, tuple[list[str], list[dict], list[dict]]]: mapping from doc_id to list of
             location IDs, archive locations, and extended archive location list including those found in descriptions.
         """
-        hf_token = os.getenv("HF_TOKEN", "")
-
         # Step 1: Gather descriptors + archive locs + region centres for every doc upfront.
         # We now store two separate description lists per doc (priority1 and priority2).
         per_doc_inputs: list[dict] = []
@@ -720,8 +719,8 @@ class FileLocationFinder:
         # Only run priority2 if at least one document has no priority1 results.
         docs_needing_p2 = []
         identified_locations_per_doc = []
-        all_extracted_p1 = extract_locations_batched(
-            all_p1_lists, hf_token, batch_size=batch_size, debug_print=debug_print
+        all_extracted_p1 = self._location_extractor.extract_locations_batched(
+            all_p1_lists, batch_size=batch_size, debug_print=debug_print
         )
         for doc_idx, doc_id in enumerate(doc_ids):
             extracted_p1 = all_extracted_p1[doc_idx]
@@ -739,8 +738,8 @@ class FileLocationFinder:
         if docs_needing_p2:
             # Only include priority2 lists for docs that need it
             filtered_p2_lists = [all_p2_lists[i] if i in docs_needing_p2 else [] for i in range(len(doc_ids))]
-            all_extracted_p2 = extract_locations_batched(
-                filtered_p2_lists, hf_token, batch_size=batch_size, debug_print=debug_print
+            all_extracted_p2 = self._location_extractor.extract_locations_batched(
+                filtered_p2_lists, batch_size=batch_size, debug_print=debug_print
             )
             # Fallback: only consult priority2 if priority1 produced nothing
             for doc_idx, doc_id in enumerate(doc_ids):
@@ -1068,8 +1067,8 @@ class FileLocationFinder:
             self._province_keywords, self._district_keywords,
             self._district_keywords_suffix_only, self._settlement_keywords, debug_print)
         # add the archive location provinces
-        archive_loc_ids = {int(loc["location_id"]) for loc in doc_archive_locs}
-        additional_centre_ids = [{int(loc["location_id"]) for loc in item} for item in additional_centers]
+        archive_loc_ids = {loc["location_id"] for loc in doc_archive_locs}
+        additional_centre_ids = [{loc["location_id"] for loc in item} for item in additional_centers]
 
         # found_province_names->found_province_ids
         found_province_ids = set()

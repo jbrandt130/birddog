@@ -13,7 +13,7 @@ from file_location import (
 
 
 class LocationPerformanceEvaluator:
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, provider: str):
         """
         Reads an Excel file and returns the string values of cells C{N} and G{N}.
         """
@@ -27,7 +27,7 @@ class LocationPerformanceEvaluator:
 
         # Total rows minus 1 header row
         self.total_data_rows = self.sheet.max_row - 1
-        self.file_location_finder = FileLocationFinder()
+        self.file_location_finder = FileLocationFinder(provider)
         self.num_evaluated_docs = 0
         self.num_docs_evaluated_correctly = 0
         self.num_docs_with_all_locations_found = 0
@@ -297,13 +297,14 @@ class LocationPerformanceEvaluator:
 # testing
 if __name__ == "__main__":
     report_path = r"C:\Users\user\PycharmProjects\birddog\research\triage\Cumulative Ukraine Research Report.xlsx"
-    evaluator = LocationPerformanceEvaluator(report_path)
+    _provider = "groq"
+    evaluator = LocationPerformanceEvaluator(report_path, _provider)
 
     debug_print_ = True
     batch_size_ = 5
 
-#    rows_ = [3497, 4296, 5274, 5289, 5328, ]
-    rows_ = [21, 48, 119, 213, 297, 314, 397, 451, 457, 459, 615, 628, 644, 693, 696, 769, 838, 860, 867, 924, 1072, 1086, 1136, 1147, 1158, 1275, 1315, 1359, 1508, 1651, 1672, 1840, 1852, 2087, 2123, 2329, 2412, 2517, 2533, 2575, 2618, 2674, 2676, 2702, 2730, 2777, 2808, 2815, 2863, 2947, 3010, 3095, 3106, 3143, 3202, 3251, 3312, 3331, 3357, 3479, 3497, 3555, 3601, 3716, 3783, 3897, 4028, 4031, 4044, 4125, 4240, 4246, 4296, 4485, 4535, 4927, 5100, 5218, 5231, 5261, 5274, 5289, 5328, 5353, 5368, 5379, 5404, 5442, 5495, 5506, 5941, 6031, 6036, 6053, 6078, 6168, 6262, 6310, 6417, 6476, 6490, 6524, 6539, 6552, 6576, 6597, 6633, 6676, 6758, 6834, 6849, 6909, 6933, 6981, 7007, 7026, 7079, 7207, 7245, 7311, 7381, 7431, 7544, 7637, 7659, 7713, 7798, 7935, 7969, 8001, 8003, 8143, 8187, 8199, 8268, 8299, 8322, 8334, 8355, 8392, 8531, 8598, 8607, 8779, 8838, 9034, 9057, 9072, 9083, 9236, 9337, 9460, 9493, 9537, 9572, 9588, 9668, 9677, 9711, 9714, 9744, 9747, 9778, 9814, 10210, 10227, 10230, 10845]
+    rows_ = [3497] #, 4296]
+#    rows_ = [21, 48, 119, 213, 297, 314, 397, 451, 457, 459, 615, 628, 644, 693, 696, 769, 838, 860, 867, 924, 1072, 1086, 1136, 1147, 1158, 1275, 1315, 1359, 1508, 1651, 1672, 1840, 1852, 2087, 2123, 2329, 2412, 2517, 2533, 2575, 2618, 2674, 2676, 2702, 2730, 2777, 2808, 2815, 2863, 2947, 3010, 3095, 3106, 3143, 3202, 3251, 3312, 3331, 3357, 3479, 3497, 3555, 3601, 3716, 3783, 3897, 4028, 4031, 4044, 4125, 4240, 4246, 4296, 4485, 4535, 4927, 5100, 5218, 5231, 5261, 5274, 5289, 5328, 5353, 5368, 5379, 5404, 5442, 5495, 5506, 5941, 6031, 6036, 6053, 6078, 6168, 6262, 6310, 6417, 6476, 6490, 6524, 6539, 6552, 6576, 6597, 6633, 6676, 6758, 6834, 6849, 6909, 6933, 6981, 7007, 7026, 7079, 7207, 7245, 7311, 7381, 7431, 7544, 7637, 7659, 7713, 7798, 7935, 7969, 8001, 8003, 8143, 8187, 8199, 8268, 8299, 8322, 8334, 8355, 8392, 8531, 8598, 8607, 8779, 8838, 9034, 9057, 9072, 9083, 9236, 9337, 9460, 9493, 9537, 9572, 9588, 9668, 9677, 9711, 9714, 9744, 9747, 9778, 9814, 10210, 10227, 10230, 10845]
 #    rows_ = evaluator.unique_random_integers(250)
 #    rows_ = [row + 1 for row in rows_]  # the first row is the header
     evaluator.evaluate_location_extraction(rows_, False, debug_print_, batch_size_)
