@@ -20,6 +20,7 @@ from openpyxl import load_workbook
 
 from birddog.abstract_database import FailedIO, InvalidFieldValue
 from birddog.log import get_logger
+from birddog.utility import UKR_TO_LAT
 
 
 def retry_on_transient_error(func, *args, max_retries=3, base_delay=2.0, max_delay=15.0, **kwargs):
@@ -1025,30 +1026,9 @@ def cyrillic_to_latin(s: str) -> str:
     Converts Ukrainian/Russian Cyrillic letters to Latin equivalents.
     Leaves digits, hyphens, punctuation unchanged.
     """
-    # Cyrillic → Latin transliteration map (Russian + Ukrainian)
-    trans_map = {
-        # Russian lowercase
-        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
-        'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
-        'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
-        'ф': 'f', 'х': 'h', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
-        'ъ': "'", 'ы': 'y', 'ь': "'", 'э': 'e', 'ю': 'yu', 'я': 'ya',
-
-        # Ukrainian lowercase (+ unique letters)
-        'ґ': 'g', 'є': 'ye', 'і': 'i', 'ї': 'yi',
-
-        # Uppercase (same transliteration, capitalized)
-        'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo',
-        'Ж': 'Zh', 'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M',
-        'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U',
-        'Ф': 'F', 'Х': 'H', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch',
-        'Ъ': "'", 'Ы': 'Y', 'Ь': "'", 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya',
-        'Ґ': 'G', 'Є': 'Ye', 'І': 'I', 'Ї': 'Yi'
-    }
-
     result = []
     for char in s:
-        result.append(trans_map.get(char, char))  # Keep non-Cyrillic chars unchanged
+        result.append(UKR_TO_LAT.get(char, char))  # Keep non-Cyrillic chars unchanged
 
     return ''.join(result)
 
@@ -1997,7 +1977,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAKIRO-D-wiki-20260827.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DALUO-R-wiki-20260218.xlsx"
     import_spreadsheet(filepath, True)
 #    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(dir_path)
