@@ -12,9 +12,6 @@ from pydantic import BaseModel, Field, ValidationError
 
 # 1. Define the data structure to capture location hierarchy
 class ExtractedLocation(BaseModel):
-    has_location: bool = Field(
-        description="True if the text contains any geographical location, city, region, or country. False otherwise."
-    )
     locations: list[str] = Field(
         default_factory=list,
         description="All geographical locations found in the text."
@@ -29,9 +26,6 @@ class PerDocExtraction(BaseModel):
     document_index: int = Field(
         ...,
         description="0-based index of the descriptor in the input array. Must match the position of the descriptor in the list."
-    )
-    has_location: bool = Field(
-        description="True if the text contains any geographical location, city, region, or country. False otherwise."
     )
     locations: list[str] = Field(
         default_factory=list,
@@ -54,7 +48,7 @@ batch_system_prompt = (
     "its single result entry.\n"
     "CRITICAL RULES:\n"
     "1. Output EXACTLY one 'PerDocExtraction' entry per document_index (0, 1, 2, ...).\n"
-    "   If a document has no locations, output has_location=false and locations=[] for it.\n"
+    "   If a document has no locations, output locations=[] for it.\n"
     "2. Extract every DISTINCT location mentioned. Do not skip any, and do not\n"
     "   list duplicates — if 'Chyhyryn district' appears 5 times, list it ONCE.\n"
     "3. Retain settlement suffixes (e.g., 'village', 'town', 'district', 'province').\n"
@@ -87,17 +81,15 @@ BATCH_FEW_SHOT_MESSAGES: list[ChatCompletionMessageParam] = [
                 "extracted_locations": [
                     {
                         "document_index": 0,
-                        "has_location": True,
                         "locations": [
                             "Kamianets-Podilskyi",
                             "Kamianets-Podilskyi district",
                             "Podilskyi province",
                         ],
                     },
-                    {"document_index": 1, "has_location": False, "locations": []},
+                    {"document_index": 1, "locations": []},
                     {
                         "document_index": 2,
-                        "has_location": True,
                         "locations": [
                             "Efingar",
                             "Kherson district",
@@ -122,12 +114,10 @@ BATCH_FEW_SHOT_MESSAGES: list[ChatCompletionMessageParam] = [
                 "extracted_locations": [
                     {
                         "document_index": 0,
-                        "has_location": True,
                         "locations": ["Warsaw"],
                     },
                     {
                         "document_index": 1,
-                        "has_location": True,
                         "locations": [
                             "Cherkasy county",
                             "Chyhyryn county",
@@ -160,7 +150,6 @@ def _process_response(raw_json: dict, debug_print: bool = False) -> list[str]:
                 extracted_locations=[
                     PerDocExtraction(
                         document_index=0,
-                        has_location=item.has_location,
                         locations=item.locations,
                     )
                     for item in legacy.extracted_locations
@@ -173,7 +162,7 @@ def _process_response(raw_json: dict, debug_print: bool = False) -> list[str]:
     # Filter out entries without locations
     final_extracted = [
         item for item in parsed_data.extracted_locations
-        if item.has_location and item.locations
+        if item.locations
     ]
 
     # Convert to a list of strings, ensuring no None values.
@@ -487,7 +476,7 @@ class LocationExtractor:
                 # Convert chunk-relative index → global index
                 global_idx = start + item.document_index
 
-                if not item.has_location or not item.locations:
+                if not item.locations:
                     # Document had no locations — fill slot if not already filled
                     if 0 <= global_idx < len(batches) and all_results[global_idx] is None:
                         all_results[global_idx] = []
