@@ -25,6 +25,20 @@ var checked_paths           = new Set();
 var rendered_paths          = new Set();
 var last_checked_path       = null;
 
+// issue #83: undo for the alerts panel's resolve actions. Each entry is one
+// resolve()/resolve_batch() call this session -- {id, items: [{title, item,
+// resolved_at}], label, status, restored_count}. Every item keeps its own
+// resolved_at rather than the action sharing one: a single-item resolve has
+// exactly one, but a bulk click can span several watches, each of which
+// gets its own resolved_at from the server (see resolve_batch() in
+// service.py). Session-only, deliberately not persisted (same treatment as
+// checked_paths above): it resets on reload rather than trying to
+// reconstruct "what did I resolve" from server state, which has no concept
+// of a batch/action, only per-item history.
+var recently_resolved        = [];
+var recently_resolved_next_id = 1;
+var recently_resolved_flash_timer = null;
+
 const months                = [
     'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
     'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'
@@ -1434,7 +1448,7 @@ function view_changes(page_title, modified, last_resolved) {
 }
 
 
-async function resolve_page_update(title, item_title, deep=false) {
+async function resolve_page_update(title, item_title, deep=false, label=null) {
     try {
         console.log('Resolving:', title, item_title, "deep=", deep);
         const params = new URLSearchParams({ title: title, item: item_title, tree: '1' });
@@ -1456,6 +1470,14 @@ async function resolve_page_update(title, item_title, deep=false) {
         unresolved_updates[title] = data.unresolved;
 
         render_unresolved_items();
+
+        // issue #83: a deep resolve can sweep in an unknown number of
+        // subsidiary items that the server never reports back, so there's
+        // nothing a client-side undo could reliably reverse -- only offer
+        // undo for the single, exactly-known item a plain resolve just did.
+        if (!deep && data.resolved_at) {
+            push_recently_resolved([{ title, item: item_title, resolved_at: data.resolved_at }], label || item_title);
+        }
     } catch (error) {
         console.error('Error during resolve:', error);
         alert('Failed to resolve.');
@@ -1473,8 +1495,139 @@ function mark_resolved(watch_title, full_path, label) {
         return false;
     }
     console.log("Marking resolved:", watch_title, full_path);
-    resolve_page_update(watch_title, full_path, deep=false);
+    resolve_page_update(watch_title, full_path, deep=false, label=label);
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// RECENTLY RESOLVED / UNDO (issue #83)
+//
+// One entry per resolve()/resolve_batch() call this session, newest first.
+// "Undo" reverses exactly the items in that one action -- nothing resolved
+// before or after it -- by echoing back each item's own resolved_at
+// timestamp from the resolve response; the server only reverses an item
+// whose current top-of-history entry still matches that timestamp (see
+// undo_resolve_many() in watcher.py), so an item that was independently
+// resolved again since comes back "stale" instead of silently undoing the
+// wrong thing.
+
+function describe_resolved_action_html(action) {
+    return action.items.length > 1
+        ? `<strong>${action.items.length}</strong> items in ${escape_attr(action.label)}`
+        : escape_attr(action.label);
+}
+
+function describe_resolved_action_text(action) {
+    return action.items.length > 1
+        ? `${action.items.length} items in "${action.label}"`
+        : `"${action.label}"`;
+}
+
+function render_recently_resolved() {
+    const list = document.getElementById('recently-resolved-list');
+    show_if('recently-resolved-card', recently_resolved.length > 0);
+    document.getElementById('recently-resolved-count').textContent = recently_resolved.length;
+
+    list.innerHTML = recently_resolved.map(action => {
+        const action_html = `
+            <span class="flex-grow-1">
+              ${describe_resolved_action_html(action)}
+            </span>`;
+
+        if (action.status === 'partial') {
+            const remaining = action.items.length - action.restored_count;
+            return `
+                <li class="list-group-item d-flex align-items-center gap-2 flex-wrap" data-action-id="${action.id}">
+                  ${action_html}
+                  <span class="text-warning small">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    ${action.restored_count} of ${action.items.length} restored &mdash; ${remaining} changed since
+                  </span>
+                  <button type="button" class="btn btn-sm btn-link text-decoration-none dismiss-activity-btn" data-action-id="${action.id}">Dismiss</button>
+                </li>`;
+        }
+        return `
+            <li class="list-group-item d-flex align-items-center gap-2 flex-wrap" data-action-id="${action.id}">
+              ${action_html}
+              <button type="button" class="btn btn-sm btn-outline-secondary undo-resolve-btn" data-action-id="${action.id}">
+                <i class="bi bi-arrow-counterclockwise"></i> Undo
+              </button>
+            </li>`;
+    }).join('');
+}
+
+function flash_recently_resolved(message) {
+    const el = document.getElementById('recently-resolved-flash');
+    el.textContent = message;
+    show_if('recently-resolved-flash', true);
+    if (recently_resolved_flash_timer) clearTimeout(recently_resolved_flash_timer);
+    recently_resolved_flash_timer = setTimeout(() => hide('recently-resolved-flash'), 4000);
+}
+
+function push_recently_resolved(items, label) {
+    recently_resolved.unshift({
+        id: recently_resolved_next_id++,
+        items: items,
+        label: label,
+        status: 'active',
+    });
+    render_recently_resolved();
+}
+
+function dismiss_recently_resolved(action_id) {
+    recently_resolved = recently_resolved.filter(a => a.id !== action_id);
+    render_recently_resolved();
+}
+
+async function undo_resolved_action(action_id) {
+    const action = recently_resolved.find(a => a.id === action_id);
+    if (!action) return;
+
+    try {
+        const response = await fetch('/resolve/undo?tree=1', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                items: action.items.map(i => ({ title: i.title, item: i.item, last_resolved: i.resolved_at })),
+            }),
+        });
+        if (!response.ok) {
+            if (response.status === 404) {
+                // the watch this action belonged to no longer exists (e.g.
+                // it was retired by resolving its "moved" marker as part of
+                // this same action, which wipes that watch's whole resolved
+                // history) -- there's nothing left here to restore
+                dismiss_recently_resolved(action_id);
+                flash_recently_resolved(`Couldn't undo -- that watchlist entry no longer exists.`);
+                return;
+            }
+            throw new Error(`Failed to undo: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        Object.entries(data.unresolved).forEach(([title, unresolved]) => {
+            unresolved_updates[title] = unresolved;
+        });
+        render_unresolved_items();
+
+        const stale_count = Object.values(data.stale || {}).reduce((sum, arr) => sum + arr.length, 0);
+        const restored_count = action.items.length - stale_count;
+
+        if (restored_count === 0) {
+            dismiss_recently_resolved(action_id);
+            flash_recently_resolved(`Nothing to undo -- already changed since.`);
+        } else if (stale_count === 0) {
+            dismiss_recently_resolved(action_id);
+            flash_recently_resolved(`Restored ${describe_resolved_action_text(action)} to unresolved.`);
+        } else {
+            action.status = 'partial';
+            action.restored_count = restored_count;
+            render_recently_resolved();
+        }
+    } catch (error) {
+        console.error('Error during undo:', error);
+        alert('Failed to undo.');
+    }
 }
 
 // called from resolve button on browse page
@@ -1841,6 +1994,17 @@ async function resolve_selected() {
         Object.entries(data.unresolved).forEach(([title, unresolved]) => {
             unresolved_updates[title] = unresolved;
         });
+
+        // issue #83: one activity entry for the whole click, however many
+        // watches it touched -- each item still carries its own title, so
+        // undo can send the right per-watch resolved_at back for each one
+        const distinct_titles = new Set(items.map(i => i.title));
+        const label = distinct_titles.size === 1
+            ? label_for_watch_title(items[0].title)
+            : `${distinct_titles.size} watchlists`;
+        const items_with_resolved_at = items.map(i => ({ ...i, resolved_at: data.resolved_at[i.title] }));
+        push_recently_resolved(items_with_resolved_at, label);
+
         checked_paths.clear();
         last_checked_path = null;
         render_unresolved_items();
@@ -2053,6 +2217,18 @@ async function on_loaded() {
 
         document.getElementById('bulk-clear-btn')?.addEventListener('click', clear_bulk_selection);
         document.getElementById('bulk-resolve-btn')?.addEventListener('click', resolve_selected);
+
+        document.getElementById('recently-resolved-list')?.addEventListener('click', (e) => {
+            const undo_btn = e.target.closest('.undo-resolve-btn');
+            if (undo_btn) {
+                undo_resolved_action(Number(undo_btn.dataset.actionId));
+                return;
+            }
+            const dismiss_btn = e.target.closest('.dismiss-activity-btn');
+            if (dismiss_btn) {
+                dismiss_recently_resolved(Number(dismiss_btn.dataset.actionId));
+            }
+        });
 
         // ------------------ CHANGE PASSWORD HANDLER ------------------
         // handler for change password form

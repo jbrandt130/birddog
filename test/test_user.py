@@ -82,7 +82,13 @@ def _ensure_birddog_stubs():
     def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=None):
         raise NotImplementedError  # replaced by FakeWatcher in setUp()
 
-    def resolve_watcher(email, archive_title, item, runtime=None, deep=False):
+    def resolve_watcher(email, archive_title, item, runtime=None, deep=False, now=None):
+        raise NotImplementedError  # replaced by FakeWatcher in setUp()
+
+    def resolve_many(email, archive_title, items, runtime=None, now=None):
+        raise NotImplementedError  # replaced by FakeWatcher in setUp()
+
+    def undo_resolve_many(email, archive_title, items, runtime=None):
         raise NotImplementedError  # replaced by FakeWatcher in setUp()
 
     def unresolved_tree(unresolved):
@@ -93,6 +99,8 @@ def _ensure_birddog_stubs():
 
     watcher_mod.check_watcher = check_watcher
     watcher_mod.resolve_watcher = resolve_watcher
+    watcher_mod.resolve_many = resolve_many
+    watcher_mod.undo_resolve_many = undo_resolve_many
     watcher_mod.unresolved_tree = unresolved_tree
     watcher_mod.remove_watcher = remove_watcher
     sys.modules["birddog.watcher"] = watcher_mod
@@ -194,10 +202,14 @@ class FakeWatcher:
     def __init__(self):
         self.check_calls = []
         self.resolve_calls = []
+        self.resolve_many_calls = []
+        self.undo_calls = []
         self.removed = []
         self.check_result = {"example": {"count": 1}}
         self.resolve_result = {}
         self.resolve_raises = None
+        self.undo_result = ({}, [], [])  # (unresolved, restored, stale)
+        self.undo_raises = None
         # controls get_watcher(): True (default) means the watch still
         # exists after a resolve, as it does for an ordinary item resolve.
         # Tests simulate resolve_watcher() having retired the whole watch
@@ -209,11 +221,23 @@ class FakeWatcher:
         self.check_calls.append((email, archive_title, runtime, include, cutoff_date, exclude))
         return self.check_result
 
-    def resolve_watcher(self, email, archive_title, item, runtime=None, deep=False):
-        self.resolve_calls.append((email, archive_title, item, runtime, deep))
+    def resolve_watcher(self, email, archive_title, item, runtime=None, deep=False, now=None):
+        self.resolve_calls.append((email, archive_title, item, runtime, deep, now))
         if self.resolve_raises:
             raise self.resolve_raises
         return self.resolve_result
+
+    def resolve_many(self, email, archive_title, items, runtime=None, now=None):
+        self.resolve_many_calls.append((email, archive_title, list(items), runtime, now))
+        if self.resolve_raises:
+            raise self.resolve_raises
+        return self.resolve_result
+
+    def undo_resolve_many(self, email, archive_title, items, runtime=None):
+        self.undo_calls.append((email, archive_title, list(items), runtime))
+        if self.undo_raises:
+            raise self.undo_raises
+        return self.undo_result
 
     def get_watcher(self, email, archive_title):
         if not self.watcher_exists:
@@ -403,14 +427,19 @@ class UserTest(unittest.TestCase):
         u.add_to_watchlist(title, "2020,01,01,00:00")
 
         self.watcher.resolve_result = {}
-        unresolved_after = u.resolve_item(title, f"{title}/1/2/3", tree=False, deep=True)
+        unresolved_after, resolved_at = u.resolve_item(title, f"{title}/1/2/3", tree=False, deep=True)
         self.assertEqual(unresolved_after, [])
+        self.assertRegex(resolved_at, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
-        email, watch_title, item_title, runtime, deep = self.watcher.resolve_calls[-1]
+        email, watch_title, item_title, runtime, deep, now = self.watcher.resolve_calls[-1]
         self.assertEqual(email, u.email)
         self.assertEqual(watch_title, title)
         self.assertEqual(item_title, f"{title}/1/2/3")
         self.assertTrue(deep)
+        # the same timestamp handed back to the caller is what got passed
+        # down to resolve_watcher() -- issue #83 undo relies on both sides
+        # agreeing on exactly this value
+        self.assertEqual(now, resolved_at)
 
     def test_resolve_item_removes_watchlist_entry_when_watcher_is_retired(self):
         # issue #136, step 3: resolve_watcher() tears down the whole watch
@@ -489,7 +518,51 @@ class UserTest(unittest.TestCase):
         title = _watch_title("DAARK", "D")
         u.add_to_watchlist(title, "2020,01,01,00:00")
         self.watcher.resolve_result = {"x": 1}
-        result = u.resolve_item(title, f"{title}/1/2/3", tree=True)
+        result, _ = u.resolve_item(title, f"{title}/1/2/3", tree=True)
+        self.assertIsInstance(result, dict)
+        self.assertEqual(result["name"], "root")
+
+    def test_user_resolve_many_calls_watcher_and_returns_timestamp(self):
+        u = User(name="Test", email="rmany@example.com", password="pw")
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
+
+        self.watcher.resolve_result = {}
+        result, resolved_at = u.resolve_many(title, [f"{title}/1", f"{title}/2"])
+        self.assertEqual(result, [])
+        self.assertRegex(resolved_at, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+        email, watch_title, items, runtime, now = self.watcher.resolve_many_calls[-1]
+        self.assertEqual(email, u.email)
+        self.assertEqual(watch_title, title)
+        self.assertEqual(items, [f"{title}/1", f"{title}/2"])
+        self.assertEqual(now, resolved_at)
+
+    def test_user_undo_resolve_calls_watcher_and_formats_result(self):
+        # issue #83
+        u = User(name="Test", email="undo@example.com", password="pw")
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
+
+        self.watcher.undo_result = ({f"{title}/1": {"modified": "x"}}, [f"{title}/1"], [f"{title}/2"])
+        result, restored, stale = u.undo_resolve(title, [(f"{title}/1", "2026-01-01T00:00:00Z"), (f"{title}/2", "2026-01-01T00:00:00Z")])
+
+        self.assertEqual(result, [{"name": f"{title}/1", "modified": "x"}])
+        self.assertEqual(restored, [f"{title}/1"])
+        self.assertEqual(stale, [f"{title}/2"])
+
+        email, watch_title, items, runtime = self.watcher.undo_calls[-1]
+        self.assertEqual(email, u.email)
+        self.assertEqual(watch_title, title)
+        self.assertEqual(items, [(f"{title}/1", "2026-01-01T00:00:00Z"), (f"{title}/2", "2026-01-01T00:00:00Z")])
+
+    def test_user_undo_resolve_tree_returns_dict(self):
+        u = User(name="Test", email="undotree@example.com", password="pw")
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
+
+        self.watcher.undo_result = ({"x": 1}, ["x"], [])
+        result, restored, stale = u.undo_resolve(title, [("x", "2026-01-01T00:00:00Z")], tree=True)
         self.assertIsInstance(result, dict)
         self.assertEqual(result["name"], "root")
 

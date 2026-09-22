@@ -430,14 +430,15 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
 
     def test_resolve_defaults_item_to_title_when_not_given(self):
         user = self._mock_user()
-        user.resolve_item.return_value = []
+        user.resolve_item.return_value = ([], "2026-01-01T00:00:00Z")
         resp = self.client.get("/resolve?title=Архів:ДАЛО")
         self.assertEqual(resp.status_code, 200)
         user.resolve_item.assert_called_once_with("Архів:ДАЛО", "Архів:ДАЛО", tree=False, deep=False)
+        self.assertEqual(resp.get_json()["resolved_at"], "2026-01-01T00:00:00Z")
 
     def test_resolve_with_explicit_item_tree_and_deep(self):
         user = self._mock_user()
-        user.resolve_item.return_value = {}
+        user.resolve_item.return_value = ({}, "2026-01-01T00:00:00Z")
         resp = self.client.get("/resolve?title=Архів:ДАЛО&item=Архів:ДАЛО/104&tree=1&deep=1")
         self.assertEqual(resp.status_code, 200)
         user.resolve_item.assert_called_once_with("Архів:ДАЛО", "Архів:ДАЛО/104", tree=True, deep=True)
@@ -472,7 +473,7 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
 
     def test_resolve_batch_groups_by_title_and_merges_results(self):
         user = self._mock_user()
-        user.resolve_many.side_effect = lambda title, items, tree=False: {"remaining": title}
+        user.resolve_many.side_effect = lambda title, items, tree=False: ({"remaining": title}, f"resolved-{title}")
 
         resp = self.client.post("/resolve/batch", json={"items": [
             {"title": "Архів:ДАЛО", "item": "Архів:ДАЛО/1"},
@@ -487,6 +488,12 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
             "Архів:ДАЛО": {"remaining": "Архів:ДАЛО"},
             "Архів:ДАЖО": {"remaining": "Архів:ДАЖО"},
         })
+        # issue #83 undo: one resolved_at per watch, not one shared value --
+        # a batch spanning several watches gets a separate timestamp per watch
+        self.assertEqual(data["resolved_at"], {
+            "Архів:ДАЛО": "resolved-Архів:ДАЛО",
+            "Архів:ДАЖО": "resolved-Архів:ДАЖО",
+        })
 
         self.assertEqual(user.resolve_many.call_count, 2)
         user.resolve_many.assert_any_call("Архів:ДАЛО", ["Архів:ДАЛО/1", "Архів:ДАЛО/2"], tree=False)
@@ -494,7 +501,7 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
 
     def test_resolve_batch_passes_tree_flag(self):
         user = self._mock_user()
-        user.resolve_many.return_value = []
+        user.resolve_many.return_value = ([], "2026-01-01T00:00:00Z")
         self.client.post("/resolve/batch?tree=1", json={"items": [{"title": "Архів:ДАЛО", "item": "Архів:ДАЛО/1"}]})
         user.resolve_many.assert_called_once_with("Архів:ДАЛО", ["Архів:ДАЛО/1"], tree=True)
 
@@ -512,6 +519,94 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
 
         user.resolve_many.side_effect = RuntimeError("boom")
         resp3 = self.client.post("/resolve/batch", json=items)
+        self.assertEqual(resp3.status_code, 500)
+
+    # ------------------ /resolve/undo (issue #83) ------------------
+
+    def test_resolve_undo_requires_items(self):
+        self._mock_user()
+        resp = self.client.post("/resolve/undo", json={})
+        self.assertEqual(resp.status_code, 400)
+
+        resp2 = self.client.post("/resolve/undo", json={"items": []})
+        self.assertEqual(resp2.status_code, 400)
+
+    def test_resolve_undo_requires_title_item_and_last_resolved_per_entry(self):
+        self._mock_user()
+        resp = self.client.post("/resolve/undo", json={"items": [
+            {"title": "Архів:ДАЛО", "item": "Архів:ДАЛО/1"},
+        ]})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_resolve_undo_groups_by_title_and_merges_results(self):
+        user = self._mock_user()
+        user.undo_resolve.side_effect = lambda title, items, tree=False: (
+            {"remaining": title}, [i for i, _ in items], [],
+        )
+
+        resp = self.client.post("/resolve/undo", json={"items": [
+            {"title": "Архів:ДАЛО", "item": "Архів:ДАЛО/1", "last_resolved": "2026-01-01T00:00:00Z"},
+            {"title": "Архів:ДАЛО", "item": "Архів:ДАЛО/2", "last_resolved": "2026-01-01T00:00:00Z"},
+            {"title": "Архів:ДАЖО", "item": "Архів:ДАЖО/1", "last_resolved": "2026-01-02T00:00:00Z"},
+        ]})
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["unresolved"], {
+            "Архів:ДАЛО": {"remaining": "Архів:ДАЛО"},
+            "Архів:ДАЖО": {"remaining": "Архів:ДАЖО"},
+        })
+        self.assertEqual(data["restored"], {
+            "Архів:ДАЛО": ["Архів:ДАЛО/1", "Архів:ДАЛО/2"],
+            "Архів:ДАЖО": ["Архів:ДАЖО/1"],
+        })
+        self.assertEqual(data["stale"], {})
+
+        self.assertEqual(user.undo_resolve.call_count, 2)
+        user.undo_resolve.assert_any_call("Архів:ДАЛО", [
+            ("Архів:ДАЛО/1", "2026-01-01T00:00:00Z"), ("Архів:ДАЛО/2", "2026-01-01T00:00:00Z"),
+        ], tree=False)
+        user.undo_resolve.assert_any_call("Архів:ДАЖО", [
+            ("Архів:ДАЖО/1", "2026-01-02T00:00:00Z"),
+        ], tree=False)
+
+    def test_resolve_undo_reports_stale_items_without_failing(self):
+        user = self._mock_user()
+        user.undo_resolve.return_value = ({"x": 1}, [], ["Архів:ДАЛО/1"])
+
+        resp = self.client.post("/resolve/undo", json={"items": [
+            {"title": "Архів:ДАЛО", "item": "Архів:ДАЛО/1", "last_resolved": "2026-01-01T00:00:00Z"},
+        ]})
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["stale"], {"Архів:ДАЛО": ["Архів:ДАЛО/1"]})
+        self.assertNotIn("Архів:ДАЛО", data["restored"])
+
+    def test_resolve_undo_passes_tree_flag(self):
+        user = self._mock_user()
+        user.undo_resolve.return_value = ([], [], [])
+        self.client.post("/resolve/undo?tree=1", json={"items": [
+            {"title": "Архів:ДАЛО", "item": "Архів:ДАЛО/1", "last_resolved": "2026-01-01T00:00:00Z"},
+        ]})
+        user.undo_resolve.assert_called_once_with(
+            "Архів:ДАЛО", [("Архів:ДАЛО/1", "2026-01-01T00:00:00Z")], tree=True)
+
+    def test_resolve_undo_error_paths(self):
+        user = self._mock_user()
+        items = {"items": [{"title": "Архів:ДАЛО", "item": "Архів:ДАЛО/1", "last_resolved": "2026-01-01T00:00:00Z"}]}
+
+        user.undo_resolve.side_effect = KeyError("x")
+        resp = self.client.post("/resolve/undo", json=items)
+        self.assertEqual(resp.status_code, 404)
+
+        user.undo_resolve.side_effect = FileNotFoundError()
+        resp2 = self.client.post("/resolve/undo", json=items)
+        self.assertEqual(resp2.status_code, 404)
+
+        user.undo_resolve.side_effect = RuntimeError("boom")
+        resp3 = self.client.post("/resolve/undo", json=items)
         self.assertEqual(resp3.status_code, 500)
 
     def test_archives_route_serves_dynamic_registry(self):

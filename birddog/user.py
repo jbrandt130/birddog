@@ -282,10 +282,15 @@ class User:
         # because a watcher's scope (e.g. a whole archive) is coarser than
         # any one item inside it
         title = canonicalize_title(title)
+        # issue #83 undo: generated here (rather than inside
+        # watcher.resolve_watcher()) so it can be handed back to the caller
+        # alongside the result -- the client stashes it and echoes it back
+        # to /resolve/undo to identify exactly this action later
+        now = utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ')
         with self._lock:
             _logger.info(f'Resolving {item_title}, deep={deep}, tree={tree}')
             unresolved = watcher.resolve_watcher(
-                self.email, title, item_title, runtime=self._runtime, deep=deep)
+                self.email, title, item_title, runtime=self._runtime, deep=deep, now=now)
             try:
                 watcher.get_watcher(self.email, title)
             except KeyError:
@@ -299,9 +304,10 @@ class User:
                 _kv_store.remove(_watchlist_namespace(self.email), title)
 
         if tree:
-            return watcher.unresolved_tree(unresolved)
+            result = watcher.unresolved_tree(unresolved)
         else:
-            return [{'name': k, **v} for k, v in unresolved.items()]
+            result = [{'name': k, **v} for k, v in unresolved.items()]
+        return result, now
 
     def resolve_many(self, title, item_titles, tree=False):
         # issue #138 Alerts-table bulk resolve: item_titles is an explicit,
@@ -309,9 +315,10 @@ class User:
         # this one watch -- see /resolve/batch, which groups a cross-watch
         # selection by title before calling this once per watch
         title = canonicalize_title(title)
+        now = utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ')  # see resolve_item() above
         with self._lock:
             _logger.info(f'Resolving {len(item_titles)} item(s) in bulk under {title}')
-            unresolved = watcher.resolve_many(self.email, title, item_titles, runtime=self._runtime)
+            unresolved = watcher.resolve_many(self.email, title, item_titles, runtime=self._runtime, now=now)
             try:
                 watcher.get_watcher(self.email, title)
             except KeyError:
@@ -321,9 +328,31 @@ class User:
                 _kv_store.remove(_watchlist_namespace(self.email), title)
 
         if tree:
-            return watcher.unresolved_tree(unresolved)
+            result = watcher.unresolved_tree(unresolved)
         else:
-            return [{'name': k, **v} for k, v in unresolved.items()]
+            result = [{'name': k, **v} for k, v in unresolved.items()]
+        return result, now
+
+    def undo_resolve(self, title, items, tree=False):
+        # issue #83: items is a list of (item_title, expected_last_resolved)
+        # pairs -- exactly what a prior resolve_item()/resolve_many() call
+        # already reported back to the client for this one watch (its 'now'
+        # return value), not a fresh selection. See watcher.undo_resolve_many()
+        # for the staleness guard this relies on. Unlike resolve_item()/
+        # resolve_many(), undoing never retires a watch -- it only ever
+        # moves an item back to unresolved -- so there's no watchlist-entry
+        # bookkeeping to do here.
+        title = canonicalize_title(title)
+        with self._lock:
+            _logger.info(f'Undoing resolve of {len(items)} item(s) under {title}')
+            unresolved, restored, stale = watcher.undo_resolve_many(
+                self.email, title, items, runtime=self._runtime)
+
+        if tree:
+            result = watcher.unresolved_tree(unresolved)
+        else:
+            result = [{'name': k, **v} for k, v in unresolved.items()]
+        return result, restored, stale
 
     def set_preference(self, key, value):
         with self._lock:

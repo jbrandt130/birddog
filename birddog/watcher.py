@@ -579,14 +579,18 @@ def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=N
     put_watcher(email, archive_title, header)
     return get_all_unresolved(email, archive_title)
 
-def resolve_watcher(email, archive_title, item, runtime=None, deep=False):
+def resolve_watcher(email, archive_title, item, runtime=None, deep=False, now=None):
     _ensure_migrated(email, archive_title, runtime)
     try:
         header = get_watcher(email, archive_title)
     except KeyError:
         raise FileNotFoundError('No watcher found')
 
-    now = utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ')
+    # issue #83 undo: the caller (User.resolve_item()) generates and hands
+    # this back to the client as the action's timestamp, so it can later
+    # identify exactly this resolve to undo_resolve_many() -- letting it
+    # default to "now" here keeps every existing caller/test unchanged
+    now = now or utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ')
     item = canonicalize_title(item)
 
     if deep:
@@ -634,7 +638,7 @@ def resolve_watcher(email, archive_title, item, runtime=None, deep=False):
         return {}
     return unresolved
 
-def resolve_many(email, archive_title, items, runtime=None):
+def resolve_many(email, archive_title, items, runtime=None, now=None):
     # issue #138 Alerts-table bulk resolve: an explicit, already-expanded
     # list of item titles under one watch (the client has already turned a
     # checkbox/range/subtree selection into this flat list -- unlike
@@ -642,13 +646,16 @@ def resolve_many(email, archive_title, items, runtime=None):
     # here). Otherwise the same shallow-resolve-in-bulk shape as
     # resolve_watcher()'s deep branch: three bulk KV calls instead of one
     # round trip per item.
+    #
+    # now: see resolve_watcher() -- same issue #83 undo hand-back, defaulted
+    # the same way.
     _ensure_migrated(email, archive_title, runtime)
     try:
         header = get_watcher(email, archive_title)
     except KeyError:
         raise FileNotFoundError('No watcher found')
 
-    now = utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ')
+    now = now or utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ')
     wanted = {canonicalize_title(i) for i in items}
 
     matches = {
@@ -674,3 +681,61 @@ def resolve_many(email, archive_title, items, runtime=None):
         remove_watcher(email, archive_title)
         return {}
     return unresolved
+
+def undo_resolve_many(email, archive_title, items, runtime=None):
+    # issue #83: reverses one prior resolve_watcher()/resolve_many() call.
+    # items is an iterable of (item_title, expected_last_resolved) pairs --
+    # exactly the item list and shared 'resolved_at' timestamp that call
+    # already reported back to the client (see User.resolve_item() /
+    # User.resolve_many()), not a fresh selection. Each item's current
+    # top-of-history entry is popped back to unresolved only if its
+    # last_resolved still matches what's expected: if something else
+    # resolved this item again since (a later manual resolve, or an
+    # auto-resolved delete/move landing on top), that entry belongs to the
+    # later action, not this one -- reported back as "stale" rather than
+    # silently reversing the wrong history entry.
+    #
+    # Deliberately shallow like resolve_many(): no prefix expansion, and no
+    # attempt to reconstruct a watch that a resolve already retired (that
+    # wipes the watch's entire resolved/unresolved history via
+    # remove_watcher(), so get_watcher() below simply raises the same
+    # FileNotFoundError an ordinary resolve would against a nonexistent
+    # watch -- there is nothing left here to undo).
+    _ensure_migrated(email, archive_title, runtime)
+    try:
+        header = get_watcher(email, archive_title)
+    except KeyError:
+        raise FileNotFoundError('No watcher found')
+
+    wanted = {canonicalize_title(item): expected for item, expected in items}
+    resolved_raw = _watcher_kv.get_many(_resolved_ns(email, archive_title), list(wanted.keys()))
+    resolved_by_item = {k: json.loads(v) for k, v in resolved_raw.items()}
+
+    restored, stale = [], []
+    new_unresolved, new_resolved, cleared_resolved = {}, {}, []
+
+    for item, expected in wanted.items():
+        history = resolved_by_item.get(item, [])
+        if not history or history[-1].get("last_resolved") != expected:
+            stale.append(item)
+            continue
+        entry = history.pop()
+        # mirrors how check_watcher()/resolve_watcher() originally derived
+        # this same field: the resolve-before-last's timestamp, or this
+        # item's never-before-resolved cutoff if there wasn't one
+        entry["last_resolved"] = history[-1]["last_resolved"] if history else header["cutoff_date"]
+        new_unresolved[item] = entry
+        restored.append(item)
+        if history:
+            new_resolved[item] = history
+        else:
+            cleared_resolved.append(item)
+
+    if new_unresolved:
+        _watcher_kv.insert_many(_unresolved_ns(email, archive_title), {k: json.dumps(v) for k, v in new_unresolved.items()})
+    if new_resolved:
+        _watcher_kv.insert_many(_resolved_ns(email, archive_title), {k: json.dumps(v) for k, v in new_resolved.items()})
+    if cleared_resolved:
+        _watcher_kv.remove_many(_resolved_ns(email, archive_title), cleared_resolved)
+
+    return get_all_unresolved(email, archive_title), restored, stale

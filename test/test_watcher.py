@@ -420,6 +420,112 @@ class ResolveManyTests(WatcherTestBase):
 
 
 # ----------------------------------------------------------------------------
+# undo_resolve_many() -- issue #83. Reverses a prior resolve_watcher()/
+# resolve_many() call, guarded by the exact last_resolved timestamp that call
+# already reported back to the client, so an item independently resolved
+# again since comes back "stale" instead of the wrong history entry getting
+# popped.
+
+class UndoResolveManyTests(WatcherTestBase):
+    EMAIL = "r@example.com"
+    TITLE = "Архів:ДААРК"
+
+    def setUp(self):
+        super().setUp()
+        watcher_mod.put_watcher(self.EMAIL, self.TITLE, {
+            "include": [self.TITLE], "exclude": [], "cutoff_date": "2025-01-01T00:00:00Z",
+            "last_checked_date": "2025-01-01T00:00:00Z",
+        })
+        self.items = {
+            f"{self.TITLE}/100/1/5": {"modified": "2026-01-01T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z", "user": "a@b.com"},
+            f"{self.TITLE}/100/1/6": {"modified": "2026-01-02T00:00:00Z", "last_resolved": "2025-01-01T00:00:00Z", "user": "a@b.com"},
+        }
+        for item, entry in self.items.items():
+            watcher_mod.put_unresolved(self.EMAIL, self.TITLE, item, dict(entry))
+
+    def test_undo_raises_if_no_watcher(self):
+        with self.assertRaises(FileNotFoundError):
+            watcher_mod.undo_resolve_many("nobody@example.com", self.TITLE, [(f"{self.TITLE}/100/1/5", "x")])
+
+    def test_undo_restores_item_never_resolved_before(self):
+        item = f"{self.TITLE}/100/1/5"
+        watcher_mod.resolve_watcher(self.EMAIL, self.TITLE, item, now="2026-06-01T00:00:00Z")
+        self.assertNotIn(item, watcher_mod.get_all_unresolved(self.EMAIL, self.TITLE))
+
+        unresolved, restored, stale = watcher_mod.undo_resolve_many(
+            self.EMAIL, self.TITLE, [(item, "2026-06-01T00:00:00Z")])
+
+        self.assertEqual(restored, [item])
+        self.assertEqual(stale, [])
+        self.assertIn(item, unresolved)
+        # "modified" survives the round trip unchanged; "last_resolved"
+        # reverts to the watch's cutoff_date, since this item had no earlier
+        # resolve history for it to fall back to
+        self.assertEqual(unresolved[item]["modified"], "2026-01-01T00:00:00Z")
+        self.assertEqual(unresolved[item]["last_resolved"], "2025-01-01T00:00:00Z")
+        # popping the only history entry must clear the resolved key entirely,
+        # not leave an empty list behind
+        self.assertEqual(watcher_mod.get_resolved(self.EMAIL, self.TITLE, item), [])
+
+    def test_undo_restores_earlier_last_resolved_when_item_was_resolved_before(self):
+        item = f"{self.TITLE}/100/1/5"
+        watcher_mod.resolve_watcher(self.EMAIL, self.TITLE, item, now="2026-03-01T00:00:00Z")
+        # the item changes again and gets resolved a second time
+        watcher_mod.put_unresolved(self.EMAIL, self.TITLE, item, {
+            "modified": "2026-05-01T00:00:00Z", "last_resolved": "2026-03-01T00:00:00Z", "user": "a@b.com",
+        })
+        watcher_mod.resolve_watcher(self.EMAIL, self.TITLE, item, now="2026-06-01T00:00:00Z")
+        self.assertEqual(len(watcher_mod.get_resolved(self.EMAIL, self.TITLE, item)), 2)
+
+        unresolved, restored, stale = watcher_mod.undo_resolve_many(
+            self.EMAIL, self.TITLE, [(item, "2026-06-01T00:00:00Z")])
+
+        self.assertEqual(restored, [item])
+        # falls back to the *previous* resolve's timestamp, not the watch's
+        # cutoff_date -- this item does have earlier history
+        self.assertEqual(unresolved[item]["last_resolved"], "2026-03-01T00:00:00Z")
+        self.assertEqual(unresolved[item]["modified"], "2026-05-01T00:00:00Z")
+        # the earlier history entry must survive, only the undone one is popped
+        self.assertEqual(len(watcher_mod.get_resolved(self.EMAIL, self.TITLE, item)), 1)
+
+    def test_undo_reports_stale_when_timestamp_does_not_match(self):
+        item = f"{self.TITLE}/100/1/5"
+        watcher_mod.resolve_watcher(self.EMAIL, self.TITLE, item, now="2026-06-01T00:00:00Z")
+
+        unresolved, restored, stale = watcher_mod.undo_resolve_many(
+            self.EMAIL, self.TITLE, [(item, "2026-06-02T00:00:00Z")])  # wrong timestamp
+
+        self.assertEqual(restored, [])
+        self.assertEqual(stale, [item])
+        # nothing moved -- the item stays resolved, not back in unresolved
+        self.assertNotIn(item, unresolved)
+        self.assertEqual(len(watcher_mod.get_resolved(self.EMAIL, self.TITLE, item)), 1)
+
+    def test_undo_reports_stale_for_item_with_no_resolved_history(self):
+        item = f"{self.TITLE}/100/1/6"  # never resolved
+        unresolved, restored, stale = watcher_mod.undo_resolve_many(
+            self.EMAIL, self.TITLE, [(item, "2026-06-01T00:00:00Z")])
+
+        self.assertEqual(restored, [])
+        self.assertEqual(stale, [item])
+
+    def test_undo_partially_succeeds_across_multiple_items(self):
+        item_a = f"{self.TITLE}/100/1/5"
+        item_b = f"{self.TITLE}/100/1/6"
+        watcher_mod.resolve_many(self.EMAIL, self.TITLE, [item_a, item_b], now="2026-06-01T00:00:00Z")
+
+        unresolved, restored, stale = watcher_mod.undo_resolve_many(self.EMAIL, self.TITLE, [
+            (item_a, "2026-06-01T00:00:00Z"),   # correct -- restored
+            (item_b, "2026-06-02T00:00:00Z"),   # wrong -- stale
+        ])
+
+        self.assertEqual(restored, [item_a])
+        self.assertEqual(stale, [item_b])
+        self.assertIn(item_a, unresolved)
+        self.assertNotIn(item_b, unresolved)
+
+
+# ----------------------------------------------------------------------------
 # check_watcher()
 #
 # Regression coverage for the two bugs that let already-resolved edits get

@@ -677,9 +677,11 @@ def resolve_update(user):
 
     _logger.info(f'resolve_update(deep={deep}): title={title}, item={item_title}')
     try:
-        result = user.resolve_item(title, item_title, tree=tree, deep=deep)
+        result, resolved_at = user.resolve_item(title, item_title, tree=tree, deep=deep)
 
-        return jsonify({'success': True, 'unresolved': result}), 200
+        # issue #83 undo: the client stashes resolved_at and echoes it back
+        # to /resolve/undo to identify exactly this action
+        return jsonify({'success': True, 'unresolved': result, 'resolved_at': resolved_at}), 200
 
     except KeyError:
         return jsonify({'error': 'Watchlist item not found'}), 404
@@ -711,9 +713,16 @@ def resolve_batch(user):
 
     _logger.info(f'resolve_batch: {len(items)} item(s) across {len(by_watch)} watch(es)')
     try:
-        results = {title: user.resolve_many(title, item_titles, tree=tree)
-                   for title, item_titles in by_watch.items()}
-        return jsonify({'success': True, 'unresolved': results}), 200
+        results, resolved_at = {}, {}
+        for title, item_titles in by_watch.items():
+            results[title], resolved_at[title] = user.resolve_many(title, item_titles, tree=tree)
+        # issue #83 undo: one watch's items in this batch always share a
+        # single resolved_at (see User.resolve_many()), but a batch spanning
+        # several watches gets one timestamp per watch, not one for the
+        # whole click -- the client already partitions items by title for
+        # this same request, so it just carries the matching timestamp
+        # alongside each item rather than needing a single shared one
+        return jsonify({'success': True, 'unresolved': results, 'resolved_at': resolved_at}), 200
 
     except KeyError:
         return jsonify({'error': 'Watchlist item not found'}), 404
@@ -722,6 +731,48 @@ def resolve_batch(user):
     except Exception:
         _logger.exception("Error during batch resolve")
         return jsonify({'error': 'Exception during batch resolve'}), 500
+
+@app.route('/resolve/undo', methods=['POST'])
+@login_required
+def resolve_undo(user):
+    # issue #83: reverses one prior /resolve or /resolve/batch action. Body
+    # shape deliberately mirrors /resolve/batch's request, plus the
+    # resolved_at timestamp that action's response already handed back:
+    # {"items": [{"title": ..., "item": ..., "last_resolved": ...}, ...]}
+    payload = request.get_json(silent=True) or {}
+    items = payload.get('items') or []
+    if not items:
+        return jsonify({'error': "Missing required field: 'items'"}), 400
+
+    tree = request.args.get('tree') is not None
+    by_watch = {}
+    for entry in items:
+        title = entry.get('title')
+        item_title = entry.get('item')
+        last_resolved = entry.get('last_resolved')
+        if not title or not item_title or not last_resolved:
+            return jsonify({'error': "Each item requires 'title', 'item' and 'last_resolved'"}), 400
+        by_watch.setdefault(title, []).append((item_title, last_resolved))
+
+    _logger.info(f'resolve_undo: {len(items)} item(s) across {len(by_watch)} watch(es)')
+    try:
+        results, restored, stale = {}, {}, {}
+        for title, item_pairs in by_watch.items():
+            result, title_restored, title_stale = user.undo_resolve(title, item_pairs, tree=tree)
+            results[title] = result
+            if title_restored:
+                restored[title] = title_restored
+            if title_stale:
+                stale[title] = title_stale
+        return jsonify({'success': True, 'unresolved': results, 'restored': restored, 'stale': stale}), 200
+
+    except KeyError:
+        return jsonify({'error': 'Watchlist item not found'}), 404
+    except FileNotFoundError:
+        return jsonify({'error': 'No watcher found'}), 404
+    except Exception:
+        _logger.exception("Error during undo resolve")
+        return jsonify({'error': 'Exception during undo resolve'}), 500
 
 # ---- TRANSLATION MANAGEMENT -------------------------------------------------
 

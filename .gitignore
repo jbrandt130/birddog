@@ -12,6 +12,7 @@ venv*
 nocodb
 .env
 .idea
+.claude
 
 # Elastic Beanstalk Files
 .elasticbeanstalk/*
