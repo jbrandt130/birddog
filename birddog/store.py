@@ -8,6 +8,7 @@ Common store support
 import os
 import time
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -791,6 +792,16 @@ class SQLiteKeyValueStore(AbstractKeyValueStore):
 
 # key value store (dynamodb version) ---------------------------------------
 
+# BatchWriteItem/BatchGetItem cap how many items fit in one call (25/100),
+# not how many calls can be in flight at once -- issuing the required calls
+# one at a time is what turned a 6,000-item resolve into 15s in production
+# (found 2026-09-23 scanning var/web.stdout.log). Fanning them out across a
+# small thread pool cuts wall-clock time roughly by the worker count instead
+# of the call count. 10 matches boto3's default connection pool size per
+# client, so this needs no Config(max_pool_connections=...) change to take
+# effect; raising it further would.
+_DDB_BATCH_MAX_WORKERS = 10
+
 class DynamoDBKeyValueStore:
     def __init__(self, table_name='birddog_key_value_store'):
         self._table_name = table_name
@@ -877,10 +888,10 @@ class DynamoDBKeyValueStore:
                 )
                 items.extend(resp.get("Items", []))
 
-            if items:
-                with self._table.batch_writer() as batch:
-                    for item in items:
-                        batch.delete_item(Key={"namespace": item["namespace"], "key": item["key"]})
+            self._parallel_batch_write([
+                {"DeleteRequest": {"Key": {"namespace": item["namespace"], "key": item["key"]}}}
+                for item in items
+            ])
 
     def get(self, namespace: str, key: str) -> str:
         if not isinstance(key, str):
@@ -940,29 +951,66 @@ class DynamoDBKeyValueStore:
                 count += resp.get("Count", 0)
         return int(count)
 
+    def _write_batch_chunk(self, chunk: list):
+        # chunk: up to 25 {"PutRequest": {...}} / {"DeleteRequest": {...}}
+        # dicts (BatchWriteItem's own per-call cap) -- retries whatever
+        # DynamoDB reports as unprocessed, same as the pre-parallel code did
+        request = {self._table_name: chunk}
+        while request:
+            resp = self._dynamodb.batch_write_item(RequestItems=request)
+            request = resp.get("UnprocessedItems") or None
+
+    def _parallel_batch_write(self, requests: list):
+        # requests: flat list of {"PutRequest"|"DeleteRequest": {...}} dicts,
+        # already up to caller to have built. Splits into 25-item chunks (the
+        # BatchWriteItem cap) and fans them out across a small thread pool --
+        # see _DDB_BATCH_MAX_WORKERS for why this matters at scale.
+        if not requests:
+            return
+        chunks = [requests[i:i + 25] for i in range(0, len(requests), 25)]
+        if len(chunks) == 1:
+            self._write_batch_chunk(chunks[0])
+            return
+        with ThreadPoolExecutor(max_workers=min(len(chunks), _DDB_BATCH_MAX_WORKERS)) as executor:
+            futures = [executor.submit(self._write_batch_chunk, chunk) for chunk in chunks]
+            for future in as_completed(futures):
+                future.result()  # surface the first exception, if any
+
     def insert_many(self, namespace: str, items: dict):
         if not items:
             return
         size = sum(len(k) + len(v) for k, v in items.items())
         with LogService("KVStore", "insert_many", path=namespace, size=size):
-            with self._table.batch_writer() as batch:
-                for key, value in items.items():
-                    batch.put_item(Item={"namespace": namespace, "key": key, "value": value})
+            self._parallel_batch_write([
+                {"PutRequest": {"Item": {"namespace": namespace, "key": key, "value": value}}}
+                for key, value in items.items()
+            ])
+
+    def _fetch_batch_chunk(self, namespace: str, chunk: list) -> dict:
+        # chunk: up to 100 keys (BatchGetItem's own per-call cap)
+        result = {}
+        request_keys = [{"namespace": namespace, "key": k} for k in chunk]
+        request = {self._table_name: {"Keys": request_keys, "ConsistentRead": True}}
+        while request:
+            resp = self._dynamodb.batch_get_item(RequestItems=request)
+            for item in resp.get("Responses", {}).get(self._table_name, []):
+                result[item["key"]] = item.get("value", "")
+            request = resp.get("UnprocessedKeys") or None
+        return result
 
     def get_many(self, namespace: str, keys: list) -> dict:
         if not keys:
             return {}
         result = {}
         with LogService("KVStore", "get_many", path=namespace) as log:
-            # batch_get_item is capped at 100 keys per call
-            for i in range(0, len(keys), 100):
-                request_keys = [{"namespace": namespace, "key": k} for k in keys[i:i + 100]]
-                request = {self._table_name: {"Keys": request_keys, "ConsistentRead": True}}
-                while request:
-                    resp = self._dynamodb.batch_get_item(RequestItems=request)
-                    for item in resp.get("Responses", {}).get(self._table_name, []):
-                        result[item["key"]] = item.get("value", "")
-                    request = resp.get("UnprocessedKeys") or None
+            chunks = [keys[i:i + 100] for i in range(0, len(keys), 100)]
+            if len(chunks) == 1:
+                result.update(self._fetch_batch_chunk(namespace, chunks[0]))
+            else:
+                with ThreadPoolExecutor(max_workers=min(len(chunks), _DDB_BATCH_MAX_WORKERS)) as executor:
+                    futures = [executor.submit(self._fetch_batch_chunk, namespace, chunk) for chunk in chunks]
+                    for future in as_completed(futures):
+                        result.update(future.result())
             log.size = json_size(result)
         return result
 
@@ -970,9 +1018,10 @@ class DynamoDBKeyValueStore:
         if not keys:
             return
         with LogService("KVStore", "remove_many", path=namespace, size=len(keys)):
-            with self._table.batch_writer() as batch:
-                for key in keys:
-                    batch.delete_item(Key={"namespace": namespace, "key": key})
+            self._parallel_batch_write([
+                {"DeleteRequest": {"Key": {"namespace": namespace, "key": key}}}
+                for key in keys
+            ])
 
 # platform-independent access to key value store ----------------------------------
 

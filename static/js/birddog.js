@@ -1579,9 +1579,19 @@ function dismiss_recently_resolved(action_id) {
     render_recently_resolved();
 }
 
-async function undo_resolved_action(action_id) {
+async function undo_resolved_action(action_id, btn) {
     const action = recently_resolved.find(a => a.id === action_id);
     if (!action) return;
+
+    // undo does the same class of DynamoDB work as a bulk resolve (up to
+    // however many items that action touched), so it deserves the same
+    // busy feedback as "Resolve Selected" -- scoped to just this row's
+    // button, since other rows' undo actions are independent
+    const original_html = btn ? btn.innerHTML : null;
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Undoing…';
+    }
 
     try {
         const response = await fetch('/resolve/undo?tree=1', {
@@ -1627,6 +1637,17 @@ async function undo_resolved_action(action_id) {
     } catch (error) {
         console.error('Error during undo:', error);
         alert('Failed to undo.');
+    } finally {
+        // every non-error path above ends by calling dismiss_recently_resolved()
+        // or render_recently_resolved(), which rebuild the list's innerHTML and
+        // so already replace this button -- isConnected is false there, and
+        // resetting it would be a no-op on a detached node anyway. Only the
+        // plain-error path above leaves the row (and this button) untouched,
+        // so only there does the user need it back in a clickable state to retry.
+        if (btn && btn.isConnected) {
+            btn.disabled = false;
+            btn.innerHTML = original_html;
+        }
     }
 }
 
@@ -1962,6 +1983,21 @@ function select_subtree(prefix) {
     update_bulk_bar();
 }
 
+function set_bulk_resolve_busy(busy) {
+    // a bulk resolve of a large selection can legitimately take several
+    // seconds server-side (found 2026-09-23: a 6,021-item resolve took
+    // 15s in production) -- without this, the button just sits there
+    // clickable with no feedback for the whole wait, inviting a double
+    // submit
+    const resolve_btn = document.getElementById('bulk-resolve-btn');
+    const clear_btn = document.getElementById('bulk-clear-btn');
+    resolve_btn.disabled = busy;
+    clear_btn.disabled = busy;
+    resolve_btn.innerHTML = busy
+        ? '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Resolving…'
+        : 'Resolve Selected';
+}
+
 async function resolve_selected() {
     if (checked_paths.size === 0) return;
 
@@ -1976,6 +2012,7 @@ async function resolve_selected() {
     const hidden_text = hidden > 0 ? ` (including ${hidden} hidden)` : '';
     if (!confirm(`Resolve ${items.length} selected item(s)${hidden_text}?`)) return;
 
+    set_bulk_resolve_busy(true);
     try {
         const response = await fetch('/resolve/batch?tree=1', {
             method: 'POST',
@@ -2011,6 +2048,8 @@ async function resolve_selected() {
     } catch (error) {
         console.error('Error during batch resolve:', error);
         alert('Failed to resolve selected items.');
+    } finally {
+        set_bulk_resolve_busy(false);
     }
 }
 
@@ -2221,7 +2260,7 @@ async function on_loaded() {
         document.getElementById('recently-resolved-list')?.addEventListener('click', (e) => {
             const undo_btn = e.target.closest('.undo-resolve-btn');
             if (undo_btn) {
-                undo_resolved_action(Number(undo_btn.dataset.actionId));
+                undo_resolved_action(Number(undo_btn.dataset.actionId), undo_btn);
                 return;
             }
             const dismiss_btn = e.target.closest('.dismiss-activity-btn');

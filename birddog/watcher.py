@@ -603,17 +603,30 @@ def resolve_watcher(email, archive_title, item, runtime=None, deep=False, now=No
             if title_in_scope(key, [item])
         }
         if matches:
+            # one summary line, not one per matched item -- a coarse-scoped
+            # watch's deep resolve can sweep thousands of items in a single
+            # call, and a log line per item there once turned a 6,000-item
+            # bulk resolve into 15s of logging overhead in production
+            # (found 2026-09-23 scanning var/web.stdout.log after the issue
+            # #83 undo deploy)
+            _logger.info(f'resolve_watcher: deep resolving {len(matches)} subitem(s) under {item}')
             resolved_raw = _watcher_kv.get_many(_resolved_ns(email, archive_title), list(matches.keys()))
             resolved_by_item = {k: json.loads(v) for k, v in resolved_raw.items()}
             new_resolved = {}
             for key, entry in matches.items():
-                _logger.info(f'resolve_watcher: deep resolving subitem: {key}; {item}')
                 entry["last_resolved"] = now
                 history = resolved_by_item.get(key, [])
                 history.append(entry)
                 new_resolved[key] = history
-            _watcher_kv.remove_many(_unresolved_ns(email, archive_title), list(matches.keys()))
+            # write the new (resolved) copy before clearing the old
+            # (unresolved) one -- a mid-batch failure (timeout, worker
+            # kill) then leaves an item duplicated in both rather than
+            # gone from both. The other order can silently lose items:
+            # a kill between the two calls (or partway through either,
+            # since both are chunked) leaves items removed from
+            # unresolved with no resolved entry ever written.
             _watcher_kv.insert_many(_resolved_ns(email, archive_title), {k: json.dumps(v) for k, v in new_resolved.items()})
+            _watcher_kv.remove_many(_unresolved_ns(email, archive_title), list(matches.keys()))
     else:
         try:
             entry = get_unresolved(email, archive_title, item)
@@ -663,17 +676,22 @@ def resolve_many(email, archive_title, items, runtime=None, now=None):
         if key in wanted
     }
     if matches:
+        # one summary line, not one per item -- see the matching comment in
+        # resolve_watcher()'s deep branch above
+        _logger.info(f'resolve_many: resolving {len(matches)} item(s)')
         resolved_raw = _watcher_kv.get_many(_resolved_ns(email, archive_title), list(matches.keys()))
         resolved_by_item = {k: json.loads(v) for k, v in resolved_raw.items()}
         new_resolved = {}
         for key, entry in matches.items():
-            _logger.info(f'resolve_many: resolving {key}')
             entry["last_resolved"] = now
             history = resolved_by_item.get(key, [])
             history.append(entry)
             new_resolved[key] = history
-        _watcher_kv.remove_many(_unresolved_ns(email, archive_title), list(matches.keys()))
+        # see the matching comment in resolve_watcher()'s deep branch above --
+        # write resolved before clearing unresolved, so a mid-batch failure
+        # duplicates rather than loses items
         _watcher_kv.insert_many(_resolved_ns(email, archive_title), {k: json.dumps(v) for k, v in new_resolved.items()})
+        _watcher_kv.remove_many(_unresolved_ns(email, archive_title), list(matches.keys()))
 
     unresolved = get_all_unresolved(email, archive_title)
     if header.get("moved_to") and archive_title not in unresolved:

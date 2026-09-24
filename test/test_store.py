@@ -280,6 +280,52 @@ class TestStores(unittest.TestCase):
         with self.subTest(impl="dynamodb"):
             self._run_common_kv_store_tests(ddb_kv, "dynamodb")
 
+    def test_dynamodb_batch_parallelism_correctness(self):
+        # issue #83 follow-up: insert_many/get_many/remove_many now fan their
+        # chunked BatchWriteItem/BatchGetItem calls out across a thread pool
+        # instead of issuing them one at a time (see _DDB_BATCH_MAX_WORKERS
+        # in store.py). _run_common_kv_store_tests above only ever exercises
+        # 1-3 items, i.e. the single-chunk fast path -- this drives item
+        # counts past both chunk caps (25 for writes, 100 for reads) to
+        # cover the multi-chunk/multi-thread path for correctness.
+        table_name = "birddog_key_value_store_unittest"
+        try:
+            ddb_kv = DynamoDBKeyValueStore(table_name=table_name)
+            ns = f"unittest:kv:dynamodb-batch:{uuid.uuid4().hex}"
+            ddb_kv.insert(ns, "smoke", "v")
+            ddb_kv.remove_all(ns)
+        except (
+            botocore.exceptions.NoCredentialsError,
+            botocore.exceptions.PartialCredentialsError,
+            botocore.exceptions.EndpointConnectionError,
+            botocore.exceptions.ClientError,
+        ) as e:
+            self.skipTest(f"DynamoDBKeyValueStore not available (skipping): {e}")
+            return
+
+        try:
+            n = 130  # > 100 (get_many chunk) and > 25 (write chunk) with margin
+            items = {f"k{i}": f"v{i}" for i in range(n)}
+
+            ddb_kv.insert_many(ns, items)
+            self.assertEqual(ddb_kv.count(ns), n)
+            self.assertEqual(ddb_kv.get_many(ns, list(items.keys())), items)
+
+            # a chunk boundary must not swallow or duplicate a missing key
+            partial_keys = list(items.keys())[:5] + ["does-not-exist"]
+            self.assertEqual(ddb_kv.get_many(ns, partial_keys), {f"k{i}": f"v{i}" for i in range(5)})
+
+            # remove a span crossing more than one write chunk
+            to_remove = list(items.keys())[:60]
+            ddb_kv.remove_many(ns, to_remove)
+            self.assertEqual(ddb_kv.count(ns), n - len(to_remove))
+            remaining = ddb_kv.get_many(ns, list(items.keys()))
+            self.assertEqual(set(remaining.keys()), set(items.keys()) - set(to_remove))
+            self.assertEqual(remaining, {k: items[k] for k in remaining})
+        finally:
+            ddb_kv.remove_all(ns)
+            self.assertEqual(ddb_kv.count(ns), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
