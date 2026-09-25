@@ -110,35 +110,6 @@
   
   <div id="home-page-content">
 
- <!-- Recently Resolved Section (issue #83: session-only undo). Hidden via
-      d-none whenever there's nothing to undo -- see render_recently_resolved()
-      in birddog.js -- so it never sits around showing an empty state. -->
-<div class="card mb-4 d-none" id="recently-resolved-card">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center mb-2">
-      <h4 class="mb-0">Recently Resolved <span class="badge bg-primary" id="recently-resolved-count">0</span></h4>
-      <button class="btn btn-link p-0 text-decoration-none" type="button" data-bs-toggle="collapse" data-bs-target="#recently-resolved-collapse" aria-expanded="true" aria-controls="recently-resolved-collapse" onclick="toggle_recently_resolved_icon(this)">
-        <i class="bi bi-dash-circle-fill fs-3" id="recently-resolved-icon"></i>
-      </button>
-    </div>
-    <div class="collapse show" id="recently-resolved-collapse">
-      <div id="recently-resolved-flash" class="alert alert-success py-1 px-2 small d-none mb-2" role="status"></div>
-      <ul class="list-group list-group-flush" id="recently-resolved-list">
-        <!-- rows populated dynamically -->
-      </ul>
-    </div>
-  </div>
-</div>
-
-<script>
-  function toggle_recently_resolved_icon(button) {
-    const icon = document.getElementById('recently-resolved-icon');
-    const isExpanded = button.getAttribute('aria-expanded') === 'true';
-    icon.classList.toggle('bi-dash-circle-fill', isExpanded);
-    icon.classList.toggle('bi-plus-circle-fill', !isExpanded);
-  }
-</script>
-
  <!-- Unresolved Updates Section -->
 <div class="card mb-4">
   <div class="card-body">
@@ -198,6 +169,35 @@
 <script>
   function toggle_unresolved_icon(button) {
     const icon = document.getElementById('unresolved-icon');
+    const isExpanded = button.getAttribute('aria-expanded') === 'true';
+    icon.classList.toggle('bi-dash-circle-fill', isExpanded);
+    icon.classList.toggle('bi-plus-circle-fill', !isExpanded);
+  }
+</script>
+
+ <!-- Recently Resolved Section (issue #83: session-only undo). Hidden via
+      d-none whenever there's nothing to undo -- see render_recently_resolved()
+      in birddog.js -- so it never sits around showing an empty state. -->
+<div class="card mb-4 d-none" id="recently-resolved-card">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h4 class="mb-0">Recently Resolved <span class="badge bg-primary" id="recently-resolved-count">0</span></h4>
+      <button class="btn btn-link p-0 text-decoration-none" type="button" data-bs-toggle="collapse" data-bs-target="#recently-resolved-collapse" aria-expanded="true" aria-controls="recently-resolved-collapse" onclick="toggle_recently_resolved_icon(this)">
+        <i class="bi bi-dash-circle-fill fs-3" id="recently-resolved-icon"></i>
+      </button>
+    </div>
+    <div class="collapse show" id="recently-resolved-collapse">
+      <div id="recently-resolved-flash" class="alert alert-success py-1 px-2 small d-none mb-2" role="status"></div>
+      <ul class="list-group list-group-flush" id="recently-resolved-list">
+        <!-- rows populated dynamically -->
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+  function toggle_recently_resolved_icon(button) {
+    const icon = document.getElementById('recently-resolved-icon');
     const isExpanded = button.getAttribute('aria-expanded') === 'true';
     icon.classList.toggle('bi-dash-circle-fill', isExpanded);
     icon.classList.toggle('bi-plus-circle-fill', !isExpanded);
