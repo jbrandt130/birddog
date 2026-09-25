@@ -638,6 +638,32 @@ class TestParseWikitextTableLines(unittest.TestCase):
         rows = _parse_wikitext_table_lines(wt)
         self.assertEqual(len(rows[0]), 3)
 
+    # multi-line cells (issue #143, Архів:ДАДнО/Р-6508/10дТ2): lines without a
+    # leading table marker continue the preceding cell
+
+    def test_multiline_cell_continuation_after_text(self):
+        wt = "!H1!!H2\n|-\n|A||Село1\nСело2\n\nСело3\n|-\n|B||Село4"
+        rows = _parse_wikitext_table_lines(wt)
+        self.assertEqual(rows[1], ["A", "Село1, Село2, Село3"])
+        self.assertEqual(rows[2], ["B", "Село4"])
+
+    def test_multiline_cell_starting_after_separator(self):
+        # cell content begins on the line after the trailing ||
+        wt = "!H1!!H2\n|-\n|A||\nСело1\n\nСело2\n|-\n|B||Село3"
+        rows = _parse_wikitext_table_lines(wt)
+        self.assertEqual(rows[1], ["A", "Село1, Село2"])
+        self.assertEqual(rows[2], ["B", "Село3"])
+
+    def test_multiline_cell_on_own_line(self):
+        wt = "!H1\n|-\n|\nFoo\nBar"
+        rows = _parse_wikitext_table_lines(wt)
+        self.assertEqual(rows[1], ["Foo, Bar"])
+
+    def test_continuation_after_row_separator_dropped(self):
+        wt = "!H1\n|-\nstray\n|A"
+        rows = _parse_wikitext_table_lines(wt)
+        self.assertEqual(rows, [["H1"], ["A"]])
+
 
 # ── _parse_wikitext_table ──────────────────────────────────────────────────────
 
@@ -1014,6 +1040,52 @@ class TestPageSignificance(unittest.TestCase):
     def test_real_content_change_is_significant(self):
         reference = self._parse(self._table_wt("Опис 1"))
         page = self._parse(self._table_wt("Опис 2"))
+        self.assertTrue(page_significance(page, reference))
+
+    # notes/other_links link reshuffle (issue #138 false positive, found
+    # 2026-09-25 investigating Архів:ЦДІАК/127/1016/280). Built directly from
+    # dicts rather than _parse() -- which bucket a link lands in depends on
+    # wikitext template-field structure, not something worth reproducing
+    # here when the two page-dict shapes already say exactly what's compared.
+
+    _FS_URL = "https://www.familysearch.org/records/images/image-details?imageGroupNumbers=1"
+
+    def _page_dict(self, notes, other_links):
+        return {
+            "title": {"uk": "Опис 1"},
+            "description": {"uk": "Опис 1"},
+            "dates": {"uk": "1830"},
+            "doc_link": "",
+            "tables": [],
+            "notes": notes,
+            "other_links": other_links,
+        }
+
+    def _empty_other_links(self, **overrides):
+        return {"commons_links": [], "internal_links": [], "external_links": [], "category_links": [], **overrides}
+
+    def test_link_moved_between_notes_and_other_links_is_insignificant(self):
+        # the same URL shifting from notes into other_links (e.g. because an
+        # unrelated category got added nearby, changing how the parser
+        # buckets the section) is zero net change in what the page links to
+        reference = self._page_dict(
+            notes={"external_links": [self._FS_URL]},
+            other_links=self._empty_other_links(),
+        )
+        page = self._page_dict(
+            notes={},
+            other_links=self._empty_other_links(external_links=[self._FS_URL], category_links=["Категорія:Тест"]),
+        )
+        self.assertFalse(page_significance(page, reference))
+
+    def test_link_actually_removed_across_notes_and_other_links_is_significant(self):
+        # the combined-pool comparison must still catch a real removal, not
+        # just stop caring about notes/other_links entirely
+        reference = self._page_dict(
+            notes={"external_links": [self._FS_URL]},
+            other_links=self._empty_other_links(),
+        )
+        page = self._page_dict(notes={}, other_links=self._empty_other_links())
         self.assertTrue(page_significance(page, reference))
 
 

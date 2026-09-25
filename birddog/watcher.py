@@ -634,10 +634,16 @@ def resolve_watcher(email, archive_title, item, runtime=None, deep=False, now=No
             entry = None
         if entry is not None:
             entry["last_resolved"] = now
-            remove_unresolved(email, archive_title, item)
+            # write resolved before clearing unresolved -- see the matching
+            # comment in the deep branch above; a kill between these two
+            # calls otherwise loses the item from both instead of just
+            # leaving it duplicated in both (found 2026-09-25: a CDIAK item
+            # whose last_resolved had reverted to the watch's raw cutoff,
+            # consistent with this exact ordering losing its resolved entry)
             history = get_resolved(email, archive_title, item)
             history.append(entry)
             put_resolved(email, archive_title, item, history)
+            remove_unresolved(email, archive_title, item)
 
     unresolved = get_all_unresolved(email, archive_title)
     if header.get("moved_to") and archive_title not in unresolved:

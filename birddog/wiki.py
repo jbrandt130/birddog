@@ -1156,6 +1156,38 @@ def _tokenize_wikitext_table_line(text):
 
     return result
 
+def _join_wikitext_table_continuation_lines(lines):
+    """
+    Fold continuation lines into the cell line they belong to.
+
+    In MediaWiki, a line inside a table that doesn't start with a table marker
+    (|, !) continues the content of the preceding cell -- e.g. a place cell
+    listing one village per line (issue #143, Архів:ДАДнО/Р-6508/10дТ2).
+    Such lines were previously dropped, keeping only the first line of the cell.
+    Continuation fragments are joined into the cell with ", " so the result
+    stays a single-line cell value. Continuation lines not preceded by a cell
+    line (e.g. after a |- row separator) are dropped, as before.
+    """
+    result = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(('|', '!')):
+            result.append(stripped)
+            continue
+        if not result or result[-1].startswith(('|-', '|+', '|}')):
+            continue
+        prev = result[-1]
+        # no separator when the continuation starts the cell's content, i.e.
+        # the previous line ends in a cell/attribute separator (||, !!, |) or
+        # is a bare header marker (a lone trailing ! is ordinary text)
+        if prev.endswith(('|', '!!')) or prev == '!':
+            result[-1] = prev + stripped
+        else:
+            result[-1] = prev + ", " + stripped
+    return result
+
 def _parse_wikitext_table_lines(wikitext):
     """
     Parse stripped Wikitext table content line-by-line.
@@ -1167,7 +1199,7 @@ def _parse_wikitext_table_lines(wikitext):
     current_row = []
     is_header = False
 
-    lines = wikitext.strip().splitlines()
+    lines = _join_wikitext_table_continuation_lines(wikitext.strip().splitlines())
 
     for line in lines:
         line = line.strip()
@@ -1711,9 +1743,16 @@ def page_significance(page, reference):
     if (page.get('doc_link') or '') != (reference.get('doc_link') or ''):
         return True
 
-    if _urls_excluding_categories(page.get('notes')) != _urls_excluding_categories(reference.get('notes')):
-        return True
-    if _urls_excluding_categories(page.get('other_links')) != _urls_excluding_categories(reference.get('other_links')):
+    # notes and other_links are compared as one combined pool of URLs, not
+    # two separate ones: the wiki parser can shift the same link between
+    # these two buckets on an unrelated edit (e.g. adding a category
+    # nearby), which nets to zero change in what the page actually links to
+    # -- comparing them separately made that reshuffle look like the notes
+    # link was deleted and a different other_links one was added (found
+    # 2026-09-25 investigating a CDIAK false-positive: Архів:ЦДІАК/127/1016/280)
+    page_urls = _urls_excluding_categories(page.get('notes')) | _urls_excluding_categories(page.get('other_links'))
+    ref_urls = _urls_excluding_categories(reference.get('notes')) | _urls_excluding_categories(reference.get('other_links'))
+    if page_urls != ref_urls:
         return True
 
     ref_tables_by_name = {t["name"]: t for t in reference.get("tables", [])}
