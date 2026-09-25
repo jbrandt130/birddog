@@ -246,7 +246,8 @@ class FileLocationFinder:
     def __init__(self, provider: str = "modal"):
         """
         For provider "modal" the API key is stored in the environment variable "HF_TOKEN";
-        for provider "groq" - in the environment variable "GROQ_LOCATION_KEY".
+        for provider "groq" - in the environment variable "GROQ_LOCATION_KEY". For the latter,
+        you can get one free at console.groq.com.
         """
         self._logger = get_logger()
         self._db = Database()
