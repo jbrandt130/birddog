@@ -1,0 +1,182 @@
+DOC_TYPE CLASSIFIER PROJECT — SESSION SUMMARY (for picking up in a new session)
+Last updated: 2026-07-10
+
+====================================================================
+PROJECT CONTEXT
+====================================================================
+Genealogical research database project (JewishGen URD Dev, NocoDB base,
+base_id prsjtz30iuhk88f). Goal: build an ML/LLM classifier that predicts the
+`doc_type` field (multi-label) for archival document metadata records.
+
+doc_type labels in active use: V, C, L, O, P
+  V = Vital record (birth, death, marriage, ...)
+  C = Census document
+  L = List of names such as refugees, pogrom victims, passengers, etc.
+  O = Other type of document
+  P = Passport applications and related documents
+  M = legacy/undocumented value, excluded from scoring and prediction.
+
+Key NocoDB tables:
+  ML Document Set   mjrd3mg993pdtba  - frozen snapshot used for all ML work
+  Schema Values      m3qkh46x5mvfgq0  - authoritative label definitions
+
+Architectural constraints (still governing, not to be violated):
+  - Do not modify the live Documents/Pages tables.
+  - ML Document Set must stay a frozen, isolated snapshot.
+  - Never use the `comments` field as a classifier input feature — it's added
+    by the triager AFTER classification and would leak the answer.
+
+====================================================================
+DATA SPLIT DESIGN (three-way)
+====================================================================
+  train      - source for few-shot / fine-tuning examples
+  validation - fond-disjoint holdout within seen archives; SAFE to reuse
+               repeatedly during iterative prompt/model development
+  test       - entire archives held out completely; meant to be touched
+               ONCE for final reporting, not used during iteration
+
+Split method: user-authored greedy algorithm. Root-level (archive) greedy
+split produces train/test (~90/10, minimizing marginal doc_type distribution
+difference via best-of-n random restarts). A second fond-level greedy split
+carves validation out of the train pool — this converges less well (much
+larger search space) and produces a real train/validation L-label imbalance
+(21.5% vs 10.4%) that has been confirmed as a genuine property of the split,
+not a data bug. Not yet remedied (open item, see below).
+
+100%-test archives (zero train/validation representation) — CONFIRMED, do
+not pull few-shot or "validation" records from these; they only exist in test:
+  AGAD (14/14), DAPO (4338/4338), ДАХмО_Картотека (49/49), TSDIAL (131/131)
+
+====================================================================
+KEY MISTAKE FOUND AND FIXED THIS SESSION
+====================================================================
+All eval runs prior to this session (5-shot and 7-shot) drew their 46
+test_cases via `ml_split=eq,test` instead of `ml_split=eq,validation` —
+violating the project's own train/validation/test design and burning the
+"touch once" test budget on iterative prompt development. Several of those
+46 records came from 100%-test archives (DAPO, TSDIAL, AGAD).
+
+FIXED: `/Users/jbrandt/code/ollama/eval_data.json` was rebuilt from scratch
+with:
+  - few_shot: 20 examples, all sourced via (ml_split,eq,train) filter
+  - test_cases: 47 examples, all sourced via (ml_split,eq,validation) filter
+Verified via bash: no duplicate test_case ids, zero exact-record-label
+overlap between few_shot and test_cases, no AGAD/DAPO/TSDIAL/ДАХмО_Картотека
+records present. Archive-name overlap between the two sets (e.g. both contain
+CDIAK, DADNO, TSDAVO, DAKO records) is fine and expected — ml_split, not
+archive identity, is what guarantees disjointness, since those archives have
+records split across both train and validation.
+
+Label balance achieved:
+  few_shot (20):  V=1, C=8, L=8, O=9, P=5   (counts sum >20 due to multi-label)
+  test_cases (47): V=10, O=15, L=11, C=11, P=10
+
+Rationale for few-shot distribution: V is already easy/reliable, doesn't need
+many examples. C, L, O, P are the confused labels from prior eval rounds, so
+they're oversampled, including several multi-label combo examples (O+C, O+L,
+O+L+C, O+C+P, O+L+P) to teach realistic co-occurrence patterns.
+
+====================================================================
+FILES IN /Users/jbrandt/code/ollama/
+====================================================================
+1. eval_data.json
+   Structure: {"label_definitions": {...}, "few_shot": [...20 records...],
+   "test_cases": [...47 records...]}
+   Each record: root_label, label, level, years, page_description,
+   page_native_description, doc_type (list). test_cases also carry "id".
+   CURRENT STATE: freshly rebuilt this session (20-shot, validation-sourced
+   test set) — NOT YET RUN by the user against this new version.
+
+2. run_eval.py
+   Self-contained Python 3 (stdlib only) batch eval script against a local
+   Ollama instance.
+   Usage: python3 run_eval.py --model qwen2.5:14b
+          (defaults: --host http://localhost:11434 --data eval_data.json
+           --out results.csv)
+   Builds a fixed system+few-shot prefix (identical every call, enables
+   Ollama's automatic prefix/KV-cache reuse) + one varying user turn per test
+   record. Parses predicted doc_type letters via regex, scores against
+   ground truth: per-label precision/recall/F1, overall exact-match
+   (set-equality) accuracy, average Jaccard similarity. Writes results.csv
+   with per-record detail and prints a summary table to stdout.
+   VALID_LABELS = ["V","C","L","O","P"] (M excluded).
+   No changes needed to this script for the 20-shot/validation-sourced
+   update — it just reads whatever is in eval_data.json.
+
+3. session_summary.txt — this file.
+
+====================================================================
+EVAL HISTORY SO FAR (for context, NOT directly comparable across rounds
+since the test set composition changed)
+====================================================================
+Round 1 (5-shot, WRONG test-split source, 46 cases): exact-match 20/46 (43.5%)
+Round 2 (7-shot, WRONG test-split source, 46 cases): exact-match 19/46 (41.3%)
+  - Regression traced to bundling two changes: broadening the C label
+    definition text (added "tax rolls, personnel lists, election/officialdom
+    records") and adding one dense 4-label (O,L,C,P) example (DAKO/1/93/169).
+    This taught the model to over-apply C as a "safe default" for any
+    roster/list-like document, collapsing O's F1 from 0.41 to 0.22.
+  - Fix applied: reverted C definition to plain "Census document", removed
+    the DAKO/1/93/169 example -> 6-example v3 few-shot set (this became the
+    seed for the current 20-example set; the L-improvement sub-change was
+    kept since it held up across both rounds).
+Round 3: NOT YET RUN. This is the 20-shot, validation-sourced version
+  (current eval_data.json). User should rerun run_eval.py and report back
+  results for analysis. Treat this as a fresh baseline, not a continuation
+  of the exact-match curve above.
+
+====================================================================
+OTHER DELIVERABLES FROM EARLIER IN THE PROJECT
+====================================================================
+- /Users/jbrandt/code/ollama/doc_type_classifier_test_prompt.md (in the
+  Cowork outputs area, already presented to user) — standalone markdown
+  with the original 5-example few-shot prompt + one held-out AGAD test case
+  (ground truth C), used for the initial manual ChatGPT-web / Ollama spot
+  tests before the batch pipeline existed.
+- Local LLM setup recommendation: Ollama running qwen2.5:14b on the user's
+  36GB M3 MacBook Pro (confirmed working, default port 11434, OpenAI/chat-
+  compatible /api/chat endpoint).
+- Prompt/prefix caching explained: Anthropic API explicit cache_control
+  breakpoints (5-min or 1-hour TTL, ~10% cost on cache read) vs. Ollama's
+  automatic prefix caching (no config needed; just keep fixed content first,
+  variable content last in the message list — this is exactly what
+  build_fixed_messages() in run_eval.py does).
+
+====================================================================
+OPEN / PENDING ITEMS FOR NEXT SESSION
+====================================================================
+1. IMMEDIATE NEXT STEP: user needs to run
+     python3 run_eval.py --model qwen2.5:14b
+   against the new eval_data.json (20-shot, validation-sourced) and report
+   results back for per-label precision/recall/F1 + exact-match + Jaccard
+   analysis.
+2. Longer-term/unresolved:
+   - Decide on a remedy for the train/validation L-label imbalance (re-salt
+     or reweight the greedy fond-level split's score function, or accept
+     as-is).
+   - Resolve the ДАХмО_Картотека / OdessaLists root_label consolidation
+     question (whether these should be treated as one archive or kept
+     separate).
+   - Determine whether JewishGen has an existing gazetteer/Communities
+     database that could support a geographic-inference feature for the
+     classifier.
+   - Consider dynamic per-query few-shot retrieval (K-nearest similar train
+     examples) as a future alternative to a static few-shot block — trade-off
+     is losing the prefix-caching benefit that the current fixed-prefix
+     design relies on.
+   - Once local prompt-tuning stabilizes, plan a proper one-time run against
+     the `test` split for final reported metrics (not to be touched again
+     afterward).
+
+====================================================================
+NOCODB / MCP TOOL QUIRKS (carried over, still relevant)
+====================================================================
+- `sort` param on queryRecords is broken; `aggregate` tool is non-functional.
+- createRecords/updateRecords capped at 10 records per call.
+- `nin` operator unsupported — use `~not(field,in,...)` instead.
+- queryRecords pageSize capped at 200.
+- `anyof` filter works well for MultiSelect fields, e.g.
+  (doc_type,anyof,C) and combinable via ~and for multi-condition filters,
+  e.g. (ml_split,eq,validation)~and(doc_type,anyof,C)~and(page_description,isnot,null)
+- Results sometimes need to be saved to temp files when they exceed token
+  limits (not needed for the eval_data.json rebuild this session).

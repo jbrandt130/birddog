@@ -1,0 +1,257 @@
+{
+  "7150": {
+    "label": "CDIAK/491/96/95",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "O"
+    ],
+    "page_count": 254,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "register_table",
+        "name_entries": 7,
+        "ruled_rows": 10,
+        "page": 106,
+        "image_path": "pages/7150/00106.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 7, \"ruled_rows\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 0,
+        "ruled_rows": 6,
+        "page": 139,
+        "image_path": "pages/7150/00139.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 0, \"ruled_rows\": 6}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 0,
+        "ruled_rows": 12,
+        "page": 143,
+        "image_path": "pages/7150/00143.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 0, \"ruled_rows\": 12}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 0,
+        "ruled_rows": 12,
+        "page": 155,
+        "image_path": "pages/7150/00155.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 0, \"ruled_rows\": 12}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 7,
+        "ruled_rows": 18,
+        "page": 161,
+        "image_path": "pages/7150/00161.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 7, \"ruled_rows\": 18}"
+      }
+    ]
+  },
+  "7105": {
+    "label": "CDIAK/127/699/73",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "L"
+    ],
+    "page_count": 192,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "form",
+        "name_entries": 1,
+        "ruled_rows": null,
+        "page": 69,
+        "image_path": "pages/7105/00069.jpg",
+        "raw_response": "{\"page_type\": \"form\", \"name_entries\": 1, \"ruled_rows\": null}"
+      },
+      {
+        "page_type": "prose",
+        "name_entries": 0,
+        "ruled_rows": null,
+        "page": 86,
+        "image_path": "pages/7105/00086.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"name_entries\": 0, \"ruled_rows\": null}"
+      },
+      {
+        "page_type": "prose",
+        "name_entries": 0,
+        "ruled_rows": null,
+        "page": 88,
+        "image_path": "pages/7105/00088.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"name_entries\": 0, \"ruled_rows\": null}"
+      },
+      {
+        "page_type": "prose",
+        "name_entries": 0,
+        "ruled_rows": null,
+        "page": 118,
+        "image_path": "pages/7105/00118.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"name_entries\": 0, \"ruled_rows\": null}"
+      },
+      {
+        "page_type": "prose",
+        "name_entries": 0,
+        "ruled_rows": null,
+        "page": 126,
+        "image_path": "pages/7105/00126.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"name_entries\": 0, \"ruled_rows\": null}"
+      }
+    ]
+  },
+  "7156": {
+    "label": "CDIAK/1162/1/28",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 207,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "register_table",
+        "name_entries": 2,
+        "ruled_rows": null,
+        "page": 72,
+        "image_path": "pages/7156/00072.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 2, \"ruled_rows\": null}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 3,
+        "ruled_rows": null,
+        "page": 89,
+        "image_path": "pages/7156/00089.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 3, \"ruled_rows\": null}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 6,
+        "ruled_rows": null,
+        "page": 91,
+        "image_path": "pages/7156/00091.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 6, \"ruled_rows\": null}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 4,
+        "ruled_rows": 6,
+        "page": 121,
+        "image_path": "pages/7156/00121.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 4, \"ruled_rows\": 6}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 4,
+        "ruled_rows": 6,
+        "page": 129,
+        "image_path": "pages/7156/00129.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 4, \"ruled_rows\": 6}"
+      }
+    ]
+  },
+  "7305": {
+    "label": "CDIAK/515/1/134",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "L"
+    ],
+    "page_count": 7,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "name_entries": 0,
+        "ruled_rows": null,
+        "page": 1,
+        "image_path": "pages/7305/00001.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"name_entries\": 0, \"ruled_rows\": null}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 6,
+        "ruled_rows": 7,
+        "page": 2,
+        "image_path": "pages/7305/00002.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 6, \"ruled_rows\": 7}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "name_entries": 0,
+        "ruled_rows": null,
+        "page": 3,
+        "image_path": "pages/7305/00003.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"name_entries\": 0, \"ruled_rows\": null}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 2,
+        "ruled_rows": 3,
+        "page": 4,
+        "image_path": "pages/7305/00004.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 2, \"ruled_rows\": 3}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 0,
+        "ruled_rows": 12,
+        "page": 5,
+        "image_path": "pages/7305/00005.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 0, \"ruled_rows\": 12}"
+      }
+    ]
+  },
+  "7106": {
+    "label": "CDIAK/1150/1/51",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 10,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "name_entries": 0,
+        "ruled_rows": null,
+        "page": 2,
+        "image_path": "pages/7106/00002.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"name_entries\": 0, \"ruled_rows\": null}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 0,
+        "ruled_rows": 12,
+        "page": 3,
+        "image_path": "pages/7106/00003.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 0, \"ruled_rows\": 12}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 12,
+        "ruled_rows": 8,
+        "page": 4,
+        "image_path": "pages/7106/00004.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 12, \"ruled_rows\": 8}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 15,
+        "ruled_rows": 20,
+        "page": 6,
+        "image_path": "pages/7106/00006.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 15, \"ruled_rows\": 20}"
+      },
+      {
+        "page_type": "register_table",
+        "name_entries": 10,
+        "ruled_rows": 8,
+        "page": 7,
+        "image_path": "pages/7106/00007.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"name_entries\": 10, \"ruled_rows\": 8}"
+      }
+    ]
+  }
+}

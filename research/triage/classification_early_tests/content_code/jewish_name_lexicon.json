@@ -1,0 +1,442 @@
+{
+  "_purpose": "Latin + Cyrillic Jewish given-name/surname-marker lexicon for the content_code name-lexicon experiment. v2: adds Zelman (missing from the content checker's seed list, found by eyeballing a raw train sample) and declension-safe stems for vowel-final Cyrillic given names, minus a hand-checked collision exclusion list.",
+  "male_given_names": {
+    "avrum": {
+      "latin": [
+        "avrum",
+        "avraham"
+      ],
+      "cyrillic": [
+        "аврум",
+        "авраам",
+        "абрам"
+      ]
+    },
+    "chaim": {
+      "latin": [
+        "chaim"
+      ],
+      "cyrillic": [
+        "хаим",
+        "хайм"
+      ]
+    },
+    "duvid": {
+      "latin": [
+        "duvid",
+        "david"
+      ],
+      "cyrillic": [
+        "дувид",
+        "давид"
+      ]
+    },
+    "hirsh": {
+      "latin": [
+        "hirsh",
+        "gerko"
+      ],
+      "cyrillic": [
+        "гирш",
+        "герш",
+        "герко"
+      ]
+    },
+    "ide_leib": {
+      "latin": [
+        "ide-leib",
+        "ideleib"
+      ],
+      "cyrillic": [
+        "иде-лейб",
+        "іде-лейб"
+      ]
+    },
+    "iosif": {
+      "latin": [
+        "iosif",
+        "yos"
+      ],
+      "cyrillic": [
+        "иосиф",
+        "іосиф",
+        "йосиф",
+        "йось"
+      ]
+    },
+    "leyb": {
+      "latin": [
+        "leyb"
+      ],
+      "cyrillic": [
+        "лейб",
+        "лейба"
+      ]
+    },
+    "mendel": {
+      "latin": [
+        "mendel"
+      ],
+      "cyrillic": [
+        "мендель",
+        "мендел"
+      ]
+    },
+    "mordko": {
+      "latin": [
+        "mordko",
+        "mordechai"
+      ],
+      "cyrillic": [
+        "мордко",
+        "мордк",
+        "мордхе",
+        "мордх",
+        "мордехай"
+      ]
+    },
+    "moshko": {
+      "latin": [
+        "moshko",
+        "moshe"
+      ],
+      "cyrillic": [
+        "мошко",
+        "мошк",
+        "мойше",
+        "мойш",
+        "моше"
+      ]
+    },
+    "nukhim": {
+      "latin": [
+        "nukhim"
+      ],
+      "cyrillic": [
+        "нухим"
+      ]
+    },
+    "nuta_bir": {
+      "latin": [
+        "nuta-bir"
+      ],
+      "cyrillic": [
+        "нута-бир"
+      ]
+    },
+    "pesach": {
+      "latin": [
+        "pesach"
+      ],
+      "cyrillic": [
+        "песах"
+      ]
+    },
+    "pinkhus": {
+      "latin": [
+        "pinkhus"
+      ],
+      "cyrillic": [
+        "пинхус",
+        "пинхас"
+      ]
+    },
+    "shloima": {
+      "latin": [
+        "shloima",
+        "shlomo"
+      ],
+      "cyrillic": [
+        "шлойма",
+        "шлойм",
+        "шломо",
+        "шлом"
+      ]
+    },
+    "shmul": {
+      "latin": [
+        "shmul"
+      ],
+      "cyrillic": [
+        "шмуль",
+        "шмул"
+      ]
+    },
+    "srul": {
+      "latin": [
+        "srul",
+        "yisroel"
+      ],
+      "cyrillic": [
+        "срул"
+      ]
+    },
+    "wolf": {
+      "latin": [
+        "wolf"
+      ],
+      "cyrillic": [
+        "вольф"
+      ]
+    },
+    "yankel": {
+      "latin": [
+        "yankel"
+      ],
+      "cyrillic": [
+        "янкель",
+        "янкел"
+      ]
+    },
+    "zeylik": {
+      "latin": [
+        "zeylik"
+      ],
+      "cyrillic": [
+        "зейлик"
+      ]
+    },
+    "zelman": {
+      "latin": [
+        "zelman"
+      ],
+      "cyrillic": [
+        "зельман"
+      ]
+    }
+  },
+  "female_given_names": {
+    "rivka": {
+      "latin": [
+        "rivka",
+        "rivke",
+        "riva"
+      ],
+      "cyrillic": [
+        "рівка",
+        "рівк",
+        "ривка",
+        "ривк",
+        "рива"
+      ]
+    },
+    "malka": {
+      "latin": [
+        "malka",
+        "malke"
+      ],
+      "cyrillic": [
+        "малка",
+        "малк",
+        "малке"
+      ]
+    },
+    "miriam": {
+      "latin": [
+        "miriam",
+        "mirl",
+        "miri",
+        "masha",
+        "musia"
+      ],
+      "cyrillic": [
+        "мириам",
+        "мірл",
+        "мири",
+        "маша",
+        "муся"
+      ]
+    },
+    "chaya": {
+      "latin": [
+        "chaya",
+        "chaya-sura"
+      ],
+      "cyrillic": [
+        "хая",
+        "хая-сура"
+      ]
+    },
+    "sura": {
+      "latin": [
+        "sura",
+        "sura-hana",
+        "sura-rivka"
+      ],
+      "cyrillic": [
+        "сура",
+        "сура-хана",
+        "сура-рівка"
+      ]
+    },
+    "ruchel": {
+      "latin": [
+        "ruchel",
+        "rachael",
+        "rochele"
+      ],
+      "cyrillic": [
+        "рухель",
+        "рухел",
+        "рухля",
+        "рухл",
+        "рохеле",
+        "рохел"
+      ]
+    },
+    "sheine": {
+      "latin": [
+        "sheine"
+      ],
+      "cyrillic": [
+        "шейна",
+        "шейн",
+        "шейне"
+      ]
+    },
+    "shifra": {
+      "latin": [
+        "shifra"
+      ],
+      "cyrillic": [
+        "шифра"
+      ]
+    },
+    "zlata": {
+      "latin": [
+        "zlata",
+        "zlate"
+      ],
+      "cyrillic": [
+        "злата",
+        "злате"
+      ]
+    },
+    "gitl": {
+      "latin": [
+        "gitl",
+        "gitlya"
+      ],
+      "cyrillic": [
+        "гітл",
+        "гітля"
+      ]
+    },
+    "mindel": {
+      "latin": [
+        "mindel"
+      ],
+      "cyrillic": [
+        "міндель",
+        "міндел"
+      ]
+    },
+    "roisa": {
+      "latin": [
+        "roisa",
+        "rosa"
+      ],
+      "cyrillic": [
+        "роїса",
+        "роїс",
+        "роза"
+      ]
+    },
+    "khinka": {
+      "latin": [
+        "khinka",
+        "chinke"
+      ],
+      "cyrillic": [
+        "хінка",
+        "хінк",
+        "хінке"
+      ]
+    },
+    "khivra": {
+      "latin": [
+        "khivra",
+        "chivre"
+      ],
+      "cyrillic": [
+        "хівра",
+        "хівр",
+        "хівре"
+      ]
+    },
+    "chule": {
+      "latin": [
+        "chule",
+        "chole"
+      ],
+      "cyrillic": [
+        "хуле",
+        "холе"
+      ]
+    },
+    "khvalya": {
+      "latin": [
+        "khvalya"
+      ],
+      "cyrillic": [
+        "хваля"
+      ]
+    },
+    "tsimka": {
+      "latin": [
+        "tsimka",
+        "tsyna"
+      ],
+      "cyrillic": [
+        "цимка",
+        "цимк",
+        "цина"
+      ]
+    },
+    "ranya_liebe": {
+      "latin": [
+        "ranya-liebe"
+      ],
+      "cyrillic": [
+        "раня-лібе"
+      ]
+    },
+    "rezlya": {
+      "latin": [
+        "rezlya"
+      ],
+      "cyrillic": [
+        "резля",
+        "резл"
+      ]
+    }
+  },
+  "surname_markers": {
+    "latin": [
+      "katz",
+      "rabinovich",
+      "shapiro",
+      "furman",
+      "tsap"
+    ],
+    "cyrillic": [
+      "кац",
+      "рабінович",
+      "рабинович",
+      "шапіро",
+      "шапір",
+      "шапиро",
+      "шапир",
+      "фурман",
+      "цап"
+    ],
+    "suffix_markers_note": "-ovich/-ович/-івич, -in/-ін/-ин, -es are too short/common to use as standalone substring matches (would fire on many non-Jewish Slavic surnames too) -- excluded from the regex. Additional surnames seen in the mining sample (Гуревич, Бухін, Ровинський, Любарський, Браїловський, Дашевський, Толчинський) are town-derived Slavic-pattern surnames, not from the seed list -- flagged for a future data-driven mining pass, not added here without broader corpus validation."
+  },
+  "jewish_word_stem": {
+    "cyrillic": [
+      "єврей",
+      "еврей"
+    ],
+    "note": "Ukrainian єврей- and Russian еврей- (both mean Jew-/Jewish-)."
+  }
+}

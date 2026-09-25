@@ -1,0 +1,1904 @@
+{
+  "7148": {
+    "label": "CDIAK/1164/2/404",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 14,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 1,
+        "image_path": "pages/7148/00001.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 2,
+        "image_path": "pages/7148/00002.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 10,
+        "page": 3,
+        "image_path": "pages/7148/00003.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 4,
+        "page": 4,
+        "image_path": "pages/7148/00004.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 4}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "page": 5,
+        "image_path": "pages/7148/00005.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 9}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "page": 6,
+        "image_path": "pages/7148/00006.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 9}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 10,
+        "page": 7,
+        "image_path": "pages/7148/00007.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 6,
+        "page": 8,
+        "image_path": "pages/7148/00008.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 6}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 10,
+        "page": 9,
+        "image_path": "pages/7148/00009.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 4,
+        "page": 10,
+        "image_path": "pages/7148/00010.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 4}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 10,
+        "page": 11,
+        "image_path": "pages/7148/00011.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 12,
+        "image_path": "pages/7148/00012.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 13,
+        "image_path": "pages/7148/00013.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "form",
+        "filled_entries": 2,
+        "named_individuals": 1,
+        "page": 14,
+        "image_path": "pages/7148/00014.jpg",
+        "raw_response": "{\"page_type\": \"form\", \"filled_entries\": 2, \"named_individuals\": 1}"
+      }
+    ]
+  },
+  "7175": {
+    "label": "CDIAK/1267/1/10",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 15,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 1,
+        "image_path": "pages/7175/00001.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 12,
+        "page": 2,
+        "image_path": "pages/7175/00002.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 12}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 10,
+        "page": 3,
+        "image_path": "pages/7175/00003.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 12,
+        "page": 4,
+        "image_path": "pages/7175/00004.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 12}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 7,
+        "named_individuals": 14,
+        "page": 5,
+        "image_path": "pages/7175/00005.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 7, \"named_individuals\": 14}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 6,
+        "page": 6,
+        "image_path": "pages/7175/00006.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 6}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 6,
+        "page": 7,
+        "image_path": "pages/7175/00007.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 6}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 8,
+        "page": 8,
+        "image_path": "pages/7175/00008.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 4, \"named_individuals\": 8}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 10,
+        "page": 9,
+        "image_path": "pages/7175/00009.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 6,
+        "page": 10,
+        "image_path": "pages/7175/00010.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 6}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 6,
+        "page": 11,
+        "image_path": "pages/7175/00011.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 6}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "page": 12,
+        "image_path": "pages/7175/00012.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 9}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "page": 13,
+        "image_path": "pages/7175/00013.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 9}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 10,
+        "page": 14,
+        "image_path": "pages/7175/00014.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 15,
+        "image_path": "pages/7175/00015.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 1, \"named_individuals\": 0}"
+      }
+    ]
+  },
+  "14625": {
+    "label": "DACHGO/128/1/4598",
+    "root_label": "DACHGO",
+    "doc_type": [
+      "V",
+      "C"
+    ],
+    "page_count": 200,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 10,
+        "image_path": "pages/14625/00010.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 1}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 20,
+        "image_path": "pages/14625/00020.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 30,
+        "image_path": "pages/14625/00030.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 1}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 40,
+        "image_path": "pages/14625/00040.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 1}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 50,
+        "image_path": "pages/14625/00050.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 60,
+        "image_path": "pages/14625/00060.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 15,
+        "named_individuals": 30,
+        "page": 70,
+        "image_path": "pages/14625/00070.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 15, \"named_individuals\": 30}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 12,
+        "named_individuals": 30,
+        "page": 80,
+        "image_path": "pages/14625/00080.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 12, \"named_individuals\": 30}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 20,
+        "named_individuals": 60,
+        "page": 90,
+        "image_path": "pages/14625/00090.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 20, \"named_individuals\": 60}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 100,
+        "image_path": "pages/14625/00100.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 110,
+        "image_path": "pages/14625/00110.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 120,
+        "image_path": "pages/14625/00120.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 130,
+        "image_path": "pages/14625/00130.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 140,
+        "image_path": "pages/14625/00140.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 150,
+        "image_path": "pages/14625/00150.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 160,
+        "image_path": "pages/14625/00160.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 3,
+        "page": 170,
+        "image_path": "pages/14625/00170.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 3,
+        "page": 180,
+        "image_path": "pages/14625/00180.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 190,
+        "image_path": "pages/14625/00190.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 12,
+        "named_individuals": 0,
+        "page": 200,
+        "image_path": "pages/14625/00200.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 12, \"named_individuals\": 0}"
+      }
+    ]
+  },
+  "67506": {
+    "label": "DAKO/2/145/944",
+    "root_label": "DAKO",
+    "doc_type": [
+      "P"
+    ],
+    "page_count": 42,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "register_table",
+        "filled_entries": 5,
+        "named_individuals": 10,
+        "page": 3,
+        "image_path": "pages/67506/00003.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 5, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 13,
+        "page": 5,
+        "image_path": "pages/67506/00005.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 13}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 12,
+        "page": 7,
+        "image_path": "pages/67506/00007.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 12}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 7,
+        "named_individuals": 14,
+        "page": 9,
+        "image_path": "pages/67506/00009.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 7, \"named_individuals\": 14}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 12,
+        "page": 11,
+        "image_path": "pages/67506/00011.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 12}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 12,
+        "page": 13,
+        "image_path": "pages/67506/00013.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 12}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 10,
+        "page": 15,
+        "image_path": "pages/67506/00015.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 10,
+        "page": 17,
+        "image_path": "pages/67506/00017.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 10,
+        "page": 19,
+        "image_path": "pages/67506/00019.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 7,
+        "named_individuals": 14,
+        "page": 21,
+        "image_path": "pages/67506/00021.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 7, \"named_individuals\": 14}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 7,
+        "named_individuals": 14,
+        "page": 24,
+        "image_path": "pages/67506/00024.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 7, \"named_individuals\": 14}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 12,
+        "page": 26,
+        "image_path": "pages/67506/00026.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 12}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 8,
+        "named_individuals": 16,
+        "page": 28,
+        "image_path": "pages/67506/00028.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 8, \"named_individuals\": 16}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 8,
+        "named_individuals": 15,
+        "page": 30,
+        "image_path": "pages/67506/00030.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 8, \"named_individuals\": 15}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 9,
+        "named_individuals": 18,
+        "page": 32,
+        "image_path": "pages/67506/00032.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 9, \"named_individuals\": 18}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 10,
+        "page": 34,
+        "image_path": "pages/67506/00034.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 12,
+        "page": 36,
+        "image_path": "pages/67506/00036.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 12}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 12,
+        "page": 38,
+        "image_path": "pages/67506/00038.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 12}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 8,
+        "named_individuals": 10,
+        "page": 40,
+        "image_path": "pages/67506/00040.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 8, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 8,
+        "named_individuals": 15,
+        "page": 42,
+        "image_path": "pages/67506/00042.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 8, \"named_individuals\": 15}"
+      }
+    ]
+  },
+  "76856": {
+    "label": "TSDAVO/1/16/6",
+    "root_label": "TSDAVO",
+    "doc_type": [
+      "O"
+    ],
+    "page_count": 129,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 3,
+        "page": 7,
+        "image_path": "pages/76856/00007.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 13,
+        "image_path": "pages/76856/00013.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 6,
+        "page": 20,
+        "image_path": "pages/76856/00020.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 6}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 13,
+        "page": 26,
+        "image_path": "pages/76856/00026.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 13}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 29,
+        "page": 32,
+        "image_path": "pages/76856/00032.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 29}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 16,
+        "page": 39,
+        "image_path": "pages/76856/00039.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 16}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 3,
+        "page": 45,
+        "image_path": "pages/76856/00045.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 13,
+        "page": 52,
+        "image_path": "pages/76856/00052.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 13}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 13,
+        "page": 58,
+        "image_path": "pages/76856/00058.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 13}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 10,
+        "named_individuals": 9,
+        "page": 65,
+        "image_path": "pages/76856/00065.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 10, \"named_individuals\": 9}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 3,
+        "page": 71,
+        "image_path": "pages/76856/00071.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 2,
+        "page": 78,
+        "image_path": "pages/76856/00078.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 3,
+        "page": 84,
+        "image_path": "pages/76856/00084.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 7,
+        "named_individuals": 8,
+        "page": 91,
+        "image_path": "pages/76856/00091.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 7, \"named_individuals\": 8}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 3,
+        "page": 97,
+        "image_path": "pages/76856/00097.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 3,
+        "page": 103,
+        "image_path": "pages/76856/00103.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "page": 110,
+        "image_path": "pages/76856/00110.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 3, \"named_individuals\": 9}"
+      },
+      {
+        "page_type": "name_list",
+        "filled_entries": 24,
+        "named_individuals": 24,
+        "page": 116,
+        "image_path": "pages/76856/00116.jpg",
+        "raw_response": "{\"page_type\": \"name_list\", \"filled_entries\": 24, \"named_individuals\": 24}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 5,
+        "named_individuals": 10,
+        "page": 123,
+        "image_path": "pages/76856/00123.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 5, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 30,
+        "named_individuals": 65,
+        "page": 129,
+        "image_path": "pages/76856/00129.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 30, \"named_individuals\": 65}"
+      }
+    ]
+  },
+  "1451": {
+    "label": "DADNO/R-2859/1/35",
+    "root_label": "DADNO",
+    "doc_type": [
+      "P"
+    ],
+    "page_count": 33,
+    "priority_target": "NO",
+    "pages": [
+      {
+        "page_type": "register_table",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 2,
+        "image_path": "pages/1451/00002.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 13,
+        "named_individuals": 20,
+        "page": 4,
+        "image_path": "pages/1451/00004.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 13, \"named_individuals\": 20}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 12,
+        "named_individuals": 30,
+        "page": 5,
+        "image_path": "pages/1451/00005.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 12, \"named_individuals\": 30}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 12,
+        "named_individuals": 30,
+        "page": 7,
+        "image_path": "pages/1451/00007.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 12, \"named_individuals\": 30}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 14,
+        "named_individuals": 20,
+        "page": 9,
+        "image_path": "pages/1451/00009.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 14, \"named_individuals\": 20}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 13,
+        "named_individuals": 20,
+        "page": 10,
+        "image_path": "pages/1451/00010.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 13, \"named_individuals\": 20}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 16,
+        "named_individuals": 20,
+        "page": 12,
+        "image_path": "pages/1451/00012.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 16, \"named_individuals\": 20}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 15,
+        "named_individuals": 20,
+        "page": 14,
+        "image_path": "pages/1451/00014.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 15, \"named_individuals\": 20}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 14,
+        "named_individuals": 20,
+        "page": 15,
+        "image_path": "pages/1451/00015.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 14, \"named_individuals\": 20}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 12,
+        "named_individuals": 30,
+        "page": 17,
+        "image_path": "pages/1451/00017.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 12, \"named_individuals\": 30}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 12,
+        "named_individuals": 30,
+        "page": 19,
+        "image_path": "pages/1451/00019.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 12, \"named_individuals\": 30}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 16,
+        "named_individuals": 20,
+        "page": 20,
+        "image_path": "pages/1451/00020.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 16, \"named_individuals\": 20}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 12,
+        "named_individuals": 14,
+        "page": 22,
+        "image_path": "pages/1451/00022.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 12, \"named_individuals\": 14}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 15,
+        "named_individuals": 20,
+        "page": 24,
+        "image_path": "pages/1451/00024.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 15, \"named_individuals\": 20}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 14,
+        "named_individuals": 20,
+        "page": 25,
+        "image_path": "pages/1451/00025.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 14, \"named_individuals\": 20}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 12,
+        "named_individuals": 30,
+        "page": 27,
+        "image_path": "pages/1451/00027.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 12, \"named_individuals\": 30}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 15,
+        "named_individuals": 20,
+        "page": 28,
+        "image_path": "pages/1451/00028.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 15, \"named_individuals\": 20}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 30,
+        "named_individuals": 65,
+        "page": 30,
+        "image_path": "pages/1451/00030.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 30, \"named_individuals\": 65}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 0,
+        "named_individuals": 2,
+        "page": 32,
+        "image_path": "pages/1451/00032.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 0, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 0,
+        "page": 33,
+        "image_path": "pages/1451/00033.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 0}"
+      }
+    ]
+  },
+  "15264": {
+    "label": "DACHGO/132/1/136",
+    "root_label": "DACHGO",
+    "doc_type": [
+      "C"
+    ],
+    "page_count": 13,
+    "priority_target": "NO",
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 2,
+        "image_path": "pages/15264/00002.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 2,
+        "page": 3,
+        "image_path": "pages/15264/00003.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 4,
+        "image_path": "pages/15264/00004.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 2,
+        "named_individuals": 3,
+        "page": 5,
+        "image_path": "pages/15264/00005.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 2, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 8,
+        "named_individuals": 10,
+        "page": 6,
+        "image_path": "pages/15264/00006.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 8, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 3,
+        "named_individuals": 10,
+        "page": 7,
+        "image_path": "pages/15264/00007.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 3, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "blank_or_illegible",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 8,
+        "image_path": "pages/15264/00008.jpg",
+        "raw_response": "{\"page_type\": \"blank_or_illegible\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "blank_or_illegible",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 9,
+        "image_path": "pages/15264/00009.jpg",
+        "raw_response": "{\"page_type\": \"blank_or_illegible\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "blank_or_illegible",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 10,
+        "image_path": "pages/15264/00010.jpg",
+        "raw_response": "{\"page_type\": \"blank_or_illegible\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "blank_or_illegible",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 11,
+        "image_path": "pages/15264/00011.jpg",
+        "raw_response": "{\"page_type\": \"blank_or_illegible\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 12,
+        "image_path": "pages/15264/00012.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 1}"
+      },
+      {
+        "page_type": "blank_or_illegible",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 13,
+        "image_path": "pages/15264/00013.jpg",
+        "raw_response": "{\"page_type\": \"blank_or_illegible\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      }
+    ]
+  },
+  "67608": {
+    "label": "DAKO/2/3/113",
+    "root_label": "DAKO",
+    "doc_type": [
+      "O"
+    ],
+    "page_count": 27,
+    "priority_target": "NO",
+    "pages": [
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 2,
+        "image_path": "pages/67608/00002.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 3,
+        "image_path": "pages/67608/00003.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 4,
+        "image_path": "pages/67608/00004.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 1}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 6,
+        "image_path": "pages/67608/00006.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 7,
+        "image_path": "pages/67608/00007.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 9,
+        "image_path": "pages/67608/00009.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 1, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 10,
+        "image_path": "pages/67608/00010.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 12,
+        "page": 11,
+        "image_path": "pages/67608/00011.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 12}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 13,
+        "image_path": "pages/67608/00013.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 10,
+        "page": 14,
+        "image_path": "pages/67608/00014.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 15,
+        "image_path": "pages/67608/00015.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 17,
+        "image_path": "pages/67608/00017.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 18,
+        "image_path": "pages/67608/00018.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "name_list",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 19,
+        "image_path": "pages/67608/00019.jpg",
+        "raw_response": "{\"page_type\": \"name_list\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 21,
+        "image_path": "pages/67608/00021.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 22,
+        "image_path": "pages/67608/00022.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 23,
+        "image_path": "pages/67608/00023.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 25,
+        "image_path": "pages/67608/00025.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 26,
+        "image_path": "pages/67608/00026.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 27,
+        "image_path": "pages/67608/00027.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      }
+    ]
+  },
+  "64614": {
+    "label": "DAKIRO/24/1/3",
+    "root_label": "DAKIRO",
+    "doc_type": [
+      "C"
+    ],
+    "page_count": 1607,
+    "priority_target": "NO",
+    "pages": [
+      {
+        "page_type": "blank_or_illegible",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 77,
+        "image_path": "pages/64614/00077.jpg",
+        "raw_response": "{\"page_type\": \"blank_or_illegible\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 5,
+        "named_individuals": 10,
+        "page": 158,
+        "image_path": "pages/64614/00158.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 5,   \"named_individuals\": 10 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "page": 238,
+        "image_path": "pages/64614/00238.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 9 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 5,
+        "page": 318,
+        "image_path": "pages/64614/00318.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 2,   \"named_individuals\": 5 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 5,
+        "named_individuals": 10,
+        "page": 399,
+        "image_path": "pages/64614/00399.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 5, \"named_individuals\": 10}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 479,
+        "image_path": "pages/64614/00479.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 559,
+        "image_path": "pages/64614/00559.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "page": 640,
+        "image_path": "pages/64614/00640.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 9 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "page": 720,
+        "image_path": "pages/64614/00720.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 9 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "page": 800,
+        "image_path": "pages/64614/00800.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 9 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 10,
+        "named_individuals": 25,
+        "page": 881,
+        "image_path": "pages/64614/00881.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 10,   \"named_individuals\": 25 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 961,
+        "image_path": "pages/64614/00961.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 1,   \"named_individuals\": 3 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 6,
+        "page": 1041,
+        "image_path": "pages/64614/01041.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 6 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 6,
+        "page": 1122,
+        "image_path": "pages/64614/01122.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 6 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 5,
+        "page": 1202,
+        "image_path": "pages/64614/01202.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 2,   \"named_individuals\": 5 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 6,
+        "page": 1283,
+        "image_path": "pages/64614/01283.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 6 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 1363,
+        "image_path": "pages/64614/01363.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 1,   \"named_individuals\": 3 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 7,
+        "page": 1443,
+        "image_path": "pages/64614/01443.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 2,   \"named_individuals\": 7 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "page": 1524,
+        "image_path": "pages/64614/01524.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 9 }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 6,
+        "page": 1604,
+        "image_path": "pages/64614/01604.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 6 }"
+      }
+    ]
+  },
+  "14770": {
+    "label": "DACHGO/127/18a/383",
+    "root_label": "DACHGO",
+    "doc_type": [
+      "C"
+    ],
+    "page_count": 111,
+    "priority_target": "P2",
+    "pages": [
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 2,
+        "page": 6,
+        "image_path": "pages/14770/00006.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 0,   \"named_individuals\": 2 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 11,
+        "image_path": "pages/14770/00011.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 0 }"
+      },
+      {
+        "page_type": "blank_or_illegible",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 17,
+        "image_path": "pages/14770/00017.jpg",
+        "raw_response": "{\"page_type\": \"blank_or_illegible\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 22,
+        "image_path": "pages/14770/00022.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 0 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 28,
+        "image_path": "pages/14770/00028.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 0 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 34,
+        "image_path": "pages/14770/00034.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 2 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 39,
+        "image_path": "pages/14770/00039.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 45,
+        "image_path": "pages/14770/00045.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 0 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 50,
+        "image_path": "pages/14770/00050.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 0 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 56,
+        "image_path": "pages/14770/00056.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 0 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 61,
+        "image_path": "pages/14770/00061.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 0 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 67,
+        "image_path": "pages/14770/00067.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 0,   \"named_individuals\": 1 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 72,
+        "image_path": "pages/14770/00072.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 3 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 78,
+        "image_path": "pages/14770/00078.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 2 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 84,
+        "image_path": "pages/14770/00084.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 3 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 89,
+        "image_path": "pages/14770/00089.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 0,   \"named_individuals\": 1 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 95,
+        "image_path": "pages/14770/00095.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 3 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 100,
+        "image_path": "pages/14770/00100.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 0 }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 106,
+        "image_path": "pages/14770/00106.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 1,   \"named_individuals\": 0 }"
+      },
+      {
+        "page_type": "form",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 111,
+        "image_path": "pages/14770/00111.jpg",
+        "raw_response": "{   \"page_type\": \"form\",   \"filled_entries\": 1,   \"named_individuals\": 3 }"
+      }
+    ]
+  },
+  "35621": {
+    "label": "DAMO/R-6197/1/12",
+    "root_label": "DAMO",
+    "doc_type": [
+      "O",
+      "L"
+    ],
+    "page_count": 49,
+    "priority_target": "P2",
+    "pages": [
+      {
+        "page_type": "register_table",
+        "filled_entries": 43,
+        "named_individuals": 65,
+        "page": 3,
+        "image_path": "pages/35621/00003.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 43, \"named_individuals\": 65}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 5,
+        "image_path": "pages/35621/00005.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 1}"
+      },
+      {
+        "page_type": "name_list",
+        "filled_entries": 46,
+        "named_individuals": 102,
+        "page": 8,
+        "image_path": "pages/35621/00008.jpg",
+        "raw_response": "{\"page_type\": \"name_list\", \"filled_entries\": 46, \"named_individuals\": 102}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 40,
+        "named_individuals": 80,
+        "page": 10,
+        "image_path": "pages/35621/00010.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 40, \"named_individuals\": 80}"
+      },
+      {
+        "page_type": "name_list",
+        "filled_entries": 100,
+        "named_individuals": 250,
+        "page": 13,
+        "image_path": "pages/35621/00013.jpg",
+        "raw_response": "{\"page_type\": \"name_list\", \"filled_entries\": 100, \"named_individuals\": 250}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 50,
+        "named_individuals": 120,
+        "page": 15,
+        "image_path": "pages/35621/00015.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 50, \"named_individuals\": 120}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 2,
+        "page": 18,
+        "image_path": "pages/35621/00018.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "blank_or_illegible",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 20,
+        "image_path": "pages/35621/00020.jpg",
+        "raw_response": "{\"page_type\": \"blank_or_illegible\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 40,
+        "named_individuals": 85,
+        "page": 22,
+        "image_path": "pages/35621/00022.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 40, \"named_individuals\": 85}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 30,
+        "named_individuals": 65,
+        "page": 25,
+        "image_path": "pages/35621/00025.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 30, \"named_individuals\": 65}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 60,
+        "named_individuals": 120,
+        "page": 27,
+        "image_path": "pages/35621/00027.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 60, \"named_individuals\": 120}"
+      },
+      {
+        "page_type": "name_list",
+        "filled_entries": 50,
+        "named_individuals": 120,
+        "page": 30,
+        "image_path": "pages/35621/00030.jpg",
+        "raw_response": "{\"page_type\": \"name_list\", \"filled_entries\": 50, \"named_individuals\": 120}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 30,
+        "named_individuals": 60,
+        "page": 32,
+        "image_path": "pages/35621/00032.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 30, \"named_individuals\": 60}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 35,
+        "image_path": "pages/35621/00035.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 37,
+        "image_path": "pages/35621/00037.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 0, \"named_individuals\": 1}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 40,
+        "named_individuals": 85,
+        "page": 40,
+        "image_path": "pages/35621/00040.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 40, \"named_individuals\": 85}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 42,
+        "image_path": "pages/35621/00042.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 1}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 30,
+        "named_individuals": 54,
+        "page": 44,
+        "image_path": "pages/35621/00044.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 30, \"named_individuals\": 54}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 62,
+        "named_individuals": 105,
+        "page": 47,
+        "image_path": "pages/35621/00047.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 62, \"named_individuals\": 105}"
+      },
+      {
+        "page_type": "form",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 49,
+        "image_path": "pages/35621/00049.jpg",
+        "raw_response": "{\"page_type\": \"form\", \"filled_entries\": 0, \"named_individuals\": 1}"
+      }
+    ]
+  },
+  "64689": {
+    "label": "DAKIRO/18/1/317",
+    "root_label": "DAKIRO",
+    "doc_type": [
+      "C"
+    ],
+    "page_count": 21,
+    "priority_target": "P2",
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 2,
+        "image_path": "pages/64689/00002.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 3,
+        "image_path": "pages/64689/00003.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 4,
+        "image_path": "pages/64689/00004.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 5,
+        "image_path": "pages/64689/00005.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 6,
+        "image_path": "pages/64689/00006.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 7,
+        "image_path": "pages/64689/00007.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 8,
+        "image_path": "pages/64689/00008.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 9,
+        "image_path": "pages/64689/00009.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 0,
+        "page": 10,
+        "image_path": "pages/64689/00010.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 11,
+        "image_path": "pages/64689/00011.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 12,
+        "image_path": "pages/64689/00012.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 13,
+        "image_path": "pages/64689/00013.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 14,
+        "image_path": "pages/64689/00014.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 2,
+        "page": 15,
+        "image_path": "pages/64689/00015.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 2}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 12,
+        "page": 16,
+        "image_path": "pages/64689/00016.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 12}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 9,
+        "page": 17,
+        "image_path": "pages/64689/00017.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 9}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 5,
+        "page": 18,
+        "image_path": "pages/64689/00018.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 5}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 19,
+        "image_path": "pages/64689/00019.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 20,
+        "image_path": "pages/64689/00020.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "form",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 21,
+        "image_path": "pages/64689/00021.jpg",
+        "raw_response": "{\"page_type\": \"form\", \"filled_entries\": 0, \"named_individuals\": 1}"
+      }
+    ]
+  }
+}

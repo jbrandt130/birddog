@@ -1,0 +1,805 @@
+{
+  "7156": {
+    "label": "CDIAK/1162/1/28",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 207,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 12,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 3,
+        "image_path": "pages/7156/00003.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 4, \"named_individuals\": 12, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 12,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 4,
+        "image_path": "pages/7156/00004.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 4,   \"named_individuals\": 12,   \"hebrew_script\": true,   \"jewish_markers\": false }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 10,
+        "named_individuals": 23,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 5,
+        "image_path": "pages/7156/00005.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 10, \"named_individuals\": 23, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 12,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 6,
+        "image_path": "pages/7156/00006.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 4,   \"named_individuals\": 12,   \"hebrew_script\": true,   \"jewish_markers\": false }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 12,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 7,
+        "image_path": "pages/7156/00007.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 4, \"named_individuals\": 12, \"hebrew_script\": false, \"jewish_markers\": true}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 12,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 8,
+        "image_path": "pages/7156/00008.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 4,   \"named_individuals\": 12,   \"hebrew_script\": true,   \"jewish_markers\": false }"
+      }
+    ]
+  },
+  "7307": {
+    "label": "CDIAK/1164/2/73",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 436,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 3,
+        "image_path": "pages/7307/00003.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "form",
+        "filled_entries": 0,
+        "named_individuals": 3,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 4,
+        "image_path": "pages/7307/00004.jpg",
+        "raw_response": "{\"page_type\": \"form\", \"filled_entries\": 0, \"named_individuals\": 3, \"hebrew_script\": false, \"jewish_markers\": true}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 5,
+        "image_path": "pages/7307/00005.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 9, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 6,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 6,
+        "image_path": "pages/7307/00006.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 6, \"hebrew_script\": false, \"jewish_markers\": true}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 7,
+        "image_path": "pages/7307/00007.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 9,   \"hebrew_script\": true,   \"jewish_markers\": false }"
+      },
+      {
+        "page_type": "form",
+        "filled_entries": 3,
+        "named_individuals": 1,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 8,
+        "image_path": "pages/7307/00008.jpg",
+        "raw_response": "{   \"page_type\": \"form\",   \"filled_entries\": 3,   \"named_individuals\": 1,   \"hebrew_script\": false,   \"jewish_markers\": true }"
+      }
+    ]
+  },
+  "7106": {
+    "label": "CDIAK/1150/1/51",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 10,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "register_table",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 3,
+        "image_path": "pages/7106/00003.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 10,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 4,
+        "image_path": "pages/7106/00004.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 4, \"named_individuals\": 10, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 5,
+        "image_path": "pages/7106/00005.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 9,   \"hebrew_script\": true,   \"jewish_markers\": false }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 10,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 6,
+        "image_path": "pages/7106/00006.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 4,   \"named_individuals\": 10,   \"hebrew_script\": true,   \"jewish_markers\": false }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 10,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 7,
+        "image_path": "pages/7106/00007.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 4,   \"named_individuals\": 10,   \"hebrew_script\": true,   \"jewish_markers\": false }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 7,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 8,
+        "image_path": "pages/7106/00008.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 4, \"named_individuals\": 7, \"hebrew_script\": true, \"jewish_markers\": false}"
+      }
+    ]
+  },
+  "7108": {
+    "label": "CDIAK/1164/2/326",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 39,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 10,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 3,
+        "image_path": "pages/7108/00003.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 10, \"hebrew_script\": false, \"jewish_markers\": true}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 6,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 4,
+        "image_path": "pages/7108/00004.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 6, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 10,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 5,
+        "image_path": "pages/7108/00005.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 6,   \"named_individuals\": 10,   \"hebrew_script\": false,   \"jewish_markers\": true }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 6,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 6,
+        "image_path": "pages/7108/00006.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 6, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 10,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 7,
+        "image_path": "pages/7108/00007.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 4, \"named_individuals\": 10, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 12,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 8,
+        "image_path": "pages/7108/00008.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 4, \"named_individuals\": 12, \"hebrew_script\": true, \"jewish_markers\": false}"
+      }
+    ]
+  },
+  "7104": {
+    "label": "CDIAK/1159/1/22",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 47,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "form",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 3,
+        "image_path": "pages/7104/00003.jpg",
+        "raw_response": "{   \"page_type\": \"form\",   \"filled_entries\": 1,   \"named_individuals\": 3,   \"hebrew_script\": false,   \"jewish_markers\": true }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 6,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 4,
+        "image_path": "pages/7104/00004.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 6, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 10,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 5,
+        "image_path": "pages/7104/00005.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 2,   \"named_individuals\": 10,   \"hebrew_script\": false,   \"jewish_markers\": true }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 6,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 6,
+        "image_path": "pages/7104/00006.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 6, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 6,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 7,
+        "image_path": "pages/7104/00007.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 6, \"hebrew_script\": false, \"jewish_markers\": true}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 6,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 8,
+        "image_path": "pages/7104/00008.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 2,   \"named_individuals\": 6,   \"hebrew_script\": true,   \"jewish_markers\": false }"
+      }
+    ]
+  },
+  "7102": {
+    "label": "CDIAK/1164/2/99",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 10,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 3,
+        "image_path": "pages/7102/00003.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 4,
+        "image_path": "pages/7102/00004.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 9,   \"hebrew_script\": false,   \"jewish_markers\": true }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 5,
+        "image_path": "pages/7102/00005.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 9, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 6,
+        "image_path": "pages/7102/00006.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 9,   \"hebrew_script\": false,   \"jewish_markers\": true }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 7,
+        "image_path": "pages/7102/00007.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 8,
+        "image_path": "pages/7102/00008.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 4, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      }
+    ]
+  },
+  "7148": {
+    "label": "CDIAK/1164/2/404",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 14,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 6,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 3,
+        "image_path": "pages/7148/00003.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 6, \"hebrew_script\": false, \"jewish_markers\": true}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 6,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 4,
+        "image_path": "pages/7148/00004.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 6, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 10,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 5,
+        "image_path": "pages/7148/00005.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 3,   \"named_individuals\": 10,   \"hebrew_script\": false,   \"jewish_markers\": true }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 9,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 6,
+        "image_path": "pages/7148/00006.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 9, \"hebrew_script\": true, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 10,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 7,
+        "image_path": "pages/7148/00007.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 10, \"hebrew_script\": false, \"jewish_markers\": true}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 10,
+        "hebrew_script": true,
+        "jewish_markers": false,
+        "page": 8,
+        "image_path": "pages/7148/00008.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 10, \"hebrew_script\": true, \"jewish_markers\": false}"
+      }
+    ]
+  },
+  "7150": {
+    "label": "CDIAK/491/96/95",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "O"
+    ],
+    "page_count": 254,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "register_table",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 2,
+        "image_path": "pages/7150/00002.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "blank_or_illegible",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 3,
+        "image_path": "pages/7150/00003.jpg",
+        "raw_response": "{\"page_type\": \"blank_or_illegible\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "blank_or_illegible",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 4,
+        "image_path": "pages/7150/00004.jpg",
+        "raw_response": "{\"page_type\": \"blank_or_illegible\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 5,
+        "image_path": "pages/7150/00005.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 1, \"hebrew_script\": false, \"jewish_markers\": false}"
+      }
+    ]
+  },
+  "7101": {
+    "label": "CDIAK/57/1/47",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "C"
+    ],
+    "page_count": 1102,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 2,
+        "image_path": "pages/7101/00002.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 3,
+        "image_path": "pages/7101/00003.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 4,
+        "image_path": "pages/7101/00004.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 1, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 4,
+        "named_individuals": 12,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 5,
+        "image_path": "pages/7101/00005.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 4,   \"named_individuals\": 12,   \"hebrew_script\": false,   \"jewish_markers\": false }"
+      }
+    ]
+  },
+  "7128": {
+    "label": "CDIAK/57/1/37",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "C"
+    ],
+    "page_count": 1101,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 2,
+        "image_path": "pages/7128/00002.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 3,
+        "image_path": "pages/7128/00003.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 4,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 4,
+        "image_path": "pages/7128/00004.jpg",
+        "raw_response": "{   \"page_type\": \"register_table\",   \"filled_entries\": 2,   \"named_individuals\": 4,   \"hebrew_script\": false,   \"jewish_markers\": false }"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 5,
+        "image_path": "pages/7128/00005.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 1, \"named_individuals\": 3, \"hebrew_script\": false, \"jewish_markers\": false}"
+      }
+    ]
+  },
+  "7301": {
+    "label": "CDIAK/57/1/201",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "O"
+    ],
+    "page_count": 565,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 2,
+        "image_path": "pages/7301/00002.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 12,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 3,
+        "image_path": "pages/7301/00003.jpg",
+        "raw_response": "{   \"page_type\": \"prose\",   \"filled_entries\": 0,   \"named_individuals\": 12,   \"hebrew_script\": false,   \"jewish_markers\": false }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 12,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 4,
+        "image_path": "pages/7301/00004.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 12, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "blank_or_illegible",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 5,
+        "image_path": "pages/7301/00005.jpg",
+        "raw_response": "{\"page_type\": \"blank_or_illegible\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      }
+    ]
+  },
+  "7302": {
+    "label": "CDIAK/57/1/171",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "C"
+    ],
+    "page_count": 458,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "form",
+        "filled_entries": 0,
+        "named_individuals": 12,
+        "hebrew_script": false,
+        "jewish_markers": true,
+        "page": 2,
+        "image_path": "pages/7302/00002.jpg",
+        "raw_response": "{   \"page_type\": \"form\",   \"filled_entries\": 0,   \"named_individuals\": 12,   \"hebrew_script\": false,   \"jewish_markers\": true }"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 12,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 3,
+        "image_path": "pages/7302/00003.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 12, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 12,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 4,
+        "image_path": "pages/7302/00004.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 12, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "form",
+        "filled_entries": 2,
+        "named_individuals": 6,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 5,
+        "image_path": "pages/7302/00005.jpg",
+        "raw_response": "{   \"page_type\": \"form\",   \"filled_entries\": 2,   \"named_individuals\": 6,   \"hebrew_script\": false,   \"jewish_markers\": false }"
+      }
+    ]
+  },
+  "14717": {
+    "label": "DACHGO/127/15/96",
+    "root_label": "DACHGO",
+    "doc_type": [
+      "C"
+    ],
+    "page_count": 187,
+    "priority_target": null,
+    "pages": [
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 12,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 2,
+        "image_path": "pages/14717/00002.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 12, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 3,
+        "image_path": "pages/14717/00003.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 4,
+        "image_path": "pages/14717/00004.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "hebrew_script": false,
+        "jewish_markers": false,
+        "page": 5,
+        "image_path": "pages/14717/00005.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 0, \"named_individuals\": 0, \"hebrew_script\": false, \"jewish_markers\": false}"
+      }
+    ]
+  }
+}

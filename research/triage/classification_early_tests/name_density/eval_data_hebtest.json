@@ -1,0 +1,347 @@
+{
+ "purpose": "Hebrew-detection model test: can the vision model see Hebrew script? 7 confirmed/near-certain Hebrew-bearing Jewish metric books vs 6 Cyrillic-only controls. expected_hebrew is the truth.",
+ "k_pages": 6,
+ "train": [],
+ "validation": [
+  {
+   "id": 7156,
+   "label": "CDIAK/1162/1/28",
+   "root_label": "CDIAK",
+   "doc_type": [
+    "V"
+   ],
+   "page_count": 207,
+   "page_description": "Metric book of the Jewish community of Tarashcha. Birth.",
+   "content_code": null,
+   "expected_hebrew": "yes",
+   "sampled_pages": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "image_paths": [
+    "pages/7156/00003.jpg",
+    "pages/7156/00004.jpg",
+    "pages/7156/00005.jpg",
+    "pages/7156/00006.jpg",
+    "pages/7156/00007.jpg",
+    "pages/7156/00008.jpg"
+   ]
+  },
+  {
+   "id": 7307,
+   "label": "CDIAK/1164/2/73",
+   "root_label": "CDIAK",
+   "doc_type": [
+    "V"
+   ],
+   "page_count": 436,
+   "page_description": "Divorce record book of the Borodyanka Jewish community",
+   "content_code": null,
+   "expected_hebrew": "yes",
+   "sampled_pages": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "image_paths": [
+    "pages/7307/00003.jpg",
+    "pages/7307/00004.jpg",
+    "pages/7307/00005.jpg",
+    "pages/7307/00006.jpg",
+    "pages/7307/00007.jpg",
+    "pages/7307/00008.jpg"
+   ]
+  },
+  {
+   "id": 7106,
+   "label": "CDIAK/1150/1/51",
+   "root_label": "CDIAK",
+   "doc_type": [
+    "V"
+   ],
+   "page_count": 10,
+   "page_description": "Metric book of the Jewish community of Khodoriv about birth",
+   "content_code": null,
+   "expected_hebrew": "yes",
+   "sampled_pages": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "image_paths": [
+    "pages/7106/00003.jpg",
+    "pages/7106/00004.jpg",
+    "pages/7106/00005.jpg",
+    "pages/7106/00006.jpg",
+    "pages/7106/00007.jpg",
+    "pages/7106/00008.jpg"
+   ]
+  },
+  {
+   "id": 7108,
+   "label": "CDIAK/1164/2/326",
+   "root_label": "CDIAK",
+   "doc_type": [
+    "V"
+   ],
+   "page_count": 39,
+   "page_description": "The record book of the Jewish community of M. Makariv about death",
+   "content_code": null,
+   "expected_hebrew": "yes",
+   "sampled_pages": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "image_paths": [
+    "pages/7108/00003.jpg",
+    "pages/7108/00004.jpg",
+    "pages/7108/00005.jpg",
+    "pages/7108/00006.jpg",
+    "pages/7108/00007.jpg",
+    "pages/7108/00008.jpg"
+   ]
+  },
+  {
+   "id": 7104,
+   "label": "CDIAK/1159/1/22",
+   "root_label": "CDIAK",
+   "doc_type": [
+    "V"
+   ],
+   "page_count": 47,
+   "page_description": "The registry book of the Jewish community of Bila Tserkva about marriage",
+   "content_code": null,
+   "expected_hebrew": "yes",
+   "sampled_pages": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "image_paths": [
+    "pages/7104/00003.jpg",
+    "pages/7104/00004.jpg",
+    "pages/7104/00005.jpg",
+    "pages/7104/00006.jpg",
+    "pages/7104/00007.jpg",
+    "pages/7104/00008.jpg"
+   ]
+  },
+  {
+   "id": 7102,
+   "label": "CDIAK/1164/2/99",
+   "root_label": "CDIAK",
+   "doc_type": [
+    "V"
+   ],
+   "page_count": 10,
+   "page_description": "Record book of the Jewish community of M. Dymer about birth",
+   "content_code": null,
+   "expected_hebrew": "yes",
+   "sampled_pages": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "image_paths": [
+    "pages/7102/00003.jpg",
+    "pages/7102/00004.jpg",
+    "pages/7102/00005.jpg",
+    "pages/7102/00006.jpg",
+    "pages/7102/00007.jpg",
+    "pages/7102/00008.jpg"
+   ]
+  },
+  {
+   "id": 7148,
+   "label": "CDIAK/1164/2/404",
+   "root_label": "CDIAK",
+   "doc_type": [
+    "V"
+   ],
+   "page_count": 14,
+   "page_description": "Record book of the Jewish community of Rzhyshchiv about divorce",
+   "content_code": null,
+   "expected_hebrew": "yes",
+   "sampled_pages": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ],
+   "image_paths": [
+    "pages/7148/00003.jpg",
+    "pages/7148/00004.jpg",
+    "pages/7148/00005.jpg",
+    "pages/7148/00006.jpg",
+    "pages/7148/00007.jpg",
+    "pages/7148/00008.jpg"
+   ]
+  },
+  {
+   "id": 7150,
+   "label": "CDIAK/491/96/95",
+   "root_label": "CDIAK",
+   "doc_type": [
+    "O"
+   ],
+   "page_count": 254,
+   "page_description": "Inventory of the Trypil public estate of Kyiv County",
+   "content_code": null,
+   "expected_hebrew": "no",
+   "sampled_pages": [
+    2,
+    3,
+    4,
+    5
+   ],
+   "image_paths": [
+    "pages/7150/00002.jpg",
+    "pages/7150/00003.jpg",
+    "pages/7150/00004.jpg",
+    "pages/7150/00005.jpg"
+   ]
+  },
+  {
+   "id": 7101,
+   "label": "CDIAK/57/1/47",
+   "root_label": "CDIAK",
+   "doc_type": [
+    "C"
+   ],
+   "page_count": 1102,
+   "page_description": "Yard census of residents of the Konotopa Hundred of the Nizhyn Regiment; documents (copies of registered deeds, court decisions, deeds of gift, deeds of sale, etc.) to confirm the right of ownership",
+   "content_code": null,
+   "expected_hebrew": "no",
+   "sampled_pages": [
+    2,
+    3,
+    4,
+    5
+   ],
+   "image_paths": [
+    "pages/7101/00002.jpg",
+    "pages/7101/00003.jpg",
+    "pages/7101/00004.jpg",
+    "pages/7101/00005.jpg"
+   ]
+  },
+  {
+   "id": 7128,
+   "label": "CDIAK/57/1/37",
+   "root_label": "CDIAK",
+   "doc_type": [
+    "C"
+   ],
+   "page_count": 1101,
+   "page_description": "Household census of the residents of Olyshivka town and Likhachove village of the Olyshivka Hundred of the Kyiv Regiment; documents (copies of court decisions, deeds of gift, deeds of sale, etc. for 1695 and other years) confirming ownership",
+   "content_code": null,
+   "expected_hebrew": "no",
+   "sampled_pages": [
+    2,
+    3,
+    4,
+    5
+   ],
+   "image_paths": [
+    "pages/7128/00002.jpg",
+    "pages/7128/00003.jpg",
+    "pages/7128/00004.jpg",
+    "pages/7128/00005.jpg"
+   ]
+  },
+  {
+   "id": 7301,
+   "label": "CDIAK/57/1/201",
+   "root_label": "CDIAK",
+   "doc_type": [
+    "O"
+   ],
+   "page_count": 565,
+   "page_description": "Documents (copies of court decisions, deeds of gift, deeds of sale, etc.) to confirm the ownership rights of residents of the Helmyazun hundred of the Pereyaslav regiment",
+   "content_code": null,
+   "expected_hebrew": "no",
+   "sampled_pages": [
+    2,
+    3,
+    4,
+    5
+   ],
+   "image_paths": [
+    "pages/7301/00002.jpg",
+    "pages/7301/00003.jpg",
+    "pages/7301/00004.jpg",
+    "pages/7301/00005.jpg"
+   ]
+  },
+  {
+   "id": 7302,
+   "label": "CDIAK/57/1/171",
+   "root_label": "CDIAK",
+   "doc_type": [
+    "C"
+   ],
+   "page_count": 458,
+   "page_description": "Household census of residents of the villages of Bykiv and Petrivka of the Basanska hundred of the Pereyaslav Regiment and descriptions of the boundaries of their possessions",
+   "content_code": null,
+   "expected_hebrew": "no",
+   "sampled_pages": [
+    2,
+    3,
+    4,
+    5
+   ],
+   "image_paths": [
+    "pages/7302/00002.jpg",
+    "pages/7302/00003.jpg",
+    "pages/7302/00004.jpg",
+    "pages/7302/00005.jpg"
+   ]
+  },
+  {
+   "id": 14717,
+   "label": "DACHGO/127/15/96",
+   "root_label": "DACHGO",
+   "doc_type": [
+    "C"
+   ],
+   "page_count": 187,
+   "page_description": "Collection of documents on the resettlement of Jews to other provinces and their transfer from estate to estate",
+   "content_code": null,
+   "expected_hebrew": "no",
+   "sampled_pages": [
+    2,
+    3,
+    4,
+    5
+   ],
+   "image_paths": [
+    "pages/14717/00002.jpg",
+    "pages/14717/00003.jpg",
+    "pages/14717/00004.jpg",
+    "pages/14717/00005.jpg"
+   ]
+  }
+ ]
+}

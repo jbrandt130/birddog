@@ -1,0 +1,130 @@
+{
+  "purpose": "Targeted sample of training-set documents to test whether fetched wikitext/transcription content adds signal beyond the existing page_description field for doc_type classification. Grouped by the specific confusion pattern each record is meant to probe. All records are ml_split=train.",
+  "samples": [
+    {
+      "group": "C vs L: bare 'list of Jews resettled/settled in district X' - currently misclassified as L even though ground truth is C",
+      "records": [
+        {
+          "label": "CDIAK/442/1/6709",
+          "doc_type": ["C"],
+          "page_description": "List of Jews of Yampil engaged in agriculture and subject to resettlement from the territory of the 50-mile zone",
+          "url": "https://uk.wikisource.org/wiki/Файл:ЦДІАК_442-1-6709_Список_євреїв_м-ка_Ямпіль,_які_підлягають_переселенню_з_території_50-вірстної_зони_(1846).pdf"
+        },
+        {
+          "label": "CDIAK/442/1/6712",
+          "doc_type": ["C"],
+          "page_description": "Lists of Jews of the town of Ozhegivtsi to be resettled from the territory of the 50-mile border zone",
+          "url": "https://uk.wikisource.org/wiki/Файл:ЦДІАК_442-1-6712_Списки_євреїв_м-ка_Ожегівці,_що_підлягають_переселенню_з_території_50-вірстної_прикордонної_зони_(1846).pdf"
+        },
+        {
+          "label": "CDIAK/442/1/6711",
+          "doc_type": ["C"],
+          "page_description": "Lists of Jews of Kulchyn to be resettled from the territory of the 50-mile border zone",
+          "url": "https://uk.wikisource.org/wiki/Файл:ЦДІАК_442-1-6711_Списки_євреїв_м-ка_Кульчини,_що_підлягають_переселенню_з_території_50-вірстної_прикордонної_зони_(1846).pdf"
+        }
+      ]
+    },
+    {
+      "group": "C vs O: bare 'Inventory of the village/estate of X' without the word 'lustration' - currently misclassified as O",
+      "records": [
+        {
+          "label": "CDIAK/491/94/55",
+          "doc_type": ["C"],
+          "page_description": "Inventory of the state-owned Trypillia estate of the Kyiv province",
+          "url": "https://uk.wikisource.org/wiki/Файл:ЦДІАК_491-94-55._1854._Інвентар_казеного_Трипільського_маєтку_Київської_губернії.pdf"
+        },
+        {
+          "label": "CDIAK/491/96/133",
+          "doc_type": ["C"],
+          "page_description": "The draft of the audit lustration of the Gleva public estate of Kyiv County",
+          "url": "https://uk.wikisource.org/wiki/Файл:DAKO_491_96_133.pdf",
+          "note": "the url in the database uses a 'DAKO' filename prefix even though root_label/label are CDIAK - copied verbatim from the database, not a transcription error on my part; may be worth flagging as a data quality issue"
+        }
+      ]
+    },
+    {
+      "group": "CRITICAL CONTRAST: 'lustration of X' appears as both C and L in the data - need to see if the actual content reveals what differentiates them, since our current C definition names 'lustration' explicitly and that has started bleeding onto true-L lustration records",
+      "records": [
+        {
+          "label": "CDIAK/491/96/263",
+          "doc_type": ["C"],
+          "page_description": "Lustration of the Trypil public estate of Kyiv County",
+          "url": "https://uk.wikisource.org/wiki/Файл:ЦДІАК_491-96-263._1847-1858._Люстрація_Трипільського_казенного_маєтку_Київського_повіту.pdf",
+          "note": "this is our current C few-shot example"
+        },
+        {
+          "label": "CDIAK/515/1/104",
+          "doc_type": ["L"],
+          "page_description": "Lustration of the villages of Sevastianivka and Ivangorod, Haisyn district, Podil province",
+          "url": "https://uk.wikisource.org/wiki/Файл:ЦДІАК_515-1-104._1871-1873._Люстрації_сіл_Севастянівка_та_Івангород_Гайсинського_повіту_Подільської_губернії.pdf",
+          "note": "same 'lustration' wording but ground truth is L, not C - this pair is the single most diagnostic contrast in the sample"
+        }
+      ]
+    },
+    {
+      "group": "L vs O: old manor/court 'minute book' (act book) records - currently misclassified as O",
+      "records": [
+        {
+          "label": "CDIAK/28/1/128",
+          "doc_type": ["O", "L"],
+          "page_description": "Minute book",
+          "url": "https://uk.wikisource.org/wiki/File:ЦДІАК_28-1-128._1683._Актова_книга.pdf"
+        },
+        {
+          "label": "CDIAK/11/1/38",
+          "doc_type": ["O", "L"],
+          "page_description": "Minute book",
+          "url": "https://uk.wikisource.org/wiki/File:ЦДІАК_11-1-38._2_січня_1745_р._–_19_травня_1747_р._Актова_книга.pdf"
+        },
+        {
+          "label": "CDIAK/25/1/35",
+          "doc_type": ["O", "L"],
+          "page_description": "Minute book",
+          "url": "https://uk.wikisource.org/wiki/File:ЦДІАК_25-1-35._1586._Актова_книга.pdf"
+        }
+      ]
+    },
+    {
+      "group": "L: 'case/list' phrasing that does not superficially look like a list - checking whether underlying content is actually name-list-shaped",
+      "records": [
+        {
+          "label": "CDIAK/127/699/73",
+          "doc_type": ["L"],
+          "page_description": "The case of the conversion of Jews, residents of the Kyiv Eparchy, to Orthodoxy",
+          "url": "https://uk.wikisource.org/wiki/Файл:ЦДІАК_127-699-73._1848._Справа_про_перехід_іудеїв,_жителів_Київської_єпархії_у_православ'я.pdf"
+        },
+        {
+          "label": "CDIAK/515/1/134",
+          "doc_type": ["L"],
+          "page_description": "Results of land distribution, name list of unauthorized residents in Bari",
+          "url": "https://uk.wikisource.org/wiki/Файл:ЦДІАК_515-1-134_Результати_розподілу_земель,_іменний_список_сторонніх_жителів_у_м._Барі_(1871-1873).pdf"
+        },
+        {
+          "label": "CDIAK/1010/1/148",
+          "doc_type": ["L"],
+          "page_description": "Lists and profiles of Jewish hostages from frontline cities and towns",
+          "url": "https://uk.wikisource.org/wiki/Файл:ЦДІАК_1010-1-148_Списки_та_анкетні_дані_євреїв-заручників_із_прифронтових_міст_та_містечок_(1915).pdf"
+        }
+      ]
+    },
+    {
+      "group": "baseline: records the model already gets right, included for comparison - if wikitext looks similar in richness/structure to the confusing ones above, that's evidence content alone isn't the differentiator",
+      "records": [
+        {
+          "label": "CDIAK/57/1/47",
+          "doc_type": ["C"],
+          "page_description": "Yard census of residents of the Konotopa Hundred of the Nizhyn Regiment; documents (copies of registered deeds, court decisions, deeds of gift, deeds of sale, etc.) to confirm the right of ownership",
+          "url": "https://uk.wikisource.org/wiki/Файл:ЦДІАК_57-1-47._1685-1767._Подвірний_перепис_жителів_Конотопської_сотні_Ніжинського_полку.pdf",
+          "note": "current C few-shot example. There is a second database row for this same label (id 108203) pointing to https://cdiak.archives.gov.ua/spysok_fondiv/0057/0001/0047/ with a slightly different description ('Court census...') - looks like a duplicate/near-duplicate record worth a data-quality look separately."
+        },
+        {
+          "label": "DADNO/R-2276/1/2113",
+          "doc_type": ["L"],
+          "page_description": "Personal account book of homeowners of Dnipropetrovsk city for income tax collection, who live on streets whose names begin with the letters \"A\", \"B\" and \"G\"",
+          "url": "https://uk.wikisource.org/wiki/File:ДАДнО_Р-2276-1-2113_Книга_особових_рахунків_домовласників_м.Дніпропетровська_зі_стягнення_прибуткового..._(1943).pdf",
+          "note": "current L few-shot example"
+        }
+      ]
+    }
+  ]
+}

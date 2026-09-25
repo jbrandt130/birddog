@@ -1,0 +1,217 @@
+id,label,root_label,description,true_doc_type,predicted,correct,abstained,raw_response
+7148,CDIAK/1164/2/404,CDIAK,Record book of the Jewish community of Rzhyshchiv about divorce,V,V,True,False,V
+7401,CDIAK/663/1/19,CDIAK,Metric book of the synagogue in Korostyshiv. Birth,V,V,True,False,V
+7102,CDIAK/1164/2/99,CDIAK,Record book of the Jewish community of M. Dymer about birth,V,V,True,False,V
+7402,CDIAK/1164/2/340,CDIAK,Matrimonial book of the Jewish community of Motyzhyn about marriage,V,V,True,False,V
+7303,CDIAK/1164/2/350,CDIAK,Divorce register of the Jewish community of Motyzhyn,V,V,True,False,V
+7104,CDIAK/1159/1/22,CDIAK,The registry book of the Jewish community of Bila Tserkva about marriage,V,V,True,False,V
+7154,CDIAK/1164/2/8,CDIAK,The record book of the Jewish community of Byshiv on death,V,V,True,False,V
+7158,CDIAK/1164/2/390,CDIAK,Record book of the Jewish community of Obukhiv about divorce,V,V,True,False,V
+7306,CDIAK/1164/2/182,CDIAK,Record book of the Jewish community of Ignativka about divorce,V,V,True,False,V
+7107,CDIAK/1164/2/430,CDIAK,Metrical book of the Jewish community of Trypillya about death,V,V,True,False,V
+25,TSDAVO/1/3/591,TSDAVO,Applications of citizens for the restoration of their voting rights and correspondence with the Kremenchuk Regional Executive Committee,O,P,False,False,P
+28,TSDAVO/1/5/1067,TSDAVO,Correspondence with the Kremenchuk Regional Executive Committee on consideration of applications of persons deprived of voting rights for restoration of their rights (in 2 volumes). Т. 1.,"L,O",UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   P
+29,TSDAVO/1/3/560,TSDAVO,Correspondence with the Kremenchuk District Executive Committee on the consideration of applications for restoration of voting rights by persons deprived of their voting rights. Statements of these persons.,O,P,False,False,P
+40,TSDAVO/1/5/1102,TSDAVO,"Materials on consideration of applications for restoration of voting rights (protocols, extracts from protocols, correspondence, lists of those deprived of voting rights).","L,O",V,False,False,V
+41,TSDAVO/1/5/1101,TSDAVO,Correspondence with the Kremenchuk Regional Executive Committee on consideration of applications of persons deprived of voting rights for restoration of their rights (in 2 volumes). Vol. 2 (last).,"L,O",UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   P
+374,DADNO/R-2874/1/17,DADNO,"Characteristics and list of new housing construction projects put into operation during the 1st five-year plan, plan of rationalization measures, title lists",O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR
+175,DADNO/R-6478/2t2/10637,DADNO,Archival and investigative file of N.S. Shtefan.,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   UNCLEAR
+958,DADNO/R-2874/1/14,DADNO,ACTS of inspection and acceptance of completed construction projects,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   P
+768,DADNO/R-2874/1/15,DADNO,Overview and information on the status of preparation for construction of facilities,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   L   O
+572,DADNO/R-6478/2t1/1406,DADNO,Simanovich V.S.,O,UNCLEAR,False,True,"V, C, L, O, P, UNCLEAR, UNCLEAR, UNCLEAR"
+2546,DADNO/R-2492/1/5,DADNO,Census data of the district,C,V,False,False,V
+4083,DADNO/R-2859/1/39,DADNO,Population lists of the village of Saksagan,C,C,True,False,C
+4179,DADNO/R-2859/1/40,DADNO,Population lists of the village of Saksagan,C,C,True,False,C
+4844,DADNO/R-2859/1/38,DADNO,Population lists of the village of Saksagan,C,L,False,False,L
+4882,DADNO/R-2859/1/37,DADNO,Population lists of the village of Saksagan,C,C,True,False,C
+5041,DADNO/R-2492/2/6,DADNO,Census data of the district,C,V,False,False,V
+5739,DADNO/R-3651/1/44,DADNO,"Draft lists of citizens about evasion in Shyrokiv, Lozuvatsky, Pyatikhatsky and Saksagansky districts",C,C,True,False,C
+7162,CDIAK/2227/1/180,CDIAK,Another list of recruits from the Jewish artisan bourgeoisie of Kamianets-Podilskyi,C,V,False,False,V
+7426,CDIAK/514/1/35,CDIAK,"On the lustration of the state estate in Trypillia, Kyiv district",C,C,True,False,C
+7341,CDIAK/514/1/364,CDIAK,"On the lustration of the state estate in Trypillia, Kyiv district",C,C,True,False,C
+31,TSDAVO/1/6/1032,TSDAVO,Correspondence with the Kremenchuk Regional Executive Committee on the consideration of applications from persons deprived of their voting rights for their restoration,L,V,False,False,V
+35,TSDAVO/1/6/1033,TSDAVO,Questionnaires of persons deprived of voting rights in Kremenchuk district,L,V,False,False,V
+287,DADNO/R-3807/1/4,DADNO,Correspondence with the Ozerivka section on the confiscation of a cow from a citizen of Neplyakh and his statement,L,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   P
+1023,DADNO/R-3348/1/5,DADNO,Lists of orphanages,L,L,True,False,L
+1379,DADNO/R-2874/1/25,DADNO,Calendar plans and record cards of district inspectors,"L,O",UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   P
+2020,DADNO/R-2874/1/16,DADNO,"Resolutions of the Presidium of the Central Control Commission and the Central Executive Committee of the Ukrainian SSR, the Dnipropetrovsk Regional Executive Committee on the inspection of the construction of bread factories, a list of employees, information on the progress of loan subscriptions, etc.","L,O",V,False,False,V
+2429,DADNO/R-2874/1/2,DADNO,Information and lists of individual house developers and applications for the release of building materials,"L,O",V,False,False,V
+781,DADNO/R-2859/1/29,DADNO,Lists of people applying for passports in the city of Pyatikhatky,P,P,True,False,P
+1451,DADNO/R-2859/1/35,DADNO,Lists of people applying for passports in the Saksagansk village council,P,P,True,False,P
+1926,DADNO/R-2859/1/36,DADNO,Lists of the population for obtaining passports on the collective farm Zirka Commune of the Saksagansk Village Council,P,L,False,False,L
+6329,DADNO/R-2859/1/28,DADNO,Lists of people applying for passports in the city of Pyatikhatky,P,P,True,False,P
+18535,DAK/1/2/799,DAK,On the recovery from the city of Kyiv of non-resident Jews who do not have passports for their previous place of residence,"C,P",P,True,False,P
+35593,DAMO/R-6197/1/74,DAMO,Application forms for the planned relocation of families from Stanislavsk to Mykolaiv region. Characteristics of farms provided by the executive committees of district Soviets of Workers' Deputies to persons who expressed a desire to relocate. Sanitary passport and duplicate veterinary certificate for the right to board trains. Volume 1,"L,O,P",P,True,False,P
+40610,DARO/314/1/4,DARO,Applications of residents of Rivne for the issuance of passports,"O,P",P,True,False,P
+65595,DAKIRO/18/1/531,DAKIRO,Resolutions of the Duma on dismissal of members on short-term leave and issuance of a passport to the merchant Trester,P,P,True,False,P
+67501,DAKO/2/145/937,DAKO,Registration book of foreign nationals who received passports for the right of residence in Russia,P,P,True,False,P
+67502,DAKO/2/145/961,DAKO,On the issuance of Russian passports to foreign nationals,P,P,True,False,P
+7307,CDIAK/1164/2/73,CDIAK,Divorce record book of the Borodyanka Jewish community,V,V,True,False,V
+7108,CDIAK/1164/2/326,CDIAK,The record book of the Jewish community of M. Makariv about death,V,V,True,False,V
+7409,CDIAK/1164/2/148,CDIAK,Record book of the Jewish community of M. Dymer about birth,V,V,True,False,V
+7110,CDIAK/1164/2/152,CDIAK,Dimer's record book of the Jewish community on divorce,V,V,True,False,V
+7310,CDIAK/1164/2/36,CDIAK,The record book of the Jewish community of Byshiv on death,V,V,True,False,V
+7410,CDIAK/1164/2/190,CDIAK,Record book of the Jewish community of M. Ignativka about birth,V,V,True,False,V
+7168,CDIAK/1164/2/320,CDIAK,Record book of the Jewish community of Makariv on divorce,V,V,True,False,V
+7411,CDIAK/1164/2/401,CDIAK,The metric book of the Jewish community of Rzhyshchiv on deaths,V,V,True,False,V
+7174,CDIAK/1164/2/170,CDIAK,The birth registry of the Jewish community of Dymer,V,V,True,False,V
+7313,CDIAK/1159/1s/10,CDIAK,Metric book of the synagogue in Bila Tserkva. Birth,V,V,True,False,V
+7114,CDIAK/1164/2/38,CDIAK,The record book of the Jewish community of the city of Byshiv about marriage,V,V,True,False,V
+7175,CDIAK/1267/1/10,CDIAK,Metric book of the synagogue of Gornostaypil. Birth.,V,V,True,False,V
+7176,CDIAK/1164/2/52,CDIAK,Divorce record book of the Jewish community of the city of Byshiv,V,V,True,False,V
+7315,CDIAK/1164/2/63,CDIAK,Divorce record book of the Jewish community of the city of Byshiv,V,V,True,False,V
+7415,CDIAK/1164/2/335,CDIAK,Birth record book of the Jewish community of M. Makariv,V,V,True,False,V
+7116,CDIAK/1164/2/139,CDIAK,Dimer's record book of the Jewish community on divorce,V,V,True,False,V
+7178,CDIAK/1164/2/451,CDIAK,Birth register of the Jewish community of Trypillya,V,V,True,False,V
+7316,CDIAK/1164/2/41,CDIAK,The record book of the Jewish community of the city of Byshiv about marriage,V,V,True,False,V
+7117,CDIAK/1164/2/247,CDIAK,Record book of the Jewish community of M. Ignativka about birth. The second copy,V,V,True,False,V
+7180,CDIAK/1268/2/4,CDIAK,"Marriage searches of residents of the Kiev province. 1805, 1810, 1815, 1817; Polish language",V,V,True,False,V
+7317,CDIAK/1164/2/304,CDIAK,Record book of the Jewish community of Makariv on divorce,V,V,True,False,V
+7182,CDIAK/1164/2/363,CDIAK,Divorce register of the Jewish community of Motyzhyn,V,V,True,False,V
+7186,CDIAK/1164/2/157,CDIAK,Dimer's record book of the Jewish community on divorce,V,V,True,False,V
+7320,CDIAK/1267/1/2,CDIAK,Metric book of the synagogue of Gornostaypil. Birth.,V,V,True,False,V
+7121,CDIAK/1164/2/349,CDIAK,Matrimonial book of the Jewish community of Motyzhyn about marriage,V,V,True,False,V
+7190,CDIAK/1164/2/405,CDIAK,The metric book of the Jewish community of Rzhyshchiv on deaths,V,V,True,False,V
+7422,CDIAK/1164/2/105,CDIAK,Record book of the Jewish community of M. Dymer about birth,V,V,True,False,V
+7191,CDIAK/1267/1/5,CDIAK,Metric book of the Jewish community of Gornostaipil on birth,V,V,True,False,V
+7423,CDIAK/1164/2/411,CDIAK,The metric book of the Jewish community of Rzhyshchiv on divorce and death,V,V,True,False,V
+7324,CDIAK/1164/2/46,CDIAK,The record book of the Jewish community of the city of Byshiv about marriage,V,V,True,False,V
+7125,CDIAK/1164/2/42,CDIAK,The record book of the Jewish community of Byshiv on death,V,V,True,False,V
+7195,CDIAK/1164/2/201,CDIAK,Record book of the Jewish community of Ignativka about divorce. The second copy,V,V,True,False,V
+7425,CDIAK/1159/1s/9,CDIAK,Metric book of the synagogue in Bila Tserkva. Death,V,V,True,False,V
+7197,CDIAK/1164/2/337,CDIAK,Birth record book of the Jewish community of M. Makariv,V,V,True,False,V
+7199,CDIAK/1164/2/125,CDIAK,Matrimonial book of the Jewish community of M. Dymer about marriage,V,V,True,False,V
+7392,CDIAK/49/1/2123,CDIAK,"Inventory of half of the village of Kosmova, compiled when the village was transferred to the Invlotskyi Mykhailskyi in 1755",C,C,True,False,C
+7906,CDIAK/49/1/127,CDIAK,About the chinsha tax - street lists of residents (Christians and Jews) of the town of Nemyrov,C,C,True,False,C
+7941,CDIAK/49/2/1527,CDIAK,Information on the number of Jews in Kyiv County and the amount of taxes,C,V,False,False,V
+7858,CDIAK/730/2/126,CDIAK,Audit Tales of the Jews of Mglin,C,C,True,False,C
+7561,CDIAK/301/1/2647,CDIAK,"Reports of gendarme non-commissioned officers and reports to the chief of the Podolsk State Department of Housing on the mood of the population in the districts, on peasant strikes in Bratslav and Mogilev districts, on cases of distribution of illegal literature in Podolsk province, on the search for and identification of various persons, and more. Lists of recruits from Letichev, Lityn, Bratslav and Gaisyn counties.","C,L",V,False,False,V
+7781,CDIAK/236/2/13,CDIAK,"Materials on the management of the estates of the Ostroh Order. Ostroh Ordinary's universals, manifestations, records, decisions of condensation courts, etc. Originals, copies, and certified extracts from the Kremenets town registers.","C,O",V,False,False,V
+7983,CDIAK/236/2/20,CDIAK,Registers of payment of floating tax by residents of Lubar,C,V,False,False,V
+7684,CDIAK/193/1/1847,CDIAK,On the Right of Citizenship for Jews of the Katerynoslav Governorate and the Tavriya Region,C,V,False,False,V
+8002,CDIAK/193/1/86,CDIAK,"List of nobles of Pereyaslavl uyezd, Kiev nomesnichestvo.",C,L,False,False,L
+8404,CDIAK/49/1/1980,CDIAK,Family lists of parishioners of Greek Catholic parishes of the Brailivka deanery.,C,C,True,False,C
+8417,CDIAK/49/1/2493,CDIAK,"Inventory of parts of the villages: Trostiantsia, Balakyr, Ostapkovets, Voludrynets, which are part of the Horodotsky Klych, which belongs to the Potocki-Kanivsky Starost",C,V,False,False,V
+8125,CDIAK/49/1/2246,CDIAK,"Inventory of the village of Skazynets from June 24, 1770",C,C,True,False,C
+8451,CDIAK/49/1/2825,CDIAK,Inventory of part of the village of Zhyshchynets that belonged to the Potocki - Kaniv starost,C,V,False,False,V
+8385,CDIAK/514/1/16,CDIAK,Gleva state estate of the Gleva parish of the Kyiv district,C,C,True,False,C
+8744,CDIAK/49/3/360,CDIAK,"Description of the towns of Yarychiv, Staryi Yarychiv, Zapytiv, and Pidlisky with a list of the town's Christians and Jews.",C,V,False,False,V
+8646,CDIAK/49/1/1805,CDIAK,Inventory of the village of Khyzhynets with an indication of the obligations of subjects in 1780,C,C,True,False,C
+8556,CDIAK/241/1/50,CDIAK,Part of the audit tale of the peasants of the village of Kyshchyntsi by Count Franciszek Xavier Branicki,C,V,False,False,V
+8587,CDIAK/241/1/59,CDIAK,"An audit tale of the peasants of the village. Lyakhivtsy, Brest County",C,C,True,False,C
+14702,DACHGO/152/1/144,DACHGO,"Reports of recruiters with the provision of lists of persons given to recruits in Chernihiv, Sosnitsky, Konotop and other counties for 90 sets to receive credit receipts",C,V,False,False,V
+14606,DACHGO/127/5/644,DACHGO,On permission for Jew Haft and his family to move to a settlement near Konotop,C,V,False,False,V
+14710,DACHGO/127/14/4260,DACHGO,"List of Jews who settled in the Novgorod-Seversky district before May 23, 1882",C,L,False,False,L
+14714,DACHGO/206/1/26,DACHGO,About the inclusion of Jews from abroad in the recruitment lists of the city of Chernihiv,C,P,False,False,P
+14717,DACHGO/127/15/96,DACHGO,Collection of documents on the resettlement of Jews to other provinces and their transfer from estate to estate,C,V,False,False,V
+14618,DACHGO/127/14/4262,DACHGO,List of Jews who settled in the Novgorod-Siversky district,C,L,False,False,L
+14718,DACHGO/127/1/3702,DACHGO,On the permission for the Jew Haft to move to the land he rented from the landowner Bobrowska,C,V,False,False,V
+14719,DACHGO/127/14/4119,DACHGO,List of Jews who illegally settled in the rural areas of the Novgorodseversky district,C,L,False,False,L
+14721,DACHGO/128/1/7608,DACHGO,The request of the Jews of Glukhov to release them from the supply of recruits,C,V,False,False,V
+14724,DACHGO/127/14/3309,DACHGO,"Family lists of Jews who settled in Chernihiv province until May 23, 1882. Krasnorig Volost, 1st state of Mghlyna County",C,L,False,False,L
+14625,DACHGO/128/1/4598,DACHGO,Statistics on Jews of Chernihiv Province and Metric Books of Jews of Kozelets and Nizhyn,"C,V",V,True,False,V
+14726,DACHGO/467/2/73,DACHGO,Reviz fairy tales of residents of Berezna,C,C,True,False,C
+14628,DACHGO/127/14/3544,DACHGO,"Family lists of Jews living in settlements 1, 2, 3 of the Novozybkov district",C,L,False,False,L
+14728,DACHGO/127/1/3999,DACHGO,Residence permits for Jews in Chernihiv province and family lists by county,C,L,False,False,L
+14629,DACHGO/152/1/195,DACHGO,"Conscription list of burghers, Christians and artisans of the recruiting area for 1874",C,C,True,False,C
+14630,DACHGO/127/14/3543,DACHGO,"Lists of Jews living in villages of the 1st, 2nd and 3rd estates of the Nizhyn District",C,L,False,False,L
+14730,DACHGO/205/1/208,DACHGO,Book of records of the arrival of recruitment money from the Jews of Chernihiv,C,V,False,False,V
+2062,DADNO/R-2874/1/23,DADNO,"Annual report for 1933, lists of employees","L,O",L,True,False,L
+2775,DADNO/R-2492/2/20,DADNO,Lists of employees of district institutions to receive rations,L,L,True,False,L
+3445,DADNO/R-2492/2/18,DADNO,Lists of employees of district institutions to receive rations,L,L,True,False,L
+3635,DADNO/R-2874/1/22,DADNO,"Work plan for the second quarter of 1933, excerpts from orders on personnel, reports on the inspection of construction sites, correspondence on the progress of construction and the supply of building materials, etc.","L,O",O,True,False,O
+3895,DADNO/R-2492/1/3,DADNO,"Lists of members of the ""Rekonstruktor"" municipal enterprise sent to Germany /p. Saksagan/, certificates on the place of residence of citizens",L,L,True,False,L
+4957,DADNO/R-2874/1/31,DADNO,"Resolutions of the All-Union Central Executive Committee, the Council of People's Commissars of the Ukrainian SSR, the 1st Dnipropetrovsk Conference on state control and improvement of the quality of housing construction, staff lists, price lists for building materials, correspondence on the progress of construction of facilities, etc.","L,O",UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR
+4585,DADNO/R-2874/1/28,DADNO,"Resolution of the RNK of the Ukrainian SSR, the All-Union Central Executive Committee of the Ukrainian SSR on state control over construction, construction of a covered market in the city of Dnipropetrovsk, lists of employees","L,O",V,False,False,V
+5442,DADNO/R-2492/1/17,DADNO,Lists of workers and employees of the Pyatikhat locomotive depot for receiving rations,L,L,True,False,L
+5747,DADNO/R-2492/2/19,DADNO,Lists of employees of district institutions to receive rations,L,L,True,False,L
+6101,DADNO/R-2492/1/4,DADNO,Lists of families whose members left for Germany,L,L,True,False,L
+7404,CDIAK/276/1/2565,CDIAK,"Agent information on the activities of the RSDLP, Social Revolutionary Party, ""Bund"", group of anarchist-communists and other organizations, on surveillance and arrest of persons belonging to these parties in Chernigov province","L,O",V,False,False,V
+7137,CDIAK/49/1/1795,CDIAK,"Documents relating to the estates of Polonsky Key: inventories of this key, description of Polonsky Key, property registers of Polonsky Key, etc.","L,O",C,False,False,C
+7455,CDIAK/268/1/343,CDIAK,Correspondence on the activities and search for members of the Odesa branch of the Bund,L,UNCLEAR,False,True,V C C C C L L L O O O P P P UNCLEAR UNCLEAR UNCLEAR
+7460,CDIAK/26/1/2,CDIAK,Act book,"L,O",UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   L   UNCLEAR
+7465,CDIAK/236/2/252,CDIAK,Allocation book (Martsyn) Lyubomyrskyi to the Polonna tenant about the payment of the military tax for the maintenance of the garrison in Polonna,L,V,False,False,V
+7270,CDIAK/236/2/71,CDIAK,Register of taxes from Kagal city of Lubar,L,V,False,False,V
+7286,CDIAK/236/2/104,CDIAK,"Lists of craftsmen from the blacksmith and tinsmith guilds in the town of Lyubar, Zhytomyr County, Kyiv Province",L,L,True,False,L
+7391,CDIAK/236/2/261,CDIAK,Lists of personnel of the Lyubarsky garrison of the Lubomirsky princes,L,L,True,False,L
+7823,CDIAK/241/1/51,CDIAK,Register of mills and taverns of the Bohuslav key of Kyiv province,L,V,False,False,V
+7948,CDIAK/49/1/199,CDIAK,Explanation of who owned the possessions included in the Horodotsky Key at what time,L,V,False,False,V
+7973,CDIAK/2227/1/95,CDIAK,"Lustration of the Bratslav and Vinnytsia starosts. Certified extract from the Crown Register of 1775. Language Polish, Latin",L,V,False,False,V
+7976,CDIAK/26/1/1,CDIAK,Act book,"L,O",UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   L   UNCLEAR
+8415,CDIAK/1268/2/9,CDIAK,Service lists of clergy of Roman Catholic churches in Kyiv and Kyiv province,"L,O",V,False,False,V
+8136,CDIAK/276/1/51,CDIAK,Correspondence with the Chernigov State Department of Housing and Urban Development and other institutions about the activities of the South-Western group of anarchist-communists in Chernigov province. On surveillance and arrest of persons suspected of belonging to this group,"L,O",V,False,False,V
+8263,CDIAK/2227/1/158,CDIAK,"Lustration of the city of Lutsk and the Lutsk starost. Inventories of the villages of Krasne, Gomshiv, Radomyshl, Svozh, Kolchyn of the Lutsk district of the Volyn province. Copy of the 19th century from the lustration decree to the Lutsk city books",L,V,False,False,V
+8484,CDIAK/49/1/181,CDIAK,"Various financial and trade agreements with Jewish merchants from the towns of Bar, Ostrov, Proskuriv, and others",L,V,False,False,V
+8087,CDIAK/2227/1/645,CDIAK,"Inventory of the estates of Fastiv Key, which belonged to the Catholic Bishoprics of Kyiv and Chernihiv",L,C,False,False,C
+8090,CDIAK/514/1/287,CDIAK,"On various petitions of the peasants of the Khotiv, Glevakha, Byshiv parishes of the Kyiv district and the Veprykivka parish of the Vasylkiv district",L,V,False,False,V
+8634,CDIAK/49/1/703,CDIAK,"List of arrears on the Jews of Tulchyn, name lists of Jewish households",L,L,True,False,L
+8642,CDIAK/276/1/29,CDIAK,Correspondence with Chernigov and Irkutsk GZhU on surveillance and search for persons belonging to the Social Revolutionary Party in Chernigov province,"L,O",UNCLEAR,False,True,"V, C, L, O, P, UNCLEAR, UNCLEAR, UNCLEAR"
+8979,DAHMO/R-3168/1/4,DAHMO,"Health certificates, applications for financial assistance",L,V,False,False,V
+9605,DAHMO/R-254/1/4,DAHMO,"Receipt and expenditure orders, acts and lists of artel members who paid for sugar","L,O",UNCLEAR,False,True,V C C C C L L L O O O P P P UNCLEAR UNCLEAR UNCLEAR O
+9921,DAHMO/R-2222/1/3,DAHMO,List of households in Kilikiyevo whose houses are subject to denationalization,L,L,True,False,L
+9736,DAHMO/R-254/1/1,DAHMO,"Applications of collective farmers for assistance, dismissal and appointment to work, and other issues","L,O",V,False,False,V
+584,DADNO/R-6478/2t2/5769,DADNO,Archival and investigative file of A.F. Shtefan.,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   UNCLEAR
+593,DADNO/R-2874/1/34,DADNO,"Resolution of the Dnipropetrovsk Regional Executive Committee on the distribution of building materials by facility, extracts from orders of the regional inspectorate on the liquidation of district inspectorates, title lists for capital construction, etc.",O,V,False,False,V
+695,DADNO/R-2874/1/6,DADNO,"Orders and excerpts from the minutes of the meeting of the Presidium of the Dnipropetrovsk City Executive Committee on measures to improve accounting and management of housing construction, on the progress of port construction, correspondence on production issues",O,V,False,False,V
+1817,DADNO/R-6478/2t1/5249,DADNO,Slabakov N.S.,O,UNCLEAR,False,True,"V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   (unclear, no doc_type provided)"
+1547,DADNO/R-2874/1/35,DADNO,"Resolution and minutes of the meeting of the Dnipropetrovsk City Executive Committee on approving the commission for accepting completed construction projects, reports on the inspection of the condition of construction sites and correspondence on this issue",O,V,False,False,V
+1964,DADNO/R-2874/1/33,DADNO,"Materials on the termination of construction financing / extracts from minutes, correspondence, etc.",O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   L   O   P   P   P   P   P   P   P   P   P
+1873,DADNO/R-2874/1/46,DADNO,Construction site inspection reports,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   O
+1677,DADNO/R-6478/2t1/1121,DADNO,Mr. Ivan Ilyich,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   P
+2006,DADNO/R-2874/1/40,DADNO,"Materials on the progress of preparation of housing, communal and cultural construction in the Amur-Nyzhnyodniprovsky district of the city of Dnipropetrovsk /memorandums, reports, instructions, etc.",O,V,False,False,V
+2416,DADNO/R-6478/2t1/4562,DADNO,"Ruden M.G., Taran A.M. and others",O,UNCLEAR,False,True,V C C C C L L L O O O P P P UNCLEAR UNCLEAR UNCLEAR
+2048,DADNO/R-2878/1/1,DADNO,"Estimate of actual costs for routine repairs, correspondence with district councils, the State Arbitration Court, and other city organizations regarding moving into apartments, rent, and other issues",O,V,False,False,V
+2259,DADNO/R-2874/1/44,DADNO,Order for the right to carry out construction work,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   P
+2391,DADNO/R-6478/2t1/3474,DADNO,Tovmach A.A.,O,UNCLEAR,False,True,"V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   (unclear, no doc_type provided)"
+2294,DADNO/R-2874/1/29,DADNO,"Materials on the progress of construction and acceptance of completed facilities / resolutions, instructions, orders, correspondence, etc.",O,V,False,False,V
+3247,DADNO/R-2874/1/42,DADNO,Acts of acceptance of construction projects,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   P
+3424,DADNO/R-2874/1/27,DADNO,"Materials on the progress of construction of facilities /acts, reports, correspondence",O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   L   UNCLEAR
+3276,DADNO/R-2874/1/41,DADNO,Information on construction projects put into operation for the III quarter of 1934 in the city of Dnipropetrovsk,O,O,True,False,O
+3453,DADNO/R-2874/1/7,DADNO,"Resolutions of the Presidium of the Dnipropetrovsk City Executive Committee on the progress of construction, acts of acceptance of completed facilities",O,V,False,False,V
+3369,DADNO/R-6478/2t2/6947,DADNO,Archival and investigative file of Z.F. Kramar.,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   UNCLEAR
+3374,DADNO/R-6478/1t37/120311,DADNO,Filtration case of Maria Vasylivna Tovmach,O,V,False,False,V
+3680,DADNO/R-2874/1/26,DADNO,Construction inspection reports,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   L   O   P   P   P   P   P   P   P   P   P
+3511,DADNO/R-6478/2t1/3114,DADNO,"Pototsky G.L., Babaryko M.A., Panych I.T. etc. (volume 1)",O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   UNCLEAR   L
+3694,DADNO/R-2874/1/37,DADNO,"Minutes of meetings of the commission for reviewing construction projects submitted by factories and other organizations, and conclusions on them",O,V,False,False,V
+3916,DADNO/R-6478/2t2/8916,DADNO,Archival and investigative file of V.Y. Zahrebelnyi.,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   L   UNCLEAR
+3925,DADNO/R-6478/2t2/6512,DADNO,Archival and investigative file of D.I. Tovmach.,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   L   UNCLEAR
+4301,DADNO/R-2874/1/10,DADNO,"Minutes of the technical meeting of the Petrovsky and Lenin factories on the results of the inspection of their activities by the USSR State Industrial Committee, decisions, acts, information and explanatory notes on the progress of construction",O,V,False,False,V
+4062,DADNO/R-2874/1/12,DADNO,Market review of the progress of capital construction at the Lenin and Petrovsky factories,O,V,False,False,V
+4345,DADNO/R-2874/1/39,DADNO,Excerpts from orders and correspondence on production and administrative and economic issues,O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   L   O   P   P   P   P   P   P   P   P   P
+4453,DADNO/R-2874/1/24,DADNO,"Inspection reports and reports on the condition of construction sites, work plan for the second quarter of 1933, estimate of administrative and economic expenses for 1933",O,V,False,False,V
+4357,DADNO/R-2874/1/36,DADNO,"Materials on the progress of construction / acts, extracts from protocols, correspondence, etc.",O,UNCLEAR,False,True,V   C   C   C   C   C   L   L   L   O   O   O   P   P   P   UNCLEAR   UNCLEAR   L   UNCLEAR
+67602,DAKO/2/145/933,DAKO,Book for the record of passports issued by the Kiev governor for traveling abroad,P,P,True,False,P
+67503,DAKO/2/145/916,DAKO,Registration book of subjects who received passports for the right of residence in Russia,P,P,True,False,P
+67604,DAKO/2/145/490,DAKO,Registration book of passports issued by the Kyiv governor,P,P,True,False,P
+67505,DAKO/2/145/934,DAKO,Registration book of foreign nationals who received passports for the right of residence in Russia,P,P,True,False,P
+67506,DAKO/2/145/944,DAKO,Book for the record of passports issued by the Kiev governor for traveling abroad,P,P,True,False,P
+67609,DAKO/2/145/978,DAKO,Book for recording the receipt and expenditure of foreign passport forms,P,UNCLEAR,False,True,"V, C, L, O, P, UNCLEAR, UNCLEAR, UNCLEAR"
+67516,DAKO/2/145/931,DAKO,On the issue of Russian passports to foreign nationals,P,P,True,False,P
+67517,DAKO/2/145/871,DAKO,Reports of the Berdichev police chief on the issuance of passports to foreign nationals,P,P,True,False,P
+67617,DAKO/2/145/977,DAKO,Alphabet of persons who received foreign passports. Lists of people who received passports,P,P,True,False,P
+67521,DAKO/2/145/427,DAKO,Issuance of residence permits to foreigners in the Russian Empire,P,P,True,False,P
+67523,DAKO/2/145/968,DAKO,On the issuance of Russian passports to foreign nationals,P,P,True,False,P
+67525,DAKO/2/145/925,DAKO,Book on the note of passports issued by the Governor of Kiev to travel abroad. Part 2,P,P,True,False,P
+67625,DAKO/2/145/943,DAKO,Book for the record of passports issued by the Kiev governor for traveling abroad,P,P,True,False,P
+67533,DAKO/2/145/857,DAKO,Applications from foreign nationals for passports,P,P,True,False,P
+67633,DAKO/2/145/970,DAKO,On issuing Russian residence permits to foreign nationals,P,P,True,False,P
+67534,DAKO/2/145/891,DAKO,On the issuance of passports to Austrian citizens,P,P,True,False,P
+67635,DAKO/2/145/882,DAKO,Reports of the Chigirin police chief on the issuance of passports to foreign nationals,P,P,True,False,P
+67536,DAKO/2/145/945,DAKO,On the issue of Russian passports to foreign nationals,P,P,True,False,P
+67537,DAKO/2/145/951,DAKO,Book of registration of foreign nationals who have received passports for the right to reside in Russia,P,P,True,False,P
+67640,DAKO/2/145/880,DAKO,Reports of the Uman police chief on the issuance of passports to foreign nationals,P,P,True,False,P
+67641,DAKO/2/145/405a,DAKO,Issuance of residence permits to foreigners in the Russian Empire,P,P,True,False,P
+67541,DAKO/2/145/983,DAKO,On the issuance by the Jewish Colonization Society of certificates for the right to leave Russia for America,P,P,True,False,P
+67642,DAKO/2/145/854,DAKO,Applications from foreign nationals for passports,P,P,True,False,P
+67542,DAKO/2/145/949,DAKO,Book for the record of passports issued by the Kiev governor for traveling abroad,P,P,True,False,P
+67544,DAKO/2/145/876,DAKO,Reports of the Lipovets police chief on the issuance of passports to foreign nationals,P,P,True,False,P
+67547,DAKO/2/83/156,DAKO,On the departure from Kiev to Poltava province of Austrian subject Gavril Vavizel,P,V,False,False,V
+67660,DAKO/2/145/930,DAKO,On the issuance of Russian passports to foreign nationals,P,P,True,False,P
+67550,DAKO/2/145/875,DAKO,Reports of the Kyiv police chief on the issuance of passports to foreign nationals,P,P,True,False,P
+67662,DAKO/2/145/595,DAKO,"Reports from the Warsaw, Kursk and other governors on the issuance of passports to foreign nationals",P,P,True,False,P
+67551,DAKO/2/145/960,DAKO,On the issuance of Russian passports to foreign nationals,P,UNCLEAR,False,True,"V, C, L, O, P, UNCLEAR, UNCLEAR, UNCLEAR"
+67664,DAKO/2/173/416,DAKO,"On issuing tickets to Arii Dogalevsky, Gena Rajba and Gdal Lichtenstein",P,P,True,False,P
+67552,DAKO/2/88/2,DAKO,On issuance of foreign passports of the 3rd guild to the merchant Levi Itsko Geler and the burgher Avram-Ios-Moshe Goldstein,P,P,True,False,P
+67668,DAKO/2/145/892,DAKO,On the issuance of passports to Austrian citizens,P,P,True,False,P
+67669,DAKO/2/145/597,DAKO,"Messages from Podolsky, Poltavsky and other governors on issuing passports to foreign nationals",P,P,True,False,P
+67677,DAKO/2/145/976,DAKO,Alphabet on issuing Russian residence permits to foreign nationals,P,P,True,False,P

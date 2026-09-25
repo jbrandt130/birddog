@@ -1,0 +1,2901 @@
+{
+  "purpose": "Extraction-only data file (no classification fields) for the 193 p1_p2_no documents with rendered pages but no OCR text yet. Feed to extract_text.py --data eval_data_p1_p2_no_extra.json --out extracted_text.json --resume to extend the canonical 233-entry extracted_text.json in place.",
+  "few_shot": [],
+  "test_cases": [
+    {
+      "id": 706,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6508/43/5",
+      "sampled_pages": [
+        5,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/706/00005.jpg",
+        "pages/706/00008.jpg",
+        "pages/706/00010.jpg"
+      ]
+    },
+    {
+      "id": 7105,
+      "root_label": "CDIAK",
+      "label": "CDIAK/127/699/73",
+      "sampled_pages": [
+        8,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/7105/00008.jpg",
+        "pages/7105/00009.jpg",
+        "pages/7105/00010.jpg"
+      ]
+    },
+    {
+      "id": 7106,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1150/1/51",
+      "sampled_pages": [
+        6,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/7106/00006.jpg",
+        "pages/7106/00008.jpg",
+        "pages/7106/00009.jpg"
+      ]
+    },
+    {
+      "id": 7128,
+      "root_label": "CDIAK",
+      "label": "CDIAK/57/1/37",
+      "sampled_pages": [
+        1,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/7128/00001.jpg",
+        "pages/7128/00005.jpg",
+        "pages/7128/00006.jpg"
+      ]
+    },
+    {
+      "id": 7150,
+      "root_label": "CDIAK",
+      "label": "CDIAK/491/96/95",
+      "sampled_pages": [
+        2,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/7150/00002.jpg",
+        "pages/7150/00009.jpg",
+        "pages/7150/00010.jpg"
+      ]
+    },
+    {
+      "id": 7156,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1162/1/28",
+      "sampled_pages": [
+        1,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/7156/00001.jpg",
+        "pages/7156/00005.jpg",
+        "pages/7156/00007.jpg"
+      ]
+    },
+    {
+      "id": 7164,
+      "root_label": "CDIAK",
+      "label": "CDIAK/274/1/1237",
+      "sampled_pages": [
+        5,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/7164/00005.jpg",
+        "pages/7164/00007.jpg",
+        "pages/7164/00010.jpg"
+      ]
+    },
+    {
+      "id": 7281,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/52",
+      "sampled_pages": [
+        1,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/7281/00001.jpg",
+        "pages/7281/00006.jpg",
+        "pages/7281/00007.jpg"
+      ]
+    },
+    {
+      "id": 7301,
+      "root_label": "CDIAK",
+      "label": "CDIAK/57/1/201",
+      "sampled_pages": [
+        4,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/7301/00004.jpg",
+        "pages/7301/00006.jpg",
+        "pages/7301/00008.jpg"
+      ]
+    },
+    {
+      "id": 7302,
+      "root_label": "CDIAK",
+      "label": "CDIAK/57/1/171",
+      "sampled_pages": [
+        1,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/7302/00001.jpg",
+        "pages/7302/00007.jpg",
+        "pages/7302/00010.jpg"
+      ]
+    },
+    {
+      "id": 7305,
+      "root_label": "CDIAK",
+      "label": "CDIAK/515/1/134",
+      "sampled_pages": [
+        1,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/7305/00001.jpg",
+        "pages/7305/00005.jpg",
+        "pages/7305/00007.jpg"
+      ]
+    },
+    {
+      "id": 7323,
+      "root_label": "CDIAK",
+      "label": "CDIAK/442/169/100",
+      "sampled_pages": [
+        4,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/7323/00004.jpg",
+        "pages/7323/00009.jpg",
+        "pages/7323/00010.jpg"
+      ]
+    },
+    {
+      "id": 7326,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/67",
+      "sampled_pages": [
+        2,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/7326/00002.jpg",
+        "pages/7326/00004.jpg",
+        "pages/7326/00007.jpg"
+      ]
+    },
+    {
+      "id": 7378,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/265",
+      "sampled_pages": [
+        2,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/7378/00002.jpg",
+        "pages/7378/00006.jpg",
+        "pages/7378/00007.jpg"
+      ]
+    },
+    {
+      "id": 7413,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1240/1/25",
+      "sampled_pages": [
+        1,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/7413/00001.jpg",
+        "pages/7413/00003.jpg",
+        "pages/7413/00004.jpg"
+      ]
+    },
+    {
+      "id": 7437,
+      "root_label": "CDIAK",
+      "label": "CDIAK/707/287/2103",
+      "sampled_pages": [
+        1,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/7437/00001.jpg",
+        "pages/7437/00007.jpg",
+        "pages/7437/00008.jpg"
+      ]
+    },
+    {
+      "id": 7520,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/1",
+      "sampled_pages": [
+        3,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/7520/00003.jpg",
+        "pages/7520/00006.jpg",
+        "pages/7520/00010.jpg"
+      ]
+    },
+    {
+      "id": 7526,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/271",
+      "sampled_pages": [
+        2,
+        3,
+        5
+      ],
+      "image_paths": [
+        "pages/7526/00002.jpg",
+        "pages/7526/00003.jpg",
+        "pages/7526/00005.jpg"
+      ]
+    },
+    {
+      "id": 7550,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/264",
+      "sampled_pages": [
+        1,
+        2,
+        3
+      ],
+      "image_paths": [
+        "pages/7550/00001.jpg",
+        "pages/7550/00002.jpg",
+        "pages/7550/00003.jpg"
+      ]
+    },
+    {
+      "id": 7575,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/262",
+      "sampled_pages": [
+        1,
+        2,
+        10
+      ],
+      "image_paths": [
+        "pages/7575/00001.jpg",
+        "pages/7575/00002.jpg",
+        "pages/7575/00010.jpg"
+      ]
+    },
+    {
+      "id": 7596,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/16",
+      "sampled_pages": [
+        2,
+        3,
+        6
+      ],
+      "image_paths": [
+        "pages/7596/00002.jpg",
+        "pages/7596/00003.jpg",
+        "pages/7596/00006.jpg"
+      ]
+    },
+    {
+      "id": 7667,
+      "root_label": "CDIAK",
+      "label": "CDIAK/730/1/71",
+      "sampled_pages": [
+        1,
+        2,
+        4
+      ],
+      "image_paths": [
+        "pages/7667/00001.jpg",
+        "pages/7667/00002.jpg",
+        "pages/7667/00004.jpg"
+      ]
+    },
+    {
+      "id": 7679,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/8",
+      "sampled_pages": [
+        2,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/7679/00002.jpg",
+        "pages/7679/00003.jpg",
+        "pages/7679/00004.jpg"
+      ]
+    },
+    {
+      "id": 7764,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/5",
+      "sampled_pages": [
+        3,
+        4,
+        6
+      ],
+      "image_paths": [
+        "pages/7764/00003.jpg",
+        "pages/7764/00004.jpg",
+        "pages/7764/00006.jpg"
+      ]
+    },
+    {
+      "id": 7765,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/13",
+      "sampled_pages": [
+        1,
+        2,
+        4
+      ],
+      "image_paths": [
+        "pages/7765/00001.jpg",
+        "pages/7765/00002.jpg",
+        "pages/7765/00004.jpg"
+      ]
+    },
+    {
+      "id": 7796,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/6",
+      "sampled_pages": [
+        1,
+        2,
+        3
+      ],
+      "image_paths": [
+        "pages/7796/00001.jpg",
+        "pages/7796/00002.jpg",
+        "pages/7796/00003.jpg"
+      ]
+    },
+    {
+      "id": 7856,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1708/1/160",
+      "sampled_pages": [
+        1,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/7856/00001.jpg",
+        "pages/7856/00003.jpg",
+        "pages/7856/00004.jpg"
+      ]
+    },
+    {
+      "id": 7956,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/64",
+      "sampled_pages": [
+        5,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/7956/00005.jpg",
+        "pages/7956/00007.jpg",
+        "pages/7956/00010.jpg"
+      ]
+    },
+    {
+      "id": 8169,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/11",
+      "sampled_pages": [
+        1,
+        2,
+        3
+      ],
+      "image_paths": [
+        "pages/8169/00001.jpg",
+        "pages/8169/00002.jpg",
+        "pages/8169/00003.jpg"
+      ]
+    },
+    {
+      "id": 8413,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/7",
+      "sampled_pages": [
+        1,
+        2,
+        3
+      ],
+      "image_paths": [
+        "pages/8413/00001.jpg",
+        "pages/8413/00002.jpg",
+        "pages/8413/00003.jpg"
+      ]
+    },
+    {
+      "id": 8754,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/19",
+      "sampled_pages": [
+        1,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/8754/00001.jpg",
+        "pages/8754/00006.jpg",
+        "pages/8754/00010.jpg"
+      ]
+    },
+    {
+      "id": 8858,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-6448/1/19",
+      "sampled_pages": [
+        4,
+        5,
+        10
+      ],
+      "image_paths": [
+        "pages/8858/00004.jpg",
+        "pages/8858/00005.jpg",
+        "pages/8858/00010.jpg"
+      ]
+    },
+    {
+      "id": 8884,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-6448/1/145",
+      "sampled_pages": [
+        2,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/8884/00002.jpg",
+        "pages/8884/00003.jpg",
+        "pages/8884/00004.jpg"
+      ]
+    },
+    {
+      "id": 8903,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-6453/1/74",
+      "sampled_pages": [
+        6,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/8903/00006.jpg",
+        "pages/8903/00009.jpg",
+        "pages/8903/00010.jpg"
+      ]
+    },
+    {
+      "id": 9303,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-6448/1/31",
+      "sampled_pages": [
+        4,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/9303/00004.jpg",
+        "pages/9303/00006.jpg",
+        "pages/9303/00008.jpg"
+      ]
+    },
+    {
+      "id": 9359,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-6193/12/P8232",
+      "sampled_pages": [
+        4,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/9359/00004.jpg",
+        "pages/9359/00007.jpg",
+        "pages/9359/00009.jpg"
+      ]
+    },
+    {
+      "id": 9411,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-6448/1/5",
+      "sampled_pages": [
+        2,
+        4,
+        6
+      ],
+      "image_paths": [
+        "pages/9411/00002.jpg",
+        "pages/9411/00004.jpg",
+        "pages/9411/00006.jpg"
+      ]
+    },
+    {
+      "id": 14611,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/20a/507",
+      "sampled_pages": [
+        3,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/14611/00003.jpg",
+        "pages/14611/00006.jpg",
+        "pages/14611/00008.jpg"
+      ]
+    },
+    {
+      "id": 14634,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4314",
+      "sampled_pages": [
+        4,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/14634/00004.jpg",
+        "pages/14634/00007.jpg",
+        "pages/14634/00010.jpg"
+      ]
+    },
+    {
+      "id": 14644,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4300",
+      "sampled_pages": [
+        5,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/14644/00005.jpg",
+        "pages/14644/00007.jpg",
+        "pages/14644/00009.jpg"
+      ]
+    },
+    {
+      "id": 14667,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/110a/188",
+      "sampled_pages": [
+        1,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/14667/00001.jpg",
+        "pages/14667/00006.jpg",
+        "pages/14667/00010.jpg"
+      ]
+    },
+    {
+      "id": 14685,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4018",
+      "sampled_pages": [
+        2,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/14685/00002.jpg",
+        "pages/14685/00004.jpg",
+        "pages/14685/00007.jpg"
+      ]
+    },
+    {
+      "id": 14716,
+      "root_label": "DACHGO",
+      "label": "DACHGO/467/2/64",
+      "sampled_pages": [
+        1,
+        2,
+        4
+      ],
+      "image_paths": [
+        "pages/14716/00001.jpg",
+        "pages/14716/00002.jpg",
+        "pages/14716/00004.jpg"
+      ]
+    },
+    {
+      "id": 14751,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/80",
+      "sampled_pages": [
+        1,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/14751/00001.jpg",
+        "pages/14751/00004.jpg",
+        "pages/14751/00005.jpg"
+      ]
+    },
+    {
+      "id": 14757,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/1/2391",
+      "sampled_pages": [
+        1,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/14757/00001.jpg",
+        "pages/14757/00003.jpg",
+        "pages/14757/00004.jpg"
+      ]
+    },
+    {
+      "id": 14760,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/12/729",
+      "sampled_pages": [
+        1,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/14760/00001.jpg",
+        "pages/14760/00005.jpg",
+        "pages/14760/00007.jpg"
+      ]
+    },
+    {
+      "id": 14770,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/18a/383",
+      "sampled_pages": [
+        6,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/14770/00006.jpg",
+        "pages/14770/00008.jpg",
+        "pages/14770/00010.jpg"
+      ]
+    },
+    {
+      "id": 15027,
+      "root_label": "DACHGO",
+      "label": "DACHGO/1502/1/12",
+      "sampled_pages": [
+        6,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/15027/00006.jpg",
+        "pages/15027/00008.jpg",
+        "pages/15027/00009.jpg"
+      ]
+    },
+    {
+      "id": 15055,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/722",
+      "sampled_pages": [
+        1,
+        2,
+        8
+      ],
+      "image_paths": [
+        "pages/15055/00001.jpg",
+        "pages/15055/00002.jpg",
+        "pages/15055/00008.jpg"
+      ]
+    },
+    {
+      "id": 15058,
+      "root_label": "DACHGO",
+      "label": "DACHGO/132/1/154",
+      "sampled_pages": [
+        3,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/15058/00003.jpg",
+        "pages/15058/00006.jpg",
+        "pages/15058/00009.jpg"
+      ]
+    },
+    {
+      "id": 15108,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/724",
+      "sampled_pages": [
+        2,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/15108/00002.jpg",
+        "pages/15108/00009.jpg",
+        "pages/15108/00010.jpg"
+      ]
+    },
+    {
+      "id": 15144,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/2326",
+      "sampled_pages": [
+        3,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/15144/00003.jpg",
+        "pages/15144/00005.jpg",
+        "pages/15144/00006.jpg"
+      ]
+    },
+    {
+      "id": 15166,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/367",
+      "sampled_pages": [
+        5,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/15166/00005.jpg",
+        "pages/15166/00007.jpg",
+        "pages/15166/00009.jpg"
+      ]
+    },
+    {
+      "id": 15176,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/984",
+      "sampled_pages": [
+        2,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/15176/00002.jpg",
+        "pages/15176/00005.jpg",
+        "pages/15176/00006.jpg"
+      ]
+    },
+    {
+      "id": 15194,
+      "root_label": "DACHGO",
+      "label": "DACHGO/805/1/477",
+      "sampled_pages": [
+        1,
+        2,
+        9
+      ],
+      "image_paths": [
+        "pages/15194/00001.jpg",
+        "pages/15194/00002.jpg",
+        "pages/15194/00009.jpg"
+      ]
+    },
+    {
+      "id": 15201,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/775",
+      "sampled_pages": [
+        2,
+        4,
+        10
+      ],
+      "image_paths": [
+        "pages/15201/00002.jpg",
+        "pages/15201/00004.jpg",
+        "pages/15201/00010.jpg"
+      ]
+    },
+    {
+      "id": 15203,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/1513",
+      "sampled_pages": [
+        7,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/15203/00007.jpg",
+        "pages/15203/00009.jpg",
+        "pages/15203/00010.jpg"
+      ]
+    },
+    {
+      "id": 15211,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/419",
+      "sampled_pages": [
+        3,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/15211/00003.jpg",
+        "pages/15211/00005.jpg",
+        "pages/15211/00008.jpg"
+      ]
+    },
+    {
+      "id": 15212,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/10/1712",
+      "sampled_pages": [
+        2,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/15212/00002.jpg",
+        "pages/15212/00005.jpg",
+        "pages/15212/00008.jpg"
+      ]
+    },
+    {
+      "id": 15226,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4059",
+      "sampled_pages": [
+        3,
+        4,
+        8
+      ],
+      "image_paths": [
+        "pages/15226/00003.jpg",
+        "pages/15226/00004.jpg",
+        "pages/15226/00008.jpg"
+      ]
+    },
+    {
+      "id": 15241,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/415",
+      "sampled_pages": [
+        3,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/15241/00003.jpg",
+        "pages/15241/00004.jpg",
+        "pages/15241/00007.jpg"
+      ]
+    },
+    {
+      "id": 15259,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/111a/105",
+      "sampled_pages": [
+        1,
+        2,
+        9
+      ],
+      "image_paths": [
+        "pages/15259/00001.jpg",
+        "pages/15259/00002.jpg",
+        "pages/15259/00009.jpg"
+      ]
+    },
+    {
+      "id": 15264,
+      "root_label": "DACHGO",
+      "label": "DACHGO/132/1/136",
+      "sampled_pages": [
+        6,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/15264/00006.jpg",
+        "pages/15264/00007.jpg",
+        "pages/15264/00009.jpg"
+      ]
+    },
+    {
+      "id": 15370,
+      "root_label": "DADNO",
+      "label": "DADNO/282/1/7",
+      "sampled_pages": [
+        2,
+        4,
+        10
+      ],
+      "image_paths": [
+        "pages/15370/00002.jpg",
+        "pages/15370/00004.jpg",
+        "pages/15370/00010.jpg"
+      ]
+    },
+    {
+      "id": 15401,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/3624",
+      "sampled_pages": [
+        6,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/15401/00006.jpg",
+        "pages/15401/00007.jpg",
+        "pages/15401/00008.jpg"
+      ]
+    },
+    {
+      "id": 15502,
+      "root_label": "DADNO",
+      "label": "DADNO/282/1/4",
+      "sampled_pages": [
+        2,
+        3,
+        9
+      ],
+      "image_paths": [
+        "pages/15502/00002.jpg",
+        "pages/15502/00003.jpg",
+        "pages/15502/00009.jpg"
+      ]
+    },
+    {
+      "id": 15553,
+      "root_label": "DADNO",
+      "label": "DADNO/282/1/1",
+      "sampled_pages": [
+        1,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/15553/00001.jpg",
+        "pages/15553/00007.jpg",
+        "pages/15553/00008.jpg"
+      ]
+    },
+    {
+      "id": 15716,
+      "root_label": "DADNO",
+      "label": "DADNO/282/1/5",
+      "sampled_pages": [
+        5,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/15716/00005.jpg",
+        "pages/15716/00008.jpg",
+        "pages/15716/00010.jpg"
+      ]
+    },
+    {
+      "id": 15744,
+      "root_label": "DADNO",
+      "label": "DADNO/282/1/3",
+      "sampled_pages": [
+        2,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/15744/00002.jpg",
+        "pages/15744/00007.jpg",
+        "pages/15744/00010.jpg"
+      ]
+    },
+    {
+      "id": 18532,
+      "root_label": "DAK",
+      "label": "DAK/1/2/1922",
+      "sampled_pages": [
+        4,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/18532/00004.jpg",
+        "pages/18532/00005.jpg",
+        "pages/18532/00008.jpg"
+      ]
+    },
+    {
+      "id": 18538,
+      "root_label": "DAK",
+      "label": "DAK/1/2/544",
+      "sampled_pages": [
+        1,
+        2,
+        3
+      ],
+      "image_paths": [
+        "pages/18538/00001.jpg",
+        "pages/18538/00002.jpg",
+        "pages/18538/00003.jpg"
+      ]
+    },
+    {
+      "id": 18539,
+      "root_label": "DAK",
+      "label": "DAK/1/2/1269",
+      "sampled_pages": [
+        1,
+        4,
+        9
+      ],
+      "image_paths": [
+        "pages/18539/00001.jpg",
+        "pages/18539/00004.jpg",
+        "pages/18539/00009.jpg"
+      ]
+    },
+    {
+      "id": 18544,
+      "root_label": "DAK",
+      "label": "DAK/91/1/765",
+      "sampled_pages": [
+        4,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/18544/00004.jpg",
+        "pages/18544/00006.jpg",
+        "pages/18544/00008.jpg"
+      ]
+    },
+    {
+      "id": 19188,
+      "root_label": "DAK",
+      "label": "DAK/R-871/4/380",
+      "sampled_pages": [
+        3,
+        4,
+        6
+      ],
+      "image_paths": [
+        "pages/19188/00003.jpg",
+        "pages/19188/00004.jpg",
+        "pages/19188/00006.jpg"
+      ]
+    },
+    {
+      "id": 19191,
+      "root_label": "DAK",
+      "label": "DAK/R-360/1/116",
+      "sampled_pages": [
+        1,
+        4,
+        10
+      ],
+      "image_paths": [
+        "pages/19191/00001.jpg",
+        "pages/19191/00004.jpg",
+        "pages/19191/00010.jpg"
+      ]
+    },
+    {
+      "id": 19510,
+      "root_label": "DAK",
+      "label": "DAK/R-945/1-os/312",
+      "sampled_pages": [
+        6,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/19510/00006.jpg",
+        "pages/19510/00007.jpg",
+        "pages/19510/00008.jpg"
+      ]
+    },
+    {
+      "id": 19857,
+      "root_label": "DAK",
+      "label": "DAK/R-967/1/1037",
+      "sampled_pages": [
+        4,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/19857/00004.jpg",
+        "pages/19857/00006.jpg",
+        "pages/19857/00008.jpg"
+      ]
+    },
+    {
+      "id": 20301,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/R-7915/1/498",
+      "sampled_pages": [
+        2,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/20301/00002.jpg",
+        "pages/20301/00007.jpg",
+        "pages/20301/00008.jpg"
+      ]
+    },
+    {
+      "id": 20309,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/R-7915/1/370",
+      "sampled_pages": [
+        2,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/20309/00002.jpg",
+        "pages/20309/00003.jpg",
+        "pages/20309/00004.jpg"
+      ]
+    },
+    {
+      "id": 20314,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/R-7915/2/20",
+      "sampled_pages": [
+        1,
+        3,
+        9
+      ],
+      "image_paths": [
+        "pages/20314/00001.jpg",
+        "pages/20314/00003.jpg",
+        "pages/20314/00009.jpg"
+      ]
+    },
+    {
+      "id": 21556,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/R-480/2/20",
+      "sampled_pages": [
+        2,
+        3,
+        6
+      ],
+      "image_paths": [
+        "pages/21556/00002.jpg",
+        "pages/21556/00003.jpg",
+        "pages/21556/00006.jpg"
+      ]
+    },
+    {
+      "id": 24007,
+      "root_label": "DAKO",
+      "label": "DAKO/384/10/206",
+      "sampled_pages": [
+        2,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/24007/00002.jpg",
+        "pages/24007/00008.jpg",
+        "pages/24007/00010.jpg"
+      ]
+    },
+    {
+      "id": 24408,
+      "root_label": "DAKO",
+      "label": "DAKO/384/14/50",
+      "sampled_pages": [
+        2,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/24408/00002.jpg",
+        "pages/24408/00007.jpg",
+        "pages/24408/00010.jpg"
+      ]
+    },
+    {
+      "id": 25358,
+      "root_label": "DAKO",
+      "label": "DAKO/384/8/163",
+      "sampled_pages": [
+        4,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/25358/00004.jpg",
+        "pages/25358/00006.jpg",
+        "pages/25358/00010.jpg"
+      ]
+    },
+    {
+      "id": 28009,
+      "root_label": "DAKO",
+      "label": "DAKO/R-2793/1/69",
+      "sampled_pages": [
+        3,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/28009/00003.jpg",
+        "pages/28009/00004.jpg",
+        "pages/28009/00005.jpg"
+      ]
+    },
+    {
+      "id": 28885,
+      "root_label": "DAKO",
+      "label": "DAKO/R-4205/1/76",
+      "sampled_pages": [
+        1,
+        2,
+        10
+      ],
+      "image_paths": [
+        "pages/28885/00001.jpg",
+        "pages/28885/00002.jpg",
+        "pages/28885/00010.jpg"
+      ]
+    },
+    {
+      "id": 32068,
+      "root_label": "DAKO",
+      "label": "DAKO/R-2793/1/68",
+      "sampled_pages": [
+        1,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/32068/00001.jpg",
+        "pages/32068/00008.jpg",
+        "pages/32068/00010.jpg"
+      ]
+    },
+    {
+      "id": 32434,
+      "root_label": "DAKO",
+      "label": "DAKO/R-862/1/155",
+      "sampled_pages": [
+        4,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/32434/00004.jpg",
+        "pages/32434/00006.jpg",
+        "pages/32434/00007.jpg"
+      ]
+    },
+    {
+      "id": 33425,
+      "root_label": "DAKO",
+      "label": "DAKO/R-114/1/16",
+      "sampled_pages": [
+        5,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/33425/00005.jpg",
+        "pages/33425/00006.jpg",
+        "pages/33425/00009.jpg"
+      ]
+    },
+    {
+      "id": 33455,
+      "root_label": "DAKO",
+      "label": "DAKO/R-862/1/256",
+      "sampled_pages": [
+        3,
+        4,
+        6
+      ],
+      "image_paths": [
+        "pages/33455/00003.jpg",
+        "pages/33455/00004.jpg",
+        "pages/33455/00006.jpg"
+      ]
+    },
+    {
+      "id": 34638,
+      "root_label": "DAKO",
+      "label": "DAKO/R-294/1/492",
+      "sampled_pages": [
+        1,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/34638/00001.jpg",
+        "pages/34638/00005.jpg",
+        "pages/34638/00006.jpg"
+      ]
+    },
+    {
+      "id": 34839,
+      "root_label": "DAKO",
+      "label": "DAKO/R-2793/2/255",
+      "sampled_pages": [
+        2,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/34839/00002.jpg",
+        "pages/34839/00004.jpg",
+        "pages/34839/00005.jpg"
+      ]
+    },
+    {
+      "id": 35071,
+      "root_label": "DAMO",
+      "label": "DAMO/484/1/1706",
+      "sampled_pages": [
+        6,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/35071/00006.jpg",
+        "pages/35071/00008.jpg",
+        "pages/35071/00009.jpg"
+      ]
+    },
+    {
+      "id": 35150,
+      "root_label": "DAMO",
+      "label": "DAMO/461/1/11",
+      "sampled_pages": [
+        2,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/35150/00002.jpg",
+        "pages/35150/00003.jpg",
+        "pages/35150/00004.jpg"
+      ]
+    },
+    {
+      "id": 35309,
+      "root_label": "DAMO",
+      "label": "DAMO/219/1/3",
+      "sampled_pages": [
+        2,
+        5,
+        9
+      ],
+      "image_paths": [
+        "pages/35309/00002.jpg",
+        "pages/35309/00005.jpg",
+        "pages/35309/00009.jpg"
+      ]
+    },
+    {
+      "id": 35315,
+      "root_label": "DAMO",
+      "label": "DAMO/199/1/1",
+      "sampled_pages": [
+        2,
+        3,
+        9
+      ],
+      "image_paths": [
+        "pages/35315/00002.jpg",
+        "pages/35315/00003.jpg",
+        "pages/35315/00009.jpg"
+      ]
+    },
+    {
+      "id": 35621,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/12",
+      "sampled_pages": [
+        4,
+        5,
+        9
+      ],
+      "image_paths": [
+        "pages/35621/00004.jpg",
+        "pages/35621/00005.jpg",
+        "pages/35621/00009.jpg"
+      ]
+    },
+    {
+      "id": 35736,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/64",
+      "sampled_pages": [
+        4,
+        5,
+        10
+      ],
+      "image_paths": [
+        "pages/35736/00004.jpg",
+        "pages/35736/00005.jpg",
+        "pages/35736/00010.jpg"
+      ]
+    },
+    {
+      "id": 35773,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/18",
+      "sampled_pages": [
+        2,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/35773/00002.jpg",
+        "pages/35773/00008.jpg",
+        "pages/35773/00010.jpg"
+      ]
+    },
+    {
+      "id": 35795,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/65",
+      "sampled_pages": [
+        1,
+        5,
+        9
+      ],
+      "image_paths": [
+        "pages/35795/00001.jpg",
+        "pages/35795/00005.jpg",
+        "pages/35795/00009.jpg"
+      ]
+    },
+    {
+      "id": 35801,
+      "root_label": "DAMO",
+      "label": "DAMO/R-2847/1/507",
+      "sampled_pages": [
+        2,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/35801/00002.jpg",
+        "pages/35801/00004.jpg",
+        "pages/35801/00005.jpg"
+      ]
+    },
+    {
+      "id": 35844,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/15",
+      "sampled_pages": [
+        2,
+        4,
+        9
+      ],
+      "image_paths": [
+        "pages/35844/00002.jpg",
+        "pages/35844/00004.jpg",
+        "pages/35844/00009.jpg"
+      ]
+    },
+    {
+      "id": 35855,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/59",
+      "sampled_pages": [
+        1,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/35855/00001.jpg",
+        "pages/35855/00005.jpg",
+        "pages/35855/00008.jpg"
+      ]
+    },
+    {
+      "id": 35875,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/62",
+      "sampled_pages": [
+        1,
+        3,
+        6
+      ],
+      "image_paths": [
+        "pages/35875/00001.jpg",
+        "pages/35875/00003.jpg",
+        "pages/35875/00006.jpg"
+      ]
+    },
+    {
+      "id": 35876,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/63",
+      "sampled_pages": [
+        2,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/35876/00002.jpg",
+        "pages/35876/00007.jpg",
+        "pages/35876/00009.jpg"
+      ]
+    },
+    {
+      "id": 36013,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/7",
+      "sampled_pages": [
+        1,
+        2,
+        5
+      ],
+      "image_paths": [
+        "pages/36013/00001.jpg",
+        "pages/36013/00002.jpg",
+        "pages/36013/00005.jpg"
+      ]
+    },
+    {
+      "id": 36014,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/75",
+      "sampled_pages": [
+        7,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/36014/00007.jpg",
+        "pages/36014/00009.jpg",
+        "pages/36014/00010.jpg"
+      ]
+    },
+    {
+      "id": 36155,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/68",
+      "sampled_pages": [
+        3,
+        4,
+        6
+      ],
+      "image_paths": [
+        "pages/36155/00003.jpg",
+        "pages/36155/00004.jpg",
+        "pages/36155/00006.jpg"
+      ]
+    },
+    {
+      "id": 40557,
+      "root_label": "DARO",
+      "label": "DARO/51/2/9",
+      "sampled_pages": [
+        5,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/40557/00005.jpg",
+        "pages/40557/00008.jpg",
+        "pages/40557/00010.jpg"
+      ]
+    },
+    {
+      "id": 41055,
+      "root_label": "DARO",
+      "label": "DARO/27/3/91",
+      "sampled_pages": [
+        2,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/41055/00002.jpg",
+        "pages/41055/00003.jpg",
+        "pages/41055/00004.jpg"
+      ]
+    },
+    {
+      "id": 41058,
+      "root_label": "DARO",
+      "label": "DARO/22/1/48",
+      "sampled_pages": [
+        4,
+        5,
+        9
+      ],
+      "image_paths": [
+        "pages/41058/00004.jpg",
+        "pages/41058/00005.jpg",
+        "pages/41058/00009.jpg"
+      ]
+    },
+    {
+      "id": 52854,
+      "root_label": "DAVO",
+      "label": "DAVO/46/1/6345",
+      "sampled_pages": [
+        3,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/52854/00003.jpg",
+        "pages/52854/00008.jpg",
+        "pages/52854/00010.jpg"
+      ]
+    },
+    {
+      "id": 53352,
+      "root_label": "DAVO",
+      "label": "DAVO/454/1/13",
+      "sampled_pages": [
+        4,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/53352/00004.jpg",
+        "pages/53352/00005.jpg",
+        "pages/53352/00006.jpg"
+      ]
+    },
+    {
+      "id": 53916,
+      "root_label": "DAVO",
+      "label": "DAVO/454/1/14",
+      "sampled_pages": [
+        1,
+        2,
+        4
+      ],
+      "image_paths": [
+        "pages/53916/00001.jpg",
+        "pages/53916/00002.jpg",
+        "pages/53916/00004.jpg"
+      ]
+    },
+    {
+      "id": 54234,
+      "root_label": "DAVO",
+      "label": "DAVO/R-82/1/61",
+      "sampled_pages": [
+        1,
+        2,
+        3
+      ],
+      "image_paths": [
+        "pages/54234/00001.jpg",
+        "pages/54234/00002.jpg",
+        "pages/54234/00003.jpg"
+      ]
+    },
+    {
+      "id": 54363,
+      "root_label": "DAVO",
+      "label": "DAVO/R-82/1/65",
+      "sampled_pages": [
+        2,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/54363/00002.jpg",
+        "pages/54363/00005.jpg",
+        "pages/54363/00006.jpg"
+      ]
+    },
+    {
+      "id": 54578,
+      "root_label": "DAVO",
+      "label": "DAVO/R-82/1/68",
+      "sampled_pages": [
+        1,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/54578/00001.jpg",
+        "pages/54578/00006.jpg",
+        "pages/54578/00007.jpg"
+      ]
+    },
+    {
+      "id": 61892,
+      "root_label": "DACHGO",
+      "label": "DACHGO/R-8980/1/174",
+      "sampled_pages": [
+        3,
+        5,
+        9
+      ],
+      "image_paths": [
+        "pages/61892/00003.jpg",
+        "pages/61892/00005.jpg",
+        "pages/61892/00009.jpg"
+      ]
+    },
+    {
+      "id": 62338,
+      "root_label": "DACHGO",
+      "label": "DACHGO/R-8980/1/135",
+      "sampled_pages": [
+        3,
+        4,
+        6
+      ],
+      "image_paths": [
+        "pages/62338/00003.jpg",
+        "pages/62338/00004.jpg",
+        "pages/62338/00006.jpg"
+      ]
+    },
+    {
+      "id": 64007,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/236/1/10",
+      "sampled_pages": [
+        3,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/64007/00003.jpg",
+        "pages/64007/00004.jpg",
+        "pages/64007/00007.jpg"
+      ]
+    },
+    {
+      "id": 64008,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/710/1/7",
+      "sampled_pages": [
+        1,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/64008/00001.jpg",
+        "pages/64008/00006.jpg",
+        "pages/64008/00010.jpg"
+      ]
+    },
+    {
+      "id": 64014,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/710/1/1",
+      "sampled_pages": [
+        2,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/64014/00002.jpg",
+        "pages/64014/00007.jpg",
+        "pages/64014/00008.jpg"
+      ]
+    },
+    {
+      "id": 64061,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/403/1/9",
+      "sampled_pages": [
+        1,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/64061/00001.jpg",
+        "pages/64061/00005.jpg",
+        "pages/64061/00007.jpg"
+      ]
+    },
+    {
+      "id": 64170,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/145",
+      "sampled_pages": [
+        2,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/64170/00002.jpg",
+        "pages/64170/00007.jpg",
+        "pages/64170/00008.jpg"
+      ]
+    },
+    {
+      "id": 64188,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/24/1/6",
+      "sampled_pages": [
+        2,
+        4,
+        10
+      ],
+      "image_paths": [
+        "pages/64188/00002.jpg",
+        "pages/64188/00004.jpg",
+        "pages/64188/00010.jpg"
+      ]
+    },
+    {
+      "id": 64202,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/398",
+      "sampled_pages": [
+        2,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/64202/00002.jpg",
+        "pages/64202/00003.jpg",
+        "pages/64202/00004.jpg"
+      ]
+    },
+    {
+      "id": 64210,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/710/1/8",
+      "sampled_pages": [
+        3,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/64210/00003.jpg",
+        "pages/64210/00005.jpg",
+        "pages/64210/00006.jpg"
+      ]
+    },
+    {
+      "id": 64211,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/547//1",
+      "sampled_pages": [
+        1,
+        2,
+        10
+      ],
+      "image_paths": [
+        "pages/64211/00001.jpg",
+        "pages/64211/00002.jpg",
+        "pages/64211/00010.jpg"
+      ]
+    },
+    {
+      "id": 64305,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/520/1/1",
+      "sampled_pages": [
+        4,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/64305/00004.jpg",
+        "pages/64305/00006.jpg",
+        "pages/64305/00009.jpg"
+      ]
+    },
+    {
+      "id": 64308,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/403/1/27",
+      "sampled_pages": [
+        3,
+        4,
+        8
+      ],
+      "image_paths": [
+        "pages/64308/00003.jpg",
+        "pages/64308/00004.jpg",
+        "pages/64308/00008.jpg"
+      ]
+    },
+    {
+      "id": 64313,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/223/1/20",
+      "sampled_pages": [
+        5,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/64313/00005.jpg",
+        "pages/64313/00006.jpg",
+        "pages/64313/00009.jpg"
+      ]
+    },
+    {
+      "id": 64382,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/24/1/2",
+      "sampled_pages": [
+        2,
+        3,
+        10
+      ],
+      "image_paths": [
+        "pages/64382/00002.jpg",
+        "pages/64382/00003.jpg",
+        "pages/64382/00010.jpg"
+      ]
+    },
+    {
+      "id": 64406,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/225/1/44",
+      "sampled_pages": [
+        1,
+        2,
+        7
+      ],
+      "image_paths": [
+        "pages/64406/00001.jpg",
+        "pages/64406/00002.jpg",
+        "pages/64406/00007.jpg"
+      ]
+    },
+    {
+      "id": 64407,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/403/1/38",
+      "sampled_pages": [
+        2,
+        3,
+        9
+      ],
+      "image_paths": [
+        "pages/64407/00002.jpg",
+        "pages/64407/00003.jpg",
+        "pages/64407/00009.jpg"
+      ]
+    },
+    {
+      "id": 64411,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/78/4/417",
+      "sampled_pages": [
+        6,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/64411/00006.jpg",
+        "pages/64411/00008.jpg",
+        "pages/64411/00009.jpg"
+      ]
+    },
+    {
+      "id": 64413,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/711/1/2",
+      "sampled_pages": [
+        3,
+        4,
+        6
+      ],
+      "image_paths": [
+        "pages/64413/00003.jpg",
+        "pages/64413/00004.jpg",
+        "pages/64413/00006.jpg"
+      ]
+    },
+    {
+      "id": 64461,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/17/1/1",
+      "sampled_pages": [
+        2,
+        3,
+        7
+      ],
+      "image_paths": [
+        "pages/64461/00002.jpg",
+        "pages/64461/00003.jpg",
+        "pages/64461/00007.jpg"
+      ]
+    },
+    {
+      "id": 64613,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/528",
+      "sampled_pages": [
+        2,
+        3,
+        7
+      ],
+      "image_paths": [
+        "pages/64613/00002.jpg",
+        "pages/64613/00003.jpg",
+        "pages/64613/00007.jpg"
+      ]
+    },
+    {
+      "id": 64614,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/24/1/3",
+      "sampled_pages": [
+        3,
+        4,
+        10
+      ],
+      "image_paths": [
+        "pages/64614/00003.jpg",
+        "pages/64614/00004.jpg",
+        "pages/64614/00010.jpg"
+      ]
+    },
+    {
+      "id": 64636,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/520/1/38",
+      "sampled_pages": [
+        3,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/64636/00003.jpg",
+        "pages/64636/00005.jpg",
+        "pages/64636/00006.jpg"
+      ]
+    },
+    {
+      "id": 64689,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/317",
+      "sampled_pages": [
+        2,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/64689/00002.jpg",
+        "pages/64689/00005.jpg",
+        "pages/64689/00008.jpg"
+      ]
+    },
+    {
+      "id": 64715,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/195",
+      "sampled_pages": [
+        1,
+        2,
+        4
+      ],
+      "image_paths": [
+        "pages/64715/00001.jpg",
+        "pages/64715/00002.jpg",
+        "pages/64715/00004.jpg"
+      ]
+    },
+    {
+      "id": 64745,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/35",
+      "sampled_pages": [
+        2,
+        3,
+        10
+      ],
+      "image_paths": [
+        "pages/64745/00002.jpg",
+        "pages/64745/00003.jpg",
+        "pages/64745/00010.jpg"
+      ]
+    },
+    {
+      "id": 64836,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/515",
+      "sampled_pages": [
+        3,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/64836/00003.jpg",
+        "pages/64836/00009.jpg",
+        "pages/64836/00010.jpg"
+      ]
+    },
+    {
+      "id": 64845,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/10",
+      "sampled_pages": [
+        3,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/64845/00003.jpg",
+        "pages/64845/00006.jpg",
+        "pages/64845/00007.jpg"
+      ]
+    },
+    {
+      "id": 65133,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/195/1/26",
+      "sampled_pages": [
+        4,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/65133/00004.jpg",
+        "pages/65133/00005.jpg",
+        "pages/65133/00007.jpg"
+      ]
+    },
+    {
+      "id": 65537,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/233",
+      "sampled_pages": [
+        2,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/65537/00002.jpg",
+        "pages/65537/00005.jpg",
+        "pages/65537/00007.jpg"
+      ]
+    },
+    {
+      "id": 67287,
+      "root_label": "DAKO",
+      "label": "DAKO/1/67/89",
+      "sampled_pages": [
+        4,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/67287/00004.jpg",
+        "pages/67287/00008.jpg",
+        "pages/67287/00009.jpg"
+      ]
+    },
+    {
+      "id": 67504,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/174",
+      "sampled_pages": [
+        4,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/67504/00004.jpg",
+        "pages/67504/00008.jpg",
+        "pages/67504/00009.jpg"
+      ]
+    },
+    {
+      "id": 67507,
+      "root_label": "DAKO",
+      "label": "DAKO/2/205/551",
+      "sampled_pages": [
+        2,
+        4,
+        10
+      ],
+      "image_paths": [
+        "pages/67507/00002.jpg",
+        "pages/67507/00004.jpg",
+        "pages/67507/00010.jpg"
+      ]
+    },
+    {
+      "id": 67508,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/429",
+      "sampled_pages": [
+        3,
+        4,
+        6
+      ],
+      "image_paths": [
+        "pages/67508/00003.jpg",
+        "pages/67508/00004.jpg",
+        "pages/67508/00006.jpg"
+      ]
+    },
+    {
+      "id": 67512,
+      "root_label": "DAKO",
+      "label": "DAKO/2/3/9676",
+      "sampled_pages": [
+        4,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/67512/00004.jpg",
+        "pages/67512/00006.jpg",
+        "pages/67512/00008.jpg"
+      ]
+    },
+    {
+      "id": 67513,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/923",
+      "sampled_pages": [
+        1,
+        2,
+        10
+      ],
+      "image_paths": [
+        "pages/67513/00001.jpg",
+        "pages/67513/00002.jpg",
+        "pages/67513/00010.jpg"
+      ]
+    },
+    {
+      "id": 67518,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/88",
+      "sampled_pages": [
+        1,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/67518/00001.jpg",
+        "pages/67518/00003.jpg",
+        "pages/67518/00004.jpg"
+      ]
+    },
+    {
+      "id": 67519,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/366",
+      "sampled_pages": [
+        2,
+        3,
+        8
+      ],
+      "image_paths": [
+        "pages/67519/00002.jpg",
+        "pages/67519/00003.jpg",
+        "pages/67519/00008.jpg"
+      ]
+    },
+    {
+      "id": 67601,
+      "root_label": "DAKO",
+      "label": "DAKO/2/221/164",
+      "sampled_pages": [
+        6,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/67601/00006.jpg",
+        "pages/67601/00007.jpg",
+        "pages/67601/00009.jpg"
+      ]
+    },
+    {
+      "id": 67603,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/393",
+      "sampled_pages": [
+        5,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/67603/00005.jpg",
+        "pages/67603/00006.jpg",
+        "pages/67603/00009.jpg"
+      ]
+    },
+    {
+      "id": 67606,
+      "root_label": "DAKO",
+      "label": "DAKO/2/3/6974",
+      "sampled_pages": [
+        4,
+        5,
+        10
+      ],
+      "image_paths": [
+        "pages/67606/00004.jpg",
+        "pages/67606/00005.jpg",
+        "pages/67606/00010.jpg"
+      ]
+    },
+    {
+      "id": 67607,
+      "root_label": "DAKO",
+      "label": "DAKO/2/1/8927",
+      "sampled_pages": [
+        6,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/67607/00006.jpg",
+        "pages/67607/00007.jpg",
+        "pages/67607/00009.jpg"
+      ]
+    },
+    {
+      "id": 67608,
+      "root_label": "DAKO",
+      "label": "DAKO/2/3/113",
+      "sampled_pages": [
+        3,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/67608/00003.jpg",
+        "pages/67608/00007.jpg",
+        "pages/67608/00010.jpg"
+      ]
+    },
+    {
+      "id": 67611,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/428",
+      "sampled_pages": [
+        1,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/67611/00001.jpg",
+        "pages/67611/00007.jpg",
+        "pages/67611/00009.jpg"
+      ]
+    },
+    {
+      "id": 67615,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/358",
+      "sampled_pages": [
+        1,
+        3,
+        9
+      ],
+      "image_paths": [
+        "pages/67615/00001.jpg",
+        "pages/67615/00003.jpg",
+        "pages/67615/00009.jpg"
+      ]
+    },
+    {
+      "id": 67616,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/491",
+      "sampled_pages": [
+        4,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/67616/00004.jpg",
+        "pages/67616/00005.jpg",
+        "pages/67616/00007.jpg"
+      ]
+    },
+    {
+      "id": 75078,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/8",
+      "sampled_pages": [
+        4,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/75078/00004.jpg",
+        "pages/75078/00005.jpg",
+        "pages/75078/00006.jpg"
+      ]
+    },
+    {
+      "id": 75102,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/16",
+      "sampled_pages": [
+        4,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/75102/00004.jpg",
+        "pages/75102/00007.jpg",
+        "pages/75102/00008.jpg"
+      ]
+    },
+    {
+      "id": 75171,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/20",
+      "sampled_pages": [
+        4,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/75171/00004.jpg",
+        "pages/75171/00006.jpg",
+        "pages/75171/00008.jpg"
+      ]
+    },
+    {
+      "id": 75197,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/17",
+      "sampled_pages": [
+        6,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/75197/00006.jpg",
+        "pages/75197/00007.jpg",
+        "pages/75197/00009.jpg"
+      ]
+    },
+    {
+      "id": 75265,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/2",
+      "sampled_pages": [
+        2,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/75265/00002.jpg",
+        "pages/75265/00006.jpg",
+        "pages/75265/00007.jpg"
+      ]
+    },
+    {
+      "id": 75302,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/16/4",
+      "sampled_pages": [
+        2,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/75302/00002.jpg",
+        "pages/75302/00007.jpg",
+        "pages/75302/00009.jpg"
+      ]
+    },
+    {
+      "id": 75315,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/7",
+      "sampled_pages": [
+        2,
+        4,
+        8
+      ],
+      "image_paths": [
+        "pages/75315/00002.jpg",
+        "pages/75315/00004.jpg",
+        "pages/75315/00008.jpg"
+      ]
+    },
+    {
+      "id": 75353,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/14",
+      "sampled_pages": [
+        3,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/75353/00003.jpg",
+        "pages/75353/00006.jpg",
+        "pages/75353/00009.jpg"
+      ]
+    },
+    {
+      "id": 75398,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/2/637",
+      "sampled_pages": [
+        2,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/75398/00002.jpg",
+        "pages/75398/00004.jpg",
+        "pages/75398/00007.jpg"
+      ]
+    },
+    {
+      "id": 75430,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/26/517",
+      "sampled_pages": [
+        2,
+        3,
+        6
+      ],
+      "image_paths": [
+        "pages/75430/00002.jpg",
+        "pages/75430/00003.jpg",
+        "pages/75430/00006.jpg"
+      ]
+    },
+    {
+      "id": 75602,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2588/1/3",
+      "sampled_pages": [
+        3,
+        4,
+        9
+      ],
+      "image_paths": [
+        "pages/75602/00003.jpg",
+        "pages/75602/00004.jpg",
+        "pages/75602/00009.jpg"
+      ]
+    },
+    {
+      "id": 75665,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/10",
+      "sampled_pages": [
+        1,
+        2,
+        8
+      ],
+      "image_paths": [
+        "pages/75665/00001.jpg",
+        "pages/75665/00002.jpg",
+        "pages/75665/00008.jpg"
+      ]
+    },
+    {
+      "id": 75756,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/12",
+      "sampled_pages": [
+        2,
+        3,
+        6
+      ],
+      "image_paths": [
+        "pages/75756/00002.jpg",
+        "pages/75756/00003.jpg",
+        "pages/75756/00006.jpg"
+      ]
+    },
+    {
+      "id": 75867,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/3",
+      "sampled_pages": [
+        1,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/75867/00001.jpg",
+        "pages/75867/00005.jpg",
+        "pages/75867/00008.jpg"
+      ]
+    },
+    {
+      "id": 76006,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/15",
+      "sampled_pages": [
+        4,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/76006/00004.jpg",
+        "pages/76006/00007.jpg",
+        "pages/76006/00010.jpg"
+      ]
+    },
+    {
+      "id": 76033,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/5",
+      "sampled_pages": [
+        2,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/76033/00002.jpg",
+        "pages/76033/00006.jpg",
+        "pages/76033/00009.jpg"
+      ]
+    },
+    {
+      "id": 76039,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/4",
+      "sampled_pages": [
+        1,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/76039/00001.jpg",
+        "pages/76039/00004.jpg",
+        "pages/76039/00005.jpg"
+      ]
+    },
+    {
+      "id": 76207,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/19",
+      "sampled_pages": [
+        2,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/76207/00002.jpg",
+        "pages/76207/00007.jpg",
+        "pages/76207/00009.jpg"
+      ]
+    },
+    {
+      "id": 76226,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/16/7054",
+      "sampled_pages": [
+        2,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/76226/00002.jpg",
+        "pages/76226/00007.jpg",
+        "pages/76226/00010.jpg"
+      ]
+    },
+    {
+      "id": 76352,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/11",
+      "sampled_pages": [
+        3,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/76352/00003.jpg",
+        "pages/76352/00006.jpg",
+        "pages/76352/00010.jpg"
+      ]
+    },
+    {
+      "id": 76432,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/9",
+      "sampled_pages": [
+        3,
+        5,
+        10
+      ],
+      "image_paths": [
+        "pages/76432/00003.jpg",
+        "pages/76432/00005.jpg",
+        "pages/76432/00010.jpg"
+      ]
+    },
+    {
+      "id": 76756,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/16/3",
+      "sampled_pages": [
+        1,
+        3,
+        8
+      ],
+      "image_paths": [
+        "pages/76756/00001.jpg",
+        "pages/76756/00003.jpg",
+        "pages/76756/00008.jpg"
+      ]
+    },
+    {
+      "id": 76799,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/4/1/32",
+      "sampled_pages": [
+        4,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/76799/00004.jpg",
+        "pages/76799/00005.jpg",
+        "pages/76799/00008.jpg"
+      ]
+    },
+    {
+      "id": 76856,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/16/6",
+      "sampled_pages": [
+        1,
+        4,
+        10
+      ],
+      "image_paths": [
+        "pages/76856/00001.jpg",
+        "pages/76856/00004.jpg",
+        "pages/76856/00010.jpg"
+      ]
+    },
+    {
+      "id": 93154,
+      "root_label": "DAHMO",
+      "label": "DAHMO/28/1/373",
+      "sampled_pages": [
+        1,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/93154/00001.jpg",
+        "pages/93154/00007.jpg",
+        "pages/93154/00008.jpg"
+      ]
+    },
+    {
+      "id": 93301,
+      "root_label": "DAHMO",
+      "label": "DAHMO/28/1/390",
+      "sampled_pages": [
+        2,
+        3,
+        9
+      ],
+      "image_paths": [
+        "pages/93301/00002.jpg",
+        "pages/93301/00003.jpg",
+        "pages/93301/00009.jpg"
+      ]
+    },
+    {
+      "id": 93705,
+      "root_label": "DAHMO",
+      "label": "DAHMO/28/1/299",
+      "sampled_pages": [
+        3,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/93705/00003.jpg",
+        "pages/93705/00006.jpg",
+        "pages/93705/00009.jpg"
+      ]
+    },
+    {
+      "id": 93844,
+      "root_label": "DAHMO",
+      "label": "DAHMO/28/1/388",
+      "sampled_pages": [
+        1,
+        2,
+        7
+      ],
+      "image_paths": [
+        "pages/93844/00001.jpg",
+        "pages/93844/00002.jpg",
+        "pages/93844/00007.jpg"
+      ]
+    },
+    {
+      "id": 143428,
+      "root_label": "DACHGO",
+      "label": "DACHGO/151/1/965",
+      "sampled_pages": [
+        4,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/143428/00004.jpg",
+        "pages/143428/00008.jpg",
+        "pages/143428/00010.jpg"
+      ]
+    },
+    {
+      "id": 143652,
+      "root_label": "DADNO",
+      "label": "DADNO/282/1/2",
+      "sampled_pages": [
+        1,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/143652/00001.jpg",
+        "pages/143652/00006.jpg",
+        "pages/143652/00007.jpg"
+      ]
+    }
+  ]
+}

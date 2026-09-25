@@ -1,0 +1,257 @@
+{
+  "7150": {
+    "label": "CDIAK/491/96/95",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "O"
+    ],
+    "page_count": 254,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "prose",
+        "filled_entries": 6,
+        "named_individuals": 15,
+        "page": 106,
+        "image_path": "pages/7150/00106.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 6, \"named_individuals\": 15}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 12,
+        "named_individuals": 0,
+        "page": 139,
+        "image_path": "pages/7150/00139.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 12, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 3,
+        "named_individuals": 0,
+        "page": 143,
+        "image_path": "pages/7150/00143.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 3, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 9,
+        "named_individuals": 0,
+        "page": 155,
+        "image_path": "pages/7150/00155.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 9, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 7,
+        "named_individuals": 20,
+        "page": 161,
+        "image_path": "pages/7150/00161.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 7, \"named_individuals\": 20}"
+      }
+    ]
+  },
+  "7105": {
+    "label": "CDIAK/127/699/73",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "L"
+    ],
+    "page_count": 192,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 69,
+        "image_path": "pages/7105/00069.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 10,
+        "named_individuals": 25,
+        "page": 86,
+        "image_path": "pages/7105/00086.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 10, \"named_individuals\": 25}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 88,
+        "image_path": "pages/7105/00088.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 118,
+        "image_path": "pages/7105/00118.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "prose",
+        "filled_entries": 1,
+        "named_individuals": 3,
+        "page": 126,
+        "image_path": "pages/7105/00126.jpg",
+        "raw_response": "{\"page_type\": \"prose\", \"filled_entries\": 1, \"named_individuals\": 3}"
+      }
+    ]
+  },
+  "7156": {
+    "label": "CDIAK/1162/1/28",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 207,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 6,
+        "page": 72,
+        "image_path": "pages/7156/00072.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 6}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 9,
+        "named_individuals": 18,
+        "page": 89,
+        "image_path": "pages/7156/00089.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 9, \"named_individuals\": 18}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 18,
+        "page": 91,
+        "image_path": "pages/7156/00091.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 18}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 18,
+        "page": 121,
+        "image_path": "pages/7156/00121.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 18}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 5,
+        "named_individuals": 10,
+        "page": 129,
+        "image_path": "pages/7156/00129.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 5, \"named_individuals\": 10}"
+      }
+    ]
+  },
+  "7305": {
+    "label": "CDIAK/515/1/134",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "L"
+    ],
+    "page_count": 7,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 3,
+        "page": 1,
+        "image_path": "pages/7305/00001.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 0,
+        "page": 2,
+        "image_path": "pages/7305/00002.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 1,
+        "page": 3,
+        "image_path": "pages/7305/00003.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 1}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 3,
+        "page": 4,
+        "image_path": "pages/7305/00004.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 3}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 2,
+        "named_individuals": 0,
+        "page": 5,
+        "image_path": "pages/7305/00005.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 2, \"named_individuals\": 0}"
+      }
+    ]
+  },
+  "7106": {
+    "label": "CDIAK/1150/1/51",
+    "root_label": "CDIAK",
+    "doc_type": [
+      "V"
+    ],
+    "page_count": 10,
+    "priority_target": "P1",
+    "pages": [
+      {
+        "page_type": "cover_or_title",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 2,
+        "image_path": "pages/7106/00002.jpg",
+        "raw_response": "{\"page_type\": \"cover_or_title\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 0,
+        "named_individuals": 0,
+        "page": 3,
+        "image_path": "pages/7106/00003.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 0, \"named_individuals\": 0}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 12,
+        "named_individuals": 30,
+        "page": 4,
+        "image_path": "pages/7106/00004.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 12, \"named_individuals\": 30}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 12,
+        "named_individuals": 30,
+        "page": 6,
+        "image_path": "pages/7106/00006.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 12, \"named_individuals\": 30}"
+      },
+      {
+        "page_type": "register_table",
+        "filled_entries": 6,
+        "named_individuals": 12,
+        "page": 7,
+        "image_path": "pages/7106/00007.jpg",
+        "raw_response": "{\"page_type\": \"register_table\", \"filled_entries\": 6, \"named_individuals\": 12}"
+      }
+    ]
+  }
+}

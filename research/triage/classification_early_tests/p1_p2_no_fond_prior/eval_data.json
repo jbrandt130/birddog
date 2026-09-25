@@ -1,0 +1,5435 @@
+{
+  "label_definitions": {
+    "P1": "Second-tier triage judged this record top priority for acquisition -- content-checkers assessed it after first-level triage and decided it should be acquired first.",
+    "P2": "Second-tier triage judged this record a lower-but-still-worthwhile acquisition priority -- content-checkers decided it should be acquired, just not first.",
+    "NO": "Second-tier triage judged this record should NOT be acquired/processed at all."
+  },
+  "few_shot": [
+    {
+      "id": 7150,
+      "root_label": "CDIAK",
+      "label": "CDIAK/491/96/95",
+      "level": "case",
+      "years": null,
+      "page_description": "Inventory of the Trypil public estate of Kyiv County",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P1",
+      "page_count": 254,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7105,
+      "root_label": "CDIAK",
+      "label": "CDIAK/127/699/73",
+      "level": "case",
+      "years": null,
+      "page_description": "The case of the conversion of Jews, residents of the Kyiv Eparchy, to Orthodoxy",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "target": "P1",
+      "page_count": 192,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7156,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1162/1/28",
+      "level": "case",
+      "years": null,
+      "page_description": "Metric book of the Jewish community of Tarashcha. Birth.",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "target": "P1",
+      "page_count": 207,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7305,
+      "root_label": "CDIAK",
+      "label": "CDIAK/515/1/134",
+      "level": "case",
+      "years": null,
+      "page_description": "Results of land distribution, name list of unauthorized residents in Bari",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "target": "P1",
+      "page_count": 7,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7106,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1150/1/51",
+      "level": "case",
+      "years": null,
+      "page_description": "Metric book of the Jewish community of Khodoriv about birth",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "target": "P1",
+      "page_count": 10,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7413,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1240/1/25",
+      "level": "case",
+      "years": null,
+      "page_description": "Book of records about divorced Jews in Chernobyl, Radomysl County. 1862",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "target": "P1",
+      "page_count": 7,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 706,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6508/43/5",
+      "level": "case",
+      "years": null,
+      "page_description": "Book of Ternivka District Registry Office on death, marriage, divorce",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "target": "P2",
+      "page_count": 248,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7101,
+      "root_label": "CDIAK",
+      "label": "CDIAK/57/1/47",
+      "level": "case",
+      "years": null,
+      "page_description": "Yard census of residents of the Konotopa Hundred of the Nizhyn Regiment; documents (copies of registered deeds, court decisions, deeds of gift, deeds of sale, etc.) to confirm the right of ownership",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "target": "P2",
+      "page_count": 1102,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 2
+      }
+    },
+    {
+      "id": 7164,
+      "root_label": "CDIAK",
+      "label": "CDIAK/274/1/1237",
+      "level": "case",
+      "years": null,
+      "page_description": "Inquest on the charge of Sh. Tsap and M. Furman of distributing the \"Village Newspaper\" No. 3 of the Socialist Revolutionary Party in the village of Rossava.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P2",
+      "page_count": 95,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7323,
+      "root_label": "CDIAK",
+      "label": "CDIAK/442/169/100",
+      "level": "case",
+      "years": null,
+      "page_description": "The case of embezzlement of public funds by the tax collector of the city of Felshtyn, Proskuriv district, Podolsk province, Sigal M.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P2",
+      "page_count": 24,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7437,
+      "root_label": "CDIAK",
+      "label": "CDIAK/707/287/2103",
+      "level": "case",
+      "years": null,
+      "page_description": "Avraham Leibovich Dogilevsky",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P2",
+      "page_count": 13,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7128,
+      "root_label": "CDIAK",
+      "label": "CDIAK/57/1/37",
+      "level": "case",
+      "years": null,
+      "page_description": "Household census of the residents of Olyshivka town and Likhachove village of the Olyshivka Hundred of the Kyiv Regiment; documents (copies of court decisions, deeds of gift, deeds of sale, etc. for 1695 and other years) confirming ownership",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "target": "P2",
+      "page_count": 1101,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 2
+      }
+    },
+    {
+      "id": 26,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/582/1/4716",
+      "level": "case",
+      "years": null,
+      "page_description": "Tables of budget descriptions of peasant farms in the Kremenchug district for 1928-29. Volume 1",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "NO",
+      "page_count": 294,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 2
+      }
+    },
+    {
+      "id": 34,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/5/2/235",
+      "level": "case",
+      "years": null,
+      "page_description": "Correspondence with the administrative department of the Kremenchuk District Executive Committee of the Poltava Province about the return of the Savior and Transfiguration Church to the Old Slavonic community of Kremenchuk, 06/03/1924-03/17/1927, 62 sheets.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "NO",
+      "page_count": null,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 36,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/582/1/444",
+      "level": "case",
+      "years": null,
+      "page_description": "Personal cards (A) of members of the KNS [Committee of Poor Peasants] of the Potytsky District of the Kremenchuk District of the Poltava Province",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "target": "NO",
+      "page_count": 557,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 2
+      }
+    },
+    {
+      "id": 7301,
+      "root_label": "CDIAK",
+      "label": "CDIAK/57/1/201",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents (copies of court decisions, deeds of gift, deeds of sale, etc.) to confirm the ownership rights of residents of the Helmyazun hundred of the Pereyaslav regiment",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "NO",
+      "page_count": 565,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 1
+      }
+    },
+    {
+      "id": 7302,
+      "root_label": "CDIAK",
+      "label": "CDIAK/57/1/171",
+      "level": "case",
+      "years": null,
+      "page_description": "Household census of residents of the villages of Bykiv and Petrivka of the Basanska hundred of the Pereyaslav Regiment and descriptions of the boundaries of their possessions",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "target": "NO",
+      "page_count": 458,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 1
+      }
+    },
+    {
+      "id": 33,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/582/1/1374",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of settlements by districts of Kremenchuk district (route lists)",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "NO",
+      "page_count": 51,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 2
+      }
+    },
+    {
+      "id": 35801,
+      "root_label": "DAMO",
+      "label": "DAMO/R-2847/1/507",
+      "level": "case",
+      "years": null,
+      "page_description": "House book for registration of citizens at Roboche Selishche Street No. 91",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 13,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 24007,
+      "root_label": "DAKO",
+      "label": "DAKO/384/10/206",
+      "level": "case",
+      "years": null,
+      "page_description": "Census Letters, Kornynskaya Volost village Protein, 8 Census, 2 Counting, Part 2",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 235,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 20301,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/R-7915/1/498",
+      "level": "case",
+      "years": null,
+      "page_description": "Civil registry book on divorce",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 45,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 2,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 24408,
+      "root_label": "DAKO",
+      "label": "DAKO/384/14/50",
+      "level": "case",
+      "years": null,
+      "page_description": "Census sheets and population count information, Shabelnytsia volost, Borovytsia village, 11th census precinct, 4th counting precinct, part 5",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 132,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 35071,
+      "root_label": "DAMO",
+      "label": "DAMO/484/1/1706",
+      "level": "case",
+      "years": null,
+      "page_description": "Metrical book of the Jews of Mykolaiv. Death",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 143,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 8903,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-6453/1/74",
+      "level": "case",
+      "years": null,
+      "page_description": "Book of registration of acts of marriage of Khmelnytskyi RATS",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 289,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 20309,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/R-7915/1/370",
+      "level": "case",
+      "years": null,
+      "page_description": "Death registration book. Yelysavetgrad",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 246,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 1
+      }
+    },
+    {
+      "id": 20314,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/R-7915/2/20",
+      "level": "case",
+      "years": null,
+      "page_description": "Birth registration book",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 305,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 1
+      }
+    },
+    {
+      "id": 143428,
+      "root_label": "DACHGO",
+      "label": "DACHGO/151/1/965",
+      "level": "case",
+      "years": null,
+      "page_description": "On the compilation of birth certificates for Jews born in 1857-1861",
+      "page_native_description": "Про складання метричних виписок щодо євреїв, народжених у 1857-1861 роках",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 47,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 25358,
+      "root_label": "DAKO",
+      "label": "DAKO/384/8/163",
+      "level": "case",
+      "years": null,
+      "page_description": "Order No. 3. On the creation of accounting stations and the staff of accountants",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 102,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 2
+      }
+    },
+    {
+      "id": 64406,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/225/1/44",
+      "level": "case",
+      "years": null,
+      "page_description": "1918 On the implementation of the mortgaged fortress of L.I. Molchynska - L.A. Oleksandrov.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 9,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 121066,
+      "root_label": "DAMO",
+      "label": "DAMO/N-2699/1/1",
+      "level": "case",
+      "years": null,
+      "page_description": "Information on the payment of wages to workers and employees for 1941-1942",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": null,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 126420,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/3206/6/283",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of Volksdoyche and partly Ukrainians who were in German-fascist camps for displaced persons from Ukraine, 13.04.1943-12.05.1944, 157 sheets.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": null,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 76799,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/4/1/32",
+      "level": "case",
+      "years": null,
+      "page_description": "Verbal notes of the Embassy of the Republic of Poland in Ukraine. Correspondence with the plenipotentiary of the USSR National Defense Forces in the Ukrainian SSR Schlichter on the repatriation of Jewish refugees from Bessarabia",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 39,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 28885,
+      "root_label": "DAKO",
+      "label": "DAKO/R-4205/1/76",
+      "level": "case",
+      "years": null,
+      "page_description": "Questionnaires and applications for visas and passports for travel to England",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 49,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 67287,
+      "root_label": "DAKO",
+      "label": "DAKO/1/67/89",
+      "level": "case",
+      "years": null,
+      "page_description": "About the incorrect issuance of a passport to the Jew Polonsky by the Khodorkovsky bourgeois administration",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 25,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    }
+  ],
+  "test_cases": [
+    {
+      "id": 7148,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/404",
+      "level": "case",
+      "years": null,
+      "page_description": "Record book of the Jewish community of Rzhyshchiv about divorce",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "target": "P1",
+      "page_count": 14,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7401,
+      "root_label": "CDIAK",
+      "label": "CDIAK/663/1/19",
+      "level": "case",
+      "years": null,
+      "page_description": "Metric book of the synagogue in Korostyshiv. Birth",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "target": "P1",
+      "page_count": 34,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7102,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/99",
+      "level": "case",
+      "years": null,
+      "page_description": "Record book of the Jewish community of M. Dymer about birth",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "target": "P1",
+      "page_count": 10,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7402,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/340",
+      "level": "case",
+      "years": null,
+      "page_description": "Matrimonial book of the Jewish community of Motyzhyn about marriage",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "target": "P1",
+      "page_count": 7,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7303,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/350",
+      "page_description": "Divorce register of the Jewish community of Motyzhyn",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 7,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7104,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1159/1/22",
+      "page_description": "The registry book of the Jewish community of Bila Tserkva about marriage",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 47,
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7404,
+      "root_label": "CDIAK",
+      "label": "CDIAK/276/1/2565",
+      "page_description": "Agent information on the activities of the RSDLP, Social Revolutionary Party, \"Bund\", group of anarchist-communists and other organizations, on surveillance and arrest of persons belonging to these parties in Chernigov province",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 351,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7158,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/390",
+      "page_description": "Record book of the Jewish community of Obukhiv about divorce",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 7,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7306,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/182",
+      "page_description": "Record book of the Jewish community of Ignativka about divorce",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 4,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7307,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/73",
+      "page_description": "Divorce record book of the Borodyanka Jewish community",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 436,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7108,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/326",
+      "page_description": "The record book of the Jewish community of M. Makariv about death",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 39,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7162,
+      "root_label": "CDIAK",
+      "label": "CDIAK/2227/1/180",
+      "page_description": "Another list of recruits from the Jewish artisan bourgeoisie of Kamianets-Podilskyi",
+      "doc_type": [
+        "C"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 135,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 1
+      }
+    },
+    {
+      "id": 7409,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/148",
+      "page_description": "Record book of the Jewish community of M. Dymer about birth",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 46,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7110,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/152",
+      "page_description": "Dimer's record book of the Jewish community on divorce",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 17,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7410,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/190",
+      "page_description": "Record book of the Jewish community of M. Ignativka about birth",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 16,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7168,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/320",
+      "page_description": "Record book of the Jewish community of Makariv on divorce",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 26,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7411,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/401",
+      "page_description": "The metric book of the Jewish community of Rzhyshchiv on deaths",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 41,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7174,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/170",
+      "page_description": "The birth registry of the Jewish community of Dymer",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 16,
+      "fond_siblings": {
+        "P1": 13,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7313,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1159/1s/10",
+      "page_description": "Metric book of the synagogue in Bila Tserkva. Birth",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 131,
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7175,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1267/1/10",
+      "page_description": "Metric book of the synagogue of Gornostaypil. Birth.",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P1",
+      "page_count": 15,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 28,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/5/1067",
+      "level": "case",
+      "years": null,
+      "page_description": "Correspondence with the Kremenchuk Regional Executive Committee on consideration of applications of persons deprived of voting rights for restoration of their rights (in 2 volumes). Т. 1.",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "target": "P1",
+      "page_count": 182,
+      "fond_siblings": {
+        "P1": 9,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 31,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/6/1032",
+      "level": "case",
+      "years": null,
+      "page_description": "Correspondence with the Kremenchuk Regional Executive Committee on the consideration of applications from persons deprived of their voting rights for their restoration",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "target": "P1",
+      "page_count": 99,
+      "fond_siblings": {
+        "P1": 9,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 35,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/6/1033",
+      "level": "case",
+      "years": null,
+      "page_description": "Questionnaires of persons deprived of voting rights in Kremenchuk district",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "target": "P1",
+      "page_count": 205,
+      "fond_siblings": {
+        "P1": 9,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 40,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/5/1102",
+      "level": "case",
+      "years": null,
+      "page_description": "Materials on consideration of applications for restoration of voting rights (protocols, extracts from protocols, correspondence, lists of those deprived of voting rights).",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "target": "P1",
+      "page_count": 66,
+      "fond_siblings": {
+        "P1": 9,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 41,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/5/1101",
+      "level": "case",
+      "years": null,
+      "page_description": "Correspondence with the Kremenchuk Regional Executive Committee on consideration of applications of persons deprived of voting rights for restoration of their rights (in 2 volumes). Vol. 2 (last).",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "target": "P1",
+      "page_count": 212,
+      "fond_siblings": {
+        "P1": 9,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 287,
+      "root_label": "DADNO",
+      "label": "DADNO/R-3807/1/4",
+      "level": "case",
+      "years": null,
+      "page_description": "Correspondence with the Ozerivka section on the confiscation of a cow from a citizen of Neplyakh and his statement",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "target": "P1",
+      "page_count": 60,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 781,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/29",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of people applying for passports in the city of Pyatikhatky",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "target": "P1",
+      "page_count": 16,
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 6
+      }
+    },
+    {
+      "id": 2020,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/16",
+      "level": "case",
+      "years": null,
+      "page_description": "Resolutions of the Presidium of the Central Control Commission and the Central Executive Committee of the Ukrainian SSR, the Dnipropetrovsk Regional Executive Committee on the inspection of the construction of bread factories, a list of employees, information on the progress of loan subscriptions, etc.",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "target": "P1",
+      "page_count": 257,
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 4957,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/31",
+      "level": "case",
+      "years": null,
+      "page_description": "Resolutions of the All-Union Central Executive Committee, the Council of People's Commissars of the Ukrainian SSR, the 1st Dnipropetrovsk Conference on state control and improvement of the quality of housing construction, staff lists, price lists for building materials, correspondence on the progress of construction of facilities, etc.",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "target": "P1",
+      "page_count": 176,
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 5739,
+      "root_label": "DADNO",
+      "label": "DADNO/R-3651/1/44",
+      "level": "case",
+      "years": null,
+      "page_description": "Draft lists of citizens about evasion in Shyrokiv, Lozuvatsky, Pyatikhatsky and Saksagansky districts",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "target": "P1",
+      "page_count": 257,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 6329,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/28",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of people applying for passports in the city of Pyatikhatky",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "target": "P1",
+      "page_count": 47,
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 6
+      }
+    },
+    {
+      "id": 14710,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4260",
+      "level": "case",
+      "years": null,
+      "page_description": "List of Jews who settled in the Novgorod-Seversky district before May 23, 1882",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 68,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 4,
+        "P2": 15,
+        "NO": 9
+      }
+    },
+    {
+      "id": 14714,
+      "root_label": "DACHGO",
+      "label": "DACHGO/206/1/26",
+      "level": "case",
+      "years": null,
+      "page_description": "About the inclusion of Jews from abroad in the recruitment lists of the city of Chernihiv",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": null,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 14716,
+      "root_label": "DACHGO",
+      "label": "DACHGO/467/2/64",
+      "level": "case",
+      "years": null,
+      "page_description": "List of tailors of the Berezyna craft administration",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 82,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 14717,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/15/96",
+      "level": "case",
+      "years": null,
+      "page_description": "Collection of documents on the resettlement of Jews to other provinces and their transfer from estate to estate",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 187,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 4,
+        "P2": 15,
+        "NO": 9
+      }
+    },
+    {
+      "id": 14618,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4262",
+      "level": "case",
+      "years": null,
+      "page_description": "List of Jews who settled in the Novgorod-Siversky district",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 52,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 4,
+        "P2": 15,
+        "NO": 9
+      }
+    },
+    {
+      "id": 14719,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4119",
+      "level": "case",
+      "years": null,
+      "page_description": "List of Jews who illegally settled in the rural areas of the Novgorodseversky district",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 39,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 4,
+        "P2": 15,
+        "NO": 9
+      }
+    },
+    {
+      "id": 14721,
+      "root_label": "DACHGO",
+      "label": "DACHGO/128/1/7608",
+      "level": "case",
+      "years": null,
+      "page_description": "The request of the Jews of Glukhov to release them from the supply of recruits",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 8,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 14724,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/3309",
+      "level": "case",
+      "years": null,
+      "page_description": "Family lists of Jews who settled in Chernihiv province until May 23, 1882. Krasnorig Volost, 1st state of Mghlyna County",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 11,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 4,
+        "P2": 15,
+        "NO": 9
+      }
+    },
+    {
+      "id": 14625,
+      "root_label": "DACHGO",
+      "label": "DACHGO/128/1/4598",
+      "level": "case",
+      "years": null,
+      "page_description": "Statistics on Jews of Chernihiv Province and Metric Books of Jews of Kozelets and Nizhyn",
+      "page_native_description": null,
+      "doc_type": [
+        "V",
+        "C"
+      ],
+      "page_count": 200,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 14726,
+      "root_label": "DACHGO",
+      "label": "DACHGO/467/2/73",
+      "level": "case",
+      "years": null,
+      "page_description": "Reviz fairy tales of residents of Berezna",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 26,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64007,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/236/1/10",
+      "level": "case",
+      "years": null,
+      "page_description": "Alphabet of the notary Volodymyr Osipovych Nikolayev, Novoukrainka",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 80,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64407,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/403/1/38",
+      "level": "case",
+      "years": null,
+      "page_description": "Metric book of Bobrynets synagogue. Death",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 35,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 1
+      }
+    },
+    {
+      "id": 64008,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/710/1/7",
+      "level": "case",
+      "years": null,
+      "page_description": "Distribution of money collections for public needs",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 51,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 2,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64308,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/403/1/27",
+      "level": "case",
+      "years": null,
+      "page_description": "Metric book of Bobrynets synagogue. Marriage",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 22,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 1
+      }
+    },
+    {
+      "id": 64210,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/710/1/8",
+      "level": "case",
+      "years": null,
+      "page_description": "Tax book of the Pokotyliv burgher administration",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 85,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 2,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64211,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/547//1",
+      "level": "case",
+      "years": null,
+      "page_description": "Metric book of the Alexander Jewish community. Birth",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 29,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64411,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/78/4/417",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of Jewish merchants and townspeople subject to the candle tax in Elisavetgrad",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 70,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64313,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/223/1/20",
+      "level": "case",
+      "years": null,
+      "page_description": "Personal subscriptions.",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 204,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64413,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/711/1/2",
+      "level": "case",
+      "years": null,
+      "page_description": "Tax book of the Merchant Bourgeois Society",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 65,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64014,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/710/1/1",
+      "level": "case",
+      "years": null,
+      "page_description": "Tax book of the Pokotyliv burgher administration",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 50,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 2,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 28009,
+      "root_label": "DAKO",
+      "label": "DAKO/R-2793/1/69",
+      "level": "case",
+      "years": null,
+      "page_description": "About persons arriving for residence in Kiev in the Demievsky district",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 5,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 1,
+        "NO": 0
+      }
+    },
+    {
+      "id": 32434,
+      "root_label": "DAKO",
+      "label": "DAKO/R-862/1/155",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists and registration sheets of citizens affected by the counter-resolution for 1919",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 102,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 32068,
+      "root_label": "DAKO",
+      "label": "DAKO/R-2793/1/68",
+      "level": "case",
+      "years": null,
+      "page_description": "About persons arriving for residence in Kiev in the Demievsky district",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 56,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 1,
+        "NO": 0
+      }
+    },
+    {
+      "id": 33455,
+      "root_label": "DAKO",
+      "label": "DAKO/R-862/1/256",
+      "level": "case",
+      "years": null,
+      "page_description": "List of board voters. Jewish prayer house Belaya Tserkov st. Pekarskaya  24",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 9,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 67601,
+      "root_label": "DAKO",
+      "label": "DAKO/2/221/164",
+      "level": "case",
+      "years": null,
+      "page_description": "About anti-Jewish riots in the Taraschan district",
+      "page_native_description": "Про антиєврейські заворушення у Таращанському повіті",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 54,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 7,
+        "NO": 10
+      }
+    },
+    {
+      "id": 67602,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/933",
+      "level": "case",
+      "years": null,
+      "page_description": "Book for the record of passports issued by the Kiev governor for traveling abroad",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 538,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 7,
+        "NO": 10
+      }
+    },
+    {
+      "id": 67503,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/916",
+      "level": "case",
+      "years": null,
+      "page_description": "Registration book of subjects who received passports for the right of residence in Russia",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 410,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 7,
+        "NO": 10
+      }
+    },
+    {
+      "id": 67506,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/944",
+      "level": "case",
+      "years": null,
+      "page_description": "Book for the record of passports issued by the Kiev governor for traveling abroad",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 42,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 7,
+        "NO": 10
+      }
+    },
+    {
+      "id": 67606,
+      "root_label": "DAKO",
+      "label": "DAKO/2/3/6974",
+      "level": "case",
+      "years": null,
+      "page_description": "Name lists of Jews taken as recruits by Radomysl recruitment office",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 26,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 7,
+        "NO": 10
+      }
+    },
+    {
+      "id": 67607,
+      "root_label": "DAKO",
+      "label": "DAKO/2/1/8927",
+      "level": "case",
+      "years": null,
+      "page_description": "On the journey of the Jewish recruitment party from Zhitomir to Orenburg",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 23,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 7,
+        "NO": 10
+      }
+    },
+    {
+      "id": 8858,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-6448/1/19",
+      "level": "case",
+      "years": null,
+      "page_description": "Birth registration book",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 505,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 3,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 8979,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-3168/1/4",
+      "level": "case",
+      "years": null,
+      "page_description": "Health certificates, applications for financial assistance",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 84,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 8884,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-6448/1/145",
+      "level": "case",
+      "years": null,
+      "page_description": "Death registration book",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 505,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 3,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 9303,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-6448/1/31",
+      "level": "case",
+      "years": null,
+      "page_description": "Birth registration book",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 100,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 3,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 9411,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-6448/1/5",
+      "level": "case",
+      "years": null,
+      "page_description": "Birth registration book",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 462,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 3,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 35309,
+      "root_label": "DAMO",
+      "label": "DAMO/219/1/3",
+      "level": "case",
+      "years": null,
+      "page_description": "Alphabetical index to the family list of the burghers of Bohoyavlenske village",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 56,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 35315,
+      "root_label": "DAMO",
+      "label": "DAMO/199/1/1",
+      "level": "case",
+      "years": null,
+      "page_description": "Vital records of births, marriages, divorces and deaths in the village of Efingar",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 447,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 15370,
+      "root_label": "DADNO",
+      "label": "DADNO/282/1/7",
+      "level": "case",
+      "years": null,
+      "page_description": "Metrical book of Jews of Pavlohrad",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 48,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 15502,
+      "root_label": "DADNO",
+      "label": "DADNO/282/1/4",
+      "level": "case",
+      "years": null,
+      "page_description": "Metrical book of Jews of Pavlohrad",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 88,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 15716,
+      "root_label": "DADNO",
+      "label": "DADNO/282/1/5",
+      "level": "case",
+      "years": null,
+      "page_description": "Metrical book of Jews of Pavlohrad",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 116,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 15744,
+      "root_label": "DADNO",
+      "label": "DADNO/282/1/3",
+      "level": "case",
+      "years": null,
+      "page_description": "Metrical book of Jews of Pavlohrad",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 84,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 15553,
+      "root_label": "DADNO",
+      "label": "DADNO/282/1/1",
+      "level": "case",
+      "years": null,
+      "page_description": "Metrical book of Jews of Pavlohrad",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 81,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 143652,
+      "root_label": "DADNO",
+      "label": "DADNO/282/1/2",
+      "level": "case",
+      "years": null,
+      "page_description": "Metric books of Jews of Pavlohrad",
+      "page_native_description": "Метричні книги євреїв м. Павлограда",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 81,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 75302,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/16/4",
+      "level": "case",
+      "years": null,
+      "page_description": "Decrees of the Presidium of the Supreme Soviet of the Ukrainian SSR",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 134,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 9,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 75430,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/26/517",
+      "level": "case",
+      "years": null,
+      "page_description": "Personal lists of the Rivne partisan unit №1 under the command of Begma VA",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 202,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 9,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 75398,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/2/637",
+      "level": "case",
+      "years": null,
+      "page_description": "[list of those deprived of voting rights in Kremenchuk]",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 8,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 9,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 76756,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/16/3",
+      "level": "case",
+      "years": null,
+      "page_description": "Minutes of the meetings of the Presidium of the Supreme Soviet of the Ukrainian SSR (printer's note). Book 2.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 165,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 9,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 76856,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/16/6",
+      "level": "case",
+      "years": null,
+      "page_description": "Decrees of the Presidium of the Supreme Soviet of the Ukrainian SSR",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 129,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 9,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 122758,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/3787/1/17",
+      "level": "case",
+      "years": null,
+      "page_description": "Correspondence with the Yekaterinoslav Provincial Committee of the EUKM about its work, 1921, 28 sheets.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": null,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 123363,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/799/1/5",
+      "level": "case",
+      "years": null,
+      "page_description": "Minutes of meetings of the commission on the development of the draft regulation on elections to the Ukrainian State Diet; draft regulations, reports, shorthand report of the meeting on the elections to the Constituent Assembly. Orders of the election bureau and correspondence about expenditure of funds, 31.05.1917-10.12.1918, 347 sheets.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": null,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 123309,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1748/1/45",
+      "level": "case",
+      "years": null,
+      "page_description": "Minutes of meetings of the commission for organizing elections to the Jewish community of Haysyn, Podilsk province, its appeals about the elections, lists of candidates from Jewish party committees, 01.20.1918-04.08.1918, 32 sheets.",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": null,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 123381,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1748/1/65",
+      "level": "case",
+      "years": null,
+      "page_description": "Minutes of meetings of the commission for organizing elections to the council of the Jewish community of Medzhibozh of the Podilsk province, election returns, cost estimates, lists of candidates from the committees of Jewish parties and other organizations, 01.24.1918-03.17.1918, 18 sheets.",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": null,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 123385,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/3787/1/37",
+      "level": "case",
+      "years": null,
+      "page_description": "Correspondence with the Korop Organization of the Ukrainian Communist Party of Chernihiv Province about its work, 1921, 21 sheets.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": null,
+      "target": "P1",
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7180,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/4",
+      "level": "case",
+      "years": null,
+      "page_description": "Marriage searches of residents of the Kiev province. 1805, 1810, 1815, 1817; Polish language",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "target": "NO",
+      "page_count": null,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 8
+      }
+    },
+    {
+      "id": 7326,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/67",
+      "level": "case",
+      "years": null,
+      "page_description": "Order of the general commissar of the estates of the princes of Lyubomirsky of the administration of the Lyubarsky starost",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "NO",
+      "page_count": 7,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 7
+      }
+    },
+    {
+      "id": 7378,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/265",
+      "level": "case",
+      "years": null,
+      "page_description": "Orders, decrees of Prince Jerzy Marcian Lyubomyrsky and other things for the Lyubar garrison",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "NO",
+      "page_count": 17,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 7
+      }
+    },
+    {
+      "id": 7281,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/52",
+      "level": "case",
+      "years": null,
+      "page_description": "Registers of weekly expenses for the maintenance of factory craftsmen in the city of Polonne",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "NO",
+      "page_count": 50,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 7
+      }
+    },
+    {
+      "id": 7526,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/271",
+      "level": "case",
+      "years": null,
+      "page_description": "Vendryhovsky's letter to Jerzy Marcyn Lyubomyrskyi about the financial affairs of the Lyubar garrison",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "NO",
+      "page_count": 6,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 7
+      }
+    },
+    {
+      "id": 7550,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/264",
+      "level": "case",
+      "years": null,
+      "page_description": "Kenevich's letters to Solyarevich, commandant of the Lyubar garrison, and an unidentified person",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "NO",
+      "page_count": 5,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 7
+      }
+    },
+    {
+      "id": 7956,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/64",
+      "page_description": "Registers of books from the Lyubomyrski library in Polonno, given to the city of Gdansk for framing",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 13,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 7
+      }
+    },
+    {
+      "id": 7764,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/5",
+      "page_description": "The case of the loss of the visitation descriptions of the church in St. Vasyliv. Polish language",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 7,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 8
+      }
+    },
+    {
+      "id": 7765,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/13",
+      "page_description": "Death certificate in the Kyiv hospital for laborers of Private Stanislav Zaionchkovsky. Marriage certificate of Princess Natalia Baratova and Second Lieutenant Vyacheslav Tutkovsky",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 5,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 8
+      }
+    },
+    {
+      "id": 7973,
+      "root_label": "CDIAK",
+      "label": "CDIAK/2227/1/95",
+      "page_description": "Lustration of the Bratslav and Vinnytsia starosts. Certified extract from the Crown Register of 1775. Language Polish, Latin",
+      "doc_type": [
+        "L"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 24,
+      "fond_siblings": {
+        "P1": 1,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7575,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/262",
+      "page_description": "Reports, information about the Lyubar garrison",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 66,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 7
+      }
+    },
+    {
+      "id": 7679,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/8",
+      "page_description": "Decree on the resignation from service of second lieutenant of the Vitebsk Infantry Regiment Yakov Hrushetsky",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 4,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 8
+      }
+    },
+    {
+      "id": 7983,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/20",
+      "page_description": "Registers of payment of floating tax by residents of Lubar",
+      "doc_type": [
+        "C"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 36,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 7
+      }
+    },
+    {
+      "id": 7596,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/16",
+      "page_description": "The case of granting permission for marriage to a Catholic woman, a resident of Kyiv, Maryna Aksen, and an Orthodox man, Warrant Officer Ivan Urlyk. The obligation of a resident of Kyiv, Anton Zagoruyko, to baptize children and raise them in the Roman Catholic faith",
+      "doc_type": [
+        "O",
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 7,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 8
+      }
+    },
+    {
+      "id": 7796,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/6",
+      "page_description": "Notice of vacant positions in the Kyiv Deanery. Polish language",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 3,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 8
+      }
+    },
+    {
+      "id": 8002,
+      "root_label": "CDIAK",
+      "label": "CDIAK/193/1/86",
+      "page_description": "List of nobles of Pereyaslavl uyezd, Kiev nomesnichestvo.",
+      "doc_type": [
+        "C"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 17,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 8169,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/11",
+      "page_description": "Service record of the priest of the church of the village of Motovylivka, Kajetan Plavinsky",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 4,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 8
+      }
+    },
+    {
+      "id": 8404,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/1/1980",
+      "page_description": "Family lists of parishioners of Greek Catholic parishes of the Brailivka deanery. Demydivka, Stanislavchyk, Brailiv, Kozachivka, Moskalivka, Mohylivka, Simakiv, Lityn, Potoky, Mayaniv, Vytava, Oznivtsi, Novosydlivka, Zhaliv, Borkiv, Ilkiv, Dzvinykha, Klishchiv, Pykivets, Mykhailivka, Sidava, Vonyachyn, Yaryshivka, Leleki, Bohinets, Sydlivka, Budky, Makhnivka, Mykulyncy, Sutyski, Sokolintsi, Pilava, Yankiv, Shyroka Hreblya, Tselinkiv, Novoselytsia, Sovenki, Sidliski, Tyvriv, Vasylivka, Voroshilovka, Shershniv, Ryzhavka, Kurylivtsi, Pochapyntsi, Zhmurynka Mala, Zhmurynka Velyka, Novoselytsia Zaluzhna, Tarasivka",
+      "doc_type": [
+        "C"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 54,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 8413,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/7",
+      "page_description": "Death certificates of residents of the Kyiv province. 1842, 1858; Polish language",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": null,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 8
+      }
+    },
+    {
+      "id": 8415,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/9",
+      "page_description": "Service lists of clergy of Roman Catholic churches in Kyiv and Kyiv province",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 32,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 8
+      }
+    },
+    {
+      "id": 1451,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/35",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of people applying for passports in the Saksagansk village council",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "target": "NO",
+      "page_count": 33,
+      "fond_siblings": {
+        "P1": 2,
+        "P2": 0,
+        "NO": 5
+      }
+    },
+    {
+      "id": 1817,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/2t1/5249",
+      "level": "case",
+      "years": null,
+      "page_description": "Slabakov N.S.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "NO",
+      "page_count": 56,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 0
+      }
+    },
+    {
+      "id": 1926,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/36",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of the population for obtaining passports on the collective farm Zirka Commune of the Saksagansk Village Council",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "target": "NO",
+      "page_count": 25,
+      "fond_siblings": {
+        "P1": 2,
+        "P2": 0,
+        "NO": 5
+      }
+    },
+    {
+      "id": 3445,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2492/2/18",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of employees of district institutions to receive rations",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "target": "NO",
+      "page_count": 90,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 4083,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/39",
+      "level": "case",
+      "years": null,
+      "page_description": "Population lists of the village of Saksagan",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "target": "NO",
+      "page_count": 43,
+      "fond_siblings": {
+        "P1": 2,
+        "P2": 0,
+        "NO": 5
+      }
+    },
+    {
+      "id": 4179,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/40",
+      "level": "case",
+      "years": null,
+      "page_description": "Population lists of the village of Saksagan",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "target": "NO",
+      "page_count": 33,
+      "fond_siblings": {
+        "P1": 2,
+        "P2": 0,
+        "NO": 5
+      }
+    },
+    {
+      "id": 4844,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/38",
+      "level": "case",
+      "years": null,
+      "page_description": "Population lists of the village of Saksagan",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "target": "NO",
+      "page_count": 39,
+      "fond_siblings": {
+        "P1": 2,
+        "P2": 0,
+        "NO": 5
+      }
+    },
+    {
+      "id": 4882,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/37",
+      "level": "case",
+      "years": null,
+      "page_description": "Population lists of the village of Saksagan",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "target": "NO",
+      "page_count": 23,
+      "fond_siblings": {
+        "P1": 2,
+        "P2": 0,
+        "NO": 5
+      }
+    },
+    {
+      "id": 5041,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2492/2/6",
+      "level": "case",
+      "years": null,
+      "page_description": "Census data of the district",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "target": "NO",
+      "page_count": 21,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 14634,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4314",
+      "page_description": "Formular list about the service of the former leader of the nobility of the Gorodnyansky district of the state adviser Lizogub",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 12,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 15,
+        "NO": 8
+      }
+    },
+    {
+      "id": 14644,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4300",
+      "page_description": "Form list about the service of the Chernihiv provincial leader of the nobility of Prince Dolgorukov",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 14,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 15,
+        "NO": 8
+      }
+    },
+    {
+      "id": 14685,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4018",
+      "page_description": "Formal lists of leaders of the nobility",
+      "doc_type": [
+        "L"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 122,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 15,
+        "NO": 8
+      }
+    },
+    {
+      "id": 15401,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/3624",
+      "page_description": "Records of the leaders of the nobility",
+      "doc_type": [
+        "L"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 206,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 15,
+        "NO": 8
+      }
+    },
+    {
+      "id": 15203,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/1513",
+      "page_description": "According to the report of the Konotop lower zemstvo court on the appointment to the court of the son of the priest, Vice-Chancellor Panteleimon Puchkovsky",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 17,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 15,
+        "NO": 8
+      }
+    },
+    {
+      "id": 15108,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/724",
+      "page_description": "About enrollment in a salary of the landowner Pishchinsky from the peasant Avdey Meshko who returned from escape. Golubichi of Gorodnitsky district",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 31,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 15,
+        "NO": 8
+      }
+    },
+    {
+      "id": 15211,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/419",
+      "page_description": "Lists of nobles of Mglinsky and Novgorod-Seversky counties",
+      "doc_type": [
+        "L"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "NO",
+      "page_count": 80,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 15,
+        "NO": 8
+      }
+    },
+    {
+      "id": 15226,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4059",
+      "level": "case",
+      "years": null,
+      "page_description": "Formulary lists about the service of officials of aristocratic guardianship",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 229,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 15,
+        "NO": 8
+      }
+    },
+    {
+      "id": 15027,
+      "root_label": "DACHGO",
+      "label": "DACHGO/1502/1/12",
+      "level": "case",
+      "years": null,
+      "page_description": "Family list of Christians in Pryluky",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 493,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 15058,
+      "root_label": "DACHGO",
+      "label": "DACHGO/132/1/154",
+      "level": "case",
+      "years": null,
+      "page_description": "Family lists of burghers who joined the militia in Chernihiv province",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 560,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 1
+      }
+    },
+    {
+      "id": 15264,
+      "root_label": "DACHGO",
+      "label": "DACHGO/132/1/136",
+      "level": "case",
+      "years": null,
+      "page_description": "The list of recruits submitted for review to the recruiting presence",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 13,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 1
+      }
+    },
+    {
+      "id": 15176,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/984",
+      "level": "case",
+      "years": null,
+      "page_description": "About the peasants of the landlady Domontovich of Sosnitsky district Shevchenko, Murashko, etc., who were missed during the audit.",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 6,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 15,
+        "NO": 8
+      }
+    },
+    {
+      "id": 75102,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/16",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents on allocation of residential premises, allocation of land, allotment of plots for construction, etc. (protocols of commissions, descriptions of property, certificates, requests, correspondence). Telegram from Comrade General Secretary of Land Affairs [B.] Martos about postponing the sale of S. Vasetsky's estate.",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 94,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 10
+      }
+    },
+    {
+      "id": 75315,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/7",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents on consideration of disputed issues between landowners E. Kapnist and E. Dragasis-Paleolog and residents of Oleksandivka, Pavlivka and Vasylivka villages of Piskiv Volost",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 101,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 10
+      }
+    },
+    {
+      "id": 75353,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/14",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents on the provision of agricultural equipment (minutes of meetings, certificates, requests, etc.)",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 196,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 10
+      }
+    },
+    {
+      "id": 75265,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/2",
+      "level": "case",
+      "years": null,
+      "page_description": "Circulars of the Ministry of Agriculture of the Provisional Government, the Poltava Provincial Land Committee, the Kremenchug District Land Committee on the collection of information for land reform",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 128,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 10
+      }
+    },
+    {
+      "id": 75171,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/20",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents on the registration of estates in Krynkivska Volost (minutes of meetings, descriptions of property, lists of persons, correspondence, etc.)",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 220,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 10
+      }
+    },
+    {
+      "id": 75078,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/8",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents on the allocation of forest plots for cutting firewood of the Chhyryn-Dubrovsk state dacha to the Hradizka city and parish land administrations",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 53,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 10
+      }
+    },
+    {
+      "id": 75197,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/17",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents on the registration of estates in Globyn Volost (minutes of meetings, descriptions of property, lists of savings officers, correspondence, etc.)",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 134,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 10
+      }
+    },
+    {
+      "id": 75665,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/10",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents on consideration of disputed issues between landowners and residents of Kobelyachkiv Volost (minutes of meetings, certificates, statements, complaints, correspondence, etc.)",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 491,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 10
+      }
+    },
+    {
+      "id": 75867,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/3",
+      "level": "case",
+      "years": null,
+      "page_description": "Correspondence with the Kremenchug Treasury and the Poltava Provincial Land Committee on financial issues",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 21,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 10
+      }
+    },
+    {
+      "id": 76006,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/15",
+      "level": "case",
+      "years": null,
+      "page_description": "Questionnaires with the results of the survey of former private estates in the Kremenchug District",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 138,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 10
+      }
+    },
+    {
+      "id": 76207,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/19",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents on the registration of estates in the Kohniv Volost (minutes of meetings, descriptions of property, lists of savings employees, correspondence, etc.)",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 105,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 10
+      }
+    },
+    {
+      "id": 76226,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/16/7054",
+      "level": "case",
+      "years": null,
+      "page_description": "Laws and resolutions adopted at the fifth session of the Verkhovna Rada of Ukraine",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 264,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 10,
+        "P2": 1,
+        "NO": 0
+      }
+    },
+    {
+      "id": 67502,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/961",
+      "level": "case",
+      "years": null,
+      "page_description": "On the issuance of Russian passports to foreign nationals",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 513,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 7,
+        "NO": 9
+      }
+    },
+    {
+      "id": 67603,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/393",
+      "level": "case",
+      "years": null,
+      "page_description": "On the assessment of the town of the Kyiv Metro station building with signs for dismantling",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 10,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 7,
+        "NO": 9
+      }
+    },
+    {
+      "id": 67504,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/174",
+      "level": "case",
+      "years": null,
+      "page_description": "Information about foreign subjects living in Kiev province. Part 5",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 174,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 7,
+        "NO": 9
+      }
+    },
+    {
+      "id": 67505,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/934",
+      "level": "case",
+      "years": null,
+      "page_description": "Registration book of foreign nationals who received passports for the right of residence in Russia",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 619,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 7,
+        "NO": 9
+      }
+    },
+    {
+      "id": 67508,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/429",
+      "level": "case",
+      "years": null,
+      "page_description": "Extradition of Russian citizens abroad",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 24,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 7,
+        "NO": 9
+      }
+    },
+    {
+      "id": 67608,
+      "root_label": "DAKO",
+      "label": "DAKO/2/3/113",
+      "level": "case",
+      "years": null,
+      "page_description": "Reports of the Kiev city governor and Pereyaslavl commandant on the issue of money to buy food and clothing for prisoners of war of Turks in the Kiev province",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 27,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 7,
+        "NO": 9
+      }
+    },
+    {
+      "id": 67611,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/428",
+      "level": "case",
+      "years": null,
+      "page_description": "Extradition of Russian citizens abroad",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 49,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 7,
+        "NO": 9
+      }
+    },
+    {
+      "id": 67516,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/931",
+      "level": "case",
+      "years": null,
+      "page_description": "On the issue of Russian passports to foreign nationals",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 79,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 7,
+        "NO": 9
+      }
+    },
+    {
+      "id": 67517,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/871",
+      "level": "case",
+      "years": null,
+      "page_description": "Reports of the Berdichev police chief on the issuance of passports to foreign nationals",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 229,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 7,
+        "NO": 9
+      }
+    },
+    {
+      "id": 67518,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/88",
+      "level": "case",
+      "years": null,
+      "page_description": "Copy of the Minister of the Interior's statement on the establishment of secret surveillance of Jews living in Russia and having ties to the French Jewish Society",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 4,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 7,
+        "NO": 9
+      }
+    },
+    {
+      "id": 35150,
+      "root_label": "DAMO",
+      "label": "DAMO/461/1/11",
+      "level": "case",
+      "years": null,
+      "page_description": "Archival description No. 1 of permanent storage cases",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 4,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 35844,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/15",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of repatriated persons who arrived from Bulgaria, France, China and other countries of the world in 1946 and 1948 to the Mykolaiv region",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 33,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 8
+      }
+    },
+    {
+      "id": 35736,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/64",
+      "level": "case",
+      "years": null,
+      "page_description": "Questionnaires-applications for the planned relocation of families from Ternopil to Mykolaiv region, surnames from the letter \"K\" to the letter \"L\".",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 396,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 8
+      }
+    },
+    {
+      "id": 35855,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/59",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of Soviet citizens who did not return to their homeland from exile in the districts of Mykolaiv region.",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 246,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 8
+      }
+    },
+    {
+      "id": 35773,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/18",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents about the arrival of the steamer \"Karl Marx\" to the Mykolaiv port with families of immigrants from Bulgaria along with property, livestock, and equipment.",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 192,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 8
+      }
+    },
+    {
+      "id": 35875,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/62",
+      "level": "case",
+      "years": null,
+      "page_description": "Questionnaires-applications for the planned relocation of families from Ternopil to Mykolaiv region, surnames from the letter \"A\" to the letter \"B\".",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 342,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 8
+      }
+    },
+    {
+      "id": 35876,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/63",
+      "level": "case",
+      "years": null,
+      "page_description": "Questionnaires-applications for the planned relocation of families from Ternopil to Mykolaiv region, surnames from the letter \"G\" through the letter \"I\".",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 384,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 8
+      }
+    },
+    {
+      "id": 35795,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/65",
+      "level": "case",
+      "years": null,
+      "page_description": "Questionnaires-applications for the planned relocation of families from Ternopil to Mykolaiv region, surnames from the letter \"M\" through the letter \"O\".",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 334,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 8
+      }
+    },
+    {
+      "id": 36013,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/7",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of repatriated Soviet citizens sent by the ZPP of the cities of Volodymyro-Volynskyi, Kovel, Brest and camp No. 322 to the Mykolaiv and Kherson regions.",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 95,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 8
+      }
+    },
+    {
+      "id": 36014,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/75",
+      "level": "case",
+      "years": null,
+      "page_description": "Questionnaires-applications about the planned relocation of families from Stanislavsk to Mykolaiv region. Volume 2",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 457,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 8
+      }
+    },
+    {
+      "id": 64061,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/403/1/9",
+      "level": "case",
+      "years": null,
+      "page_description": "Metric book of Bobrynets synagogue. Birth",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 10,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 2,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64461,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/17/1/1",
+      "level": "case",
+      "years": null,
+      "page_description": "Record book of passports and tickets issued to Christian townspeople of Yelysavetgrad",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 216,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64170,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/145",
+      "level": "case",
+      "years": null,
+      "page_description": "Materials on the enrollment of Sumy merchants in the Elisavetgrad merchant title",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 27,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 6,
+        "NO": 2
+      }
+    },
+    {
+      "id": 64382,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/24/1/2",
+      "level": "case",
+      "years": null,
+      "page_description": "Family list of Jews of the Novomyrhorod bourgeois Christian society. Volume 2.",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 333,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 2
+      }
+    },
+    {
+      "id": 64188,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/24/1/6",
+      "level": "case",
+      "years": null,
+      "page_description": "Alphabet to the family list of Christians of the Novomyrhorod burghers' council",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 62,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 2
+      }
+    },
+    {
+      "id": 64614,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/24/1/3",
+      "level": "case",
+      "years": null,
+      "page_description": "Alphabetical book, family list of Novomyrhorod bourgeois Christian society.",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 1607,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 2
+      }
+    },
+    {
+      "id": 64715,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/195",
+      "level": "case",
+      "years": null,
+      "page_description": "Certificates of registration in the Yelisavetgrad burghers of persons who entered the Novorossiysk region",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "C"
+      ],
+      "page_count": 13,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 6,
+        "NO": 2
+      }
+    },
+    {
+      "id": 64845,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/10",
+      "level": "case",
+      "years": null,
+      "page_description": "Notification of the surveyor about merchants and burghers who have land in Elisavetgrad",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 8,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 6,
+        "NO": 2
+      }
+    },
+    {
+      "id": 18532,
+      "root_label": "DAK",
+      "label": "DAK/1/2/1922",
+      "level": "case",
+      "years": null,
+      "page_description": "On the prohibition of admission of non-resident Jews to merchant guilds",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 10,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 18539,
+      "root_label": "DAK",
+      "label": "DAK/1/2/1269",
+      "level": "case",
+      "years": null,
+      "page_description": "On the prohibition of Jews from trading in the flea market",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 9,
+      "target": "NO",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 1
+      }
+    },
+    {
+      "id": 29,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/3/560",
+      "level": "case",
+      "years": null,
+      "page_description": "Correspondence with the Kremenchuk District Executive Committee on the consideration of applications for restoration of voting rights by persons deprived of their voting rights. Statements of these persons.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P2",
+      "page_count": 627,
+      "fond_siblings": {
+        "P1": 10,
+        "P2": 0,
+        "NO": 1
+      }
+    },
+    {
+      "id": 5747,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2492/2/19",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of employees of district institutions to receive rations",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "target": "P2",
+      "page_count": 282,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 2
+      }
+    },
+    {
+      "id": 7520,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/1",
+      "level": "case",
+      "years": null,
+      "page_description": "The case of the conversion to Roman Catholicism of the Jewish woman Leia Hershelovich with her daughters Rashka and Khlyana. Polish, Russian languages",
+      "page_native_description": null,
+      "doc_type": [
+        "V"
+      ],
+      "target": "P2",
+      "page_count": 23,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 9
+      }
+    },
+    {
+      "id": 7856,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1708/1/160",
+      "level": "case",
+      "years": null,
+      "page_description": "Contracts for the lease of the Polissia monastery ferry by the burgher Leib Polissky",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P2",
+      "page_count": 4,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 7667,
+      "root_label": "CDIAK",
+      "label": "CDIAK/730/1/71",
+      "level": "case",
+      "years": null,
+      "page_description": "Description of the Luchansk beet and sugar factory, which belongs to the landowner Doroshe Antonivna Mlodetskyi and is leased by Naftula Hirovyevich Hornshtein and is located in the village of Luka, Taraschansky district, Kyiv province",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P2",
+      "page_count": 115,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 8754,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/19",
+      "level": "case",
+      "years": null,
+      "page_description": "Contracts of the governor of the estates of the Polonsk Key, Michal Tovazhevskyi, with the burghers of the city of Polonne, David Shmulovich, Sos Mayerovych, and others for the lease of mills and a brewery in the city of Kamenchyk, Kremenets County, Volyn Voivodeship.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P2",
+      "page_count": 15,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 8
+      }
+    },
+    {
+      "id": 9359,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-6193/12/P8232",
+      "level": "case",
+      "years": null,
+      "page_description": "Balk Benya-Itsko Meyerovich; Polonne city",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P2",
+      "page_count": 84,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 14606,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/644",
+      "level": "case",
+      "years": null,
+      "page_description": "On permission for Jew Haft and his family to move to a settlement near Konotop",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "target": "P2",
+      "page_count": 14,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 14611,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/20a/507",
+      "level": "case",
+      "years": null,
+      "page_description": "At the request of the residents of the Dobryanka village of the Gorgonjanka district, the Jewish merchants Poliakovsky, Bulkin, and the burghers Leiba Uzhevsky, Leiba Hajkin, and others, for permission to open a Jewish prayer school in Dobryanka",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P2",
+      "page_count": 38,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 14718,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/1/3702",
+      "level": "case",
+      "years": null,
+      "page_description": "On the permission for the Jew Haft to move to the land he rented from the landowner Bobrowska",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "target": "P2",
+      "page_count": 93,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 14751,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/80",
+      "level": "case",
+      "years": null,
+      "page_description": "About the baptism of the Jewish woman Lifshitsy",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P2",
+      "page_count": 109,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 14757,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/1/2391",
+      "level": "case",
+      "years": null,
+      "page_description": "On the discovery of Jewish books unapproved by the censors in Novhorod-Siversk Jews",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P2",
+      "page_count": 571,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 14760,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/12/729",
+      "level": "case",
+      "years": null,
+      "page_description": "Cards of doctors of Glukhov uyezd",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "target": "P2",
+      "page_count": 104,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 14667,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/110a/188",
+      "level": "case",
+      "years": null,
+      "page_description": "At the request of Mordukh Volkov Rabinovich, a citizen of Dobryanka, about illegal actions of former police supervisor Yanovsky",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "target": "P2",
+      "page_count": 95,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 14770,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/18a/383",
+      "level": "case",
+      "years": null,
+      "page_description": "On the resettlement of the Jew Yankel Haft to the merchants of Poltava province",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "target": "P2",
+      "page_count": 111,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 15201,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/775",
+      "page_description": "On permission for merchants Haft and Drapkin to open a synagogue in their house in Konotop station in honor of the Emperor's coronation",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 12,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 15212,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/10/1712",
+      "page_description": "According to the report of the Glukhov district governor on the permission of the merchant Isaac Yankelev Eisenstadt to install a cellar for storage of kerosene outside the city of Glukhov",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 27,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 15241,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/415",
+      "page_description": "On adding his son Khaim and daughter Sosi to the family of the Novgorod-Seversky tradesman Livshits",
+      "doc_type": [
+        "C"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 9,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 15144,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/2326",
+      "page_description": "On the right of unimpeded residence of retired soldier Jew Haft",
+      "doc_type": [
+        "C"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 7,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 15055,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/722",
+      "page_description": "On the resettlement of the Berezensky Jew Vorobyov to the bourgeois Jewish tax society of the Gomel district of the Mogilev province",
+      "doc_type": [
+        "C"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 15,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 15259,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/111a/105",
+      "page_description": "According to the report of the Gorodnyansky District Police Department, number 796, on the former bailiff of the 1st state of the Gorodnyansky district, now a police supervisor of the Dobryanka post, collegiate assessor Marcinowicz, accused of placing false information in his interrogation about the property of local Jews Heifichovs",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 44,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 15166,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/367",
+      "page_description": "On the extension of the permit for the clerk of the Hafta wood supplier, Jew Rokhlin, to temporarily live in the village of Pirogivka until the end of the supply",
+      "doc_type": [
+        "C"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 51,
+      "fond_siblings": {
+        "P1": 5,
+        "P2": 14,
+        "NO": 9
+      }
+    },
+    {
+      "id": 15194,
+      "root_label": "DACHGO",
+      "label": "DACHGO/805/1/477",
+      "page_description": "Collection of documents: decree of the Chernihiv Chamber of Treasury on the procedure for receiving money for issuing certificates to Jewish teachers, on the amount of the patent fee from inn establishments in the cities; the list of rural areas of the Chernihiv province with a division into categories for patent collection from drinking establishments and others",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 74,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 18538,
+      "root_label": "DAK",
+      "label": "DAK/1/2/544",
+      "page_description": "Report of the kahal elders on the need to check the entry of Jews in the census tales",
+      "doc_type": [
+        "C"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 4,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 2
+      }
+    },
+    {
+      "id": 18544,
+      "root_label": "DAK",
+      "label": "DAK/91/1/765",
+      "page_description": "Radutskaya Tauba Ovseevna",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 8,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 19188,
+      "root_label": "DAK",
+      "label": "DAK/R-871/4/380",
+      "page_description": "Personal file of Mykhailo Dovhalevskyi",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 15,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 19191,
+      "root_label": "DAK",
+      "label": "DAK/R-360/1/116",
+      "page_description": "Personal file of Vira Veniaminivna Dovhalevska",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 15,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 19510,
+      "root_label": "DAK",
+      "label": "DAK/R-945/1-os/312",
+      "page_description": "Personal file of L.V. Dovhalevska",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 74,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 19857,
+      "root_label": "DAK",
+      "label": "DAK/R-967/1/1037",
+      "page_description": "On the claim of Dovgalevskaya Khaya Gdalevna against Dovgalevsky Veniamin Yeremeevich on payment of alimony",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 38,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 21556,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/R-480/2/20",
+      "page_description": "Materials about the confiscated property of Кухарського/Kukharskogo Avram",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 17,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 33425,
+      "root_label": "DAKO",
+      "label": "DAKO/R-114/1/16",
+      "page_description": "Resolution of the Presidium on permission to withdraw and submit the rights of Ukrainian citizenship and materials to the resolution",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 9,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 34839,
+      "root_label": "DAKO",
+      "label": "DAKO/R-2793/2/255",
+      "page_description": "On the arrest of Debora (Debra) Moiseivna Bryanoe on charges of activities directed against the Hetman's government",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 12,
+      "fond_siblings": {
+        "P1": 2,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 34638,
+      "root_label": "DAKO",
+      "label": "DAKO/R-294/1/492",
+      "page_description": "Dovgalevskaya R.A.",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 7,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 35621,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/12",
+      "page_description": "Registration journal of repatriates who arrived in the Mykolaiv region",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 49,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 9
+      }
+    },
+    {
+      "id": 36155,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/68",
+      "page_description": "Documents (acts, report, lists, transcript, certificate, register) on the arrival of displaced families and their property from Vinnytsia, Zhytomyr, Zakarpattia, Chernihiv and Ternopil regions. on the passage of sanitary treatment and the amount of potatoes received from displaced people",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 102,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 9
+      }
+    },
+    {
+      "id": 40557,
+      "root_label": "DARO",
+      "label": "DARO/51/2/9",
+      "page_description": "Certificates of graduation from primary schools of residents of Kostopil",
+      "doc_type": [
+        "L"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 19,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 41055,
+      "root_label": "DARO",
+      "label": "DARO/27/3/91",
+      "page_description": "About the state tax payer, a citizen of the city of Rivne, Moshko-Ios Sheynes",
+      "doc_type": [
+        "L"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 26,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 41058,
+      "root_label": "DARO",
+      "label": "DARO/22/1/48",
+      "page_description": "On the investigation of the theft of rye from a barn in the village of Netishine, owned by the merchant of the 3rd guild Galperin Duvid",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 161,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 52854,
+      "root_label": "DAVO",
+      "label": "DAVO/46/1/6345",
+      "page_description": "Correspondence with the Volodymyr Starosty about the issuance of an industrial certificate to Fudym Nuhim to work at a sawmill",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 35,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 53352,
+      "root_label": "DAVO",
+      "label": "DAVO/454/1/13",
+      "page_description": "Special right Eisenberg Henrik - teacher",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 6,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 0
+      }
+    },
+    {
+      "id": 53916,
+      "root_label": "DAVO",
+      "label": "DAVO/454/1/14",
+      "page_description": "Personal file of Eisenberg Yudita - teacher",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 7,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 0
+      }
+    },
+    {
+      "id": 54234,
+      "root_label": "DAVO",
+      "label": "DAVO/R-82/1/61",
+      "page_description": "Personal case of Dr. Shekhter Solomon",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 5,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 0
+      }
+    },
+    {
+      "id": 54363,
+      "root_label": "DAVO",
+      "label": "DAVO/R-82/1/65",
+      "page_description": "Personal case of dentist Berta Yakivlivna Shekhter",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 6,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 0
+      }
+    },
+    {
+      "id": 54578,
+      "root_label": "DAVO",
+      "label": "DAVO/R-82/1/68",
+      "page_description": "Personal file of Rikla Itskivna Beigel",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 7,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 2,
+        "NO": 0
+      }
+    },
+    {
+      "id": 61892,
+      "root_label": "DACHGO",
+      "label": "DACHGO/R-8980/1/174",
+      "page_description": "Birth certificate book (renewed)",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 699,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 0
+      }
+    },
+    {
+      "id": 62338,
+      "root_label": "DACHGO",
+      "label": "DACHGO/R-8980/1/135",
+      "page_description": "Marriage record book",
+      "doc_type": [
+        "V"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 477,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64202,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/398",
+      "page_description": "About enrollment from Elisavetgrad merchants in Odessa",
+      "doc_type": [
+        "C"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 6,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 3
+      }
+    },
+    {
+      "id": 64305,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/520/1/1",
+      "page_description": "Annual report on the state of schools in Zolotonosha County",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 19,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64613,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/528",
+      "page_description": "Attitude, resolution and decree on the defendant Geinakhov on his eviction from the society of Jewish burghers",
+      "doc_type": [
+        "C"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 50,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 3
+      }
+    },
+    {
+      "id": 64636,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/520/1/38",
+      "page_description": "Correspondence with a rabbi regarding the issue of issuing certificates for children's education",
+      "doc_type": [
+        "O"
+      ],
+      "level": "case",
+      "years": null,
+      "page_native_description": null,
+      "target": "P2",
+      "page_count": 6,
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 1,
+        "NO": 0
+      }
+    },
+    {
+      "id": 64836,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/515",
+      "level": "case",
+      "years": null,
+      "page_description": "Petition, testimony and admission verdict on the enrollment of the Jew Yaroshevich in the Elisavetgrad burghers",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "C"
+      ],
+      "page_count": 27,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 3
+      }
+    },
+    {
+      "id": 64745,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/35",
+      "level": "case",
+      "years": null,
+      "page_description": "Petitions of various persons for enrollment in Yelisavetgrad burghers",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 197,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 3
+      }
+    },
+    {
+      "id": 64689,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/317",
+      "level": "case",
+      "years": null,
+      "page_description": "About enrollment in the Elisavetgrad merchant class of the 3rd guild of the Chigirin burgher Chechelnitsky Yu. A.",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 21,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 3
+      }
+    },
+    {
+      "id": 65133,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/195/1/26",
+      "level": "case",
+      "years": null,
+      "page_description": "Register of notary V.V.Senenko in Rivne.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 43,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 65537,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/233",
+      "level": "case",
+      "years": null,
+      "page_description": "About the inclusion of the Jewish Baltyanskaya and her family in the burghers of Elisavetgrad",
+      "page_native_description": null,
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 11,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 5,
+        "NO": 3
+      }
+    },
+    {
+      "id": 67604,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/490",
+      "level": "case",
+      "years": null,
+      "page_description": "Registration book of passports issued by the Kyiv governor",
+      "page_native_description": null,
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 241,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 6,
+        "NO": 10
+      }
+    },
+    {
+      "id": 67507,
+      "root_label": "DAKO",
+      "label": "DAKO/2/205/551",
+      "level": "case",
+      "years": null,
+      "page_description": "On Avrum Dovgalevsky's petition for permission to reside in Kyiv",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 10,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 6,
+        "NO": 10
+      }
+    },
+    {
+      "id": 67512,
+      "root_label": "DAKO",
+      "label": "DAKO/2/3/9676",
+      "level": "case",
+      "years": null,
+      "page_description": "The case of the Jew Krakowski, tried for harboring burglaries",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 38,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 6,
+        "NO": 10
+      }
+    },
+    {
+      "id": 67513,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/923",
+      "level": "case",
+      "years": null,
+      "page_description": "Book on the note of donations received in the deposit of the Kyiv governor in favor of the victims of crop failure in 1891",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 44,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 6,
+        "NO": 10
+      }
+    },
+    {
+      "id": 67615,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/358",
+      "level": "case",
+      "years": null,
+      "page_description": "About the scandal with the Tver rabbi, accused of collecting possible Jewish money for Jewish deputies in St. Petersburg",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 36,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 6,
+        "NO": 10
+      }
+    },
+    {
+      "id": 67616,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/491",
+      "level": "case",
+      "years": null,
+      "page_description": "Information about foreigners detained in Chyhyryn County in May-August 1844",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 7,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 6,
+        "NO": 10
+      }
+    },
+    {
+      "id": 67519,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/366",
+      "level": "case",
+      "years": null,
+      "page_description": "Lists of participants in the Polish Uprising of 1830-1831 based on information about the revolution, court decisions",
+      "page_native_description": null,
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 324,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 6,
+        "P2": 6,
+        "NO": 10
+      }
+    },
+    {
+      "id": 121326,
+      "root_label": "DAMO",
+      "label": "DAMO/R-1185/1/15",
+      "level": "case",
+      "years": null,
+      "page_description": "Work books of Sakur Frosi Sergiyevna, Arbitman Abram Mordkovich for 1929-1930",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": null,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 121041,
+      "root_label": "DAMO",
+      "label": "DAMO/R-1002/1/18",
+      "level": "case",
+      "years": null,
+      "page_description": "Certificate of travel to training courses for heads of district archives. Minutes of the meeting of the examination commission.",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": null,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 4,
+        "NO": 0
+      }
+    },
+    {
+      "id": 121376,
+      "root_label": "DAMO",
+      "label": "DAMO/R-1002/3/57",
+      "level": "case",
+      "years": null,
+      "page_description": "Staff roster and cost estimate of the department of state archives of the Mykolaiv region for 1945.",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": null,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 4,
+        "NO": 0
+      }
+    },
+    {
+      "id": 121196,
+      "root_label": "DAMO",
+      "label": "DAMO/R-1002/3/4",
+      "level": "case",
+      "years": null,
+      "page_description": "Minutes of the meetings of the expert-checking commission at the Department of State Archives of the National Archives of the Mykolaiv Region",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": null,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 4,
+        "NO": 0
+      }
+    },
+    {
+      "id": 121708,
+      "root_label": "DAMO",
+      "label": "DAMO/R-1002/3/53",
+      "level": "case",
+      "years": null,
+      "page_description": "Correspondence with the regional state archive regarding the issuance of certificates of revolutionary activity",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": null,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 4,
+        "NO": 0
+      }
+    },
+    {
+      "id": 121817,
+      "root_label": "DAMO",
+      "label": "DAMO/R-1002/3/75",
+      "level": "case",
+      "years": null,
+      "page_description": "Staff roster and cost estimate of the department of state archives of the Mykolaiv region for 1946.",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": null,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 4,
+        "NO": 0
+      }
+    },
+    {
+      "id": 107504,
+      "root_label": "CDIAK",
+      "label": "CDIAK/293/1/852",
+      "level": "case",
+      "years": null,
+      "page_description": "Correspondence with the Kyiv military governor regarding the transfer to the Committee for the Preservation of the Manuscript in Hebrew, seized during a search of the Berdychiv burgher Sh. Lipets",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": null,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 3,
+        "NO": 0
+      }
+    },
+    {
+      "id": 107753,
+      "root_label": "CDIAK",
+      "label": "CDIAK/293/1/475",
+      "level": "case",
+      "years": null,
+      "page_description": "The case of censorship review and return to the owner of books in Hebrew, received from abroad in the name of a resident of Zhytomyr, Volyn region. Suhostavera",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": null,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 3,
+        "NO": 0
+      }
+    },
+    {
+      "id": 107759,
+      "root_label": "CDIAK",
+      "label": "CDIAK/293/1/409",
+      "level": "case",
+      "years": null,
+      "page_description": "The case of censorship of books in Hebrew, confiscated from a resident of Husiatyn, Podil Province. E. Diment among smuggled goods",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": null,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 3,
+        "NO": 0
+      }
+    },
+    {
+      "id": 107969,
+      "root_label": "CDIAK",
+      "label": "CDIAK/293/1/233",
+      "level": "case",
+      "years": null,
+      "page_description": "Case on censorship of a book in Hebrew, detained at Druzhkopil customs among smuggled goods",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": null,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 3,
+        "NO": 0
+      }
+    },
+    {
+      "id": 75602,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2588/1/3",
+      "level": "case",
+      "years": null,
+      "page_description": "On the organization of the State Guard in Kremenchuk (orders, reports, lists of guards, etc.)",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 136,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 0
+      }
+    },
+    {
+      "id": 75756,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/12",
+      "level": "case",
+      "years": null,
+      "page_description": "The case of the Kremenchug County Land Committee on the composition of the parish land committees (minutes of meetings and meetings, resolutions of meetings, certificates, correspondence, etc.)",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 257,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 4,
+        "NO": 11
+      }
+    },
+    {
+      "id": 76432,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/9",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents on consideration of disputed issues between landowners and residents of Globyn Volost (minutes of meetings, statements, correspondence, etc.). Lists of residents of Pogrebyan Volost",
+      "page_native_description": null,
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 108,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 4,
+        "NO": 11
+      }
+    },
+    {
+      "id": 76033,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/5",
+      "level": "case",
+      "years": null,
+      "page_description": "Minutes of meetings and the resolution of the Omelnytskyi Parish Land Committee on the complaint of the widow of the Cossack T. Ognivenko about illegal actions of the committee, etc.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 72,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 4,
+        "NO": 11
+      }
+    },
+    {
+      "id": 76039,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/4",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents on consideration of disputed issues regarding the felling of the forest bought by B. Yelysavetskyi from O. Kozachka in the Kohniv Volost (purchase agreement, protocols, statements, correspondence)",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 66,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 4,
+        "NO": 11
+      }
+    },
+    {
+      "id": 76352,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/2145/1/11",
+      "level": "case",
+      "years": null,
+      "page_description": "Documents on consideration of disputed issues between landowners and residents of Pototsk Volost (minutes of meetings, certificates, statements, complaints, lists, correspondence, etc.)",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 870,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 4,
+        "NO": 11
+      }
+    },
+    {
+      "id": 93301,
+      "root_label": "DAHMO",
+      "label": "DAHMO/28/1/390",
+      "level": "case",
+      "years": null,
+      "page_description": "About collecting money from Shahman",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 232,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 3,
+        "NO": 0
+      }
+    },
+    {
+      "id": 93154,
+      "root_label": "DAHMO",
+      "label": "DAHMO/28/1/373",
+      "level": "case",
+      "years": null,
+      "page_description": "On the charge of Milis I. of causing bodily harm to Byal A.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 85,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 3,
+        "NO": 0
+      }
+    },
+    {
+      "id": 93705,
+      "root_label": "DAHMO",
+      "label": "DAHMO/28/1/299",
+      "level": "case",
+      "years": null,
+      "page_description": "According to the indictment, Yanchenetsky A. is accused of evading military service.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 160,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 3,
+        "NO": 0
+      }
+    },
+    {
+      "id": 93844,
+      "root_label": "DAHMO",
+      "label": "DAHMO/28/1/388",
+      "level": "case",
+      "years": null,
+      "page_description": "According to the lawsuit of Toirova and Trublevych against Faynbysh E.",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 201,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 3,
+        "NO": 0
+      }
+    },
+    {
+      "id": 159846,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/1/61073",
+      "level": "case",
+      "years": null,
+      "page_description": "Ivan Zagrebelny",
+      "page_native_description": null,
+      "doc_type": [
+        "O"
+      ],
+      "page_count": null,
+      "target": "P2",
+      "fond_siblings": {
+        "P1": 0,
+        "P2": 0,
+        "NO": 1
+      }
+    }
+  ]
+}

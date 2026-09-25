@@ -1,0 +1,5 @@
+{
+  "purpose": "Extraction-only data file (no classification fields) for the 193 p1_p2_no documents with rendered pages but no OCR text yet. Feed to extract_text.py --data eval_data_p1_p2_no_extra.json --out extracted_text.json --resume to extend the canonical 233-entry extracted_text.json in place.",
+  "few_shot": [],
+  "test_cases": []
+}

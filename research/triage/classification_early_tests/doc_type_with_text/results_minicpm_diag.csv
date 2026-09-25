@@ -1,0 +1,13 @@
+id,label,root_label,description,true_doc_type,predicted,correct,abstained,raw_response
+7148,CDIAK/1164/2/404,CDIAK,Record book of the Jewish community of Rzhyshchiv about divorce,V,V,True,False,V
+768,DADNO/R-2874/1/15,DADNO,Overview and information on the status of preparation for construction of facilities,O,V,False,False,V
+2429,DADNO/R-2874/1/2,DADNO,Information and lists of individual house developers and applications for the release of building materials,"L,O",V,False,False,V
+7411,CDIAK/1164/2/401,CDIAK,The metric book of the Jewish community of Rzhyshchiv on deaths,V,V,True,False,V
+7190,CDIAK/1164/2/405,CDIAK,The metric book of the Jewish community of Rzhyshchiv on deaths,V,V,True,False,V
+8002,CDIAK/193/1/86,CDIAK,"List of nobles of Pereyaslavl uyezd, Kiev nomesnichestvo.",C,V,False,False,V
+14721,DACHGO/128/1/7608,DACHGO,The request of the Jews of Glukhov to release them from the supply of recruits,C,V,False,False,V
+6101,DADNO/R-2492/1/4,DADNO,Lists of families whose members left for Germany,L,V,False,False,V
+8090,CDIAK/514/1/287,CDIAK,"On various petitions of the peasants of the Khotiv, Glevakha, Byshiv parishes of the Kyiv district and the Veprykivka parish of the Vasylkiv district",L,V,False,False,V
+2259,DADNO/R-2874/1/44,DADNO,Order for the right to carry out construction work,O,O,True,False,O
+4357,DADNO/R-2874/1/36,DADNO,"Materials on the progress of construction / acts, extracts from protocols, correspondence, etc.",O,O,True,False,O
+67536,DAKO/2/145/945,DAKO,On the issue of Russian passports to foreign nationals,P,V,False,False,V

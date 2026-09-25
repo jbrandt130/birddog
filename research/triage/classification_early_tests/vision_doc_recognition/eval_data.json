@@ -1,0 +1,4490 @@
+{
+  "purpose": "Parallel vision (page-image) test of the doc_type classifier -- same document identities/targets as ../doc_type/eval_data.json, but the model is shown sampled page images instead of metadata text.",
+  "label_definitions": {
+    "V": "Vital record (birth, death, marriage, ...)",
+    "C": "Census document - any historical population, household, or estate enumeration, regardless of the specific name the archive uses for it: census, yard/household census, audit tale / revision list (reviz skazka), family list, lustration or estate inventory, or a conscription/military-service enrollment record. Usually organized around a place, estate, or named group of individuals for headcount, tax, or draft-administration purposes.",
+    "L": "List of names or personal/identity cards for a defined institutional group - e.g. an organization's or office's employees, homeowners on a specific street or tax district, members of a named committee, or a professional group. Only for lists of PEOPLE. Does not apply if the list's real purpose is a general population/household census for a geographic area (use C instead) or passport application processing (use P instead), even if it is formatted as a list of names.",
+    "O": "Other type of document. A document titled 'list of...' is not automatically L - if it lists places or things (streets, settlements, parks, routes) rather than named people, it is O instead.",
+    "P": "Passport applications and related documents"
+  },
+  "k_page_images": 3,
+  "max_rendered_pages": 10,
+  "few_shot": [
+    {
+      "id": 1,
+      "root_label": "DAZPO",
+      "label": "DAZPO/R-5593/24/53",
+      "doc_type": [
+        "V"
+      ],
+      "target": "V",
+      "page_count": 491,
+      "sampled_pages": [
+        2,
+        3,
+        5
+      ],
+      "image_paths": [
+        "pages/1/00002.jpg",
+        "pages/1/00003.jpg",
+        "pages/1/00005.jpg"
+      ]
+    },
+    {
+      "id": 7101,
+      "root_label": "CDIAK",
+      "label": "CDIAK/57/1/47",
+      "doc_type": [
+        "C"
+      ],
+      "target": "C",
+      "page_count": 1102,
+      "sampled_pages": [
+        1,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/7101/00001.jpg",
+        "pages/7101/00005.jpg",
+        "pages/7101/00008.jpg"
+      ]
+    },
+    {
+      "id": 146490,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1847/1/193",
+      "doc_type": [
+        "C"
+      ],
+      "target": "C",
+      "page_count": 543,
+      "sampled_pages": [
+        4,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/146490/00004.jpg",
+        "pages/146490/00007.jpg",
+        "pages/146490/00009.jpg"
+      ]
+    },
+    {
+      "id": 7809,
+      "root_label": "CDIAK",
+      "label": "CDIAK/491/96/263",
+      "doc_type": [
+        "C"
+      ],
+      "target": "C",
+      "page_count": 345,
+      "sampled_pages": [
+        1,
+        3,
+        8
+      ],
+      "image_paths": [
+        "pages/7809/00001.jpg",
+        "pages/7809/00003.jpg",
+        "pages/7809/00008.jpg"
+      ]
+    },
+    {
+      "id": 143423,
+      "root_label": "DACHGO",
+      "label": "DACHGO/151/1/104",
+      "doc_type": [
+        "C"
+      ],
+      "target": "C",
+      "page_count": 59,
+      "sampled_pages": [
+        3,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/143423/00003.jpg",
+        "pages/143423/00006.jpg",
+        "pages/143423/00009.jpg"
+      ]
+    },
+    {
+      "id": 7352,
+      "root_label": "CDIAK",
+      "label": "CDIAK/491/94/44",
+      "doc_type": [
+        "C"
+      ],
+      "target": "C",
+      "page_count": 117,
+      "sampled_pages": [
+        4,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/7352/00004.jpg",
+        "pages/7352/00008.jpg",
+        "pages/7352/00009.jpg"
+      ]
+    },
+    {
+      "id": 36,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/582/1/444",
+      "doc_type": [
+        "L"
+      ],
+      "target": "L",
+      "page_count": 557,
+      "sampled_pages": [
+        1,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/36/00001.jpg",
+        "pages/36/00006.jpg",
+        "pages/36/00009.jpg"
+      ]
+    },
+    {
+      "id": 449,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2276/1/2113",
+      "doc_type": [
+        "L"
+      ],
+      "target": "L",
+      "page_count": 114,
+      "sampled_pages": [
+        4,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/449/00004.jpg",
+        "pages/449/00009.jpg",
+        "pages/449/00010.jpg"
+      ]
+    },
+    {
+      "id": 174,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2276/1/2122",
+      "doc_type": [
+        "L"
+      ],
+      "target": "L",
+      "page_count": 104,
+      "sampled_pages": [
+        1,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/174/00001.jpg",
+        "pages/174/00008.jpg",
+        "pages/174/00010.jpg"
+      ]
+    },
+    {
+      "id": 26,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/582/1/4716",
+      "doc_type": [
+        "O"
+      ],
+      "target": "O",
+      "page_count": 294,
+      "sampled_pages": [
+        4,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/26/00004.jpg",
+        "pages/26/00007.jpg",
+        "pages/26/00010.jpg"
+      ]
+    },
+    {
+      "id": 33,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/582/1/1374",
+      "doc_type": [
+        "O"
+      ],
+      "target": "O",
+      "page_count": 51,
+      "sampled_pages": [
+        3,
+        4,
+        10
+      ],
+      "image_paths": [
+        "pages/33/00003.jpg",
+        "pages/33/00004.jpg",
+        "pages/33/00010.jpg"
+      ]
+    },
+    {
+      "id": 7259,
+      "root_label": "CDIAK",
+      "label": "CDIAK/442/198/119",
+      "doc_type": [
+        "P"
+      ],
+      "target": "P",
+      "page_count": 400,
+      "sampled_pages": [
+        1,
+        2,
+        8
+      ],
+      "image_paths": [
+        "pages/7259/00001.jpg",
+        "pages/7259/00002.jpg",
+        "pages/7259/00008.jpg"
+      ]
+    },
+    {
+      "id": 7669,
+      "root_label": "CDIAK",
+      "label": "CDIAK/442/197/140",
+      "doc_type": [
+        "P"
+      ],
+      "target": "P",
+      "page_count": 490,
+      "sampled_pages": [
+        1,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/7669/00001.jpg",
+        "pages/7669/00004.jpg",
+        "pages/7669/00007.jpg"
+      ]
+    },
+    {
+      "id": 7373,
+      "root_label": "CDIAK",
+      "label": "CDIAK/442/198/120",
+      "doc_type": [
+        "P"
+      ],
+      "target": "P",
+      "page_count": 261,
+      "sampled_pages": [
+        1,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/7373/00001.jpg",
+        "pages/7373/00006.jpg",
+        "pages/7373/00008.jpg"
+      ]
+    },
+    {
+      "id": 404,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2276/1/1583",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "target": "UNCLEAR",
+      "page_count": 524,
+      "sampled_pages": [
+        1,
+        2,
+        7
+      ],
+      "image_paths": [
+        "pages/404/00001.jpg",
+        "pages/404/00002.jpg",
+        "pages/404/00007.jpg"
+      ]
+    },
+    {
+      "id": 7846,
+      "root_label": "CDIAK",
+      "label": "CDIAK/8/1/18",
+      "doc_type": [
+        "O",
+        "C"
+      ],
+      "target": "UNCLEAR",
+      "page_count": 4,
+      "sampled_pages": [
+        1,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/7846/00001.jpg",
+        "pages/7846/00003.jpg",
+        "pages/7846/00004.jpg"
+      ]
+    },
+    {
+      "id": 6876,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2276/1/971",
+      "doc_type": [
+        "O",
+        "L",
+        "C"
+      ],
+      "target": "UNCLEAR",
+      "page_count": 27,
+      "sampled_pages": [
+        3,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/6876/00003.jpg",
+        "pages/6876/00007.jpg",
+        "pages/6876/00009.jpg"
+      ]
+    }
+  ],
+  "test_cases": [
+    {
+      "id": 7148,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/404",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 14,
+      "sampled_pages": [
+        6,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/7148/00006.jpg",
+        "pages/7148/00007.jpg",
+        "pages/7148/00008.jpg"
+      ]
+    },
+    {
+      "id": 7401,
+      "root_label": "CDIAK",
+      "label": "CDIAK/663/1/19",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 34,
+      "sampled_pages": [
+        5,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/7401/00005.jpg",
+        "pages/7401/00006.jpg",
+        "pages/7401/00010.jpg"
+      ]
+    },
+    {
+      "id": 7102,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/99",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 10,
+      "sampled_pages": [
+        4,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/7102/00004.jpg",
+        "pages/7102/00006.jpg",
+        "pages/7102/00008.jpg"
+      ]
+    },
+    {
+      "id": 7402,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/340",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 7,
+      "sampled_pages": [
+        2,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/7402/00002.jpg",
+        "pages/7402/00005.jpg",
+        "pages/7402/00007.jpg"
+      ]
+    },
+    {
+      "id": 7303,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/350",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 7,
+      "sampled_pages": [
+        2,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/7303/00002.jpg",
+        "pages/7303/00003.jpg",
+        "pages/7303/00004.jpg"
+      ]
+    },
+    {
+      "id": 7104,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1159/1/22",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 47,
+      "sampled_pages": [
+        3,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/7104/00003.jpg",
+        "pages/7104/00006.jpg",
+        "pages/7104/00007.jpg"
+      ]
+    },
+    {
+      "id": 7154,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/8",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 23,
+      "sampled_pages": [
+        4,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/7154/00004.jpg",
+        "pages/7154/00008.jpg",
+        "pages/7154/00010.jpg"
+      ]
+    },
+    {
+      "id": 7158,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/390",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 7,
+      "sampled_pages": [
+        1,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/7158/00001.jpg",
+        "pages/7158/00005.jpg",
+        "pages/7158/00006.jpg"
+      ]
+    },
+    {
+      "id": 7306,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/182",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 4,
+      "sampled_pages": [
+        1,
+        2,
+        3
+      ],
+      "image_paths": [
+        "pages/7306/00001.jpg",
+        "pages/7306/00002.jpg",
+        "pages/7306/00003.jpg"
+      ]
+    },
+    {
+      "id": 7107,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/430",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 39,
+      "sampled_pages": [
+        1,
+        4,
+        6
+      ],
+      "image_paths": [
+        "pages/7107/00001.jpg",
+        "pages/7107/00004.jpg",
+        "pages/7107/00006.jpg"
+      ]
+    },
+    {
+      "id": 25,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/3/591",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 97,
+      "sampled_pages": [
+        1,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/25/00001.jpg",
+        "pages/25/00004.jpg",
+        "pages/25/00007.jpg"
+      ]
+    },
+    {
+      "id": 28,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/5/1067",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 182,
+      "sampled_pages": [
+        2,
+        3,
+        9
+      ],
+      "image_paths": [
+        "pages/28/00002.jpg",
+        "pages/28/00003.jpg",
+        "pages/28/00009.jpg"
+      ]
+    },
+    {
+      "id": 29,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/3/560",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 627,
+      "sampled_pages": [
+        2,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/29/00002.jpg",
+        "pages/29/00006.jpg",
+        "pages/29/00009.jpg"
+      ]
+    },
+    {
+      "id": 40,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/5/1102",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 66,
+      "sampled_pages": [
+        1,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/40/00001.jpg",
+        "pages/40/00008.jpg",
+        "pages/40/00009.jpg"
+      ]
+    },
+    {
+      "id": 41,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/5/1101",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 212,
+      "sampled_pages": [
+        4,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/41/00004.jpg",
+        "pages/41/00006.jpg",
+        "pages/41/00007.jpg"
+      ]
+    },
+    {
+      "id": 374,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/17",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 183,
+      "sampled_pages": [
+        3,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/374/00003.jpg",
+        "pages/374/00006.jpg",
+        "pages/374/00009.jpg"
+      ]
+    },
+    {
+      "id": 175,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/2t2/10637",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 37,
+      "sampled_pages": [
+        1,
+        4,
+        8
+      ],
+      "image_paths": [
+        "pages/175/00001.jpg",
+        "pages/175/00004.jpg",
+        "pages/175/00008.jpg"
+      ]
+    },
+    {
+      "id": 958,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/14",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 109,
+      "sampled_pages": [
+        4,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/958/00004.jpg",
+        "pages/958/00006.jpg",
+        "pages/958/00008.jpg"
+      ]
+    },
+    {
+      "id": 768,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/15",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 269,
+      "sampled_pages": [
+        2,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/768/00002.jpg",
+        "pages/768/00005.jpg",
+        "pages/768/00008.jpg"
+      ]
+    },
+    {
+      "id": 572,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/2t1/1406",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 147,
+      "sampled_pages": [
+        4,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/572/00004.jpg",
+        "pages/572/00005.jpg",
+        "pages/572/00007.jpg"
+      ]
+    },
+    {
+      "id": 2546,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2492/1/5",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 192,
+      "sampled_pages": [
+        1,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/2546/00001.jpg",
+        "pages/2546/00006.jpg",
+        "pages/2546/00007.jpg"
+      ]
+    },
+    {
+      "id": 4083,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/39",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 43,
+      "sampled_pages": [
+        3,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/4083/00003.jpg",
+        "pages/4083/00007.jpg",
+        "pages/4083/00009.jpg"
+      ]
+    },
+    {
+      "id": 4179,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/40",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 33,
+      "sampled_pages": [
+        2,
+        3,
+        5
+      ],
+      "image_paths": [
+        "pages/4179/00002.jpg",
+        "pages/4179/00003.jpg",
+        "pages/4179/00005.jpg"
+      ]
+    },
+    {
+      "id": 4844,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/38",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 39,
+      "sampled_pages": [
+        3,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/4844/00003.jpg",
+        "pages/4844/00004.jpg",
+        "pages/4844/00005.jpg"
+      ]
+    },
+    {
+      "id": 4882,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/37",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 23,
+      "sampled_pages": [
+        4,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/4882/00004.jpg",
+        "pages/4882/00007.jpg",
+        "pages/4882/00009.jpg"
+      ]
+    },
+    {
+      "id": 5041,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2492/2/6",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 21,
+      "sampled_pages": [
+        5,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/5041/00005.jpg",
+        "pages/5041/00007.jpg",
+        "pages/5041/00009.jpg"
+      ]
+    },
+    {
+      "id": 5739,
+      "root_label": "DADNO",
+      "label": "DADNO/R-3651/1/44",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 257,
+      "sampled_pages": [
+        2,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/5739/00002.jpg",
+        "pages/5739/00004.jpg",
+        "pages/5739/00007.jpg"
+      ]
+    },
+    {
+      "id": 7162,
+      "root_label": "CDIAK",
+      "label": "CDIAK/2227/1/180",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 135,
+      "sampled_pages": [
+        3,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/7162/00003.jpg",
+        "pages/7162/00005.jpg",
+        "pages/7162/00008.jpg"
+      ]
+    },
+    {
+      "id": 7426,
+      "root_label": "CDIAK",
+      "label": "CDIAK/514/1/35",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 543,
+      "sampled_pages": [
+        2,
+        5,
+        9
+      ],
+      "image_paths": [
+        "pages/7426/00002.jpg",
+        "pages/7426/00005.jpg",
+        "pages/7426/00009.jpg"
+      ]
+    },
+    {
+      "id": 7341,
+      "root_label": "CDIAK",
+      "label": "CDIAK/514/1/364",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 554,
+      "sampled_pages": [
+        7,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/7341/00007.jpg",
+        "pages/7341/00009.jpg",
+        "pages/7341/00010.jpg"
+      ]
+    },
+    {
+      "id": 31,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/6/1032",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 99,
+      "sampled_pages": [
+        1,
+        2,
+        8
+      ],
+      "image_paths": [
+        "pages/31/00001.jpg",
+        "pages/31/00002.jpg",
+        "pages/31/00008.jpg"
+      ]
+    },
+    {
+      "id": 35,
+      "root_label": "TSDAVO",
+      "label": "TSDAVO/1/6/1033",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 205,
+      "sampled_pages": [
+        3,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/35/00003.jpg",
+        "pages/35/00006.jpg",
+        "pages/35/00009.jpg"
+      ]
+    },
+    {
+      "id": 287,
+      "root_label": "DADNO",
+      "label": "DADNO/R-3807/1/4",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 60,
+      "sampled_pages": [
+        1,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/287/00001.jpg",
+        "pages/287/00006.jpg",
+        "pages/287/00009.jpg"
+      ]
+    },
+    {
+      "id": 1023,
+      "root_label": "DADNO",
+      "label": "DADNO/R-3348/1/5",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 11,
+      "sampled_pages": [
+        8,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/1023/00008.jpg",
+        "pages/1023/00009.jpg",
+        "pages/1023/00010.jpg"
+      ]
+    },
+    {
+      "id": 1379,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/25",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 229,
+      "sampled_pages": [
+        4,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/1379/00004.jpg",
+        "pages/1379/00005.jpg",
+        "pages/1379/00008.jpg"
+      ]
+    },
+    {
+      "id": 2020,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/16",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 257,
+      "sampled_pages": [
+        3,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/2020/00003.jpg",
+        "pages/2020/00008.jpg",
+        "pages/2020/00010.jpg"
+      ]
+    },
+    {
+      "id": 2429,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/2",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 279,
+      "sampled_pages": [
+        2,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/2429/00002.jpg",
+        "pages/2429/00006.jpg",
+        "pages/2429/00007.jpg"
+      ]
+    },
+    {
+      "id": 781,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/29",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 16,
+      "sampled_pages": [
+        4,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/781/00004.jpg",
+        "pages/781/00007.jpg",
+        "pages/781/00010.jpg"
+      ]
+    },
+    {
+      "id": 1451,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/35",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 33,
+      "sampled_pages": [
+        4,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/1451/00004.jpg",
+        "pages/1451/00006.jpg",
+        "pages/1451/00010.jpg"
+      ]
+    },
+    {
+      "id": 1926,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/36",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 25,
+      "sampled_pages": [
+        5,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/1926/00005.jpg",
+        "pages/1926/00007.jpg",
+        "pages/1926/00010.jpg"
+      ]
+    },
+    {
+      "id": 6329,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2859/1/28",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 47,
+      "sampled_pages": [
+        2,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/6329/00002.jpg",
+        "pages/6329/00006.jpg",
+        "pages/6329/00010.jpg"
+      ]
+    },
+    {
+      "id": 18535,
+      "root_label": "DAK",
+      "label": "DAK/1/2/799",
+      "doc_type": [
+        "C",
+        "P"
+      ],
+      "page_count": 97,
+      "sampled_pages": [
+        3,
+        5,
+        9
+      ],
+      "image_paths": [
+        "pages/18535/00003.jpg",
+        "pages/18535/00005.jpg",
+        "pages/18535/00009.jpg"
+      ]
+    },
+    {
+      "id": 35593,
+      "root_label": "DAMO",
+      "label": "DAMO/R-6197/1/74",
+      "doc_type": [
+        "O",
+        "L",
+        "P"
+      ],
+      "page_count": 336,
+      "sampled_pages": [
+        3,
+        4,
+        9
+      ],
+      "image_paths": [
+        "pages/35593/00003.jpg",
+        "pages/35593/00004.jpg",
+        "pages/35593/00009.jpg"
+      ]
+    },
+    {
+      "id": 40610,
+      "root_label": "DARO",
+      "label": "DARO/314/1/4",
+      "doc_type": [
+        "O",
+        "P"
+      ],
+      "page_count": 13,
+      "sampled_pages": [
+        1,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/40610/00001.jpg",
+        "pages/40610/00008.jpg",
+        "pages/40610/00009.jpg"
+      ]
+    },
+    {
+      "id": 65595,
+      "root_label": "DAKIRO",
+      "label": "DAKIRO/18/1/531",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 24,
+      "sampled_pages": [
+        3,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/65595/00003.jpg",
+        "pages/65595/00006.jpg",
+        "pages/65595/00010.jpg"
+      ]
+    },
+    {
+      "id": 67501,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/937",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 464,
+      "sampled_pages": [
+        2,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/67501/00002.jpg",
+        "pages/67501/00004.jpg",
+        "pages/67501/00005.jpg"
+      ]
+    },
+    {
+      "id": 67502,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/961",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 513,
+      "sampled_pages": [
+        2,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/67502/00002.jpg",
+        "pages/67502/00005.jpg",
+        "pages/67502/00006.jpg"
+      ]
+    },
+    {
+      "id": 7307,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/73",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 436,
+      "sampled_pages": [
+        1,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/7307/00001.jpg",
+        "pages/7307/00009.jpg",
+        "pages/7307/00010.jpg"
+      ]
+    },
+    {
+      "id": 7108,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/326",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 39,
+      "sampled_pages": [
+        6,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/7108/00006.jpg",
+        "pages/7108/00007.jpg",
+        "pages/7108/00008.jpg"
+      ]
+    },
+    {
+      "id": 7409,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/148",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 46,
+      "sampled_pages": [
+        3,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/7409/00003.jpg",
+        "pages/7409/00004.jpg",
+        "pages/7409/00007.jpg"
+      ]
+    },
+    {
+      "id": 7110,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/152",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 17,
+      "sampled_pages": [
+        1,
+        3,
+        5
+      ],
+      "image_paths": [
+        "pages/7110/00001.jpg",
+        "pages/7110/00003.jpg",
+        "pages/7110/00005.jpg"
+      ]
+    },
+    {
+      "id": 7310,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/36",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 29,
+      "sampled_pages": [
+        3,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/7310/00003.jpg",
+        "pages/7310/00004.jpg",
+        "pages/7310/00007.jpg"
+      ]
+    },
+    {
+      "id": 7410,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/190",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 16,
+      "sampled_pages": [
+        3,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/7410/00003.jpg",
+        "pages/7410/00007.jpg",
+        "pages/7410/00008.jpg"
+      ]
+    },
+    {
+      "id": 7168,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/320",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 26,
+      "sampled_pages": [
+        5,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/7168/00005.jpg",
+        "pages/7168/00006.jpg",
+        "pages/7168/00009.jpg"
+      ]
+    },
+    {
+      "id": 7411,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/401",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 41,
+      "sampled_pages": [
+        1,
+        3,
+        10
+      ],
+      "image_paths": [
+        "pages/7411/00001.jpg",
+        "pages/7411/00003.jpg",
+        "pages/7411/00010.jpg"
+      ]
+    },
+    {
+      "id": 7174,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/170",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 16,
+      "sampled_pages": [
+        1,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/7174/00001.jpg",
+        "pages/7174/00006.jpg",
+        "pages/7174/00009.jpg"
+      ]
+    },
+    {
+      "id": 7313,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1159/1s/10",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 131,
+      "sampled_pages": [
+        1,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/7313/00001.jpg",
+        "pages/7313/00003.jpg",
+        "pages/7313/00004.jpg"
+      ]
+    },
+    {
+      "id": 7114,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/38",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 28,
+      "sampled_pages": [
+        3,
+        4,
+        8
+      ],
+      "image_paths": [
+        "pages/7114/00003.jpg",
+        "pages/7114/00004.jpg",
+        "pages/7114/00008.jpg"
+      ]
+    },
+    {
+      "id": 7175,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1267/1/10",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 15,
+      "sampled_pages": [
+        4,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/7175/00004.jpg",
+        "pages/7175/00005.jpg",
+        "pages/7175/00008.jpg"
+      ]
+    },
+    {
+      "id": 7176,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/52",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 9,
+      "sampled_pages": [
+        1,
+        2,
+        7
+      ],
+      "image_paths": [
+        "pages/7176/00001.jpg",
+        "pages/7176/00002.jpg",
+        "pages/7176/00007.jpg"
+      ]
+    },
+    {
+      "id": 7315,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/63",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 9,
+      "sampled_pages": [
+        2,
+        3,
+        5
+      ],
+      "image_paths": [
+        "pages/7315/00002.jpg",
+        "pages/7315/00003.jpg",
+        "pages/7315/00005.jpg"
+      ]
+    },
+    {
+      "id": 7415,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/335",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 107,
+      "sampled_pages": [
+        3,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/7415/00003.jpg",
+        "pages/7415/00008.jpg",
+        "pages/7415/00009.jpg"
+      ]
+    },
+    {
+      "id": 7116,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/139",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 13,
+      "sampled_pages": [
+        4,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/7116/00004.jpg",
+        "pages/7116/00007.jpg",
+        "pages/7116/00010.jpg"
+      ]
+    },
+    {
+      "id": 7178,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/451",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 38,
+      "sampled_pages": [
+        1,
+        2,
+        9
+      ],
+      "image_paths": [
+        "pages/7178/00001.jpg",
+        "pages/7178/00002.jpg",
+        "pages/7178/00009.jpg"
+      ]
+    },
+    {
+      "id": 7316,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/41",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 23,
+      "sampled_pages": [
+        3,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/7316/00003.jpg",
+        "pages/7316/00005.jpg",
+        "pages/7316/00006.jpg"
+      ]
+    },
+    {
+      "id": 7117,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/247",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 38,
+      "sampled_pages": [
+        1,
+        2,
+        4
+      ],
+      "image_paths": [
+        "pages/7117/00001.jpg",
+        "pages/7117/00002.jpg",
+        "pages/7117/00004.jpg"
+      ]
+    },
+    {
+      "id": 7180,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/4",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": null,
+      "sampled_pages": [
+        1,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/7180/00001.jpg",
+        "pages/7180/00005.jpg",
+        "pages/7180/00006.jpg"
+      ]
+    },
+    {
+      "id": 7317,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/304",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 14,
+      "sampled_pages": [
+        2,
+        3,
+        5
+      ],
+      "image_paths": [
+        "pages/7317/00002.jpg",
+        "pages/7317/00003.jpg",
+        "pages/7317/00005.jpg"
+      ]
+    },
+    {
+      "id": 7182,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/363",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 6,
+      "sampled_pages": [
+        2,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/7182/00002.jpg",
+        "pages/7182/00004.jpg",
+        "pages/7182/00005.jpg"
+      ]
+    },
+    {
+      "id": 7186,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/157",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 18,
+      "sampled_pages": [
+        2,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/7186/00002.jpg",
+        "pages/7186/00006.jpg",
+        "pages/7186/00009.jpg"
+      ]
+    },
+    {
+      "id": 7320,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1267/1/2",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 22,
+      "sampled_pages": [
+        2,
+        4,
+        9
+      ],
+      "image_paths": [
+        "pages/7320/00002.jpg",
+        "pages/7320/00004.jpg",
+        "pages/7320/00009.jpg"
+      ]
+    },
+    {
+      "id": 7121,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/349",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 9,
+      "sampled_pages": [
+        1,
+        3,
+        9
+      ],
+      "image_paths": [
+        "pages/7121/00001.jpg",
+        "pages/7121/00003.jpg",
+        "pages/7121/00009.jpg"
+      ]
+    },
+    {
+      "id": 7190,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/405",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 59,
+      "sampled_pages": [
+        4,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/7190/00004.jpg",
+        "pages/7190/00007.jpg",
+        "pages/7190/00009.jpg"
+      ]
+    },
+    {
+      "id": 7422,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/105",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 43,
+      "sampled_pages": [
+        1,
+        3,
+        6
+      ],
+      "image_paths": [
+        "pages/7422/00001.jpg",
+        "pages/7422/00003.jpg",
+        "pages/7422/00006.jpg"
+      ]
+    },
+    {
+      "id": 7191,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1267/1/5",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 18,
+      "sampled_pages": [
+        4,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/7191/00004.jpg",
+        "pages/7191/00005.jpg",
+        "pages/7191/00008.jpg"
+      ]
+    },
+    {
+      "id": 7423,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/411",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 148,
+      "sampled_pages": [
+        2,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/7423/00002.jpg",
+        "pages/7423/00006.jpg",
+        "pages/7423/00010.jpg"
+      ]
+    },
+    {
+      "id": 7324,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/46",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 31,
+      "sampled_pages": [
+        1,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/7324/00001.jpg",
+        "pages/7324/00005.jpg",
+        "pages/7324/00008.jpg"
+      ]
+    },
+    {
+      "id": 7125,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/42",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 28,
+      "sampled_pages": [
+        1,
+        4,
+        6
+      ],
+      "image_paths": [
+        "pages/7125/00001.jpg",
+        "pages/7125/00004.jpg",
+        "pages/7125/00006.jpg"
+      ]
+    },
+    {
+      "id": 7195,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/201",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 24,
+      "sampled_pages": [
+        2,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/7195/00002.jpg",
+        "pages/7195/00006.jpg",
+        "pages/7195/00008.jpg"
+      ]
+    },
+    {
+      "id": 7425,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1159/1s/9",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 71,
+      "sampled_pages": [
+        1,
+        5,
+        9
+      ],
+      "image_paths": [
+        "pages/7425/00001.jpg",
+        "pages/7425/00005.jpg",
+        "pages/7425/00009.jpg"
+      ]
+    },
+    {
+      "id": 7197,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/337",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 125,
+      "sampled_pages": [
+        6,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/7197/00006.jpg",
+        "pages/7197/00009.jpg",
+        "pages/7197/00010.jpg"
+      ]
+    },
+    {
+      "id": 7199,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1164/2/125",
+      "doc_type": [
+        "V"
+      ],
+      "page_count": 13,
+      "sampled_pages": [
+        3,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/7199/00003.jpg",
+        "pages/7199/00008.jpg",
+        "pages/7199/00010.jpg"
+      ]
+    },
+    {
+      "id": 7392,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/1/2123",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 4,
+      "sampled_pages": [
+        1,
+        2,
+        4
+      ],
+      "image_paths": [
+        "pages/7392/00001.jpg",
+        "pages/7392/00002.jpg",
+        "pages/7392/00004.jpg"
+      ]
+    },
+    {
+      "id": 7906,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/1/127",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 176,
+      "sampled_pages": [
+        4,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/7906/00004.jpg",
+        "pages/7906/00005.jpg",
+        "pages/7906/00008.jpg"
+      ]
+    },
+    {
+      "id": 7941,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/2/1527",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 36,
+      "sampled_pages": [
+        1,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/7941/00001.jpg",
+        "pages/7941/00004.jpg",
+        "pages/7941/00005.jpg"
+      ]
+    },
+    {
+      "id": 7858,
+      "root_label": "CDIAK",
+      "label": "CDIAK/730/2/126",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 118,
+      "sampled_pages": [
+        1,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/7858/00001.jpg",
+        "pages/7858/00008.jpg",
+        "pages/7858/00010.jpg"
+      ]
+    },
+    {
+      "id": 7561,
+      "root_label": "CDIAK",
+      "label": "CDIAK/301/1/2647",
+      "doc_type": [
+        "C",
+        "L"
+      ],
+      "page_count": 214,
+      "sampled_pages": [
+        8,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/7561/00008.jpg",
+        "pages/7561/00009.jpg",
+        "pages/7561/00010.jpg"
+      ]
+    },
+    {
+      "id": 7781,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/13",
+      "doc_type": [
+        "O",
+        "C"
+      ],
+      "page_count": 18,
+      "sampled_pages": [
+        2,
+        5,
+        10
+      ],
+      "image_paths": [
+        "pages/7781/00002.jpg",
+        "pages/7781/00005.jpg",
+        "pages/7781/00010.jpg"
+      ]
+    },
+    {
+      "id": 7983,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/20",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 36,
+      "sampled_pages": [
+        1,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/7983/00001.jpg",
+        "pages/7983/00007.jpg",
+        "pages/7983/00008.jpg"
+      ]
+    },
+    {
+      "id": 7684,
+      "root_label": "CDIAK",
+      "label": "CDIAK/193/1/1847",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 314,
+      "sampled_pages": [
+        7,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/7684/00007.jpg",
+        "pages/7684/00009.jpg",
+        "pages/7684/00010.jpg"
+      ]
+    },
+    {
+      "id": 8002,
+      "root_label": "CDIAK",
+      "label": "CDIAK/193/1/86",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 17,
+      "sampled_pages": [
+        4,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/8002/00004.jpg",
+        "pages/8002/00007.jpg",
+        "pages/8002/00009.jpg"
+      ]
+    },
+    {
+      "id": 8404,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/1/1980",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 54,
+      "sampled_pages": [
+        1,
+        2,
+        4
+      ],
+      "image_paths": [
+        "pages/8404/00001.jpg",
+        "pages/8404/00002.jpg",
+        "pages/8404/00004.jpg"
+      ]
+    },
+    {
+      "id": 8417,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/1/2493",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 7,
+      "sampled_pages": [
+        2,
+        3,
+        7
+      ],
+      "image_paths": [
+        "pages/8417/00002.jpg",
+        "pages/8417/00003.jpg",
+        "pages/8417/00007.jpg"
+      ]
+    },
+    {
+      "id": 8125,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/1/2246",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 5,
+      "sampled_pages": [
+        2,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/8125/00002.jpg",
+        "pages/8125/00004.jpg",
+        "pages/8125/00005.jpg"
+      ]
+    },
+    {
+      "id": 8451,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/1/2825",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 4,
+      "sampled_pages": [
+        1,
+        2,
+        3
+      ],
+      "image_paths": [
+        "pages/8451/00001.jpg",
+        "pages/8451/00002.jpg",
+        "pages/8451/00003.jpg"
+      ]
+    },
+    {
+      "id": 8385,
+      "root_label": "CDIAK",
+      "label": "CDIAK/514/1/16",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 111,
+      "sampled_pages": [
+        4,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/8385/00004.jpg",
+        "pages/8385/00009.jpg",
+        "pages/8385/00010.jpg"
+      ]
+    },
+    {
+      "id": 8744,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/3/360",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 31,
+      "sampled_pages": [
+        1,
+        3,
+        6
+      ],
+      "image_paths": [
+        "pages/8744/00001.jpg",
+        "pages/8744/00003.jpg",
+        "pages/8744/00006.jpg"
+      ]
+    },
+    {
+      "id": 8646,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/1/1805",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 7,
+      "sampled_pages": [
+        2,
+        3,
+        7
+      ],
+      "image_paths": [
+        "pages/8646/00002.jpg",
+        "pages/8646/00003.jpg",
+        "pages/8646/00007.jpg"
+      ]
+    },
+    {
+      "id": 8556,
+      "root_label": "CDIAK",
+      "label": "CDIAK/241/1/50",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 15,
+      "sampled_pages": [
+        3,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/8556/00003.jpg",
+        "pages/8556/00006.jpg",
+        "pages/8556/00008.jpg"
+      ]
+    },
+    {
+      "id": 8587,
+      "root_label": "CDIAK",
+      "label": "CDIAK/241/1/59",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 13,
+      "sampled_pages": [
+        1,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/8587/00001.jpg",
+        "pages/8587/00003.jpg",
+        "pages/8587/00004.jpg"
+      ]
+    },
+    {
+      "id": 14702,
+      "root_label": "DACHGO",
+      "label": "DACHGO/152/1/144",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 42,
+      "sampled_pages": [
+        2,
+        5,
+        9
+      ],
+      "image_paths": [
+        "pages/14702/00002.jpg",
+        "pages/14702/00005.jpg",
+        "pages/14702/00009.jpg"
+      ]
+    },
+    {
+      "id": 14606,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/5/644",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 14,
+      "sampled_pages": [
+        1,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/14606/00001.jpg",
+        "pages/14606/00009.jpg",
+        "pages/14606/00010.jpg"
+      ]
+    },
+    {
+      "id": 14710,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4260",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 68,
+      "sampled_pages": [
+        1,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/14710/00001.jpg",
+        "pages/14710/00009.jpg",
+        "pages/14710/00010.jpg"
+      ]
+    },
+    {
+      "id": 14714,
+      "root_label": "DACHGO",
+      "label": "DACHGO/206/1/26",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": null,
+      "sampled_pages": [
+        6,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/14714/00006.jpg",
+        "pages/14714/00007.jpg",
+        "pages/14714/00010.jpg"
+      ]
+    },
+    {
+      "id": 14717,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/15/96",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 187,
+      "sampled_pages": [
+        3,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/14717/00003.jpg",
+        "pages/14717/00005.jpg",
+        "pages/14717/00006.jpg"
+      ]
+    },
+    {
+      "id": 14618,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4262",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 52,
+      "sampled_pages": [
+        1,
+        2,
+        10
+      ],
+      "image_paths": [
+        "pages/14618/00001.jpg",
+        "pages/14618/00002.jpg",
+        "pages/14618/00010.jpg"
+      ]
+    },
+    {
+      "id": 14718,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/1/3702",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 93,
+      "sampled_pages": [
+        4,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/14718/00004.jpg",
+        "pages/14718/00006.jpg",
+        "pages/14718/00009.jpg"
+      ]
+    },
+    {
+      "id": 14719,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/4119",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 39,
+      "sampled_pages": [
+        6,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/14719/00006.jpg",
+        "pages/14719/00009.jpg",
+        "pages/14719/00010.jpg"
+      ]
+    },
+    {
+      "id": 14721,
+      "root_label": "DACHGO",
+      "label": "DACHGO/128/1/7608",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 8,
+      "sampled_pages": [
+        2,
+        3,
+        7
+      ],
+      "image_paths": [
+        "pages/14721/00002.jpg",
+        "pages/14721/00003.jpg",
+        "pages/14721/00007.jpg"
+      ]
+    },
+    {
+      "id": 14724,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/3309",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 11,
+      "sampled_pages": [
+        5,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/14724/00005.jpg",
+        "pages/14724/00006.jpg",
+        "pages/14724/00007.jpg"
+      ]
+    },
+    {
+      "id": 14625,
+      "root_label": "DACHGO",
+      "label": "DACHGO/128/1/4598",
+      "doc_type": [
+        "V",
+        "C"
+      ],
+      "page_count": 200,
+      "sampled_pages": [
+        1,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/14625/00001.jpg",
+        "pages/14625/00005.jpg",
+        "pages/14625/00007.jpg"
+      ]
+    },
+    {
+      "id": 14726,
+      "root_label": "DACHGO",
+      "label": "DACHGO/467/2/73",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 26,
+      "sampled_pages": [
+        1,
+        4,
+        8
+      ],
+      "image_paths": [
+        "pages/14726/00001.jpg",
+        "pages/14726/00004.jpg",
+        "pages/14726/00008.jpg"
+      ]
+    },
+    {
+      "id": 14628,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/3544",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 59,
+      "sampled_pages": [
+        2,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/14628/00002.jpg",
+        "pages/14628/00008.jpg",
+        "pages/14628/00010.jpg"
+      ]
+    },
+    {
+      "id": 14728,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/1/3999",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 1326,
+      "sampled_pages": [
+        2,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/14728/00002.jpg",
+        "pages/14728/00003.jpg",
+        "pages/14728/00004.jpg"
+      ]
+    },
+    {
+      "id": 14629,
+      "root_label": "DACHGO",
+      "label": "DACHGO/152/1/195",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 16,
+      "sampled_pages": [
+        2,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/14629/00002.jpg",
+        "pages/14629/00003.jpg",
+        "pages/14629/00004.jpg"
+      ]
+    },
+    {
+      "id": 14630,
+      "root_label": "DACHGO",
+      "label": "DACHGO/127/14/3543",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 97,
+      "sampled_pages": [
+        2,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/14630/00002.jpg",
+        "pages/14630/00007.jpg",
+        "pages/14630/00008.jpg"
+      ]
+    },
+    {
+      "id": 14730,
+      "root_label": "DACHGO",
+      "label": "DACHGO/205/1/208",
+      "doc_type": [
+        "C"
+      ],
+      "page_count": 25,
+      "sampled_pages": [
+        4,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/14730/00004.jpg",
+        "pages/14730/00005.jpg",
+        "pages/14730/00008.jpg"
+      ]
+    },
+    {
+      "id": 2062,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/23",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 81,
+      "sampled_pages": [
+        3,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/2062/00003.jpg",
+        "pages/2062/00006.jpg",
+        "pages/2062/00008.jpg"
+      ]
+    },
+    {
+      "id": 2775,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2492/2/20",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 84,
+      "sampled_pages": [
+        3,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/2775/00003.jpg",
+        "pages/2775/00008.jpg",
+        "pages/2775/00009.jpg"
+      ]
+    },
+    {
+      "id": 3445,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2492/2/18",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 90,
+      "sampled_pages": [
+        1,
+        2,
+        3
+      ],
+      "image_paths": [
+        "pages/3445/00001.jpg",
+        "pages/3445/00002.jpg",
+        "pages/3445/00003.jpg"
+      ]
+    },
+    {
+      "id": 3635,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/22",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 391,
+      "sampled_pages": [
+        3,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/3635/00003.jpg",
+        "pages/3635/00005.jpg",
+        "pages/3635/00006.jpg"
+      ]
+    },
+    {
+      "id": 3895,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2492/1/3",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 39,
+      "sampled_pages": [
+        3,
+        4,
+        9
+      ],
+      "image_paths": [
+        "pages/3895/00003.jpg",
+        "pages/3895/00004.jpg",
+        "pages/3895/00009.jpg"
+      ]
+    },
+    {
+      "id": 4957,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/31",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 176,
+      "sampled_pages": [
+        2,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/4957/00002.jpg",
+        "pages/4957/00006.jpg",
+        "pages/4957/00007.jpg"
+      ]
+    },
+    {
+      "id": 4585,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/28",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 52,
+      "sampled_pages": [
+        3,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/4585/00003.jpg",
+        "pages/4585/00006.jpg",
+        "pages/4585/00009.jpg"
+      ]
+    },
+    {
+      "id": 5442,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2492/1/17",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 167,
+      "sampled_pages": [
+        2,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/5442/00002.jpg",
+        "pages/5442/00004.jpg",
+        "pages/5442/00005.jpg"
+      ]
+    },
+    {
+      "id": 5747,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2492/2/19",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 282,
+      "sampled_pages": [
+        5,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/5747/00005.jpg",
+        "pages/5747/00006.jpg",
+        "pages/5747/00008.jpg"
+      ]
+    },
+    {
+      "id": 6101,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2492/1/4",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 128,
+      "sampled_pages": [
+        1,
+        2,
+        7
+      ],
+      "image_paths": [
+        "pages/6101/00001.jpg",
+        "pages/6101/00002.jpg",
+        "pages/6101/00007.jpg"
+      ]
+    },
+    {
+      "id": 7404,
+      "root_label": "CDIAK",
+      "label": "CDIAK/276/1/2565",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 351,
+      "sampled_pages": [
+        3,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/7404/00003.jpg",
+        "pages/7404/00005.jpg",
+        "pages/7404/00006.jpg"
+      ]
+    },
+    {
+      "id": 7137,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/1/1795",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 76,
+      "sampled_pages": [
+        2,
+        5,
+        9
+      ],
+      "image_paths": [
+        "pages/7137/00002.jpg",
+        "pages/7137/00005.jpg",
+        "pages/7137/00009.jpg"
+      ]
+    },
+    {
+      "id": 7455,
+      "root_label": "CDIAK",
+      "label": "CDIAK/268/1/343",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 109,
+      "sampled_pages": [
+        3,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/7455/00003.jpg",
+        "pages/7455/00008.jpg",
+        "pages/7455/00010.jpg"
+      ]
+    },
+    {
+      "id": 7460,
+      "root_label": "CDIAK",
+      "label": "CDIAK/26/1/2",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 825,
+      "sampled_pages": [
+        1,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/7460/00001.jpg",
+        "pages/7460/00008.jpg",
+        "pages/7460/00010.jpg"
+      ]
+    },
+    {
+      "id": 7465,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/252",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 5,
+      "sampled_pages": [
+        1,
+        2,
+        3
+      ],
+      "image_paths": [
+        "pages/7465/00001.jpg",
+        "pages/7465/00002.jpg",
+        "pages/7465/00003.jpg"
+      ]
+    },
+    {
+      "id": 7270,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/71",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 5,
+      "sampled_pages": [
+        1,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/7270/00001.jpg",
+        "pages/7270/00003.jpg",
+        "pages/7270/00004.jpg"
+      ]
+    },
+    {
+      "id": 7286,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/104",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 5,
+      "sampled_pages": [
+        1,
+        3,
+        4
+      ],
+      "image_paths": [
+        "pages/7286/00001.jpg",
+        "pages/7286/00003.jpg",
+        "pages/7286/00004.jpg"
+      ]
+    },
+    {
+      "id": 7391,
+      "root_label": "CDIAK",
+      "label": "CDIAK/236/2/261",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 21,
+      "sampled_pages": [
+        4,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/7391/00004.jpg",
+        "pages/7391/00006.jpg",
+        "pages/7391/00009.jpg"
+      ]
+    },
+    {
+      "id": 7823,
+      "root_label": "CDIAK",
+      "label": "CDIAK/241/1/51",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 8,
+      "sampled_pages": [
+        2,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/7823/00002.jpg",
+        "pages/7823/00006.jpg",
+        "pages/7823/00007.jpg"
+      ]
+    },
+    {
+      "id": 7948,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/1/199",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 17,
+      "sampled_pages": [
+        3,
+        4,
+        10
+      ],
+      "image_paths": [
+        "pages/7948/00003.jpg",
+        "pages/7948/00004.jpg",
+        "pages/7948/00010.jpg"
+      ]
+    },
+    {
+      "id": 7973,
+      "root_label": "CDIAK",
+      "label": "CDIAK/2227/1/95",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 24,
+      "sampled_pages": [
+        8,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/7973/00008.jpg",
+        "pages/7973/00009.jpg",
+        "pages/7973/00010.jpg"
+      ]
+    },
+    {
+      "id": 7976,
+      "root_label": "CDIAK",
+      "label": "CDIAK/26/1/1",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 465,
+      "sampled_pages": [
+        2,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/7976/00002.jpg",
+        "pages/7976/00006.jpg",
+        "pages/7976/00010.jpg"
+      ]
+    },
+    {
+      "id": 8415,
+      "root_label": "CDIAK",
+      "label": "CDIAK/1268/2/9",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 32,
+      "sampled_pages": [
+        1,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/8415/00001.jpg",
+        "pages/8415/00007.jpg",
+        "pages/8415/00009.jpg"
+      ]
+    },
+    {
+      "id": 8136,
+      "root_label": "CDIAK",
+      "label": "CDIAK/276/1/51",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 45,
+      "sampled_pages": [
+        1,
+        4,
+        8
+      ],
+      "image_paths": [
+        "pages/8136/00001.jpg",
+        "pages/8136/00004.jpg",
+        "pages/8136/00008.jpg"
+      ]
+    },
+    {
+      "id": 8263,
+      "root_label": "CDIAK",
+      "label": "CDIAK/2227/1/158",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 85,
+      "sampled_pages": [
+        3,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/8263/00003.jpg",
+        "pages/8263/00006.jpg",
+        "pages/8263/00010.jpg"
+      ]
+    },
+    {
+      "id": 8484,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/1/181",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 16,
+      "sampled_pages": [
+        3,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/8484/00003.jpg",
+        "pages/8484/00006.jpg",
+        "pages/8484/00010.jpg"
+      ]
+    },
+    {
+      "id": 8087,
+      "root_label": "CDIAK",
+      "label": "CDIAK/2227/1/645",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 69,
+      "sampled_pages": [
+        3,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/8087/00003.jpg",
+        "pages/8087/00006.jpg",
+        "pages/8087/00008.jpg"
+      ]
+    },
+    {
+      "id": 8090,
+      "root_label": "CDIAK",
+      "label": "CDIAK/514/1/287",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 369,
+      "sampled_pages": [
+        1,
+        2,
+        7
+      ],
+      "image_paths": [
+        "pages/8090/00001.jpg",
+        "pages/8090/00002.jpg",
+        "pages/8090/00007.jpg"
+      ]
+    },
+    {
+      "id": 8634,
+      "root_label": "CDIAK",
+      "label": "CDIAK/49/1/703",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 57,
+      "sampled_pages": [
+        5,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/8634/00005.jpg",
+        "pages/8634/00006.jpg",
+        "pages/8634/00008.jpg"
+      ]
+    },
+    {
+      "id": 8642,
+      "root_label": "CDIAK",
+      "label": "CDIAK/276/1/29",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 61,
+      "sampled_pages": [
+        1,
+        5,
+        10
+      ],
+      "image_paths": [
+        "pages/8642/00001.jpg",
+        "pages/8642/00005.jpg",
+        "pages/8642/00010.jpg"
+      ]
+    },
+    {
+      "id": 8979,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-3168/1/4",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 84,
+      "sampled_pages": [
+        1,
+        3,
+        5
+      ],
+      "image_paths": [
+        "pages/8979/00001.jpg",
+        "pages/8979/00003.jpg",
+        "pages/8979/00005.jpg"
+      ]
+    },
+    {
+      "id": 9605,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-254/1/4",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 47,
+      "sampled_pages": [
+        2,
+        3,
+        7
+      ],
+      "image_paths": [
+        "pages/9605/00002.jpg",
+        "pages/9605/00003.jpg",
+        "pages/9605/00007.jpg"
+      ]
+    },
+    {
+      "id": 9921,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-2222/1/3",
+      "doc_type": [
+        "L"
+      ],
+      "page_count": 14,
+      "sampled_pages": [
+        3,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/9921/00003.jpg",
+        "pages/9921/00005.jpg",
+        "pages/9921/00007.jpg"
+      ]
+    },
+    {
+      "id": 9736,
+      "root_label": "DAHMO",
+      "label": "DAHMO/R-254/1/1",
+      "doc_type": [
+        "O",
+        "L"
+      ],
+      "page_count": 157,
+      "sampled_pages": [
+        4,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/9736/00004.jpg",
+        "pages/9736/00009.jpg",
+        "pages/9736/00010.jpg"
+      ]
+    },
+    {
+      "id": 584,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/2t2/5769",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 43,
+      "sampled_pages": [
+        3,
+        5,
+        10
+      ],
+      "image_paths": [
+        "pages/584/00003.jpg",
+        "pages/584/00005.jpg",
+        "pages/584/00010.jpg"
+      ]
+    },
+    {
+      "id": 593,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/34",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 54,
+      "sampled_pages": [
+        6,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/593/00006.jpg",
+        "pages/593/00009.jpg",
+        "pages/593/00010.jpg"
+      ]
+    },
+    {
+      "id": 695,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/6",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 42,
+      "sampled_pages": [
+        4,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/695/00004.jpg",
+        "pages/695/00006.jpg",
+        "pages/695/00010.jpg"
+      ]
+    },
+    {
+      "id": 1817,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/2t1/5249",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 56,
+      "sampled_pages": [
+        6,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/1817/00006.jpg",
+        "pages/1817/00008.jpg",
+        "pages/1817/00009.jpg"
+      ]
+    },
+    {
+      "id": 1547,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/35",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 105,
+      "sampled_pages": [
+        2,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/1547/00002.jpg",
+        "pages/1547/00006.jpg",
+        "pages/1547/00008.jpg"
+      ]
+    },
+    {
+      "id": 1964,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/33",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 70,
+      "sampled_pages": [
+        3,
+        4,
+        9
+      ],
+      "image_paths": [
+        "pages/1964/00003.jpg",
+        "pages/1964/00004.jpg",
+        "pages/1964/00009.jpg"
+      ]
+    },
+    {
+      "id": 1873,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/46",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 33,
+      "sampled_pages": [
+        1,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/1873/00001.jpg",
+        "pages/1873/00009.jpg",
+        "pages/1873/00010.jpg"
+      ]
+    },
+    {
+      "id": 1677,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/2t1/1121",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 54,
+      "sampled_pages": [
+        5,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/1677/00005.jpg",
+        "pages/1677/00006.jpg",
+        "pages/1677/00010.jpg"
+      ]
+    },
+    {
+      "id": 2006,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/40",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 266,
+      "sampled_pages": [
+        2,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/2006/00002.jpg",
+        "pages/2006/00007.jpg",
+        "pages/2006/00009.jpg"
+      ]
+    },
+    {
+      "id": 2416,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/2t1/4562",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 248,
+      "sampled_pages": [
+        4,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/2416/00004.jpg",
+        "pages/2416/00006.jpg",
+        "pages/2416/00008.jpg"
+      ]
+    },
+    {
+      "id": 2048,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2878/1/1",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 128,
+      "sampled_pages": [
+        5,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/2048/00005.jpg",
+        "pages/2048/00007.jpg",
+        "pages/2048/00008.jpg"
+      ]
+    },
+    {
+      "id": 2259,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/44",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 125,
+      "sampled_pages": [
+        2,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/2259/00002.jpg",
+        "pages/2259/00004.jpg",
+        "pages/2259/00005.jpg"
+      ]
+    },
+    {
+      "id": 2391,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/2t1/3474",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 88,
+      "sampled_pages": [
+        2,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/2391/00002.jpg",
+        "pages/2391/00004.jpg",
+        "pages/2391/00005.jpg"
+      ]
+    },
+    {
+      "id": 2294,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/29",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 142,
+      "sampled_pages": [
+        4,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/2294/00004.jpg",
+        "pages/2294/00007.jpg",
+        "pages/2294/00008.jpg"
+      ]
+    },
+    {
+      "id": 3247,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/42",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 155,
+      "sampled_pages": [
+        2,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/3247/00002.jpg",
+        "pages/3247/00007.jpg",
+        "pages/3247/00009.jpg"
+      ]
+    },
+    {
+      "id": 3424,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/27",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 162,
+      "sampled_pages": [
+        3,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/3424/00003.jpg",
+        "pages/3424/00006.jpg",
+        "pages/3424/00008.jpg"
+      ]
+    },
+    {
+      "id": 3276,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/41",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 202,
+      "sampled_pages": [
+        6,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/3276/00006.jpg",
+        "pages/3276/00008.jpg",
+        "pages/3276/00010.jpg"
+      ]
+    },
+    {
+      "id": 3453,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/7",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 173,
+      "sampled_pages": [
+        4,
+        5,
+        10
+      ],
+      "image_paths": [
+        "pages/3453/00004.jpg",
+        "pages/3453/00005.jpg",
+        "pages/3453/00010.jpg"
+      ]
+    },
+    {
+      "id": 3369,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/2t2/6947",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 48,
+      "sampled_pages": [
+        1,
+        2,
+        3
+      ],
+      "image_paths": [
+        "pages/3369/00001.jpg",
+        "pages/3369/00002.jpg",
+        "pages/3369/00003.jpg"
+      ]
+    },
+    {
+      "id": 3374,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/1t37/120311",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 5,
+      "sampled_pages": [
+        2,
+        3,
+        5
+      ],
+      "image_paths": [
+        "pages/3374/00002.jpg",
+        "pages/3374/00003.jpg",
+        "pages/3374/00005.jpg"
+      ]
+    },
+    {
+      "id": 3680,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/26",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 127,
+      "sampled_pages": [
+        4,
+        7,
+        9
+      ],
+      "image_paths": [
+        "pages/3680/00004.jpg",
+        "pages/3680/00007.jpg",
+        "pages/3680/00009.jpg"
+      ]
+    },
+    {
+      "id": 3511,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/2t1/3114",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 323,
+      "sampled_pages": [
+        1,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/3511/00001.jpg",
+        "pages/3511/00005.jpg",
+        "pages/3511/00007.jpg"
+      ]
+    },
+    {
+      "id": 3694,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/37",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 47,
+      "sampled_pages": [
+        1,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/3694/00001.jpg",
+        "pages/3694/00005.jpg",
+        "pages/3694/00008.jpg"
+      ]
+    },
+    {
+      "id": 3916,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/2t2/8916",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 92,
+      "sampled_pages": [
+        4,
+        6,
+        7
+      ],
+      "image_paths": [
+        "pages/3916/00004.jpg",
+        "pages/3916/00006.jpg",
+        "pages/3916/00007.jpg"
+      ]
+    },
+    {
+      "id": 3925,
+      "root_label": "DADNO",
+      "label": "DADNO/R-6478/2t2/6512",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 84,
+      "sampled_pages": [
+        4,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/3925/00004.jpg",
+        "pages/3925/00008.jpg",
+        "pages/3925/00009.jpg"
+      ]
+    },
+    {
+      "id": 4301,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/10",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 373,
+      "sampled_pages": [
+        1,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/4301/00001.jpg",
+        "pages/4301/00006.jpg",
+        "pages/4301/00008.jpg"
+      ]
+    },
+    {
+      "id": 4062,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/12",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 28,
+      "sampled_pages": [
+        2,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/4062/00002.jpg",
+        "pages/4062/00009.jpg",
+        "pages/4062/00010.jpg"
+      ]
+    },
+    {
+      "id": 4345,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/39",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 139,
+      "sampled_pages": [
+        1,
+        4,
+        5
+      ],
+      "image_paths": [
+        "pages/4345/00001.jpg",
+        "pages/4345/00004.jpg",
+        "pages/4345/00005.jpg"
+      ]
+    },
+    {
+      "id": 4453,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/24",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 143,
+      "sampled_pages": [
+        2,
+        5,
+        10
+      ],
+      "image_paths": [
+        "pages/4453/00002.jpg",
+        "pages/4453/00005.jpg",
+        "pages/4453/00010.jpg"
+      ]
+    },
+    {
+      "id": 4357,
+      "root_label": "DADNO",
+      "label": "DADNO/R-2874/1/36",
+      "doc_type": [
+        "O"
+      ],
+      "page_count": 144,
+      "sampled_pages": [
+        1,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/4357/00001.jpg",
+        "pages/4357/00008.jpg",
+        "pages/4357/00010.jpg"
+      ]
+    },
+    {
+      "id": 67602,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/933",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 538,
+      "sampled_pages": [
+        1,
+        4,
+        8
+      ],
+      "image_paths": [
+        "pages/67602/00001.jpg",
+        "pages/67602/00004.jpg",
+        "pages/67602/00008.jpg"
+      ]
+    },
+    {
+      "id": 67503,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/916",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 410,
+      "sampled_pages": [
+        4,
+        7,
+        8
+      ],
+      "image_paths": [
+        "pages/67503/00004.jpg",
+        "pages/67503/00007.jpg",
+        "pages/67503/00008.jpg"
+      ]
+    },
+    {
+      "id": 67604,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/490",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 241,
+      "sampled_pages": [
+        6,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/67604/00006.jpg",
+        "pages/67604/00007.jpg",
+        "pages/67604/00010.jpg"
+      ]
+    },
+    {
+      "id": 67505,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/934",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 619,
+      "sampled_pages": [
+        1,
+        4,
+        9
+      ],
+      "image_paths": [
+        "pages/67505/00001.jpg",
+        "pages/67505/00004.jpg",
+        "pages/67505/00009.jpg"
+      ]
+    },
+    {
+      "id": 67506,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/944",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 42,
+      "sampled_pages": [
+        8,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/67506/00008.jpg",
+        "pages/67506/00009.jpg",
+        "pages/67506/00010.jpg"
+      ]
+    },
+    {
+      "id": 67609,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/978",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 548,
+      "sampled_pages": [
+        3,
+        8,
+        9
+      ],
+      "image_paths": [
+        "pages/67609/00003.jpg",
+        "pages/67609/00008.jpg",
+        "pages/67609/00009.jpg"
+      ]
+    },
+    {
+      "id": 67516,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/931",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 79,
+      "sampled_pages": [
+        1,
+        4,
+        10
+      ],
+      "image_paths": [
+        "pages/67516/00001.jpg",
+        "pages/67516/00004.jpg",
+        "pages/67516/00010.jpg"
+      ]
+    },
+    {
+      "id": 67517,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/871",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 229,
+      "sampled_pages": [
+        1,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/67517/00001.jpg",
+        "pages/67517/00005.jpg",
+        "pages/67517/00007.jpg"
+      ]
+    },
+    {
+      "id": 67617,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/977",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 470,
+      "sampled_pages": [
+        1,
+        3,
+        5
+      ],
+      "image_paths": [
+        "pages/67617/00001.jpg",
+        "pages/67617/00003.jpg",
+        "pages/67617/00005.jpg"
+      ]
+    },
+    {
+      "id": 67521,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/427",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 19,
+      "sampled_pages": [
+        4,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/67521/00004.jpg",
+        "pages/67521/00006.jpg",
+        "pages/67521/00008.jpg"
+      ]
+    },
+    {
+      "id": 67523,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/968",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 194,
+      "sampled_pages": [
+        5,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/67523/00005.jpg",
+        "pages/67523/00006.jpg",
+        "pages/67523/00008.jpg"
+      ]
+    },
+    {
+      "id": 67525,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/925",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 608,
+      "sampled_pages": [
+        2,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/67525/00002.jpg",
+        "pages/67525/00005.jpg",
+        "pages/67525/00007.jpg"
+      ]
+    },
+    {
+      "id": 67625,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/943",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 197,
+      "sampled_pages": [
+        7,
+        9,
+        10
+      ],
+      "image_paths": [
+        "pages/67625/00007.jpg",
+        "pages/67625/00009.jpg",
+        "pages/67625/00010.jpg"
+      ]
+    },
+    {
+      "id": 67533,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/857",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 57,
+      "sampled_pages": [
+        6,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/67533/00006.jpg",
+        "pages/67533/00007.jpg",
+        "pages/67533/00010.jpg"
+      ]
+    },
+    {
+      "id": 67633,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/970",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 282,
+      "sampled_pages": [
+        2,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/67633/00002.jpg",
+        "pages/67633/00005.jpg",
+        "pages/67633/00006.jpg"
+      ]
+    },
+    {
+      "id": 67534,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/891",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 62,
+      "sampled_pages": [
+        1,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/67534/00001.jpg",
+        "pages/67534/00005.jpg",
+        "pages/67534/00008.jpg"
+      ]
+    },
+    {
+      "id": 67635,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/882",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 23,
+      "sampled_pages": [
+        1,
+        5,
+        6
+      ],
+      "image_paths": [
+        "pages/67635/00001.jpg",
+        "pages/67635/00005.jpg",
+        "pages/67635/00006.jpg"
+      ]
+    },
+    {
+      "id": 67536,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/945",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 575,
+      "sampled_pages": [
+        1,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/67536/00001.jpg",
+        "pages/67536/00006.jpg",
+        "pages/67536/00010.jpg"
+      ]
+    },
+    {
+      "id": 67537,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/951",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 686,
+      "sampled_pages": [
+        2,
+        3,
+        8
+      ],
+      "image_paths": [
+        "pages/67537/00002.jpg",
+        "pages/67537/00003.jpg",
+        "pages/67537/00008.jpg"
+      ]
+    },
+    {
+      "id": 67640,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/880",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 22,
+      "sampled_pages": [
+        1,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/67640/00001.jpg",
+        "pages/67640/00006.jpg",
+        "pages/67640/00008.jpg"
+      ]
+    },
+    {
+      "id": 67641,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/405a",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 80,
+      "sampled_pages": [
+        3,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/67641/00003.jpg",
+        "pages/67641/00006.jpg",
+        "pages/67641/00008.jpg"
+      ]
+    },
+    {
+      "id": 67541,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/983",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 291,
+      "sampled_pages": [
+        3,
+        6,
+        8
+      ],
+      "image_paths": [
+        "pages/67541/00003.jpg",
+        "pages/67541/00006.jpg",
+        "pages/67541/00008.jpg"
+      ]
+    },
+    {
+      "id": 67642,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/854",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 55,
+      "sampled_pages": [
+        3,
+        6,
+        10
+      ],
+      "image_paths": [
+        "pages/67642/00003.jpg",
+        "pages/67642/00006.jpg",
+        "pages/67642/00010.jpg"
+      ]
+    },
+    {
+      "id": 67542,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/949",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 48,
+      "sampled_pages": [
+        2,
+        5,
+        9
+      ],
+      "image_paths": [
+        "pages/67542/00002.jpg",
+        "pages/67542/00005.jpg",
+        "pages/67542/00009.jpg"
+      ]
+    },
+    {
+      "id": 67544,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/876",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 33,
+      "sampled_pages": [
+        1,
+        5,
+        7
+      ],
+      "image_paths": [
+        "pages/67544/00001.jpg",
+        "pages/67544/00005.jpg",
+        "pages/67544/00007.jpg"
+      ]
+    },
+    {
+      "id": 67547,
+      "root_label": "DAKO",
+      "label": "DAKO/2/83/156",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 7,
+      "sampled_pages": [
+        2,
+        3,
+        6
+      ],
+      "image_paths": [
+        "pages/67547/00002.jpg",
+        "pages/67547/00003.jpg",
+        "pages/67547/00006.jpg"
+      ]
+    },
+    {
+      "id": 67660,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/930",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 131,
+      "sampled_pages": [
+        1,
+        6,
+        9
+      ],
+      "image_paths": [
+        "pages/67660/00001.jpg",
+        "pages/67660/00006.jpg",
+        "pages/67660/00009.jpg"
+      ]
+    },
+    {
+      "id": 67550,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/875",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 51,
+      "sampled_pages": [
+        1,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/67550/00001.jpg",
+        "pages/67550/00004.jpg",
+        "pages/67550/00007.jpg"
+      ]
+    },
+    {
+      "id": 67662,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/595",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 57,
+      "sampled_pages": [
+        3,
+        5,
+        8
+      ],
+      "image_paths": [
+        "pages/67662/00003.jpg",
+        "pages/67662/00005.jpg",
+        "pages/67662/00008.jpg"
+      ]
+    },
+    {
+      "id": 67551,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/960",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": null,
+      "sampled_pages": [
+        5,
+        7,
+        10
+      ],
+      "image_paths": [
+        "pages/67551/00005.jpg",
+        "pages/67551/00007.jpg",
+        "pages/67551/00010.jpg"
+      ]
+    },
+    {
+      "id": 67664,
+      "root_label": "DAKO",
+      "label": "DAKO/2/173/416",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 37,
+      "sampled_pages": [
+        1,
+        2,
+        3
+      ],
+      "image_paths": [
+        "pages/67664/00001.jpg",
+        "pages/67664/00002.jpg",
+        "pages/67664/00003.jpg"
+      ]
+    },
+    {
+      "id": 67552,
+      "root_label": "DAKO",
+      "label": "DAKO/2/88/2",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 8,
+      "sampled_pages": [
+        1,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/67552/00001.jpg",
+        "pages/67552/00004.jpg",
+        "pages/67552/00007.jpg"
+      ]
+    },
+    {
+      "id": 67668,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/892",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 159,
+      "sampled_pages": [
+        1,
+        4,
+        7
+      ],
+      "image_paths": [
+        "pages/67668/00001.jpg",
+        "pages/67668/00004.jpg",
+        "pages/67668/00007.jpg"
+      ]
+    },
+    {
+      "id": 67669,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/597",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 47,
+      "sampled_pages": [
+        4,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/67669/00004.jpg",
+        "pages/67669/00008.jpg",
+        "pages/67669/00010.jpg"
+      ]
+    },
+    {
+      "id": 67677,
+      "root_label": "DAKO",
+      "label": "DAKO/2/145/976",
+      "doc_type": [
+        "P"
+      ],
+      "page_count": 292,
+      "sampled_pages": [
+        6,
+        8,
+        10
+      ],
+      "image_paths": [
+        "pages/67677/00006.jpg",
+        "pages/67677/00008.jpg",
+        "pages/67677/00010.jpg"
+      ]
+    }
+  ]
+}
