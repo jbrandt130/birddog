@@ -1262,13 +1262,6 @@ def _parse_wikitext_table(text):
 
     return header, body
 
-def _included_link(link):
-    return not any([
-        _is_relative_link_target(link),
-        _is_familysearch_url(link),
-        re.search(r".(png|jpg)$", link, re.IGNORECASE),
-        ])
-
 def _included_link(link: str) -> bool:
     return not any([
         _is_relative_link_target(link),
