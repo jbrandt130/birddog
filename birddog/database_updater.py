@@ -52,7 +52,15 @@ def _edit_links(db, table_name, link_field, source_record, target_records, repla
     target_set = set(target_records)
     target_records = list(target_set)
     #_logger.info(f"_edit_links: {link_field}, {source_record}, target len={len(target_records)}, replace={replace}")
-    existing_targets = db.get_links(table_name, link_field, source_record)
+    if replace:
+        # need the full current set to know what to remove
+        existing_targets = db.get_links(table_name, link_field, source_record)
+    else:
+        # only need to know which of the requested targets are already linked.
+        # Fetching the full set instead costs one request per 100 links, per
+        # call -- e.g. linking each of the ~2000 children of a big opis page to
+        # its parent paged through all ~2000 existing children every time.
+        existing_targets = db.get_links(table_name, link_field, source_record, target_ids=target_records)
     existing_set = set(existing_targets)
     if existing_set == target_set or not replace and target_set.issubset(existing_set):
         return set(), set()
@@ -86,15 +94,43 @@ def _page_urls_from_titles(titles):
     raise TypeError(f"_page_urls_from_titles: invalid type: {type(titles)}")
 
 def _get_linked_doc_urls(db, title):
-    page_id = db.lookup("Pages", page_url_from_title(title))
-    if not page_id:
+    urls_by_title = _get_linked_doc_urls_by_title(db, [title])
+    if title not in urls_by_title:
         raise ValueError(f"_get_linked_doc_urls: unknown title: {title}")
-    doc_ids = db.get_links("Pages", "doc_links", page_id)
-    if not doc_ids:
-        return []
-    doc_recs = db.read("Documents", doc_ids, fields="url")
-    result = [rec.get("url") for rec in doc_recs if rec]
-    return [r for r in result if r]
+    return urls_by_title[title]
+
+def _get_linked_doc_urls_by_title(db, titles):
+    """Return {title: [doc url, ...]} for the docs linked to each page title.
+
+    Titles with no Pages record are omitted from the result. Batched: one Pages
+    lookup and one Documents read for all titles, plus one get_links per page --
+    rather than all three per title, which dominated the post-update step of a
+    large deep update (20 titles x 3 requests per batch, 5 batches in parallel,
+    all sharing the NocoDB rate limit).
+    """
+    url_by_title = {title: page_url_from_title(title) for title in titles}
+    page_id_by_url = db.lookup("Pages", set(url_by_title.values()))
+
+    doc_ids_by_title = {}
+    for title, page_url in url_by_title.items():
+        page_id = page_id_by_url.get(page_url)
+        if page_id:
+            doc_ids_by_title[title] = db.get_links("Pages", "doc_links", page_id)
+
+    all_doc_ids = list({doc_id for doc_ids in doc_ids_by_title.values() for doc_id in doc_ids})
+    url_by_doc_id = {}
+    if all_doc_ids:
+        doc_recs = db.read("Documents", all_doc_ids, fields="url")
+        url_by_doc_id = {
+            doc_id: rec["url"]
+            for doc_id, rec in zip(all_doc_ids, doc_recs)
+            if rec and rec.get("url")
+        }
+
+    return {
+        title: [url_by_doc_id[doc_id] for doc_id in doc_ids if doc_id in url_by_doc_id]
+        for title, doc_ids in doc_ids_by_title.items()
+    }
 
 def _lookup_pages(db, titles):
     return db.lookup("Pages", _page_urls_from_titles(titles))
@@ -1617,10 +1653,17 @@ class DatabaseUpdateManager(TaskManager):
         # (unlike the WikiDocTracker/BD:Missing Metadata paths, which have no such
         # provenance) so a deferred/resumed batch can still recover if the row it
         # was queued for doesn't exist by the time it actually runs.
+        try:
+            doc_urls_by_title = _get_linked_doc_urls_by_title(self._updater._db, titles)
+        except Exception as err:
+            _logger.error(f"DatabaseUpdateManager: exception during doc metadata update for {titles}: {err}")
+            return
         update_doc_urls = []
         for title in titles:
             try:
-                doc_urls = _get_linked_doc_urls(self._updater._db, title)
+                doc_urls = doc_urls_by_title.get(title)
+                if doc_urls is None:
+                    raise ValueError(f"unknown title: {title}")
                 if len(doc_urls) <= self._BATCHED_DOC_UPDATE_THRESHOLD:
                     update_doc_urls.extend(doc_urls)
                 else:

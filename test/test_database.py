@@ -242,6 +242,12 @@ class TestDatabase(unittest.TestCase):
         self.assertIn(child2_id, children_links)
         self.assertIn(child3_id, children_links)
 
+        # filtered get_links returns only the requested targets that are linked
+        missing_id = max(child2_id, child3_id) + 1000000
+        subset = self.db.get_links("Pages", "children", parent_id, target_ids=[child3_id, missing_id])
+        self.assertEqual(subset, [child3_id])
+        self.assertEqual(self.db.get_links("Pages", "children", parent_id, target_ids=[]), [])
+
         # unlink one child and verify removal
         self.db.delete_links("Pages", "children", parent_id, child3_id)
         children_links2 = self.db.get_links("Pages", "children", parent_id)
@@ -706,6 +712,40 @@ class TestDatabase(unittest.TestCase):
 
         self.assertEqual(link_ids, [])
         self.assertIsNone(cursor)
+
+    def test_get_links_with_target_ids_filters_and_chunks(self):
+        """
+        get_links(target_ids=...) must push an "Id in (...)" filter to the server
+        instead of paging the full link set, and split large id lists into
+        requests of at most _GET_LINKS_TARGET_CHUNK_SIZE ids.
+        """
+        from birddog.nocodb_database import _GET_LINKS_TARGET_CHUNK_SIZE
+
+        # Warm the table/field id caches for real so the lookups below don't
+        # go through the patched _fetch.
+        self.db._table_id("Pages")
+        self.db._field_id("Pages", "children")
+
+        requested = list(range(1, 2 * _GET_LINKS_TARGET_CHUNK_SIZE + 2))
+        linked = {5, _GET_LINKS_TARGET_CHUNK_SIZE + 7, 2 * _GET_LINKS_TARGET_CHUNK_SIZE + 1}
+        wheres = []
+
+        def fake_fetch(url, params=None, **kwargs):
+            where = params["where"]
+            wheres.append(where)
+            self.assertTrue(where.startswith("(Id,in,") and where.endswith(")"))
+            ids = [int(x) for x in where[len("(Id,in,"):-1].split(",")]
+            hits = [{"Id": i} for i in ids if i in linked]
+            return {"list": hits, "pageInfo": {"isLastPage": True}}
+
+        with patch.object(self.db, "_fetch", side_effect=fake_fetch):
+            result = self.db.get_links("Pages", "children", 1, target_ids=requested)
+
+        self.assertEqual(set(result), linked)
+        self.assertEqual(len(wheres), 3)
+        chunk_sizes = [len(w[len("(Id,in,"):-1].split(",")) for w in wheres]
+        self.assertTrue(all(n <= _GET_LINKS_TARGET_CHUNK_SIZE for n in chunk_sizes))
+        self.assertEqual(sum(chunk_sizes), len(requested))
 
 
 if __name__ == "__main__":

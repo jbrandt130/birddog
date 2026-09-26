@@ -16,6 +16,7 @@ from birddog.database_updater import (
     _extract_links_from_wiki_parse,
     _form_simple_page_record,
     _get_linked_doc_urls,
+    _get_linked_doc_urls_by_title,
     _has_processing_state,
     _is_category_link,
     _lookup_pages,
@@ -61,6 +62,7 @@ class FakeDB:
         self.create_calls = []
         self.delete_calls = []
         self.write_calls = []
+        self.get_links_calls = []
         self._next_id = 0
 
     def key_field_name(self, table_name):
@@ -106,8 +108,12 @@ class FakeDB:
         records, has_more = pages[idx]
         return records, (idx + 1 if has_more else None)
 
-    def get_links(self, table_name, link_field, source_record):
-        return list(self.links.get((table_name, link_field, source_record), set()))
+    def get_links(self, table_name, link_field, source_record, target_ids=None):
+        self.get_links_calls.append((table_name, link_field, source_record, target_ids))
+        existing = self.links.get((table_name, link_field, source_record), set())
+        if target_ids is not None:
+            existing = existing & set(target_ids)
+        return list(existing)
 
     def create_links(self, table_name, link_field, source_record, target_records):
         self.create_calls.append((table_name, link_field, source_record, target_records))
@@ -414,6 +420,21 @@ class TestEditLinks(unittest.TestCase):
         self.assertEqual(self.db.delete_calls, [])
         self.assertEqual(len(self.db.create_calls), 1)
 
+    def test_create_only_checks_existence_of_requested_targets_only(self):
+        # a non-replacing edit only needs to know which requested targets are
+        # already linked; fetching the source's full link set is what made
+        # linking each child of a ~2000-child opis page to its parent page
+        # through all ~2000 existing children every time
+        _create_links(self.db, "Pages", "children", "p1", ["a", "c"])
+        self.assertEqual(len(self.db.get_links_calls), 1)
+        self.assertEqual(set(self.db.get_links_calls[0][3]), {"a", "c"})
+
+    def test_replace_fetches_full_link_set(self):
+        # replace mode must see every existing link to know what to remove
+        _replace_links(self.db, "Pages", "children", "p1", ["b", "c"])
+        self.assertEqual(len(self.db.get_links_calls), 1)
+        self.assertIsNone(self.db.get_links_calls[0][3])
+
 
 class TestHasProcessingState(unittest.TestCase):
     def test_blank_record_has_no_state(self):
@@ -524,6 +545,45 @@ class TestGetLinkedDocUrls(unittest.TestCase):
             "d2": {},  # missing url -> filtered out
         }
         self.assertEqual(_get_linked_doc_urls(db, "Архів:ДАЖО/Д"), ["https://example.org/d1.pdf"])
+
+
+class TestGetLinkedDocUrlsByTitle(unittest.TestCase):
+    def setUp(self):
+        self.db = FakeDB()
+        self.titles = ["Архів:ДАЖО/Д", "Архів:ДАЖО/Р", "Архів:Unknown/1"]
+        url_d, url_r = _page_urls_from_titles(self.titles[:2])
+        self.db.lookup_map["Pages"] = {url_d: "p1", url_r: "p2"}
+        self.db.links[("Pages", "doc_links", "p1")] = {"d1", "d2"}
+        self.db.links[("Pages", "doc_links", "p2")] = {"d2", "d3"}
+        self.db.records["Documents"] = {
+            "d1": {"url": "https://x/1"},
+            "d2": {"url": "https://x/2"},
+            "d3": {},  # missing url -> filtered out
+        }
+        self.lookup_calls = []
+        self.read_calls = []
+        lookup, read = self.db.lookup, self.db.read
+        self.db.lookup = lambda table, keys: self.lookup_calls.append(table) or lookup(table, keys)
+        self.db.read = lambda table, ids, fields=None: self.read_calls.append(list(ids)) or read(table, ids, fields)
+
+    def test_maps_each_known_title_to_its_doc_urls(self):
+        result = _get_linked_doc_urls_by_title(self.db, self.titles)
+        self.assertEqual(set(result), {"Архів:ДАЖО/Д", "Архів:ДАЖО/Р"})  # unknown omitted
+        self.assertEqual(sorted(result["Архів:ДАЖО/Д"]), ["https://x/1", "https://x/2"])
+        self.assertEqual(result["Архів:ДАЖО/Р"], ["https://x/2"])
+
+    def test_one_lookup_and_one_read_for_all_titles(self):
+        _get_linked_doc_urls_by_title(self.db, self.titles)
+        self.assertEqual(self.lookup_calls, ["Pages"])
+        self.assertEqual(len(self.read_calls), 1)
+        # shared doc d2 is read once
+        self.assertEqual(sorted(self.read_calls[0]), ["d1", "d2", "d3"])
+
+    def test_no_linked_docs_skips_read(self):
+        self.db.links.clear()
+        result = _get_linked_doc_urls_by_title(self.db, self.titles[:2])
+        self.assertEqual(result, {"Архів:ДАЖО/Д": [], "Архів:ДАЖО/Р": []})
+        self.assertEqual(self.read_calls, [])
 
 
 class TestLookupPages(unittest.TestCase):

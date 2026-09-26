@@ -76,6 +76,9 @@ _NOCODB_BASE_ID               = _NOCODB_CONFIG["base_id"]
 _NOCODB_API_DELAY             = _NOCODB_CONFIG["api_delay"]
 _NOCODB_BATCH_SIZE            = _NOCODB_CONFIG["batch_size"]
 _NOCODB_EDIT_LINK_BATCH_SIZE  = _NOCODB_CONFIG["edit_link_batch_size"]
+# max target ids per filtered get_links() request -- keeps the "Id in (...)" filter
+# comfortably inside URL length limits and within one 100-row page of results
+_GET_LINKS_TARGET_CHUNK_SIZE = 100
 _logger.info(f"Using {_NOCODB_ENV_NAME} nocodb api: {_NOCODB_HOST}")
 
 _WRITE_CHUNK_SIZE               = 500       # max records per reservation window
@@ -1500,7 +1503,7 @@ class NocoDBDatabase(Database):
             table_name, link_field, source_record, target_records,
             "DELETE")
 
-    def scan_links(self, table_name, link_field, source_record, limit=100, cursor=None):
+    def scan_links(self, table_name, link_field, source_record, limit=100, cursor=None, target_ids=None):
         """
         Page through linked target record_ids for a relation field on a source record.
 
@@ -1521,6 +1524,12 @@ class NocoDBDatabase(Database):
                 Opaque paging token returned by a previous call to scan_links(), or
                 None to request the first page. In this implementation the cursor is
                 a stringified integer offset.
+
+            target_ids:
+                Optional collection of target record_ids. If given, only links to
+                those targets are returned (server-side "Id in (...)" filter). The
+                caller is responsible for keeping the collection small enough to fit
+                in a request URL -- see get_links(), which chunks it.
 
         Returns:
             (link_ids, next_cursor)
@@ -1563,6 +1572,8 @@ class NocoDBDatabase(Database):
             "offset": offset,
             "limit": limit,
         }
+        if target_ids is not None:
+            params["where"] = f"(Id,in,{','.join(str(i) for i in target_ids)})"
 
         with LogService("NocoDB", "scan_links") as log:
             try:
@@ -1601,7 +1612,7 @@ class NocoDBDatabase(Database):
             return [], None
 
 
-    def get_links(self, table_name, link_field, source_record):
+    def get_links(self, table_name, link_field, source_record, target_ids=None):
         """
         Retrieve all linked target record_ids for a relation field on a source record.
 
@@ -1615,36 +1626,55 @@ class NocoDBDatabase(Database):
             source_record:
                 Record_id ("Id") of the source record.
 
+            target_ids:
+                Optional collection of target record_ids. If given, only the subset of
+                those targets that are currently linked is returned, instead of the
+                full link set. Use this for "which of these are already linked?"
+                checks against a high-fanout source record (e.g. an opis page with
+                thousands of children), where fetching the full set costs one request
+                per 100 links.
+
         Returns:
-            A list of all linked target record_ids. If no links exist, returns an
-            empty list.
+            A list of linked target record_ids (restricted to target_ids, if given).
+            If no links exist, returns an empty list.
 
         Semantics:
             - Eagerly retrieves all pages of links by calling scan_links().
             - For large fanout relations, callers that do not need the full link set
-              should prefer scan_links().
+              should prefer scan_links() or pass target_ids.
 
         Errors:
             - InvalidTableName
             - InvalidFieldName
             - FailedIO
         """
-        result = []
-        cursor = None
+        if target_ids is None:
+            chunks = [None]
+        else:
+            target_ids = list(set(target_ids))
+            chunks = [
+                target_ids[i:i + _GET_LINKS_TARGET_CHUNK_SIZE]
+                for i in range(0, len(target_ids), _GET_LINKS_TARGET_CHUNK_SIZE)
+            ]
 
+        result = []
         with LogService("NocoDB", "get_links") as log:
             log.size = 0
-            while True:
-                page, cursor = self.scan_links(
-                    table_name,
-                    link_field,
-                    source_record,
-                    cursor=cursor,
-                )
-                log.size += json_size(page)
-                result.extend(page)
-                if not cursor:
-                    return result
+            for chunk in chunks:
+                cursor = None
+                while True:
+                    page, cursor = self.scan_links(
+                        table_name,
+                        link_field,
+                        source_record,
+                        cursor=cursor,
+                        target_ids=chunk,
+                    )
+                    log.size += json_size(page)
+                    result.extend(page)
+                    if not cursor:
+                        break
+        return result
 
     def _upload_files(self, file_paths):
         """
