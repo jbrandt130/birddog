@@ -441,7 +441,7 @@ Return metadata needed to drive the spreadsheet export dialog for a given page.
 5. Validates default table exists; otherwise clears it.  
 6. If no default template, chooses one from `list_templates()` containing `page.kind`, or `"opus.xlsx"`.  
 7. If no default table, uses first table name or `""`.  
-8. For tables missing from `header_map`, infers a mapping via `classify_table_columns`.
+8. For tables missing from `header_map`, uses the positional default from `default_column_header_map` (first columns = ID, DESCRIPTION, DATE).
 
 **Successful Response**
 

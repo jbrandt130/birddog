@@ -19,7 +19,6 @@ from openpyxl.utils.cell import get_column_letter
 
 from birddog.utility import get_text, link_status, transliterate
 from birddog.wiki import ARCHIVE_BASE
-from birddog.ai import classify_table_columns
 from birddog.task import TaskManager
 from birddog.cache import load_cached_object, save_cached_object, remove_cached_object, CacheMissError
 
@@ -265,6 +264,18 @@ def list_templates():
     pattern = os.path.join(_TEMPLATE_DIR, '*.xlsx')
     return [os.path.basename(f) for f in glob.glob(pattern)]
 
+# table column classes referenced by templates as {child[<class>]}
+_COLUMN_CLASSES = ["ID", "DESCRIPTION", "DATE"]
+
+def list_column_classes():
+    return list(_COLUMN_CLASSES)
+
+def default_column_header_map(table):
+    """Positional default mapping from column class to column index list:
+    the first table columns are taken as ID, DESCRIPTION, DATE in order."""
+    num_cols = len(table["header"])
+    return {col_class: [i] for i, col_class in enumerate(_COLUMN_CLASSES) if i < num_cols}
+
 def export_page(page, dest_file=None, template=None, table_name=None, column_map=None):
     # load template file that matches this kind of page
     _logger.info(f"export_page({page.title}: template='{template}', table_name='{table_name}', column_map='{column_map}')")
@@ -293,7 +304,7 @@ def export_page(page, dest_file=None, template=None, table_name=None, column_map
 
     if table:
         # construct column header map if needed
-        column_header_map = column_map if column_map else classify_table_columns(table)
+        column_header_map = column_map if column_map else default_column_header_map(table)
 
     # move rows below the table downward to make room for table rows
     num_children = len(table["children"]) if table else 0

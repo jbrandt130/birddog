@@ -30,7 +30,7 @@ from flask import (
 
 # Birddog packages
 from birddog.runtime import Runtime
-from birddog.excel import list_templates
+from birddog.excel import list_templates, list_column_classes, default_column_header_map
 from birddog.cache import (
     load_cached_object,
     CacheMissError)
@@ -43,7 +43,6 @@ from birddog.wiki import (
     page_label,
     )
 from birddog.user import User
-from birddog.ai import list_column_classes, classify_table_columns
 from birddog.utility import get_text, system_resource_report
 from birddog.log import (
     get_logger,
@@ -574,12 +573,7 @@ def export_dialog(user):
         default_table = page.tables[0]["name"] if page.tables else ""
     for table in page.tables:
         if table["name"] not in header_map:
-            classification = classify_table_columns(table)
-            # form mapping from column header type to column index
-            header_map[table["name"]] = {
-                col_type: [i] for i, col_type in enumerate(classification["mapping"])
-                }
-            _logger.info(f"inferred header map: {header_map}")
+            header_map[table["name"]] = default_column_header_map(table)
 
     data = {
         "title":                page_title,
