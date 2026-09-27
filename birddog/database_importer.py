@@ -198,7 +198,7 @@ def verify_opus_format(text: str):
 
         return True, str1, str2
 
-    return False, "0", "0"
+    return False, "", ""
 
 
 def verify_fond_format(text: str):
@@ -902,9 +902,8 @@ def get_dates(ws, archive_name, change_date_col, ref_date_col):
     return change_date, timestamp
 
 
-def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cyrillic_unit_name):
+def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cyrillic_unit_name, import_message = ""):
     sheet_title = ws.title
-    import_message = ""
     row = 3
     source_col = find_header_in_row(ws, row, "B", "Z", SRC_HDR)
     daho_fund_list = False
@@ -1091,14 +1090,18 @@ def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, she
     return import_message
 
 
-def get_language(ws, cell_address):
+def get_language(ws, cell_address, import_message):
     language = get_cell_value(ws[cell_address], False)
     if language:
-        parts = re.split(r"[;,& ]+", language)
-        # replace 'Russ' with 'Russian' in the resulting list
-        language = ['Russian' if s == 'Russ' else s for s in parts]
-        _logger.info(f"Found language {language}")
-    return language
+        if language.lower() == "various":
+            language = ''
+            import_message = f"{import_message}; languages marked as {language}"
+        else:
+            parts = re.split(r"[/;,& ]+", language)
+            # replace 'Russ' with 'Russian' in the resulting list
+            language = ['Russian' if s == 'Russ' else s for s in parts]
+            _logger.info(f"Found language {language}")
+    return language, import_message
 
 
 def count_fund_opus_attributes(sheet, end_col):
@@ -1327,8 +1330,8 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
                         fund_dictionary[fund_idx] = url
                 else:
                     curr_source_type, label = get_label_source_type(latin_title, source_type, title, wiki_spreadsheet)
-                    language = get_language(ws, f"O{r}")
-                    add_case_page(False, fund_num_cell, fund_num_cell_addr, "A", change_date, ord("G"), '',
+                    language, import_message = get_language(ws, f"O{r}", import_message)
+                    add_case_page(False, fund_num_cell, fund_num_cell_addr, "A", change_date, ord("G"), import_message,
                         curr_source_type, '', label, lower_level, '',
                         archive_name, archive_url, page_table, r, url, timestamp, title, wiki_spreadsheet, ws, language)
             case _:
@@ -1418,12 +1421,11 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
 
 
 def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_cyrillic_name, fund_name, opus_name,
-                       fund_url, change_date_col, ref_date_col, page_table=None):
+                       fund_url, change_date_col, ref_date_col, import_message = "", page_table=None):
     if not page_table:
         page_table = {}
     opus_title, opus_latin_title, opus_url, import_message, comments = get_url_and_parent_title(ws, wiki_spreadsheet,
-                                                                                      fund_and_opus_name,
-                                                                                      fund_and_opus_cyrillic_name)
+        fund_and_opus_name, fund_and_opus_cyrillic_name, import_message)
     label = general_page_label(opus_latin_title, opus_title, wiki_spreadsheet)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, fund_and_opus_name, change_date_col, ref_date_col)
@@ -1554,7 +1556,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                 add_opus_page(page_table, ws, r, title, raw_url, label, change_date, timestamp, source_type, opus_title,
                               fund_url, level, availability, curr_import_message)
             else:
-                language = get_language(ws, f"{chr(comments_col + 8)}{r}")
+                language, curr_import_message = get_language(ws, f"{chr(comments_col + 8)}{r}", curr_import_message)
                 add_case_page(additional_column, case_num_cell, case_num_cell_addr, case_num_col, change_date,
                     comments_col, curr_import_message, curr_source_type, fund_name, label, level, opus_name,
                     opus_title, opus_url, page_table, r, raw_url, timestamp, title, wiki_spreadsheet, ws, language)
@@ -1698,8 +1700,9 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
                 archive_unit_cyrillic_name = f"{archive_unit_cyrillic_name}/{attribute}"
 
             # for DAHMO-K-wiki-20250820.xlsx, there are no attributes on the opus page
+            import_message = ""
             header = get_cell_value(sheet['B6'])
-            if 'Case description, file link' == header:
+            if 'Case description, file link' == header and num_attributes == 0:
                 num_attributes = 2
                 fund_opus_attributes = ['', '']
 
@@ -1709,21 +1712,27 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
                     opus_name = fund_opus_attributes[-1]
                     if not fund_name:
                         is_opus_format, fund_name, opus_name = verify_opus_format(sheet.title)
-                        if not is_opus_format:
+                        if not is_opus_format and opus_name:
                             raise ValueError(f"Opus sheet name {sheet.title} is not of standard format")
 
                     if fund_name != prev_fund_name:
                         correct_format, fund_idx = verify_fond_format(fund_name)
-                        if not correct_format:
+                        if not correct_format and fund_name:
                             raise ValueError(f"Fund name {fund_name} is not of standard format")
 
                         fund_url = fund_dictionary.get(fund_idx)
-                        if not fund_url:
-                            raise ValueError(f"No URL for fund {fund_name}, sheet {sheet.title}")
+
+                    if not fund_url:
+                        import_message = f"No URL for fund {fund_name}, sheet {sheet.title}"
+                        if archive_url:
+                            fund_url = archive_url
+                            import_message = (f"{import_message} - using the archive URL {archive_url} "
+                                              f"instead for the parent")
+                        _logger.warning(import_message)
 
                     page_table = process_opus_sheet(sheet, wiki_spreadsheet, archive_unit_name,
                                                     archive_unit_cyrillic_name, fund_name, opus_name, fund_url,
-                                                    change_date_col, ref_date_col, page_table)
+                                                    change_date_col, ref_date_col, import_message, page_table)
                 case 1:
                     fund_name = fund_opus_attributes[0]
                     prev_fund_name = fund_name
@@ -1966,7 +1975,7 @@ def process_dir(dir_path, actually_write=True):
                 f.write(msg + "\n")
                 try:
                     import_spreadsheet(str(entry), actually_write)
-                except TypeError as e:
+                except (ValueError, TypeError, ZeroDivisionError) as e:
                     error_msg = f"Error processing {entry}: {e}\n"
                     f.write(error_msg)
                     _logger.info(f"{Fore.RED}{error_msg}{Fore.RESET}")
@@ -1977,7 +1986,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DALUO-R-wiki-20260218.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAMO-D-archives-20260927.xlsx"
     import_spreadsheet(filepath, True)
-#    dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
-#    process_dir(dir_path)
+#    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Difficulties"
+#    process_dir(_dir_path)
