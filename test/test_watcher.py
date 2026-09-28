@@ -27,10 +27,14 @@ class FakePageUpdateManager:
     def get_updates(self, include, exclude=None, cutoff_date=None):
         self.calls.append((tuple(include), tuple(exclude) if exclude else (), cutoff_date))
         floor = cutoff_date or "0"
+        # strict '>': mirrors the real PageTracker.get_updates() fix (an
+        # inclusive '>=' re-matched the update that had just set
+        # last_checked_date on every subsequent call -- see
+        # test_check_does_not_reprocess_item_at_exact_last_checked_date)
         return {
             title: update
             for title, update in self._updates.items()
-            if update["timestamp"] >= floor
+            if update["timestamp"] > floor
         }
 
 
@@ -570,6 +574,35 @@ class CheckWatcherTests(WatcherTestBase):
         # last_checked_date to, not re-scan unbounded history (cutoff_date=None)
         self.assertEqual(manager.calls[0], ((self.TITLE,), (), "2025-01-01T00:00:00Z"))
         self.assertEqual(manager.calls[1], ((self.TITLE,), (), "2026-01-02T10:00:00Z"))
+
+    def test_check_does_not_reprocess_item_at_exact_last_checked_date(self):
+        # found 2026-09-27 investigating Архів:ЦДІАК/1268/3/4 losing its
+        # MINOR classification: check_watcher() advances last_checked_date
+        # to exactly this update's own timestamp, so a second call bounded
+        # by that same value must not re-match it -- an inclusive '>=' did,
+        # silently overwriting the unresolved entry (and any fields the
+        # significance sweep had stamped onto it in between) with a bare
+        # {modified, last_resolved, user} dict on every subsequent check.
+        item = f"{self.TITLE}/100/1/5"
+        updates = {item: {"timestamp": "2026-01-01T10:00:00Z", "user": "alice"}}
+        manager = FakePageUpdateManager(updates)
+
+        self._check(manager)
+
+        # simulate the significance sweep having classified this item in
+        # between the two checks
+        entry = watcher_mod.get_unresolved(self.EMAIL, self.TITLE, item)
+        entry["insignificant"] = True
+        entry["sig_span"] = [entry["last_resolved"], entry["modified"]]
+        watcher_mod.put_unresolved(self.EMAIL, self.TITLE, item, entry)
+
+        # second check, bounded by the last_checked_date the first call
+        # advanced to -- exactly this same update's timestamp
+        unresolved = self._check(manager)
+
+        self.assertEqual(manager.calls[1][2], "2026-01-01T10:00:00Z")
+        self.assertIn(item, unresolved)
+        self.assertTrue(unresolved[item].get("insignificant"))
 
     def test_check_does_not_reflag_already_resolved_edit(self):
         # resolved["modified"] simulates a legacy date that passed through

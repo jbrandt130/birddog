@@ -272,6 +272,27 @@ class TestPageTracker(unittest.TestCase):
             got = pt.get_updates("archive:abc", cutoff_date="2025-01-02T00:00:00Z")
 
         self.assertEqual(set(got.keys()), {"ARCHIVE:ABC/2"})
+
+    def test_get_updates_excludes_item_exactly_at_cutoff(self):
+        # check_watcher() advances last_checked_date to max(mod_date, ...)
+        # for every update it just processed, so the next call's cutoff_date
+        # exactly equals that update's own timestamp -- get_updates() must
+        # NOT re-match it then, or check_watcher() reprocesses (and
+        # overwrites) the same already-seen item forever, wiping any
+        # significance-sweep flags stamped on it in between (issue found
+        # 2026-09-27: Архів:ЦДІАК/1268/3/4 losing its MINOR classification)
+        tracker = self.tracker
+        pt = tracker.PageTracker()
+
+        pt._page_dict = {
+            "ARCHIVE:ABC/1": {"timestamp": "2025-01-02T00:00:00Z", "user": "u1"},
+            "ARCHIVE:ABC/2": {"timestamp": "2025-01-03T00:00:00Z", "user": "u2"},
+        }
+
+        with mock.patch.object(tracker, "canonicalize_title", side_effect=lambda s: s.upper()):
+            got = pt.get_updates("archive:abc", cutoff_date="2025-01-02T00:00:00Z")
+
+        self.assertEqual(set(got.keys()), {"ARCHIVE:ABC/2"})
         self.assertEqual(got["ARCHIVE:ABC/2"]["user"], "u2")
 
     def test_reset_clears_and_repopulates(self):

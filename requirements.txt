@@ -12,7 +12,6 @@ ulid==1.1
 cachetools==6.2.4
 requests==2.32.3
 google-cloud-translate==3.23.0
-openai==1.72.0
 pandas==2.3.3
 rapidfuzz>=2.6.1
 modal>=0.67.0

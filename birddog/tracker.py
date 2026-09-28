@@ -159,7 +159,18 @@ class PageTracker:
         if not cutoff_date:
             cutoff_date = "0" # older than all dates
         def should_include(title, update):
-            return title.startswith(prefix) and update.get("timestamp") and update.get("timestamp") >= cutoff_date
+            # strict '>': check_watcher() advances last_checked_date to
+            # max(mod_date, ...) for every update it just processed, so the
+            # next call's cutoff_date exactly equals that update's own
+            # timestamp -- an inclusive '>=' here re-matched that same
+            # update on every subsequent check until a newer edit arrived,
+            # re-running check_watcher()'s "already seen" branch and
+            # overwriting the item's unresolved entry with a bare
+            # {modified, last_resolved, user} dict, silently wiping any
+            # significance-sweep flags (insignificant/new_page/sig_span)
+            # written to it in between (found 2026-09-27 investigating
+            # Архів:ЦДІАК/1268/3/4 losing its MINOR classification)
+            return title.startswith(prefix) and update.get("timestamp") and update.get("timestamp") > cutoff_date
         return {
             title: update
             for title, update in self._page_dict.items()
