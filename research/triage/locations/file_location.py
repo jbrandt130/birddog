@@ -385,6 +385,7 @@ class FileLocationFinder:
             "Don Voyska": [{"location": "Rostov",        "location_id": "-2993218"}],
             "Ekaterinoslav": [{"location": "Dnipro",     "location_id": "-1037865"}],
             "Galicia": [{"location": "Lviv",             "location_id": "-1045268"}],
+            "Ivano-Frankivs'k": [{"location": "Ivano-Frankivsk", "location_id": "-1040327"}],
             "KÃ¡rpÃ¡talja": [{"location": "Uzhhorod",    "location_id": "-1057311"}],
             "Kharkov": [{"location": "Kharkiv",          "location_id": "-1041320"}, {"location": "Poltava",         "location_id": "-1051195"}],
             "Kherson": [{"location": "Kherson",          "location_id": "-1041356"}],
@@ -1104,7 +1105,7 @@ class FileLocationFinder:
                     location = self._matcher.location_name_dict.get(place_id)
                     if not location:
                         continue
-                    province_capital_ids_array = location.get("province_capital_ids_array", set())
+                    province_capital_ids_array = location.get("province_capital_ids_array", [set()])
                     if not province_capital_ids_array:
                         continue
                     max_num_capitals = max(max_num_capitals, len(province_capital_ids_array[-1]))
