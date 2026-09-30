@@ -122,15 +122,12 @@ class LocationPerformanceEvaluator:
         self,
         rows: list[int],
         skip_extraction: bool = False,
-        debug_print: bool = False,
         batch_size: int = 20,
     ):
         max_num_docs = len(rows)
 
         rows_used = []
-        msg = ""
-        if debug_print:
-            msg = "Rows that can be used: "
+        msg = "Rows that can be used: "
         
         # Buffer: (row, file, town_list, doc_id) per document
         pending: list[tuple[int, str, list[str], int]] = []
@@ -141,14 +138,12 @@ class LocationPerformanceEvaluator:
                 if file and town_list and (doc_id := self.get_doc_id(file)):
                     pending.append((row, file, town_list, doc_id))
                     rows_used.append(row)
-                    if debug_print:
-                        msg = f"{msg}{row}, "
+                    msg = f"{msg}{row}, "
             except ValueError as err:
                 print(err)
                 continue
 
-        if debug_print:
-            print(f"{msg} a total of {len(rows_used)}")
+        print(f"{msg} a total of {len(rows_used)}")
 
         if skip_extraction:
             return
@@ -164,27 +159,24 @@ class LocationPerformanceEvaluator:
                     buffered_doc_ids,
                     batch_size=batch_size,
                     only_smallest_locations=True,
-                    debug_print=debug_print,
                 )
             else:
                 batch_results = {doc_id: ([], [], [], set()) for doc_id in buffered_doc_ids}
 
             # Now evaluate each doc in this chunk using the batched result
             for row, file, town_list, doc_id in chunk:
-                if debug_print:
-                    print(f"Processing document number {self.num_evaluated_docs} with ID {doc_id}")
+                print(f"Processing document number {self.num_evaluated_docs} with ID {doc_id}")
                 # Swap in the batched result for the extraction step
                 self.evaluate_on_one_doc_from_batch(row, doc_id, town_list, file,
                     batch_results.get(doc_id, [])[0], batch_results.get(doc_id, [])[1],
-                    batch_results.get(doc_id, [])[2], batch_results.get(doc_id, [])[3], debug_print)
+                    batch_results.get(doc_id, [])[2], batch_results.get(doc_id, [])[3])
 
         self.print_statistics(max_num_docs)
 
-        if debug_print:
-            msg = f"Used these rows: {rows_used}"
-            if self.rows_with_wrong_locations:
-                msg = f"{msg}\nRows with wrong locations: {self.rows_with_wrong_locations}"
-            print(msg)
+        msg = f"Used these rows: {rows_used}"
+        if self.rows_with_wrong_locations:
+            msg = f"{msg}\nRows with wrong locations: {self.rows_with_wrong_locations}"
+        print(msg)
 
     def evaluate_on_one_doc_from_batch(
         self,
@@ -195,12 +187,11 @@ class LocationPerformanceEvaluator:
         doc_location_ids: list[str],
         archive_locs: list[dict],
         extended_archive_locs: list[list[dict]],
-        district_names: set[str],
-        debug_print: bool,
+        district_names: set[str]
     ):
         """takes doc_location_ids directly (already extracted)."""
         cumulative_locations, district_names = self.file_location_finder.match_places_to_location_ids(
-            doc_id, cumulative_towns, archive_locs, extended_archive_locs, district_names, debug_print)
+            doc_id, cumulative_towns, archive_locs, extended_archive_locs, district_names)
         cumulative_locations = [dict(f_set) for f_set in cumulative_locations]
         cumulative_locations_ids = [loc["loc_id"] for loc in cumulative_locations]
         cumulative_locations_ids_set = set(cumulative_locations_ids)
@@ -214,38 +205,37 @@ class LocationPerformanceEvaluator:
         if cumulative_locations_ids_set.issubset(doc_location_ids_set):
             self.num_docs_with_all_locations_found += 1
 
-        if debug_print:
-            if doc_location_ids_set == cumulative_locations_ids_set:
-                msg = f"Row {row}, record {file}, document ID {doc_id}, all locations coincide: "
-                for loc_id in cumulative_locations_ids_set:
-                    location = self.file_location_finder.get_location_from_id(str(loc_id))
+        if doc_location_ids_set == cumulative_locations_ids_set:
+            msg = f"Row {row}, record {file}, document ID {doc_id}, all locations coincide: "
+            for loc_id in cumulative_locations_ids_set:
+                location = self.file_location_finder.get_location_from_id(str(loc_id))
+                if location:
+                    msg = f"{msg} {location['main_name']}"
+        else:
+            self.rows_with_wrong_locations.append(row)
+            msg = f"Row {row}, record {file}, document ID {doc_id}, {len(cumulative_locations_ids_set)} assumed locations:"
+            for loc_id in cumulative_locations_ids_set:
+                location = self.file_location_finder.get_location_from_id(str(loc_id))
+                if location:
+                    msg = f"{msg} {location['main_name']}"
+            missing = cumulative_locations_ids_set - doc_location_ids_set
+            if missing:
+                msg = f"{msg}; missing {len(missing)}:"
+                for loc_id in missing:
+                    location = self.file_location_finder.get_location_from_id(
+                        str(loc_id)
+                    )
                     if location:
                         msg = f"{msg} {location['main_name']}"
-            else:
-                self.rows_with_wrong_locations.append(row)
-                msg = f"Row {row}, record {file}, document ID {doc_id}, {len(cumulative_locations_ids_set)} assumed locations:"
-                for loc_id in cumulative_locations_ids_set:
-                    location = self.file_location_finder.get_location_from_id(str(loc_id))
+            extra = doc_location_ids_set - cumulative_locations_ids_set
+            if extra:
+                msg = f"{msg}; extra {len(extra)}:"
+                for loc_id in extra:
+                    location = self.file_location_finder.get_location_from_id(loc_id)
                     if location:
                         msg = f"{msg} {location['main_name']}"
-                missing = cumulative_locations_ids_set - doc_location_ids_set
-                if missing:
-                    msg = f"{msg}; missing {len(missing)}:"
-                    for loc_id in missing:
-                        location = self.file_location_finder.get_location_from_id(
-                            str(loc_id)
-                        )
-                        if location:
-                            msg = f"{msg} {location['main_name']}"
-                extra = doc_location_ids_set - cumulative_locations_ids_set
-                if extra:
-                    msg = f"{msg}; extra {len(extra)}:"
-                    for loc_id in extra:
-                        location = self.file_location_finder.get_location_from_id(loc_id)
-                        if location:
-                            msg = f"{msg} {location['main_name']}"
 
-            print(msg)
+        print(msg)
 
         intersection_set = doc_location_ids_set & cumulative_locations_ids_set
 
@@ -301,13 +291,12 @@ if __name__ == "__main__":
     _provider = "groq"
     evaluator = LocationPerformanceEvaluator(report_path, _provider)
 
-    debug_print_ = True
     batch_size_ = 5
 
-#    rows_ = [3497, 4296]
-    rows_ = [21, 48, 119, 213, 297, 314, 397, 451, 457, 459, 615, 628, 644, 693, 696, 769, 838, 860, 867, 924, 1072, 1086, 1136, 1147, 1158, 1275, 1315, 1359, 1508, 1651, 1672, 1840, 1852, 2087, 2123, 2329, 2412, 2517, 2533, 2575, 2618, 2674, 2676, 2702, 2730, 2777, 2808, 2815, 2863, 2947, 3010, 3095, 3106, 3143, 3202, 3251, 3312, 3331, 3357, 3479, 3497, 3555, 3601, 3716, 3783, 3897, 4028, 4031, 4044, 4125, 4240, 4246, 4296, 4485, 4535, 4927, 5100, 5218, 5231, 5261, 5274, 5289, 5328, 5353, 5368, 5379, 5404, 5442, 5495, 5506, 5941, 6031, 6036, 6053, 6078, 6168, 6262, 6310, 6417, 6476, 6490, 6524, 6539, 6552, 6576, 6597, 6633, 6676, 6758, 6834, 6849, 6909, 6933, 6981, 7007, 7026, 7079, 7207, 7245, 7311, 7381, 7431, 7544, 7637, 7659, 7713, 7798, 7935, 7969, 8001, 8003, 8143, 8187, 8199, 8268, 8299, 8322, 8334, 8355, 8392, 8531, 8598, 8607, 8779, 8838, 9034, 9057, 9072, 9083, 9236, 9337, 9460, 9493, 9537, 9572, 9588, 9668, 9677, 9711, 9714, 9744, 9747, 9778, 9814, 10210, 10227, 10230, 10845]
+    rows_ = [21, 48, 119, 213, 297, 314, 397, 451, 457, 459]
+#    rows_ = [21, 48, 119, 213, 297, 314, 397, 451, 457, 459, 615, 628, 644, 693, 696, 769, 838, 860, 867, 924, 1072, 1086, 1136, 1147, 1158, 1275, 1315, 1359, 1508, 1651, 1672, 1840, 1852, 2087, 2123, 2329, 2412, 2517, 2533, 2575, 2618, 2674, 2676, 2702, 2730, 2777, 2808, 2815, 2863, 2947, 3010, 3095, 3106, 3143, 3202, 3251, 3312, 3331, 3357, 3479, 3497, 3555, 3601, 3716, 3783, 3897, 4028, 4031, 4044, 4125, 4240, 4246, 4296, 4485, 4535, 4927, 5100, 5218, 5231, 5261, 5274, 5289, 5328, 5353, 5368, 5379, 5404, 5442, 5495, 5506, 5941, 6031, 6036, 6053, 6078, 6168, 6262, 6310, 6417, 6476, 6490, 6524, 6539, 6552, 6576, 6597, 6633, 6676, 6758, 6834, 6849, 6909, 6933, 6981, 7007, 7026, 7079, 7207, 7245, 7311, 7381, 7431, 7544, 7637, 7659, 7713, 7798, 7935, 7969, 8001, 8003, 8143, 8187, 8199, 8268, 8299, 8322, 8334, 8355, 8392, 8531, 8598, 8607, 8779, 8838, 9034, 9057, 9072, 9083, 9236, 9337, 9460, 9493, 9537, 9572, 9588, 9668, 9677, 9711, 9714, 9744, 9747, 9778, 9814, 10210, 10227, 10230, 10845]
 #    rows_ = evaluator.unique_random_integers(250)
 #    rows_ = [row + 1 for row in rows_]  # the first row is the header
-    evaluator.evaluate_location_extraction(rows_, False, debug_print_, batch_size_)
+    evaluator.evaluate_location_extraction(rows_, False, batch_size_)
 #    cumulative_file = "ЦДІАК W-1160-1-2"
 #    print(evaluator.get_doc_id(cumulative_file))

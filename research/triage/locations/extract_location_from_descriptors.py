@@ -156,7 +156,7 @@ def _process_response(raw_json: dict, debug_print: bool = False) -> list[str]:
                 ]
             )
         except (JSONDecodeError, ValidationError) as e:
-            print(f"Error parsing AI response: {e}")
+            print(f"parsing AI response: {e}")
             return []
 
     # Filter out entries without locations
@@ -222,10 +222,11 @@ class LocationExtractor:
     Handles location ID lookups using similarity scoring against multiple name variants.
     """
 
-    def __init__(self, provider: str = "modal"):
+    def __init__(self, logger, provider: str = "modal"):
         """
         setting the model and provider link
         """
+        self._logger = logger
         match provider:
             case "modal":
                 self._provider_url = "https://ztatyan--qwen-inference-service-serve.modal.run/v1"
@@ -253,8 +254,7 @@ class LocationExtractor:
     # Batched extraction: N descriptors in 1 API call
     def extract_locations_batched(self,
         batches: list[list[str]],          # list of descriptor lists, one per document
-        batch_size: int | None = None,     # if None, batches = all descriptors in 1 call
-        debug_print: bool = False,
+        batch_size: int | None = None     # if None, batches = all descriptors in 1 call
     ) -> list[list[str]]:
         """
         Extract geographical locations from many documents in batched API calls.
@@ -331,8 +331,7 @@ class LocationExtractor:
             hard_cap = max(100, 4096 - (len(user_content) // 2) - 100)
             total_max_tokens = min(total_max_tokens, hard_cap)
 
-            if debug_print:
-                print(f"[batch {start}: {len(chunk)} docs] "
+            self._logger.info(f"[batch {start}: {len(chunk)} docs] "
                       f"input≈{input_tokens_estimate} tokens, "
                       f"max_tokens={total_max_tokens}")
 
@@ -365,7 +364,7 @@ class LocationExtractor:
                 except Exception as e:
                     if "maximum context length" in str(e) and attempt < 3:
                         effective_max_tokens = max(50, effective_max_tokens // 2)
-                        print(f"  (context overflow — retrying with max_tokens={effective_max_tokens})")
+                        self._logger.error(f"  (context overflow — retrying with max_tokens={effective_max_tokens})")
                         continue
                     raise
 
@@ -380,7 +379,7 @@ class LocationExtractor:
 
                 try:
                     if response is None:
-                        print(f"Error: No response object for batch starting at {start}")
+                        self._logger.error(f"No response object for batch starting at {start}")
                         # Fill remaining with empty lists
                         for i in range(start, min(start + batch_size, len(batches))):
                             if all_results[i] is None:
@@ -388,8 +387,8 @@ class LocationExtractor:
                         break  # exit retry loop — nothing more to try
                     content_str = response.choices[0].message.content
                     if not content_str:
-                        print(f"Error: Received empty content from AI response for batch starting at {start} "
-                              f"(finish_reason={response.choices[0].finish_reason})")
+                        self._logger.error(f"Received empty content from AI response for batch starting at {start} "
+                            f"(finish_reason={response.choices[0].finish_reason})")
                         # Fill remaining with empty lists
                         for i in range(start, min(start + batch_size, len(batches))):
                             if all_results[i] is None:
@@ -402,7 +401,7 @@ class LocationExtractor:
                         getattr(response.choices[0], "finish_reason", None)
                         if response is not None else None
                     )
-                    print(f"Error parsing batched AI response (attempt {retry_count}): {e}\n"
+                    self._logger.error(f"parsing batched AI response (attempt {retry_count}): {e}\n"
                           f"  finish_reason={finish_reason}\n"
                           f"  content_preview: {preview!r}")
                     # If truncated, retry with more output budget
@@ -414,7 +413,7 @@ class LocationExtractor:
                         new_total = min(total_max_tokens + extra_tokens,
                                         max(100, 4096 - input_tokens_estimate - 50),
                                         1000)
-                        print(f"  (truncated — retrying with max_tokens={new_total})")
+                        self._logger.error(f"  (truncated — retrying with max_tokens={new_total})")
                         response = client.chat.completions.create(
                             model=self._model,
                             messages=messages,
@@ -444,7 +443,7 @@ class LocationExtractor:
                         extra_tokens = len(chunk) * per_doc_output_tokens + 50
                         new_total = min(total_max_tokens + extra_tokens,
                                         max(100, 4096 - input_tokens_estimate - 50))
-                        print(f"  (schema error / truncated — retrying with max_tokens={new_total})")
+                        self._logger.error(f"  (schema error / truncated — retrying with max_tokens={new_total})")
                         response = client.chat.completions.create(
                             model=self._model,
                             messages=messages,
@@ -453,7 +452,7 @@ class LocationExtractor:
                             temperature=0.1,
                         )
                         continue
-                    print(f"Error constructing BatchDocumentLocationsResponse (after {retry_count} retries): {e}")
+                    self._logger.error(f"constructing BatchDocumentLocationsResponse (after {retry_count} retries): {e}")
                     for i in range(start, min(start + batch_size, len(batches))):
                         if all_results[i] is None:
                             all_results[i] = []
@@ -502,85 +501,79 @@ class LocationExtractor:
                             builtins.dict.fromkeys(slot)
                         )
                 else:
-                    print(f"Warning: global_idx {global_idx} out of range (max {len(batches)-1})")
+                    self._logger.warning(f"global_idx {global_idx} out of range (max {len(batches)-1})")
 
         # Ensure all slots are filled (in case some batches failed), and return
         # as list[list[str]] — pyrefly can't track the in-place None→[] fill above.
         return [r if r is not None else [] for r in all_results]
 
 
-def locations_to_admin_units(
-        locations: list[str], province_keywords: list[str], district_keywords: list[str],
-        district_keywords_suffix_only: list[str], settlement_keywords: list[str],
-        debug_print:bool = False) -> tuple[list[builtins.dict], set, set]:
-    """
-    Function: locations_to_admin_units
+    def locations_to_admin_units(self,
+            locations: list[str], province_keywords: list[str], district_keywords: list[str],
+            district_keywords_suffix_only: list[str], settlement_keywords: list[str]
+            ) -> tuple[list[builtins.dict], set, set]:
+        """
+        Function: locations_to_admin_units
 
-    Purpose: Converts raw location names from document descriptions into standardized administrative unit records
-    with hierarchical levels.
+        Purpose: Converts raw location names from document descriptions into standardized administrative unit records
+        with hierarchical levels.
 
-    This function analyzes location names extracted from archival document descriptions
-    and categorizes them according to their administrative rank (province, district, or settlement).
-    It uses keyword-based pattern matching to determine the administrative level of each location name.
+        This function analyzes location names extracted from archival document descriptions
+        and categorizes them according to their administrative rank (province, district, or settlement).
+        It uses keyword-based pattern matching to determine the administrative level of each location name.
 
-    Parameters:
-        locations (list[str]): List of raw location names extracted from document descriptions.
-                              These names may include administrative suffixes like "province", "district",
-                              or settlement types, and are typically already processed by extract_locations_batched().
-        province_keywords (list[str]): list of lowercase province keywords
-        district_keywords (list[str]): list of lowercase district keywords
-        district_keywords_suffix_only (list[str]): list of lowercase district keywords as suffixes only
-        settlement_keywords (list[str]): list of lowercase settlement keywords
-        debug_print (bool): If True, enables verbose console output showing the identification process,
-                           including the original location name, trimmed name, and assigned administrative level.
+        Parameters:
+            locations (list[str]): List of raw location names extracted from document descriptions.
+                                  These names may include administrative suffixes like "province", "district",
+                                  or settlement types, and are typically already processed by extract_locations_batched().
+            province_keywords (list[str]): list of lowercase province keywords
+            district_keywords (list[str]): list of lowercase district keywords
+            district_keywords_suffix_only (list[str]): list of lowercase district keywords as suffixes only
+            settlement_keywords (list[str]): list of lowercase settlement keywords
 
-    Returns:
-        tuple[list[builtins.dict], set, set]: A tuple containing:
-            1. admin_units (list[builtins.dict]): A list of dictionaries where each dictionary represents an administrative unit
-                                                 with the following structure:
-                                                 {
-                                                     "location" (str): The standardized location name with administrative
-                                                                      suffix stripped (e.g., "kiev" instead of "kiev province"),
-                                                     "administrative_level" (int): Hierarchical level where:
-                                                      0 = settlement (village, town, city, etc.)
-                                                      1 = district/county (sub-provincial administrative unit)
-                                                      2 = province/governorate/oblast/voivodeship (provincial level)
-                                                 }
-            2. province_names (set): A set of standardized province-level location names (suffix stripped).
-            3. district_names (set): A set of standardized district-level location names (suffix stripped).
-    """
-    admin_units = []
-    province_names = set()
-    district_names = set()
-    for loc in locations:
-        loc = loc.lower()
-        # is it a province?
-        (found, trimmed) = check_and_trim_keywords(loc, province_keywords, False)
-        if found:
-            province_names.add(trimmed)
-            admin_units.append({"location": trimmed, "administrative_level": 2})
-            if debug_print:
-                print(f"'{loc}' identified as location '{trimmed}', level 'province'")
-        else:
-            # is it a district?
-            (found, trimmed) = check_and_trim_keywords(loc, district_keywords, False)
-            if not found:
-                # try suffix only
-                (found, trimmed) = check_and_trim_keywords(loc, district_keywords_suffix_only, True)
+        Returns:
+            tuple[list[builtins.dict], set, set]: A tuple containing:
+                1. admin_units (list[builtins.dict]): A list of dictionaries where each dictionary represents an administrative unit
+                                                     with the following structure:
+                                                     {
+                                                         "location" (str): The standardized location name with administrative
+                                                                          suffix stripped (e.g., "kiev" instead of "kiev province"),
+                                                         "administrative_level" (int): Hierarchical level where:
+                                                          0 = settlement (village, town, city, etc.)
+                                                          1 = district/county (sub-provincial administrative unit)
+                                                          2 = province/governorate/oblast/voivodeship (provincial level)
+                                                     }
+                2. province_names (set): A set of standardized province-level location names (suffix stripped).
+                3. district_names (set): A set of standardized district-level location names (suffix stripped).
+        """
+        admin_units = []
+        province_names = set()
+        district_names = set()
+        for loc in locations:
+            loc = loc.lower()
+            # is it a province?
+            (found, trimmed) = check_and_trim_keywords(loc, province_keywords, False)
             if found:
-                district_names.add(trimmed)
-                admin_units.append({"location": trimmed, "administrative_level": 1})
-                if debug_print:
-                    print(f"Location '{loc}' matches '{trimmed}', level 'district'")
+                province_names.add(trimmed)
+                admin_units.append({"location": trimmed, "administrative_level": 2})
+                self._logger.info(f"'{loc}' identified as location '{trimmed}', level 'province'")
             else:
-                # it is a settlement
-                (found, trimmed) = check_and_trim_keywords(loc, settlement_keywords, False)
+                # is it a district?
+                (found, trimmed) = check_and_trim_keywords(loc, district_keywords, False)
+                if not found:
+                    # try suffix only
+                    (found, trimmed) = check_and_trim_keywords(loc, district_keywords_suffix_only, True)
                 if found:
-                    admin_units.append({"location": trimmed, "administrative_level": 0})
-                    if debug_print:
-                        print(f"'Location '{loc}' matches '{trimmed}', level 'settlement'")
+                    district_names.add(trimmed)
+                    admin_units.append({"location": trimmed, "administrative_level": 1})
+                    self._logger.info(f"Location '{loc}' matches '{trimmed}', level 'district'")
                 else:
-                    admin_units.append({"location": loc, "administrative_level": 0})
-                    if debug_print:
-                        print(f"No keywords in the settlement name '{loc}'")
-    return admin_units, province_names, district_names
+                    # it is a settlement
+                    (found, trimmed) = check_and_trim_keywords(loc, settlement_keywords, False)
+                    if found:
+                        admin_units.append({"location": trimmed, "administrative_level": 0})
+                        self._logger.info(f"'Location '{loc}' matches '{trimmed}', level 'settlement'")
+                    else:
+                        admin_units.append({"location": loc, "administrative_level": 0})
+                        self._logger.info(f"No keywords in the settlement name '{loc}'")
+        return admin_units, province_names, district_names

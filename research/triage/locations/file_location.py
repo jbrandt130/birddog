@@ -14,10 +14,7 @@ import random
 import re
 from typing import Any, cast
 
-from extract_location_from_descriptors import (
-    LocationExtractor,
-    locations_to_admin_units,
-)
+from extract_location_from_descriptors import LocationExtractor
 from read_all_locations import LocationMatcher
 
 from birddog.database import Database
@@ -252,7 +249,7 @@ class FileLocationFinder:
         self._logger = get_logger()
         self._db = Database()
         self._file_path = "./research/triage/locations/jg_communities_data.xlsx"
-        self._location_extractor = LocationExtractor(provider)
+        self._location_extractor = LocationExtractor(self._logger, provider)
 
         # all these must be lowercase
         self._province_keywords = [
@@ -382,25 +379,26 @@ class FileLocationFinder:
             "Basarabia": [],
             "Bessarabia": [],
             "Bucovina": [{"location": "Chernivtsi",      "location_id": "-1037073"}],
+            "Bukovina": [{"location": "Chernivtsi",      "location_id": "-1037073"}],
             "Cherkasy": [{"location": "Cherkasy",        "location_id": "-1037001"}],
-            "Chernigov ": [{"location":"Chernihiv",        "location_id":"-1037057"}],
-            "Don Voyska": [{"location": "Cherkasy",        "location_id": "-1037001"}],
+            "Chernigov": [{"location":"Chernihiv",       "location_id": "-1037057"}],
+            "Don Voyska": [{"location": "Rostov",        "location_id": "-2993218"}],
             "Ekaterinoslav": [{"location": "Dnipro",     "location_id": "-1037865"}],
-            "Galicia": [{"location": "Lviv",            "location_id": "-1045268"}],
-            "KÃ¡rpÃ¡talja": [{"location": "Uzhhorod",        "location_id": "-1057311"}],
-            "Kharkov": [{"location": "Kharkiv",         "location_id": "-1041320"}, {"location": "Poltava",         "location_id": "-1051195"}],
-            "Kherson": [{"location": "Kherson",         "location_id": "-1041356"}],
-            "Kiev": [{"location": "Kyiv",            "location_id": "-1044367"}],
-            "LwÃ³w": [{"location": "Lviv",            "location_id": "-1045268"}],
-            "Lwow": [{"location": "Lviv",            "location_id": "-1045268"}],
+            "Galicia": [{"location": "Lviv",             "location_id": "-1045268"}],
+            "KÃ¡rpÃ¡talja": [{"location": "Uzhhorod",    "location_id": "-1057311"}],
+            "Kharkov": [{"location": "Kharkiv",          "location_id": "-1041320"}, {"location": "Poltava",         "location_id": "-1051195"}],
+            "Kherson": [{"location": "Kherson",          "location_id": "-1041356"}],
+            "Kiev": [{"location": "Kyiv",                "location_id": "-1044367"}],
+            "LwÃ³w": [{"location": "Lviv",               "location_id": "-1045268"}],
+            "Lwow": [{"location": "Lviv",                "location_id": "-1045268"}],
             "Minsk": [],
             "Moldavia": [],
             "Moldavian ASSR": [],
             "Mykolayiv": [{"location": "Mykolayiv",       "location_id": "-1047257"}],
             "Nikolaiev": [{"location": "Mykolayiv",       "location_id": "-1047257"}],
-            "Podolia": [{"location":"Vinnitsa",         "location_id":"-1058303"}, {"location":"Kamenets Podolskiy","location_id":"-1040849"}],
+            "Podolia": [{"location":"Vinnitsa",           "location_id":"-1058303"}, {"location":"Kamenets Podolskiy","location_id":"-1040849"}],
             "Polesie": [],
-            "Poltava": [{"location": "Poltava",         "location_id": "-1051195"}],
+            "Poltava": [{"location": "Poltava",           "location_id": "-1051195"}],
             "Russian SSR": [],
             "Slovakia": [],
             "StanisÅ‚awÃ³w": [{"location": "Ivano-Frankivsk", "location_id": "-1040327"}],
@@ -416,9 +414,10 @@ class FileLocationFinder:
             "WoÅ‚yÅ„": _volyn_locations
         }
 
-        self._matcher = LocationMatcher(self._file_path, self._regions_2_locations, self._province_capitals)
+        self._matcher = LocationMatcher(self._file_path, self._regions_2_locations,
+            self._province_capitals, self._logger)
 
-    def delete_nuisance_words(self, descriptions: set[str], debug_print: bool = False) -> set[str]:
+    def delete_nuisance_words(self, descriptions: set[str]) -> set[str]:
         all_words_to_delete = [
             "board",
             "burgher",
@@ -647,8 +646,7 @@ class FileLocationFinder:
 
             if description and len(description) > 2:
                 shortened_descriptions.add(description)
-                if debug_print:
-                    print(f"Description shortened to '{description}'")
+                self._logger.info(f"Description shortened to '{description}'")
 
         return shortened_descriptions
 
@@ -667,7 +665,6 @@ class FileLocationFinder:
         doc_ids: list[int],
         batch_size: int = 20,
         only_smallest_locations: bool = True,
-        debug_print: bool = False,
     ) -> dict[int, tuple[list[str], list[dict], list[list[dict]], set[str]]]:
         """Identifies locations for multiple documents in batched API calls.
 
@@ -681,7 +678,6 @@ class FileLocationFinder:
             doc_ids: List of document IDs to process.
             batch_size: Maximum number of documents per API call (default 20).
             only_smallest_locations: Passed through to the per-doc location matching.
-            debug_print: Passed through to per-doc location matching.
 
         Returns:
             dict[int, tuple[list[str], list[dict], list[dict]]]: mapping from doc_id to list of
@@ -694,14 +690,13 @@ class FileLocationFinder:
         all_p2_lists: list[list[str]] = []
         doc_archive_locs_lists: dict = {}
         for doc_id in doc_ids:
-            if debug_print:
-                print(f"***** Processing descriptions for document {doc_id} *****")
-            priority1, priority2, doc_archive_locs = self.get_doc_descriptions(doc_id, debug_print)
+            self._logger.info(f"***** Processing descriptions for document {doc_id} *****")
+            priority1, priority2, doc_archive_locs = self.get_doc_descriptions(doc_id)
             doc_archive_locs_lists[doc_id] = doc_archive_locs 
-            priority1, region_centres_p1 = self.extract_region_centres(priority1, debug_print)
-            priority1 = self.delete_nuisance_words(priority1, debug_print)
-            priority2, region_centres_p2 = self.extract_region_centres(priority2, debug_print)
-            priority2 = self.delete_nuisance_words(priority2, debug_print)
+            priority1, region_centres_p1 = self.extract_region_centres(priority1)
+            priority1 = self.delete_nuisance_words(priority1)
+            priority2, region_centres_p2 = self.extract_region_centres(priority2)
+            priority2 = self.delete_nuisance_words(priority2)
 
             # flatten list[list[dict]] -> list[dict] (dicts unhashable, so set().union won't work)
             united_centre_list = ([d for sublist in region_centres_p1 for d in sublist] +
@@ -726,16 +721,15 @@ class FileLocationFinder:
         identified_locations_per_doc = []
         district_names_per_doc = [set()] * len(doc_ids)
         all_extracted_p1 = self._location_extractor.extract_locations_batched(
-            all_p1_lists, batch_size=batch_size, debug_print=debug_print
+            all_p1_lists, batch_size=batch_size
         )
         for doc_idx, doc_id in enumerate(doc_ids):
             extracted_p1 = all_extracted_p1[doc_idx]
-            if debug_print and extracted_p1:
-                print(f"***** Extracted locations for document {doc_id}: {extracted_p1} *****")
+            self._logger.info(f"***** Extracted locations for document {doc_id}: {extracted_p1} *****")
             district_names = district_names_per_doc[doc_idx]
             identified_locations, district_names = self.match_places_to_location_ids(doc_id,
                 extracted_p1, doc_archive_locs_lists.get(doc_id, []),
-                per_doc_inputs[doc_idx]["additional_centers"], district_names, debug_print)
+                per_doc_inputs[doc_idx]["additional_centers"], district_names)
             identified_locations_per_doc.append(identified_locations)
             district_names_per_doc[doc_idx] = district_names
             no_settlements_found = all(needs_further_analysis(e)
@@ -748,21 +742,20 @@ class FileLocationFinder:
             # Only include priority2 lists for docs that need it
             filtered_p2_lists = [all_p2_lists[i] if i in docs_needing_p2 else [] for i in range(len(doc_ids))]
             all_extracted_p2 = self._location_extractor.extract_locations_batched(
-                filtered_p2_lists, batch_size=batch_size, debug_print=debug_print
+                filtered_p2_lists, batch_size=batch_size
             )
             # Fallback: only consult priority2 if priority1 produced nothing
             for doc_idx, doc_id in enumerate(doc_ids):
                 identified_locations = identified_locations_per_doc[doc_idx]
                 extracted_p2 = all_extracted_p2[doc_idx]
-                if debug_print and extracted_p2:
-                    print(f"***** Second extraction for document {doc_id}: {extracted_p2} *****")
-                    district_names = district_names_per_doc[doc_idx]
-                    identified_locations_p2, district_names = self.match_places_to_location_ids(doc_id,
-                        extracted_p2, doc_archive_locs_lists.get(doc_id, []),
-                        per_doc_inputs[doc_idx]["additional_centers"], district_names, debug_print)
-                    identified_locations |= identified_locations_p2
-                    identified_locations_per_doc[doc_idx] = identified_locations
-                    district_names_per_doc[doc_idx] = district_names # include those from priority1
+                self._logger.info(f"***** Second extraction for document {doc_id}: {extracted_p2} *****")
+                district_names = district_names_per_doc[doc_idx]
+                identified_locations_p2, district_names = self.match_places_to_location_ids(doc_id,
+                    extracted_p2, doc_archive_locs_lists.get(doc_id, []),
+                    per_doc_inputs[doc_idx]["additional_centers"], district_names)
+                identified_locations |= identified_locations_p2
+                identified_locations_per_doc[doc_idx] = identified_locations
+                district_names_per_doc[doc_idx] = district_names # include those from priority1
 
         # Step 3: Dispatch results back to each doc with the priority fallback rule:
         # try priority1; only fall back to priority2 if priority1 yielded nothing.
@@ -794,27 +787,28 @@ class FileLocationFinder:
                             break
 
             identified_locations_dict_list = [dict(f_set) for f_set in identified_locations]
+            if identified_locations_dict_list:
+                if only_smallest_locations:
+                    target_level = min(loc["administrative_level"] for loc in identified_locations_dict_list)
+                    result = [dict_loc["loc_id"] for dict_loc in identified_locations_dict_list
+                        if dict_loc.get("administrative_level") == target_level]
 
-            if only_smallest_locations:
-                target_level = min(loc["administrative_level"] for loc in identified_locations_dict_list)
-                result = [dict_loc["loc_id"] for dict_loc in identified_locations_dict_list
-                    if dict_loc.get("administrative_level") == target_level]
-
-                if debug_print:
                     names = [d.get("main_name") for d in identified_locations_dict_list
                         if d.get("administrative_level") == target_level and d.get("main_name")]
                     msg = "Most specific locations: " + " ".join(f"'{name}'" for name in names)
-                    print(msg)
+                    self._logger.info(msg)
 
+                else:
+                    result = [dict_loc["loc_id"] for dict_loc in identified_locations_dict_list]
             else:
-                result = [dict_loc["loc_id"] for dict_loc in identified_locations_dict_list]
+                result = []
 
             results[doc_id] = (result, doc_archive_locs_lists[doc_id],
                                per_doc_inputs[doc_idx]["additional_centers"], district_names_per_doc[doc_idx])
 
         return results
 
-    def get_archive_locations(self, archive_locs: list[dict], debug_print: bool, owning_pages: Any | None
+    def get_archive_locations(self, archive_locs: list[dict], owning_pages: Any | None
     ) -> list[dict]:
         """Retrieves and compiles archive location information from document page hierarchies.
 
@@ -825,8 +819,6 @@ class FileLocationFinder:
 
         Args:
             archive_locs (list[dict]): Initial list of archive location dictionaries to be expanded.
-            debug_print (bool, optional): If True, prints status messages when root labels
-                cannot be found in the _archive_locations dictionary. Defaults to False.
             owning_pages (Any | None): List of owning page dictionaries from the document record,
                 or None if no owning pages exist.
 
@@ -839,7 +831,7 @@ class FileLocationFinder:
             for page in owning_pages:
                 page_id = page.get("Id")
                 page_rec = cast(dict, self._db.read("Pages", page_id))
-                root_label = page_rec.get("root_label")
+                root_label = page_rec.get("root_label", "")
                 if root_label:
                     # Splits at the first '-' and retains everything before it
                     root_label = root_label.split("-", 1)[0]
@@ -847,8 +839,7 @@ class FileLocationFinder:
                 if root_label in self._archive_locations:
                     archive_locs.append(self._archive_locations[root_label])
                 else:
-                    if debug_print:
-                        print(f"Could not find root label {root_label}")
+                    self._logger.info(f"Could not find root label {root_label}")
 
         # Removes duplicates by using the hashable representation as a temporary key
         seen = set()
@@ -871,11 +862,11 @@ class FileLocationFinder:
 
         return unique_locs
 
-    def extract_region_centres(self, descriptions: set[str], debug_print: bool = False)-> tuple[set[str], list[list[dict]]]:
+    def extract_region_centres(self, descriptions: set[str])-> tuple[set[str], list[list[dict]]]:
         descriptions_after_extraction = []
         total_region_centres = []
         for description in descriptions:
-            description_after_extraction, region_centres = self.remove_sentences_with_words(description, debug_print)
+            description_after_extraction, region_centres = self.remove_sentences_with_words(description)
             if description_after_extraction:
                 descriptions_after_extraction.append(description_after_extraction)
             total_region_centres.append(
@@ -886,7 +877,7 @@ class FileLocationFinder:
 
         return descriptions_after_extraction, total_region_centres
         
-    def remove_sentences_with_words(self, text: str, debug_print: bool = False) -> tuple[str, list[dict]]:
+    def remove_sentences_with_words(self, text: str) -> tuple[str, list[dict]]:
         archive_abbreviations = set(self._regions_2_locations.keys())
         archive_cities = {loc["location"] for loc in _all_ukraine_locations}
         all_keywords_original_case = archive_abbreviations | archive_cities
@@ -921,15 +912,13 @@ class FileLocationFinder:
             matches = cities_to_check.intersection(clean_words)
             if matches:
                 found_words.update(matches)
-                if debug_print:
-                    print(f"Deleting the sentence: '{sentence}'")
+                self._logger.info(f"Deleting the sentence: '{sentence}'")
             else:
                 # now try the archive abbreviations
                 matches = abbreviations_to_check.intersection(clean_words)
                 if matches:
                     found_words.update(matches)
-                    if debug_print:
-                        print(f"Deleting the sentence: '{sentence}'")
+                    self._logger.info(f"Deleting the sentence: '{sentence}'")
                 else:
                     cleaned_pieces.append(sentence)
 
@@ -948,7 +937,7 @@ class FileLocationFinder:
         return "".join(cleaned_pieces).strip(), region_centres
 
 
-    def get_doc_descriptions(self, doc_id: int, debug_print: bool = False) -> tuple[set[str], set[str], list[dict]]:
+    def get_doc_descriptions(self, doc_id: int) -> tuple[set[str], set[str], list[dict]]:
         """Retrieves and compiles descriptions and storage locations for a document.
 
         Descriptions are split into two priority tiers:
@@ -957,8 +946,6 @@ class FileLocationFinder:
 
         Args:
             doc_id (int): The unique identifier of the target document.
-            debug_print (bool, optional): If True, prints status messages when
-                records are missing. Defaults to False.
 
         Returns:
             tuple[set[str], set[str], list[dict]]:
@@ -968,7 +955,7 @@ class FileLocationFinder:
         """
         doc_rec = get_doc_record(self._db, doc_id)
         if not doc_rec:
-            print(f"Could not find document with id {doc_id}")
+            self._logger.error(f"Could not find document with id {doc_id}")
             return set(), set(), []
 
         doc_description = doc_rec.get("description")
@@ -980,15 +967,13 @@ class FileLocationFinder:
         cyrillic_space_str, other_space_str, cyrillic_words = (
             separate_words_by_cyrillic(title)
         )
-        if debug_print:
-            print(f"Title Latin part: {other_space_str}")
+        self._logger.info(f"Title Latin part: {other_space_str}")
         translated_cyrillic = []
         if cyrillic_space_str:
             # translate the Cyrillic part
             translated_cyrillic = translation(cyrillic_space_str)
-            if debug_print:
-                print(f"Title Cyrillic part: {cyrillic_space_str}")
-                print(f"Translated Cyrillic part: {translated_cyrillic}")
+            self._logger.info(f"Title Cyrillic part: {cyrillic_space_str}")
+            self._logger.info(f"Translated Cyrillic part: {translated_cyrillic}")
 
         # Search for cyrillic words in _archive_locations cyrillic_abbr values
         doc_archive_locs = []
@@ -997,7 +982,7 @@ class FileLocationFinder:
                 if value.get("cyrillic_abbr") == word:
                     doc_archive_locs.append(value)
 
-        doc_archive_locs = self.get_archive_locations(doc_archive_locs, debug_print, owning_pages)
+        doc_archive_locs = self.get_archive_locations(doc_archive_locs, owning_pages)
 
         priority1 = set()
         priority2 = set()
@@ -1020,13 +1005,13 @@ class FileLocationFinder:
             for page in owning_pages:
                 page_id = page.get("Id")
                 page_rec = cast(dict, self._db.read("Pages", page_id))
-                descr = page_rec.get("description")
+                descr = page_rec.get("description", "")
                 if descr:
                     priority2.add(descr)
                 upper_level_page = page_rec.get("parent")
                 if upper_level_page:
                     if  any(ulp.get('Id') == page_id for ulp in upper_level_page):
-                        print(f"Error: the upper level page for page ID {page_id}, "
+                        self._logger.warning(f"the upper level page for page ID {page_id}, "
                               f"title {page.get('title')} is this same page!!")
                         upper_level_pages = []
                         break
@@ -1034,9 +1019,8 @@ class FileLocationFinder:
 
             owning_pages = upper_level_pages
 
-        if debug_print:
-            print(f"Priority1 descriptions ({len(priority1)}): {priority1}")
-            print(f"Priority2 descriptions ({len(priority2)}): {priority2}")
+        self._logger.info(f"Priority1 descriptions ({len(priority1)}): {priority1}"
+            f"Priority2 descriptions ({len(priority2)}): {priority2}")
         return priority1, priority2, doc_archive_locs
 
     def scan_database(self, **kwargs):
@@ -1048,8 +1032,8 @@ class FileLocationFinder:
 
 
     def match_places_to_location_ids(self, doc_id: int, extracted_places: list[str], doc_archive_locs: list[dict],
-            additional_centers: list[list[dict]], additional_districts: set[str], 
-            debug_print: bool) ->  tuple[set[frozenset[tuple[str, Any]]], set[str]]:
+            additional_centers: list[list[dict]],
+            additional_districts: set[str]) ->  tuple[set[frozenset[tuple[str, Any]]], set[str]]:
         """Resolve AI-extracted place names to canonical location records.
 
         Takes raw location strings produced by the LLM extraction step and maps
@@ -1069,17 +1053,17 @@ class FileLocationFinder:
             doc_id: Document being processed (used for debug logging only).
             extracted_places: Raw location name strings from the AI extraction step.
             doc_archive_locs: Archive location for the archives this document relates to.
-            additional_centers: Archive locations from descriptions.
-            debug_print: If True, prints the resolved location for each match.
+            additional_centers: province centres from descriptions.
+            additional_districts: district centres from descriptions.
 
         Returns:
             A set of frozensets, each representing one identified location record
             with keys like 'main_name', 'location_id', 'administrative_level',
             and 'loc_id'.
         """
-        loc_admin_units, found_province_names, district_names = locations_to_admin_units(extracted_places,
-            self._province_keywords, self._district_keywords,
-            self._district_keywords_suffix_only, self._settlement_keywords, debug_print)
+        loc_admin_units, found_province_names, district_names = self._location_extractor.locations_to_admin_units(
+            extracted_places, self._province_keywords, self._district_keywords,
+            self._district_keywords_suffix_only, self._settlement_keywords)
         # add the previously known districts
         district_names |= additional_districts
         # add the archive location provinces
@@ -1089,7 +1073,7 @@ class FileLocationFinder:
         # found_province_names->found_province_ids
         found_province_ids = set()
         for province_name in found_province_names:
-            curr_province_ids = self._matcher.find_location_id(province_name, False)
+            curr_province_ids = self._matcher.find_location_id(province_name)
             found_province_ids = found_province_ids | set(curr_province_ids)
 
         archive_province_center_ids = [archive_loc_ids, found_province_ids] + additional_centre_ids
@@ -1101,7 +1085,7 @@ class FileLocationFinder:
         # Try to match all locations from each extraction
         for loc_admin_unit in loc_admin_units:
             extracted_loc_name = loc_admin_unit["location"]
-            place_ids = self._matcher.find_location_id(extracted_loc_name, debug_print)
+            place_ids = self._matcher.find_location_id(extracted_loc_name)
             found_admin_match = False
             final_id = None
             correct_province: bool = True  # default
@@ -1157,9 +1141,9 @@ class FileLocationFinder:
                                     # entries in province_capital_ids_array are sorted by ascending length
                                     break
 
-            if not found_admin_match and place_ids:
-                correct_province = False
-                final_id = place_ids[0]
+#            if not found_admin_match and place_ids:
+#                correct_province = False
+#                final_id = place_ids[0]
 
             if final_id is not None:
                 location = self._matcher.location_name_dict.get(final_id)
@@ -1178,15 +1162,14 @@ class FileLocationFinder:
                             for k, v in location.items()
                         )
                         identified_locations.add(frozenset(hashable_items))
-                        if debug_print:
-                            loc_name = location.get("main_name")
-                            adm_level = location.get("administrative_level")
-                            adm_status = "settlement" if adm_level == 0 else \
-                                "district centre" if adm_level == 1 else "province capital"
-                            print(f"Identified location '{extracted_loc_name}' for document ID {doc_id} as "
-                                  f"'{loc_name}', {adm_status}, correct province: {correct_province}, ID={final_id}")
+                        loc_name = location.get("main_name")
+                        adm_level = location.get("administrative_level")
+                        adm_status = "settlement" if adm_level == 0 else \
+                            "district centre" if adm_level == 1 else "province capital"
+                        self._logger.info(f"Identified location '{extracted_loc_name}' for document ID {doc_id} as "
+                              f"'{loc_name}', {adm_status}, correct province: {correct_province}, ID={final_id}")
                     except TypeError:
-                        print(f"TypeError in match_places_to_location_ids for location {location}")
+                        self._logger.error(f"TypeError in match_places_to_location_ids for location {location}")
                         raise  # re-raise the same exception
 
         return identified_locations, district_names
@@ -1208,25 +1191,29 @@ def separate_words_by_cyrillic(file_string):
     Returns:
         Tuple of (cyrillic_space_str, other_space_str, cyrillic_words)
     """
-    # Split the string using any of the delimiters: _, :, or .
-    words = re.split(r"[_:.]", file_string)
-
-    # Filter out empty strings caused by consecutive delimiters
-    words = [word for word in words if word]
-
     cyrillic_words = []
     other_words = []
 
-    # Check each word for the presence of Cyrillic characters
-    for word in words:
-        if re.search(r"[\u0400-\u04FF]", word):
-            cyrillic_words.append(word)
-        else:
-            other_words.append(word)
-
-    # Convert lists into space-separated strings
-    cyrillic_space_str = " ".join(cyrillic_words)
-    other_space_str = " ".join(other_words)
+    if file_string:
+        # Split the string using any of the delimiters: _, :, or .
+        words = re.split(r"[_:.]", file_string)
+    
+        # Filter out empty strings caused by consecutive delimiters
+        words = [word for word in words if word]
+    
+        # Check each word for the presence of Cyrillic characters
+        for word in words:
+            if re.search(r"[\u0400-\u04FF]", word):
+                cyrillic_words.append(word)
+            else:
+                other_words.append(word)
+    
+        # Convert lists into space-separated strings
+        cyrillic_space_str = " ".join(cyrillic_words)
+        other_space_str = " ".join(other_words)
+    else:
+        cyrillic_space_str = ''
+        other_space_str = ''
 
     return cyrillic_space_str, other_space_str, cyrillic_words
 
@@ -1311,9 +1298,8 @@ def get_doc_record(db, doc_id):
 
 #testing
 if __name__ == "__main__":
-    debug_print_ = True
     finder = FileLocationFinder()
-    finder.get_doc_locations_batched([60426], 1, only_smallest_locations=False, debug_print=True)
+    finder.get_doc_locations_batched([60426], 1, only_smallest_locations=False)
 #    doc_id_ = 12953
 #    print(finder.get_doc_descriptions(doc_id_))
 

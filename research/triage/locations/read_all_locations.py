@@ -17,13 +17,14 @@ class LocationMatcher:
     """
 
     def __init__(self, communities_file_path: str, regions_2_locations: dict,
-                 province_capitals: dict[str, list[dict]]):
+                 province_capitals: dict[str, list[dict]], logger):
         """
         Populates location_name_dict from the main population register Excel file populations_file_path.
         - Handles main names and alternative names
         - Standardizes formatting
         - Sets default administrative level
         """
+        self._logger = logger
         self._province_capital_ids = {
             place_name: [loc["location_id"] for loc in province_capitals[place_name]]
             for place_name in province_capitals
@@ -127,13 +128,12 @@ class LocationMatcher:
                 continue
 
 
-    def find_location_id(self, place_to_search: str, debug_print: bool = False) -> list[str]:
+    def find_location_id(self, place_to_search: str) -> list[str]:
         """
         Finds the best matching location ID using Jaro-Winkler similarity scoring.
         - Normalizes and standardizes search term
         - Computes similarity scores against all name variants
         - Tracks the best matching location ID
-        - Prints debug output if requested
 
         Returns:
             If match score < threshold (88) - empty list. Otherwise, the list of all location IDs featuring this name.
@@ -163,32 +163,32 @@ class LocationMatcher:
         matching_ids = [x[0] for x in matching_locs_with_scores]
 
         if max_score < threshold:
-            if debug_print:
-                print(f"No match found for '{place_to_search}'. Maximum score: {max_score}, "
+            self._logger.info(f"No match found for '{place_to_search}'. Maximum score: {max_score}, "
                       f"best candidate {best_name}")
         else:
-            if debug_print:
-                msg = f"Location '{place_to_search}' is identified with score {max_score} as one of these locations: "
-                for match in matching_locs_with_scores:
-                    loc = self.location_name_dict.get(match[0])
-                    if loc:
-                        msg = f"{msg} (loc_id={match[0]}, name={loc.get('main_name')}) "
-                print(msg)
+            msg = f"Location '{place_to_search}' is identified with score {max_score} as one of these locations: "
+            for match in matching_locs_with_scores:
+                loc = self.location_name_dict.get(match[0])
+                if loc:
+                    msg = f"{msg} (loc_id={match[0]}, name={loc.get('main_name')}) "
+            self._logger.info(msg)
         return matching_ids
 
 
 if __name__ == "__main__":
     communities_file_path_ = "./research/triage/locations/jg_communities_data.xlsx"
-    matcher = LocationMatcher(communities_file_path_, {}, {})
+    from birddog.log import get_logger
+    _logger = get_logger()
+    matcher = LocationMatcher(communities_file_path_, {}, {}, _logger)
 
     # Access the encapsulated dataset via the class instance
     loc_id_1 = '-1055659'
     location = matcher.location_name_dict.get(loc_id_1)
     loc_name_ = location.get("main_name") if location else "Unknown"
     print(f"Location for id={loc_id_1}: {location}")
-    if not matcher.find_location_id(loc_name_, debug_print=True):
+    if not matcher.find_location_id(loc_name_):
         print(f"Id for location {loc_name_} not found")
 
     loc_name_ = "Monastyryska"
-    if not matcher.find_location_id(loc_name_, debug_print=True):
+    if not matcher.find_location_id(loc_name_):
         print(f"Id for location {loc_name_} not found")
