@@ -92,7 +92,10 @@ class LocationMatcher:
                     province_capital_ids_array[col_idx] = {loc_id for loc_id in self._province_capital_ids.get(name, [])}
                 if province_cols[0] in regions_2_locations:
                     province_capital_ids_array[0] |= {prov["location_id"] for prov in regions_2_locations[province_cols[0]]}
+                #delete empty sets
                 province_capital_ids_array = [item for item in province_capital_ids_array if item]
+                # Convert to frozenset to deduplicate, then convert back to regular sets
+                province_capital_ids_array = [set(fs) for fs in {frozenset(s) for s in province_capital_ids_array}]
                 province_capital_ids_array = sorted(province_capital_ids_array, key=len)
 
                 # Extract all keys matching the values
