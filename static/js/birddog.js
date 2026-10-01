@@ -1756,19 +1756,23 @@ function flatten_alert_rows(data_list, watch_title) {
         // the tree view this replaced -- they never got a resolve
         // affordance from the browse page either (see path_to_node)
         if (hide_insignificant && meta.insignificant) continue;
+        // each segment keeps its own path (which is also that level's page
+        // title, see _gen_title() in watcher.py) so alert_row_html() can make
+        // the ancestor segments clickable (issue #151)
         let acc = '';
         const segments = [];
         for (const part of path.split('/')) {
             acc = acc ? `${acc}/${part}` : part;
-            segments.push(label_by_path[acc] ?? part);
+            segments.push({ path: acc, label: label_by_path[acc] ?? part });
         }
-        rows.push({ path, watch_title, meta, full_label: segments.join(' / ') });
+        const full_label = segments.map(seg => seg.label).join(' / ');
+        rows.push({ path, watch_title, meta, segments, full_label });
     }
     return rows;
 }
 
 function alert_row_html(row) {
-    const { path, watch_title, meta, full_label } = row;
+    const { path, watch_title, meta, segments, full_label } = row;
     const modified = meta.modified || '';
     const last_resolved = meta.last_resolved || '';
     const cutoff = get_watch_cutoff(watch_title);
@@ -1782,9 +1786,18 @@ function alert_row_html(row) {
     // moved on the wiki, not an ordinary content change -- resolving it
     // retires the whole watch, so it needs to read very differently from a
     // normal alert row
+    // issue #151: each ancestor segment (archive / fond / opus) links to
+    // that level's own page in Browse -- an opus whose cases changed often
+    // has no alert row of its own, and this is the direct way to reach it
+    // (e.g. to export it). The last segment stays plain text; clicking it
+    // falls through to the row click, which views this item's changes.
+    const breadcrumb_html = segments.map((seg, i) => i < segments.length - 1
+        ? `<a href="#" class="alert-browse-link" title="Open ${escape_attr(seg.path)}" data-browse-path="${escape_attr(seg.path)}">${escape_attr(seg.label)}</a>`
+        : escape_attr(seg.label)
+    ).join(' / ');
     const label_html = meta.moved_to
-        ? `${escape_attr(full_label)} <span class="text-danger small">(archive moved to "${escape_attr(meta.moved_to)}" -- resolving removes it from your watchlist)</span>`
-        : escape_attr(full_label);
+        ? `${breadcrumb_html} <span class="text-danger small">(archive moved to "${escape_attr(meta.moved_to)}" -- resolving removes it from your watchlist)</span>`
+        : breadcrumb_html;
 
     // a subtree quick-select button only makes sense when this row has a
     // parent within its own watch to select alongside it (a bare watch-root
@@ -2215,6 +2228,13 @@ async function on_loaded() {
             const subtree_btn = e.target.closest(".alert-subtree-select-btn");
             if (subtree_btn) {
                 select_subtree(subtree_btn.dataset.selectPrefix);
+                return;
+            }
+
+            const browse_link = e.target.closest(".alert-browse-link");
+            if (browse_link) {
+                e.preventDefault();
+                view_changes(browse_link.dataset.browsePath, '', null);
                 return;
             }
 
