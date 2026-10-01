@@ -128,12 +128,6 @@ def chop_to_max_length(text, max_length):
     return text
 
 
-# Helper to recursively turn a dict (and any inner sets) into a hashable frozenset
-def freeze_dict(d):
-    return frozenset(
-        (k, frozenset(v) if isinstance(v, set) else v) for k, v in d.items()
-    )
-
 def has_positive_administrative_level(entry: frozenset) -> bool:
     """Check whether a frozenset entry relates to a settlement."""
     for k, v in entry:
@@ -204,27 +198,6 @@ def strip_list_noise(description: str) -> str:
     return description
 
 
-def extract_name_tokens(descriptions: set[str]) -> list[str]:
-    """Heuristically extract candidate place-name tokens from descriptions.
-
-    Used as a last-resort fallback when the LLM extraction yields nothing.
-    Only tokens that look like proper place names (initial capital, letters,
-    apostrophes, hyphens) are considered; noise tokens like "bk", "repeat"
-    are naturally excluded by this pattern.
-    """
-    tokens: list[str] = []
-    for description in descriptions:
-        parts = re.split(r"[;,.]", description)
-        for part in parts:
-            # A description may contain multiple space-separated names after
-            # noise fragments are removed (e.g. "Luchintsi Kamenets").
-            for token in part.split():
-                token = token.strip('"\'')
-                if len(token) >= 3 and re.fullmatch(r"[A-Za-z][A-Za-z'\-]*", token):
-                    tokens.append(token)
-    return tokens
-
-
 def wrong_province(entry: frozenset) -> bool:
     """Check the location is within the archive province."""
     for k, v in entry:
@@ -248,7 +221,6 @@ class FileLocationFinder:
         """
         self._logger = get_logger()
         self._db = Database()
-        self._file_path = "./research/triage/locations/jg_communities_data.xlsx"
         self._location_extractor = LocationExtractor(self._logger, provider)
 
         # all these must be lowercase
@@ -415,7 +387,7 @@ class FileLocationFinder:
             "WoÅ‚yÅ„": _volyn_locations
         }
 
-        self._matcher = LocationMatcher(self._file_path, self._regions_2_locations,
+        self._matcher = LocationMatcher(self._db, self._regions_2_locations,
             self._province_capitals, self._logger)
 
     def delete_nuisance_words(self, descriptions: set[str]) -> set[str]:
