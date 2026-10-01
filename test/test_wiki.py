@@ -56,6 +56,7 @@ from birddog.wiki import (
     _parse_wiki_text,
     _extract_table,
     _normalize_child_link_positions,
+    _table_significant,
 )
 
 from birddog.utility import (
@@ -1087,6 +1088,44 @@ class TestPageSignificance(unittest.TestCase):
         )
         page = self._page_dict(notes={}, other_links=self._empty_other_links())
         self.assertTrue(page_significance(page, reference))
+
+    # _table_significant duplicate-label row removal (found 2026-09-28 on
+    # Архів:Архіви's "Linked Pages" table: two archives sharing one display
+    # label collapsed ref_rows by 2, which exactly canceled out 2 genuinely
+    # removed rows and hid the removal via a raw count comparison).
+
+    @staticmethod
+    def _row(label, link="https://example.org/x"):
+        return [{"text": {"uk": label}, "link": link}]
+
+    def test_table_row_removed_is_significant(self):
+        ref_table = {"name": "Linked Pages", "children": [
+            self._row("A"), self._row("B"), self._row("C"),
+        ]}
+        table = {"name": "Linked Pages", "children": [
+            self._row("A"), self._row("C"),
+        ]}
+        self.assertTrue(_table_significant(table, ref_table))
+
+    def test_table_row_removed_is_significant_despite_a_duplicate_label_elsewhere(self):
+        # two rows sharing label "D" collapse to one ref_rows entry, which
+        # would exactly offset "B" going missing under a count-based check
+        ref_table = {"name": "Linked Pages", "children": [
+            self._row("A"), self._row("B"), self._row("D"), self._row("D"),
+        ]}
+        table = {"name": "Linked Pages", "children": [
+            self._row("A"), self._row("D"), self._row("D"),
+        ]}
+        self.assertTrue(_table_significant(table, ref_table))
+
+    def test_table_unchanged_with_duplicate_labels_is_not_significant(self):
+        ref_table = {"name": "Linked Pages", "children": [
+            self._row("A"), self._row("D"), self._row("D"),
+        ]}
+        table = {"name": "Linked Pages", "children": [
+            self._row("A"), self._row("D"), self._row("D"),
+        ]}
+        self.assertFalse(_table_significant(table, ref_table))
 
 
 # ── mw_read_page (mocked network) ────────────────────────────────────────────

@@ -10,7 +10,6 @@ from birddog.database_updater import (
     DatabaseUpdateManager,
     _allowed_doc_link,
     _apply_doc_link_diff,
-    _append_unlink_note,
     _create_links,
     _edit_links,
     _extract_links_from_wiki_parse,
@@ -470,33 +469,6 @@ class TestOwningPageIds(unittest.TestCase):
 
     def test_none_is_empty(self):
         self.assertEqual(_owning_page_ids({"owning_pages": None}), set())
-
-
-class TestAppendUnlinkNote(unittest.TestCase):
-    def test_first_note_on_blank_comments(self):
-        result = _append_unlink_note("", "ДАХмО/Р-582/2/272", "2026-08-14")
-        self.assertEqual(result, "unlinked from ДАХмО/Р-582/2/272 on 2026-08-14")
-
-    def test_first_note_on_none_comments(self):
-        result = _append_unlink_note(None, "Page A", "2026-08-14")
-        self.assertEqual(result, "unlinked from Page A on 2026-08-14")
-
-    def test_appends_to_existing_comments(self):
-        result = _append_unlink_note("processor: Juliana", "Page A", "2026-08-14")
-        self.assertEqual(result, "processor: Juliana\nunlinked from Page A on 2026-08-14")
-
-    def test_repeat_call_for_same_page_is_idempotent(self):
-        first = _append_unlink_note("", "Page A", "2026-08-14")
-        second = _append_unlink_note(first, "Page A", "2026-08-20")
-        self.assertEqual(second, first)
-
-    def test_different_page_gets_its_own_note(self):
-        first = _append_unlink_note("", "Page A", "2026-08-14")
-        second = _append_unlink_note(first, "Page B", "2026-08-14")
-        self.assertEqual(
-            second,
-            "unlinked from Page A on 2026-08-14\nunlinked from Page B on 2026-08-14",
-        )
 
 
 class TestApplyDocLinkDiff(unittest.TestCase):

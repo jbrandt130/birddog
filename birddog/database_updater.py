@@ -290,15 +290,6 @@ def _owning_page_ids(doc_rec):
     # {"Id": ..., "title": ...} dicts, not plain ids -- pull the ids back out.
     return {p["Id"] for p in (doc_rec.get("owning_pages") or [])}
 
-def _append_unlink_note(comments, page_title, timestamp):
-    # Idempotent per page_title so re-running the updater against an unchanged
-    # page doesn't append a fresh note (with a new timestamp) every cycle.
-    marker = f"unlinked from {page_title} on "
-    if comments and any(line.startswith(marker) for line in comments.splitlines()):
-        return comments
-    note = f"{marker}{timestamp}"
-    return f"{comments}\n{note}" if comments else note
-
 def _form_simple_page_record(title):
     title = _normalize_title(title)
     label = page_label(title)
@@ -1071,8 +1062,7 @@ class DatabaseUpdater:
             # A doc dropped by every page that currently links it would become a
             # fully orphaned Document record. If it already carries curated
             # processing state (from the spreadsheet import pipeline), keep the
-            # link(s) alive instead of losing that state, and note the would-be
-            # unlink on the document record itself.
+            # link(s) alive instead of losing that state.
             removed_by_page = {
                 page_id: page_existing[page_id] - target_set
                 for page_id, (_, target_set) in page_doc_targets.items()
@@ -1086,15 +1076,14 @@ class DatabaseUpdater:
                     for doc_id in removed:
                         removing_pages_by_doc.setdefault(doc_id, set()).add(page_id)
 
-                guard_fields = ["url", "owning_pages"] + list(_DOC_PROCESSING_STATE_FIELDS)
+                guard_fields = ["owning_pages"] + list(_DOC_PROCESSING_STATE_FIELDS)
                 guard_recs = {
                     rec["Id"]: rec
                     for rec in self._db.read("Documents", list(removal_candidates), fields=guard_fields)
                     if rec
                 }
 
-                timestamp = str(utc_now_dt().replace(microsecond=0))
-                comment_updates = []
+                protected_count = 0
                 for doc_id, removing_pages in removing_pages_by_doc.items():
                     doc_rec = guard_recs.get(doc_id)
                     if not doc_rec:
@@ -1105,16 +1094,12 @@ class DatabaseUpdater:
                     if not _has_processing_state(doc_rec):
                         continue  # nothing worth protecting
 
-                    comments = doc_rec.get("comments")
                     for page_id in removing_pages:
-                        page_title = page_doc_targets[page_id][0]
-                        comments = _append_unlink_note(comments, page_title, timestamp)
                         kept_by_page[page_id].add(doc_id)
-                    comment_updates.append({"url": doc_rec["url"], "comments": comments})
+                    protected_count += 1
 
-                if comment_updates:
-                    _logger.info(f"Updater {tid}: protecting {len(comment_updates)} doc(s) from orphaning")
-                    self._db.write("Documents", comment_updates)
+                if protected_count:
+                    _logger.info(f"Updater {tid}: protecting {protected_count} doc(s) from orphaning")
 
             tasks = []
             for page_id, (page_title, target_set) in page_doc_targets.items():

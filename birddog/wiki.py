@@ -1708,15 +1708,25 @@ def _table_row_changed(child, ref_child):
 
 def _table_significant(table, ref_table):
     ref_rows = {ref_child[0]["text"]["uk"]: ref_child for ref_child in ref_table.get("children", [])}
-    matched = 0
+    # track which reference *keys* actually matched, not a raw count -- two
+    # rows sharing the same first-cell text collapse into one ref_rows
+    # entry, so comparing counts lets a removed-row count coincidentally
+    # cancel out against that collapse and mask the removal entirely (found
+    # 2026-09-28: Архів:Архіви's "Церкви" list has two same-labeled entries,
+    # which silently hid two other rows -- Новоселиця, Лука Мала -- actually
+    # being deleted). Comparing the matched-key set against ref_rows' full
+    # key set catches this; it's strictly a superset of what the count check
+    # caught, and identical to it whenever labels are unique.
+    matched_keys = set()
     for child in table.get("children", []):
-        ref_child = ref_rows.get(child[0]["text"]["uk"])
+        key = child[0]["text"]["uk"]
+        ref_child = ref_rows.get(key)
         if ref_child is None:
             return True  # row added
-        matched += 1
+        matched_keys.add(key)
         if _table_row_changed(child, ref_child):
             return True
-    return matched != len(ref_rows)  # a row went missing
+    return matched_keys != set(ref_rows.keys())  # a row went missing
 
 def page_significance(page, reference):
     """
