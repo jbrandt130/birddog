@@ -19,7 +19,7 @@ from read_all_locations import LocationMatcher
 
 from birddog.database import Database
 from birddog.log import get_logger
-from birddog.translate import translation
+from birddog.translate import TranslationDisabledError, TranslationError, translation
 
 _all_ukraine_locations = [
     {"location": "Cherkasy",        "location_id": "-1037001"},
@@ -666,7 +666,7 @@ class FileLocationFinder:
         doc_ids: list[int],
         batch_size: int = 20,
         only_smallest_locations: bool = True,
-    ) -> dict[int, tuple[list[str], list[dict], list[list[dict]], set[str]]]:
+    ) -> dict[int, tuple[bool, list[str], list[dict], list[list[dict]], set[str]]]:
         """Identifies locations for multiple documents in batched API calls.
 
         For each document, descriptions are split into priority1 (doc description,
@@ -681,8 +681,9 @@ class FileLocationFinder:
             only_smallest_locations: Passed through to the per-doc location matching.
 
         Returns:
-            dict[int, tuple[list[str], list[dict], list[dict]]]: mapping from doc_id to list of
-            location IDs, archive locations, and extended archive location list including those found in descriptions.
+            dict[int, tuple[bool, list[str], list[dict], list[dict]]]: mapping from doc_id to list of:
+            flag for error during calculations;
+            location IDs; archive locations; and extended archive location list including those found in descriptions.
         """
         # Step 1: Gather descriptors + archive locs + region centres for every doc upfront.
         # We now store two separate description lists per doc (priority1 and priority2).
@@ -690,31 +691,36 @@ class FileLocationFinder:
         all_p1_lists: list[list[str]] = []
         all_p2_lists: list[list[str]] = []
         doc_archive_locs_lists: dict = {}
-        for doc_id in doc_ids:
-            self._logger.info(f"***** Processing descriptions for document {doc_id} *****")
-            priority1, priority2, doc_archive_locs = self.get_doc_descriptions(doc_id)
-            doc_archive_locs_lists[doc_id] = doc_archive_locs 
-            priority1, region_centres_p1 = self.extract_region_centres(priority1)
-            priority1 = self.delete_nuisance_words(priority1)
-            priority2, region_centres_p2 = self.extract_region_centres(priority2)
-            priority2 = self.delete_nuisance_words(priority2)
-
-            # flatten list[list[dict]] -> list[dict] (dicts unhashable, so set().union won't work)
-            united_centre_list = ([d for sublist in region_centres_p1 for d in sublist] +
-                                  [d for sublist in region_centres_p2 for d in sublist] + doc_archive_locs)
-            # remove duplicates
-            united_centre_list = [dict(t) for t in {tuple(sorted(d.items())) for d in united_centre_list}]
-            additional_centers = region_centres_p1 + region_centres_p2
-            # remove duplicates
-            additional_centers = [[dict(t) for t in {tuple(sorted(d.items())) for d in item}] for item in additional_centers]
-            
-            per_doc_inputs.append({
-                "united_centre_list": united_centre_list,
-                "additional_centers": additional_centers,
-                "has_priority2": bool(priority2),
-            })
-            all_p1_lists.append(list(priority1))
-            all_p2_lists.append(list(priority2))
+        error_per_doc = [False] * len(doc_ids)
+        for doc_idx, doc_id in enumerate(doc_ids):
+            try:
+                self._logger.info(f"***** Processing descriptions for document {doc_id} *****")
+                priority1, priority2, doc_archive_locs = self.get_doc_descriptions(doc_id)
+                doc_archive_locs_lists[doc_id] = doc_archive_locs 
+                priority1, region_centres_p1 = self.extract_region_centres(priority1)
+                priority1 = self.delete_nuisance_words(priority1)
+                priority2, region_centres_p2 = self.extract_region_centres(priority2)
+                priority2 = self.delete_nuisance_words(priority2)
+    
+                # flatten list[list[dict]] -> list[dict] (dicts unhashable, so set().union won't work)
+                united_centre_list = ([d for sublist in region_centres_p1 for d in sublist] +
+                                      [d for sublist in region_centres_p2 for d in sublist] + doc_archive_locs)
+                # remove duplicates
+                united_centre_list = [dict(t) for t in {tuple(sorted(d.items())) for d in united_centre_list}]
+                additional_centers = region_centres_p1 + region_centres_p2
+                # remove duplicates
+                additional_centers = [[dict(t) for t in {tuple(sorted(d.items())) for d in item}] for item in additional_centers]
+                
+                per_doc_inputs.append({
+                    "united_centre_list": united_centre_list,
+                    "additional_centers": additional_centers,
+                    "has_priority2": bool(priority2),
+                })
+                all_p1_lists.append(list(priority1))
+                all_p2_lists.append(list(priority2))
+            except (ValueError, KeyError, TypeError, TranslationError, TranslationDisabledError) as e:
+                error_per_doc[doc_idx] = True
+                self._logger.error(f"Failure while processing description for document {doc_id}: {e}")
 
         # Step 2: Batched AI extraction — priority1 first, then priority2 only if needed.
         # Only run priority2 if at least one document has no priority1 results.
@@ -725,18 +731,23 @@ class FileLocationFinder:
             all_p1_lists, batch_size=batch_size
         )
         for doc_idx, doc_id in enumerate(doc_ids):
-            extracted_p1 = all_extracted_p1[doc_idx]
-            self._logger.info(f"***** Extracted locations for document {doc_id}: {extracted_p1} *****")
-            district_names = district_names_per_doc[doc_idx]
-            identified_locations, district_names = self.match_places_to_location_ids(doc_id,
-                extracted_p1, doc_archive_locs_lists.get(doc_id, []),
-                per_doc_inputs[doc_idx]["additional_centers"], district_names)
-            identified_locations_per_doc.append(identified_locations)
-            district_names_per_doc[doc_idx] = district_names
-            no_settlements_found = all(needs_further_analysis(e)
-                                       for e in identified_locations) if identified_locations else True
-            if no_settlements_found:
-                docs_needing_p2.append(doc_idx)
+            if not error_per_doc[doc_idx]:
+                try:
+                    extracted_p1 = all_extracted_p1[doc_idx]
+                    self._logger.info(f"***** Extracted locations for document {doc_id}: {extracted_p1} *****")
+                    district_names = district_names_per_doc[doc_idx]
+                    identified_locations, district_names = self.match_places_to_location_ids(doc_id,
+                        extracted_p1, doc_archive_locs_lists.get(doc_id, []),
+                        per_doc_inputs[doc_idx]["additional_centers"], district_names)
+                    identified_locations_per_doc.append(identified_locations)
+                    district_names_per_doc[doc_idx] = district_names
+                    no_settlements_found = all(needs_further_analysis(e)
+                                               for e in identified_locations) if identified_locations else True
+                    if no_settlements_found:
+                        docs_needing_p2.append(doc_idx)
+                except (ValueError, KeyError, TypeError, TranslationError, TranslationDisabledError) as e:
+                    error_per_doc[doc_idx] = True
+                    self._logger.error(f"Failure while processing description for document {doc_id}: {e}")
 
         # Build priority2 lists only for those docs
         if docs_needing_p2:
@@ -747,64 +758,73 @@ class FileLocationFinder:
             )
             # Fallback: only consult priority2 if priority1 produced nothing
             for doc_idx, doc_id in enumerate(doc_ids):
-                identified_locations = identified_locations_per_doc[doc_idx]
-                extracted_p2 = all_extracted_p2[doc_idx]
-                self._logger.info(f"***** Second extraction for document {doc_id}: {extracted_p2} *****")
-                district_names = district_names_per_doc[doc_idx]
-                identified_locations_p2, district_names = self.match_places_to_location_ids(doc_id,
-                    extracted_p2, doc_archive_locs_lists.get(doc_id, []),
-                    per_doc_inputs[doc_idx]["additional_centers"], district_names)
-                identified_locations |= identified_locations_p2
-                identified_locations_per_doc[doc_idx] = identified_locations
-                district_names_per_doc[doc_idx] = district_names # include those from priority1
+                if not error_per_doc[doc_idx]:
+                    try:
+                        identified_locations = identified_locations_per_doc[doc_idx]
+                        extracted_p2 = all_extracted_p2[doc_idx]
+                        self._logger.info(f"***** Second extraction for document {doc_id}: {extracted_p2} *****")
+                        district_names = district_names_per_doc[doc_idx]
+                        identified_locations_p2, district_names = self.match_places_to_location_ids(doc_id,
+                            extracted_p2, doc_archive_locs_lists.get(doc_id, []),
+                            per_doc_inputs[doc_idx]["additional_centers"], district_names)
+                        identified_locations |= identified_locations_p2
+                        identified_locations_per_doc[doc_idx] = identified_locations
+                        district_names_per_doc[doc_idx] = district_names # include those from priority1
+                    except (ValueError, KeyError, TypeError, TranslationError, TranslationDisabledError) as e:
+                        error_per_doc[doc_idx] = True
+                        self._logger.error(f"Failure while processing description for document {doc_id}: {e}")
 
         # Step 3: Dispatch results back to each doc with the priority fallback rule:
         # try priority1; only fall back to priority2 if priority1 yielded nothing.
-        results: dict[int, tuple[list[str], list[dict], list[list[dict]], set[str]]] = {}
+        results: dict[int, tuple[bool, list[str], list[dict], list[list[dict]], set[str]]] = {}
         for doc_idx, doc_id in enumerate(doc_ids):
-            identified_locations = identified_locations_per_doc[doc_idx]
-            if not identified_locations:
-                if doc_archive_locs_lists[doc_id]:
-                    centre_list = doc_archive_locs_lists[doc_id]
-                else:
-                    centre_list = per_doc_inputs[doc_idx]["united_centre_list"]
-                for location in centre_list:
-                    loc_id = location["location_id"]
-                    location = self._matcher.location_name_dict.get(loc_id)
-                    if location:
-                        location = copy.deepcopy(location)
-                        location.pop("province_capital_ids_array", None)
-                        location.pop("district_names", None)
-                        location.pop("province_names", None)
+            result = [] # default
+            if not error_per_doc[doc_idx]:
+                try:
+                    identified_locations = identified_locations_per_doc[doc_idx]
+                    if not identified_locations:
+                        if doc_archive_locs_lists[doc_id]:
+                            centre_list = doc_archive_locs_lists[doc_id]
+                        else:
+                            centre_list = per_doc_inputs[doc_idx]["united_centre_list"]
+                        for location in centre_list:
+                            loc_id = location["location_id"]
+                            location = self._matcher.location_name_dict.get(loc_id)
+                            if location:
+                                location = copy.deepcopy(location)
+                                location.pop("province_capital_ids_array", None)
+                                location.pop("district_names", None)
+                                location.pop("province_names", None)
 
-                        location["administrative_level"] = 2
-                        location["loc_id"] = loc_id
-                        hashable_items = (
-                            (k, frozenset(v) if isinstance(v, set) else v)
-                            for k, v in location.items()
-                        )
-                        identified_locations.add(frozenset(hashable_items))
+                                location["administrative_level"] = 2
+                                location["loc_id"] = loc_id
+                                hashable_items = (
+                                    (k, frozenset(v) if isinstance(v, set) else v)
+                                    for k, v in location.items()
+                                )
+                                identified_locations.add(frozenset(hashable_items))
+                                if only_smallest_locations:
+                                    break
+
+                    identified_locations_dict_list = [dict(f_set) for f_set in identified_locations]
+                    if identified_locations_dict_list:
                         if only_smallest_locations:
-                            break
+                            target_level = min(loc["administrative_level"] for loc in identified_locations_dict_list)
+                            result = [dict_loc["loc_id"] for dict_loc in identified_locations_dict_list
+                                if dict_loc.get("administrative_level") == target_level]
 
-            identified_locations_dict_list = [dict(f_set) for f_set in identified_locations]
-            if identified_locations_dict_list:
-                if only_smallest_locations:
-                    target_level = min(loc["administrative_level"] for loc in identified_locations_dict_list)
-                    result = [dict_loc["loc_id"] for dict_loc in identified_locations_dict_list
-                        if dict_loc.get("administrative_level") == target_level]
+                            names = [d.get("main_name") for d in identified_locations_dict_list
+                                if d.get("administrative_level") == target_level and d.get("main_name")]
+                            msg = "Most specific locations: " + " ".join(f"'{name}'" for name in names)
+                            self._logger.info(msg)
 
-                    names = [d.get("main_name") for d in identified_locations_dict_list
-                        if d.get("administrative_level") == target_level and d.get("main_name")]
-                    msg = "Most specific locations: " + " ".join(f"'{name}'" for name in names)
-                    self._logger.info(msg)
+                        else:
+                            result = [dict_loc["loc_id"] for dict_loc in identified_locations_dict_list]
+                except (ValueError, KeyError, TypeError) as e:
+                    error_per_doc[doc_idx] = True
+                    self._logger.error(f"Error processing description for document {doc_id}: {e}")
 
-                else:
-                    result = [dict_loc["loc_id"] for dict_loc in identified_locations_dict_list]
-            else:
-                result = []
-
-            results[doc_id] = (result, doc_archive_locs_lists[doc_id],
+            results[doc_id] = (error_per_doc[doc_idx], result, doc_archive_locs_lists[doc_id],
                                per_doc_inputs[doc_idx]["additional_centers"], district_names_per_doc[doc_idx])
 
         return results
@@ -833,8 +853,9 @@ class FileLocationFinder:
                 page_id = page.get("Id")
                 page_rec = cast(dict, self._db.read("Pages", page_id))
                 root_label = page_rec.get("root_label", "")
-                if root_label:
-                    # Splits at the first '-' and retains everything before it
+                if root_label and not root_label.startswith("GDA-"):
+                    # Splits at the first '-' and retains everything before it, to treat cases
+                    # like "DAMO-A" and "DAHEO-D". However, we want to preserve "GDA-MOD", "GDA-MVS", etc.
                     root_label = root_label.split("-", 1)[0]
 
                 if root_label in self._archive_locations:

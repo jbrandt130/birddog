@@ -90,9 +90,7 @@ class LocationPerformanceEvaluator:
 
         split_parts = re.split(r"[ /]", file, maxsplit=1)
         if len(split_parts) < 2:
-            raise ValueError(
-                f"The provided string {file} does not contain any space or slash characters."
-            )
+            raise ValueError(f"The provided string {file} does not contain any space or slash characters.")
         archive_name, fund_hyphen_etc = split_parts
 
         # Replaces all occurrences of '-' with '/' in the input string.
@@ -148,6 +146,7 @@ class LocationPerformanceEvaluator:
         if skip_extraction:
             return
 
+        num_errors = 0
         # Flush pending docs in batches
         for flush_start in range(0, len(pending), batch_size):
             chunk = pending[flush_start:flush_start + batch_size]
@@ -161,15 +160,21 @@ class LocationPerformanceEvaluator:
                     only_smallest_locations=True,
                 )
             else:
-                batch_results = {doc_id: ([], [], [], set()) for doc_id in buffered_doc_ids}
+                batch_results = {doc_id: (False, [], [], [], set()) for doc_id in buffered_doc_ids}
 
             # Now evaluate each doc in this chunk using the batched result
             for row, file, town_list, doc_id in chunk:
-                print(f"Processing document number {self.num_evaluated_docs} with ID {doc_id}")
-                # Swap in the batched result for the extraction step
-                self.evaluate_on_one_doc_from_batch(row, doc_id, town_list, file,
-                    batch_results.get(doc_id, [])[0], batch_results.get(doc_id, [])[1],
-                    batch_results.get(doc_id, [])[2], batch_results.get(doc_id, [])[3])
+                if batch_results.get(doc_id, [])[0]:
+                    num_errors += 1
+                else:
+                    print(f"Processing document number {self.num_evaluated_docs} with ID {doc_id}")
+                    # Swap in the batched result for the extraction step
+                    self.evaluate_on_one_doc_from_batch(row, doc_id, town_list, file,
+                        batch_results.get(doc_id, [])[1], batch_results.get(doc_id, [])[2],
+                        batch_results.get(doc_id, [])[3], batch_results.get(doc_id, [])[4])
+
+        if num_errors > 0:
+            print(f"{num_errors} documents processing resulted in errors")
 
         self.print_statistics(max_num_docs)
 
@@ -293,6 +298,7 @@ if __name__ == "__main__":
 
     batch_size_ = 5
 
+#    rows_ = [48]
     rows_ = [21, 48, 119, 213, 297, 314, 397, 451, 457, 459]
 #    rows_ = [21, 48, 119, 213, 297, 314, 397, 451, 457, 459, 615, 628, 644, 693, 696, 769, 838, 860, 867, 924, 1072, 1086, 1136, 1147, 1158, 1275, 1315, 1359, 1508, 1651, 1672, 1840, 1852, 2087, 2123, 2329, 2412, 2517, 2533, 2575, 2618, 2674, 2676, 2702, 2730, 2777, 2808, 2815, 2863, 2947, 3010, 3095, 3106, 3143, 3202, 3251, 3312, 3331, 3357, 3479, 3497, 3555, 3601, 3716, 3783, 3897, 4028, 4031, 4044, 4125, 4240, 4246, 4296, 4485, 4535, 4927, 5100, 5218, 5231, 5261, 5274, 5289, 5328, 5353, 5368, 5379, 5404, 5442, 5495, 5506, 5941, 6031, 6036, 6053, 6078, 6168, 6262, 6310, 6417, 6476, 6490, 6524, 6539, 6552, 6576, 6597, 6633, 6676, 6758, 6834, 6849, 6909, 6933, 6981, 7007, 7026, 7079, 7207, 7245, 7311, 7381, 7431, 7544, 7637, 7659, 7713, 7798, 7935, 7969, 8001, 8003, 8143, 8187, 8199, 8268, 8299, 8322, 8334, 8355, 8392, 8531, 8598, 8607, 8779, 8838, 9034, 9057, 9072, 9083, 9236, 9337, 9460, 9493, 9537, 9572, 9588, 9668, 9677, 9711, 9714, 9744, 9747, 9778, 9814, 10210, 10227, 10230, 10845]
 #    rows_ = evaluator.unique_random_integers(250)
