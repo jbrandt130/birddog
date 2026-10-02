@@ -4,6 +4,7 @@ import json
 import os
 import re
 from json import JSONDecodeError
+from pathlib import Path
 
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
@@ -37,98 +38,19 @@ class BatchDocumentLocationsResponse(BaseModel):
     extracted_locations: list[PerDocExtraction]
 
 
-# System prompt and few-shot examples for extract_locations_batched
-# Batched system prompt: requires document_index in each PerDocExtraction
-batch_system_prompt = (
-    "You are a precise data extraction AI.\n"
-    "You are given MULTIPLE documents. Each document has one or more descriptor strings.\n"
-    "Extract every single geographical location mentioned in EACH document, then produce\n"
-    "EXACTLY ONE result entry per document_index (0-based). Do NOT produce multiple\n"
-    "entries for the same document_index — combine all locations found in a document into\n"
-    "its single result entry.\n"
-    "CRITICAL RULES:\n"
-    "1. Output EXACTLY one 'PerDocExtraction' entry per document_index (0, 1, 2, ...).\n"
-    "   If a document has no locations, output locations=[] for it.\n"
-    "2. Extract every DISTINCT location mentioned. Do not skip any, and do not\n"
-    "   list duplicates — if 'Chyhyryn district' appears 5 times, list it ONCE.\n"
-    "3. Retain settlement suffixes (e.g., 'village', 'town', 'district', 'province').\n"
-    "4. If a trailing suffix applies to a list of places (e.g., 'A, B, and C counties'),\n"
-    "   append the suffix to EACH individual location.\n"
-    "5. Do not include institutions, roads, or non-geographical features.\n"
-    "6. A descriptor may be a comma- or semicolon-delimited list of proper\n"
-    "   names with little or no surrounding prose — treat each such name as a\n"
-    "   separate geographical location.\n"
-    "7. Return strictly valid JSON matching this schema:\n"
-    f"{json.dumps(BatchDocumentLocationsResponse.model_json_schema())}"
+# Load batch prompts from JSON file - must be done after BatchDocumentLocationsResponse is defined
+_PROMPTS_PATH = Path(__file__).parent.parent.parent.parent / "resources" / "location_prompt.json"
+with open(_PROMPTS_PATH, encoding="utf8") as f:
+    _PROMPTS = json.load(f)
+
+batch_system_prompt = _PROMPTS["batch_system_prompt"].replace(
+    "{SCHEMA_PLACEHOLDER}",
+    json.dumps(BatchDocumentLocationsResponse.model_json_schema()),
 )
 
 # Batched few-shot examples: input is a flat list of descriptors from N documents,
 # output uses document_index to route each result back to the right document.
-BATCH_FEW_SHOT_MESSAGES: list[ChatCompletionMessageParam] = [
-    {
-        "role": "user",
-        "content": (
-            "Analyze these 2 documents and extract locations for each:\n"
-            'Document 0: "Justice of the Peace of the 1st precinct of the Kamianets-Podilskyi Judicial and Peace District, Kamianets-Podilskyi, Kamianets-Podilskyi district, Podilskyi province"\n'
-            'Document 1: "Chapter XXV - Inventories of goods"\n'
-            'Document 2: "Revision tale colony Efingar in Kherson district"'
-        ),
-    },
-    {
-        "role": "assistant",
-        "content": json.dumps(
-            {
-                "extracted_locations": [
-                    {
-                        "document_index": 0,
-                        "locations": [
-                            "Kamianets-Podilskyi",
-                            "Kamianets-Podilskyi district",
-                            "Podilskyi province",
-                        ],
-                    },
-                    {"document_index": 1, "locations": []},
-                    {
-                        "document_index": 2,
-                        "locations": [
-                            "Efingar",
-                            "Kherson district",
-                        ],
-                    },
-                ]
-            }
-        ),
-    },
-    {
-        "role": "user",
-        "content": (
-            "Analyze these 2 documents and extract locations for each:\n"
-            'Document 0: "Central Archives of Historical Records (Warsaw) (AGAD)"\n'
-            'Document 1: "of Cherkasy, Chyhyryn, Kaniv counties"'
-        ),
-    },
-    {
-        "role": "assistant",
-        "content": json.dumps(
-            {
-                "extracted_locations": [
-                    {
-                        "document_index": 0,
-                        "locations": ["Warsaw"],
-                    },
-                    {
-                        "document_index": 1,
-                        "locations": [
-                            "Cherkasy county",
-                            "Chyhyryn county",
-                            "Kaniv county",
-                        ],
-                    },
-                ]
-            }
-        ),
-    },
-]
+BATCH_FEW_SHOT_MESSAGES = _PROMPTS["batch_few_shot_messages"]
 
 
 def _process_response(raw_json: dict, debug_print: bool = False) -> list[str]:

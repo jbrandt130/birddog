@@ -1,4 +1,5 @@
 import copy
+import json
 import os
 import string
 import sys
@@ -20,67 +21,6 @@ from read_all_locations import LocationMatcher
 from birddog.database import Database
 from birddog.log import get_logger
 from birddog.translate import TranslationDisabledError, TranslationError, translation
-
-_all_ukraine_locations = [
-    {"location": "Cherkasy",        "location_id": "-1037001"},
-    {"location": "Chernihiv",       "location_id": "-1037057"},
-    {"location": "Chernivtsi",      "location_id": "-1037073"},
-    {"location": "Dnipro",          "location_id": "-1037865"},
-    {"location": "Donetsk",         "location_id": "-1038078"},
-    {"location": "Ivano-Frankivsk", "location_id": "-1040327"},
-    {"location": "Izmail",          "location_id": "-1040491"},
-    {"location":"Kamenets Podolskiy","location_id":"-1040849"},
-    {"location": "Kherson",         "location_id": "-1041356"},
-    {"location": "Khmelnytskyy",    "location_id": "-1041435"},
-    {"location": "Kharkiv",         "location_id": "-1041320"},
-    {"location": "Kyiv",            "location_id": "-1044367"},
-    {"location": "Kirovohrad",      "location_id": "-1041993"},
-    {"location": "Kremenchuk",      "location_id": "-1043663"},
-    {"location": "Lviv",            "location_id": "-1045268"},
-    {"location": "Lutsk",           "location_id": "-1045249"},
-    {"location": "Luhansk",         "location_id": "-1045160"},
-    {"location": "Mykolayiv",       "location_id": "-1047257"},
-    {"location": "Odesa",           "location_id": "-1049092"},
-    {"location": "Ostrog",          "location_id": "-1049602"},
-    {"location": "Poltava",         "location_id": "-1051195"},
-    {"location": "Rivne",           "location_id": "-1052476"},
-    {"location": "Sevastopol",      "location_id": "-1053419"},
-    {"location": "Simferopol",      "location_id": "-1054041"},
-    {"location": "Sumy",            "location_id": "-1055659"},
-    {"location": "Ternopil",        "location_id": "-1056204"},
-    {"location": "Uzhhorod",        "location_id": "-1057311"},
-    {"location": "Vinnytsya",       "location_id": "-1058303"},
-    {"location": "Zaporozh'ye",     "location_id": "-1060168"},
-    {"location": "Zhitomir",        "location_id": "-1060903"},
-]
-_podolia_locations = [
-                {"location": "Khmelnytskyy",    "location_id": "-1041435"},
-                {"location": "Vinnitsa",        "location_id": "-1058303"},
-                {"location": "Ternopil",        "location_id": "-1056204"},
-                {"location": "Odesa",           "location_id": "-1049092"},
-                {"location": "Cherkasy",        "location_id": "-1037001"},
-                {"location": "Kyiv",            "location_id": "-1044367"},
-            ]
-_volyn_locations = [
-                {"location": "Lutsk",           "location_id": "-1045249"},
-                {"location": "Rivne",           "location_id": "-1052476"},
-                {"location": "Zhitomir",        "location_id": "-1060903"},
-                {"location": "Khmelnytskyy",    "location_id": "-1041435"},
-                {"location": "Ternopil",        "location_id": "-1056204"},
-            ]
-_kiev_locations = [
-                {"location": "Kyiv",            "location_id": "-1044367"},
-                {"location": "Cherkasy",        "location_id": "-1037001"},
-                {"location": "Zhitomir",        "location_id": "-1060903"},
-                {"location": "Vinnitsa",        "location_id": "-1058303"},
-                {"location": "Kirovohrad",      "location_id": "-1041993"},
-            ]
-_chernigov_locations = [
-                {"location":"Chernihiv",        "location_id":"-1037057"},
-                {"location":"Poltava",          "location_id":"-1051195"},
-                {"location":"Kyiv",             "location_id":"-1044367"},
-                {"location":"Sumy",             "location_id":"-1055659"}
-            ]
 
 
 def remove_leading_spaces_and_punctuation(text: str) -> str:
@@ -160,44 +100,6 @@ def clean_punctuation(text: str) -> str:
     return cleaned_text.strip()
 
 
-def strip_list_noise(description: str) -> str:
-    """Remove narrative noise fragments that confuse the model when
-    the description is essentially a list of place names.
-
-    Targets:
-    - Leading fragments like "Date changed Sep", "see also"
-    - Trailing quoted commentary like '"A very confusing collection ...'
-    - Stray quotes and dashes at start/end
-    - Tokens like "bk", "repeat" that appear in some descriptions
-    """
-    # remove double quotes
-    description = description.replace('"', '')
-
-    # Drop common fragments that precede or follow a name list
-    noise_fragments = [
-        r"\bdate\s+changed\b",
-        r"\bsee\s+also\b",
-        r"\ba\s+very\s+confusing\s+collection\b",
-        r"\bbk\b",
-        r"\bext\b",
-        r"\bper\b",
-        r"\brepeat\b",
-        r"\bHebrew\b",
-        r"\bRussian\b",
-        r"\bHeb\b",
-        r"\bRus\b",
-    ]
-    for frag in noise_fragments:
-        description = re.sub(frag, ' ', description, flags=re.IGNORECASE)
-    # Remove stray quotes and dashes at the edges
-    description = description.strip(' "\'')
-    description = re.sub(r'^\s*-\s*', '', description)
-    description = re.sub(r'\s*-\s*$', '', description)
-    # Collapse stray colon-dash fragments like ": - - Kamenets"
-    description = re.sub(r':\s*-\s*-+', ' ', description)
-    return description
-
-
 def wrong_province(entry: frozenset) -> bool:
     """Check the location is within the archive province."""
     for k, v in entry:
@@ -223,82 +125,56 @@ class FileLocationFinder:
         self._db = Database()
         self._location_extractor = LocationExtractor(self._logger, provider)
 
-        # all these must be lowercase
-        self._province_keywords = [
-            "governorate",
-            "gubernia",
-            "oblast",
-            "province",
-            "provinces",
-            "region",
-            "regions",
-            "republic",
-            "voivodeship",
-            "processed via",
-            "listed @",
-        ]
-        self._district_keywords = [
-            "district",
-            "districts",
-            "county",
-            "counties",
-            "uezd",
-            "uyezd",
-            "volost",
-            "vol.",
-            "powiat",
-            "diocese",
-        ]
-        self._district_keywords_suffix_only = ["vol"]
-        self._settlement_keywords = [
-            "village",
-            "villages",
-            "town",
-            "towns",
-            "township",
-            "city",
-            "cities",
-            "settlement",
-            "selsoviet",
-            "precinct",
-            "precincts",
-            "municipality",
-            "mr.",
-        ]
+        # Read the JSON file
+        with open("resources/locations.json", "r", encoding="utf-8") as f:
+            data = json.load(f)
+        self._all_ukraine_locations = data["all_ukraine_locations"]
+        self._podolia_locations = data["podolia_locations"]
+        self._volyn_locations = data["volyn_locations"]
+        self._chernigov_locations = data["chernigov_locations"]
+        self._kiev_locations = data["kiev_locations"]
+        self._noise_fragments = data["noise_fragments"]
+        self._province_keywords = data["province_keywords"]
+        self._district_keywords = data["district_keywords"]
+        self._district_keywords_suffix_only = data["district_keywords_suffix_only"]
+        self._settlement_keywords = data["settlement_keywords"]
+        self._all_words_to_delete = data["all_words_to_delete"]
+        self._religious_terms = data["religious_terms"]
+        self._archival_noise = data["archival_noise"]
 
         self._regions_2_locations = {
             "MW/Chernigov":     [{"location": "Chernihiv", "location_id": "-1037057"}],
             "MW/Chernihiv":     [{"location": "Chernihiv", "location_id": "-1037057"}],
             "MW/Ekaterinoslav": [{"location": "Dnipro",     "location_id": "-1037865"}],
             "MW/Kherson":       [{"location": "Kherson",    "location_id": "-1041356"}],
-            "MW/Kyiv":          _kiev_locations,
-            "MW/Podolia":       _podolia_locations,
+            "MW/Kyiv":          self._kiev_locations,
+            "MW/Podolia":       self._podolia_locations,
             "MW/Poltava":       [{"location": "Poltava",    "location_id": "-1051195"}],
             "MW/Vinnitsa":      [{"location": "Vinnitsa",   "location_id": "-1058303"}],
             "MW/Yekaterinoslav": [{"location": "Dnipro",    "location_id": "-1037865"}],
             "Bessarabia":       [{"location": "Chişinău",   "location_id": "-2276223"}],
             "Bukovina":         [{"location": "Chernivtsi", "location_id": "-1037073"}],
-            "CDIAK":            _all_ukraine_locations,
+            "CDIAK":            self._all_ukraine_locations,
             "Moldavia":         [{"location": "Chişinău",   "location_id": "-2276223"}],
-            "Podilia":          _podolia_locations,
-            "Podillia":         _podolia_locations,
-            "Podolia":          _podolia_locations,
+            "Podilia":          self._podolia_locations,
+            "Podillia":         self._podolia_locations,
+            "Podolia":          self._podolia_locations,
             "Ruthenia":         [{"location": "Uzhhorod",   "location_id": "-1057311"}],
             "Taurida":          [{"location": "Simferopol", "location_id": "-1054041"}],
             "Tavriya":          [{"location": "Simferopol", "location_id": "-1054041"}],
             "Transcarpathia":   [{"location": "Uzhhorod",   "location_id": "-1057311"}],
-            "Ukraine":          _all_ukraine_locations,
-            "Volhynia":         _volyn_locations,
-            "Volyn":            _volyn_locations,
+            "Ukraine":          self._all_ukraine_locations,
+            "Volhynia":         self._volyn_locations,
+            "Volyn":            self._volyn_locations,
             "Zakarpattia":      [{"location": "Uzhhorod",   "location_id": "-1057311"}],
         }
 
         self._archive_locations = {
             "AGAD":     {"cyrillic_abbr":"ГАДА",     "locations": [{"location":"Warszawa",         "location_id":"-534433"}]},
             "AVPRI":    {"cyrillic_abbr":"АВПРИ",    "locations": [{"location":"Moscow",           "location_id":"-2960561"}]},
-            "CDIAK":    {"cyrillic_abbr":"ЦДІАК",    "locations": _all_ukraine_locations                                     },
+            "CDIAK":    {"cyrillic_abbr":"ЦДІАК",    "locations": self._all_ukraine_locations                                     },
             "DAARK":    {"cyrillic_abbr":"ДААРК",    "locations": [{"location":"Simferopol",       "location_id":"-1054041"}]},
-            "DACHGO":   {"cyrillic_abbr":"ДАЧгО",    "locations": _chernigov_locations                                       },
+            "DACHGO":   {"cyrillic_abbr":"ДАЧгО",    "locations": self._chernigov_locations                                       },
             "DACHKO":   {"cyrillic_abbr":"ДАЧкО",    "locations": [{"location":"Cherkasy",         "location_id":"-1037001"}]},
             "DACHVO":   {"cyrillic_abbr":"ДАЧвО",    "locations": [{"location":"Chernivtsi",       "location_id":"-1037073"}]},
             "DADNO":    {"cyrillic_abbr":"ДАДнО",    "locations": [{"location":"Dnipro",           "location_id":"-1037865"}]},
@@ -309,7 +185,7 @@ class FileLocationFinder:
             "DAIFO":    {"cyrillic_abbr":"ДАІФО",    "locations": [{"location":"Ivano-Frankivsk",  "location_id":"-1040327"}]},
             "DAK":      {"cyrillic_abbr":"ДАК",      "locations": [{"location":"Kyiv",             "location_id":"-1044367"}]},
             "DAKIRO":   {"cyrillic_abbr":"ДАКрО",    "locations": [{"location":"Kirovohrad",       "location_id":"-1041993"}]},
-            "DAKO":     {"cyrillic_abbr":"ДАКО",     "locations": _kiev_locations                                            },
+            "DAKO":     {"cyrillic_abbr":"ДАКО",     "locations": self._kiev_locations                                            },
             "DAKRE":    {"cyrillic_abbr":"Архівний_відділ_виконавчого_комітету_Кременчуцької_міської_ради", "locations": [{"location":"Kremenchuk",       "location_id":"-1043663"}]},
             "DALO":     {"cyrillic_abbr":"ДАЛО",     "locations": [{"location":"Lviv",             "location_id":"-1045268"}]},
             "DALUO":    {"cyrillic_abbr":"ДАЛуО",    "locations": [{"location":"Luhansk",          "location_id":"-1045160"}]},
@@ -380,162 +256,46 @@ class FileLocationFinder:
             "Tarnopol": [{"location": "Ternopil",        "location_id": "-1056204"}],
             "Taurida": [{"location": "Simferopol",      "location_id": "-1054041"}],
             "Transcarpathia": [{"location": "Uzhhorod",        "location_id": "-1057311"}],
-            "Ukraine SSR": _all_ukraine_locations,
+            "Ukraine SSR": self._all_ukraine_locations,
             "Vinnitsa": [{"location": "Vinnitsa",        "location_id": "-1058303"}],
             "Vinnytsya": [{"location": "Vinnitsa",        "location_id": "-1058303"}],
             "Volhynia": [{"location": "Zhitomir",        "location_id": "-1060903"}],
-            "WoÅ‚yÅ„": _volyn_locations
+            "WoÅ‚yÅ„": self._volyn_locations
         }
 
         self._matcher = LocationMatcher(self._db, self._regions_2_locations,
             self._province_capitals, self._logger)
 
+    def strip_list_noise(self, description: str) -> str:
+        """Remove narrative noise fragments that confuse the model when
+        the description is essentially a list of place names.
+
+        Targets:
+        - Leading fragments like "Date changed Sep", "see also"
+        - Trailing quoted commentary like '"A very confusing collection ...'
+        - Stray quotes and dashes at start/end
+        - Tokens like "bk", "repeat" that appear in some descriptions
+        """
+        # remove double quotes
+        description = description.replace('"', "")
+
+        # Drop common fragments that precede or follow a name list
+        for frag in self._noise_fragments:
+            description = re.sub(frag, " ", description, flags=re.IGNORECASE)
+        # Remove stray quotes and dashes at the edges
+        description = description.strip(" \"'")
+        description = re.sub(r"^\s*-\s*", "", description)
+        description = re.sub(r"\s*-\s*$", "", description)
+        # Collapse stray colon-dash fragments like ": - - Kamenets"
+        description = re.sub(r":\s*-\s*-+", " ", description)
+        return description
+
     def delete_nuisance_words(self, descriptions: set[str]) -> set[str]:
-        all_words_to_delete = [
-            "board",
-            "burgher",
-            "burghers",
-            "court",
-            "Peace",
-            "Justice",
-            "Judicial",
-            "Investigative",
-            "Sentence",
-            "Sentences",
-            "the",
-            "statistical",
-            "economic",
-            "historical",
-            "philological",
-            "educational",
-            "medical",
-            "governmental",
-            "government",
-            "institution",
-            "institutions",
-            "official",
-            "officials",
-            "committee",
-            "ministry",
-            "Office",
-            "Department",
-            "Fund",
-            "Funds",
-            "council",
-            "councils",
-            "duma",
-            "State",
-            "Archive",
-            "Archives",
-            "ministers",
-            "University",
-            "institute",
-            "gymnasium",
-            "statistics",
-            "Conscription",
-            "branch",
-            "Agency",
-            "Society",
-            "Community",
-            "Judgment",
-            "Judgments",
-            "rural",
-            "bourgeois",
-            "Men's",
-            "Women's",
-            "station",
-            "accounting",
-            "counting",
-            "part"
-        ]
-
+        all_words_to_delete = self._all_words_to_delete
         # delete also the religious terms
-        religious_terms = [
-            "Roman Catholic",
-            "churches",
-            "Church",
-            "synagogue",
-            "Jewish",
-            "Jews",
-            "rabbinate",
-            "Prayer",
-            "synod",
-            "Spiritual",
-            "Theological",
-            "Seminary",
-            "Consistory",
-            "Orthodox",
-            "Assumption",
-            "deanery",
-            "clergy",
-            "cemetery",
-            "suburb",
-            "suburbs",
-            "tserkovny",
-            "Trinity",
-            "Resurrection",
-            "Ascension",
-            "Intercession",
-            "Annunciation",
-            "Transfiguration",
-        ]
-        all_words_to_delete.extend(religious_terms)
-
+        all_words_to_delete.extend(self._religious_terms)
         # delete also the documentation/archival terms
-        archival_noise = [
-            "about",
-            "absent",
-            "after",
-            "birth",
-            "births",
-            "book",
-            "books",
-            "born",
-            "census",
-            "confessional",
-            "death",
-            "deaths",
-            "deceased",
-            "Decree",
-            "Decrees",
-            "div",
-            "divorce",
-            "divorced",
-            "divorces",
-            "document",
-            "documents",
-            "enumeration",
-            "file",
-            "files",
-            "folder",
-            "folders",
-            "index",
-            "journal",
-            "journals",
-            "Letter",
-            "Letters",
-            "magistrate",
-            "marriage",
-            "marriages",
-            "matriculation",
-            "meeting",
-            "meetings",
-            "metric",
-            "Metrical",
-            "prior",
-            "record",
-            "records",
-            "registry",
-            "register",
-            "registers",
-            "sheet",
-            "sheets",
-            "to",
-            "tract",
-            "year",
-            "years",
-        ]
-        all_words_to_delete.extend(archival_noise)
+        all_words_to_delete.extend(self._archival_noise)
 
         archive_abbreviations = list(self._archive_locations)
         shortened_descriptions = set()
@@ -595,7 +355,7 @@ class FileLocationFinder:
             # Strip narrative noise fragments that confuse the model when
             # the description is a list of place names (e.g. "Date changed Sep;",
             # "see also", "A very confusing collection", stray quotes/dashes).
-            description = strip_list_noise(description)
+            description = self.strip_list_noise(description)
 
             description = clean_punctuation(description)
 
@@ -873,7 +633,7 @@ class FileLocationFinder:
         
     def remove_sentences_with_words(self, text: str) -> tuple[str, list[dict]]:
         archive_abbreviations = set(self._regions_2_locations.keys())
-        archive_cities = {loc["location"] for loc in _all_ukraine_locations}
+        archive_cities = {loc["location"] for loc in self._all_ukraine_locations}
         all_keywords_original_case = archive_abbreviations | archive_cities
         # Convert target words to lowercase for case-insensitive matching
         abbreviations_to_check = {word.lower() for word in archive_abbreviations}
@@ -923,7 +683,7 @@ class FileLocationFinder:
             if key in self._regions_2_locations:
                 region_centres.extend(self._regions_2_locations[key])
             else:
-                for loc in _all_ukraine_locations:
+                for loc in self._all_ukraine_locations:
                     if loc["location"] == key:
                         region_centres.append(loc)
                         break

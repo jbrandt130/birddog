@@ -45,7 +45,7 @@ class LocationMatcher:
         records = db.scan_all("Locations")
 
         # Iterate over each record to extract names
-        for row in records:
+        for row_idx, row in enumerate(records):
             try:
                 # 1. Safely handle potential missing location_id
                 loc_id_val = row.get("location_id")
@@ -132,6 +132,7 @@ class LocationMatcher:
 
                 # 2. Populate your dictionary safely
                 self.location_name_dict[loc_id] = {
+                    "row_idx": row_idx,
                     "administrative_level": administrative_level,
                     "main_name": main_name,
                     "district_names": district_names,
