@@ -15,7 +15,10 @@ from birddog.utility import utc_now_dt
 
 fond_id = '1'
 opus_id = '74'
-case_id = '1'
+# test_Case uses its own opus: DAZHO 1/74's case pages gained contents tables
+# (2026-09-30), and Page.kind reports a case page with table rows as "opus"
+case_opus_id = '1'
+case_id = '198'
 
 # ------------------ UTILITY UNIT TESTS ------------------ 
 class Test(unittest.TestCase):
@@ -74,7 +77,7 @@ class Test(unittest.TestCase):
         print('url', page.url)
 
     def test_Case(self):
-        page = Page(ARCHIVE_BY_ADDRESS[('DAZHO', None)]).lookup(fond_id).lookup(opus_id).lookup(case_id)
+        page = Page(ARCHIVE_BY_ADDRESS[('DAZHO', None)]).lookup(fond_id).lookup(case_opus_id).lookup(case_id)
         self.assertTrue(
             page.url == f'{page.parent.url}/{case_id}')
         print('id', page.id)

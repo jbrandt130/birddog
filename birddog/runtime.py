@@ -274,9 +274,15 @@ class SignificanceSweepManager(HeartbeatManager):
         super().__init__(interval=SignificanceSweepManager._HEARTBEAT_INTERVAL)
 
     def heartbeat(self):
+        # a heartbeat tick that logs "starting" but never "finished" (and no
+        # per-item classify lines in significance.py either) means a hang is
+        # between here and sweep()'s first line -- i.e. in
+        # significance.sweep()'s own setup, not inside it.
+        _logger.info("SignificanceSweepManager: heartbeat starting")
         examined = significance.sweep(self._runtime)
         if examined:
             _logger.info(f"SignificanceSweepManager: examined {examined} item(s)")
+        _logger.info("SignificanceSweepManager: heartbeat finished")
 
 # ----------------------------------------------------------------------------
 # Resource usage monitor

@@ -127,11 +127,19 @@ def _classify_item(email, archive_title, item_title, entry, runtime):
         return False
 
     did_work = not _verdict_lru.contains(item_title, from_date, to_date)
+    # brackets the one call in this function that can block on the network
+    # (Page fetch + revert_to), so a hung sweep shows exactly which item it
+    # was working on -- a "classifying" line with no matching "classified"
+    # line before the next heartbeat tick (or its absence) pins the hang down.
+    if did_work:
+        _logger.info(f"significance sweep: classifying {item_title} ({from_date} -> {to_date})")
     try:
         verdict = _classify(item_title, from_date, to_date, runtime)
     except Exception:
         _logger.exception(f"significance: failed to classify {item_title} ({from_date} -> {to_date})")
         return did_work
+    if did_work:
+        _logger.info(f"significance sweep: classified {item_title} -> verdict={verdict!r}")
 
     if verdict is None or verdict is True:
         return did_work  # unclassifiable, or genuinely significant -- write nothing, stays visible
@@ -159,8 +167,15 @@ def sweep(runtime):
     number of items newly classified this tick, for logging."""
     now = utc_now_dt()
     examined = 0
-    for watch in watcher.get_all_active_watches():
+    # brackets get_all_active_watches() and each watch's own
+    # get_all_unresolved() call -- if a heartbeat tick goes silent before
+    # even the "starting pass" line, the hang is in get_all_active_watches()
+    # itself, not in per-item classification.
+    watches = watcher.get_all_active_watches()
+    _logger.info(f"significance sweep: starting pass over {len(watches)} active watch(es)")
+    for watch in watches:
         email, archive_title = watch["email"], watch["title"]
+        _logger.info(f"significance sweep: scanning watch {email}:{archive_title}")
         unresolved = watcher.get_all_unresolved(email, archive_title)
         for item_title, entry in unresolved.items():
             if entry.get("moved_to"):
@@ -174,4 +189,5 @@ def sweep(runtime):
                 return examined
             if _classify_item(email, archive_title, item_title, entry, runtime):
                 examined += 1
+    _logger.info(f"significance sweep: pass complete, examined {examined} item(s)")
     return examined
