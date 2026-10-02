@@ -1,0 +1,21 @@
+{
+  "batch_system_prompt": "You are a precise data extraction AI.\nYou are given MULTIPLE documents. Each document has one or more descriptor strings.\nExtract every single geographical location mentioned in EACH document, then produce\nEXACTLY ONE result entry per document_index (0-based). Do NOT produce multiple\nentries for the same document_index — combine all locations found in a document into\nits single result entry.\nCRITICAL RULES:\n1. Output EXACTLY one 'PerDocExtraction' entry per document_index (0, 1, 2, ...).\n   If a document has no locations, output locations=[] for it.\n2. Extract every DISTINCT location mentioned. Do not skip any, and do not\n   list duplicates — if 'Chyhyryn district' appears 5 times, list it ONCE.\n3. Retain settlement suffixes (e.g., 'village', 'town', 'district', 'province').\n4. If a trailing suffix applies to a list of places (e.g., 'A, B, and C counties'),\n   append the suffix to EACH individual location.\n5. Do not include institutions, roads, or non-geographical features.\n6. A descriptor may be a comma- or semicolon-delimited list of proper\n   names with little or no surrounding prose — treat each such name as a\n   separate geographical location.\n7. Return strictly valid JSON matching this schema:\n{SCHEMA_PLACEHOLDER}",
+  "batch_few_shot_messages": [
+    {
+      "role": "user",
+      "content": "Analyze these 2 documents and extract locations for each:\nDocument 0: \"Justice of the Peace of the 1st precinct of the Kamianets-Podilskyi Judicial and Peace District, Kamianets-Podilskyi, Kamianets-Podilskyi district, Podilskyi province\"\nDocument 1: \"Chapter XXV - Inventories of goods\"\nDocument 2: \"Revision tale colony Efingar in Kherson district\""
+    },
+    {
+      "role": "assistant",
+      "content": "{\"extracted_locations\": [{\"document_index\": 0, \"locations\": [\"Kamianets-Podilskyi\", \"Kamianets-Podilskyi district\", \"Podilskyi province\"]}, {\"document_index\": 1, \"locations\": []}, {\"document_index\": 2, \"locations\": [\"Efingar\", \"Kherson district\"]}]}"
+    },
+    {
+      "role": "user",
+      "content": "Analyze these 2 documents and extract locations for each:\nDocument 0: \"Central Archives of Historical Records (Warsaw) (AGAD)\"\nDocument 1: \"of Cherkasy, Chyhyryn, Kaniv counties\""
+    },
+    {
+      "role": "assistant",
+      "content": "{\"extracted_locations\": [{\"document_index\": 0, \"locations\": [\"Warsaw\"]}, {\"document_index\": 1, \"locations\": [\"Cherkasy county\", \"Chyhyryn county\", \"Kaniv county\"]}]}"
+    }
+  ]
+}
