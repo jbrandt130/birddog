@@ -578,7 +578,7 @@ class FileLocationFinder:
         Returns:
             list[dict]: A list of unique archive location dictionaries with duplicates removed
                 based on location_id. Each dictionary contains location information such as
-                location name, cyrillic abbreviation, and location_id.
+                location name, Cyrillic abbreviation, and location_id.
         """
         if owning_pages:
             for page in owning_pages:
