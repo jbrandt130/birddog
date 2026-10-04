@@ -11,6 +11,8 @@ from file_location import (
     remove_words_list,
 )
 
+from birddog.database import Database
+
 
 class LocationPerformanceEvaluator:
     def __init__(self, file_path: str, provider: str):
@@ -27,7 +29,8 @@ class LocationPerformanceEvaluator:
 
         # Total rows minus 1 header row
         self.total_data_rows = self.sheet.max_row - 1
-        self.file_location_finder = FileLocationFinder(provider)
+        db = Database()
+        self.file_location_finder = FileLocationFinder(db, provider)
         self.num_evaluated_docs = 0
         self.num_docs_evaluated_correctly = 0
         self.num_docs_with_all_locations_found = 0

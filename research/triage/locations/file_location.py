@@ -115,14 +115,14 @@ def needs_further_analysis(identified_location: frozenset) -> bool:
 
 
 class FileLocationFinder:
-    def __init__(self, provider: str = "modal"):
+    def __init__(self, db, provider: str = "modal"):
         """
         For provider "modal" the API key is stored in the environment variable "HF_TOKEN";
         for provider "groq" - in the environment variable "GROQ_LOCATION_KEY". For the latter,
         you can get one free at console.groq.com.
         """
         self._logger = get_logger()
-        self._db = Database()
+        self._db = db
         self._location_extractor = LocationExtractor(self._logger, provider)
 
         # Read the JSON file
@@ -1052,7 +1052,8 @@ def get_doc_record(db, doc_id):
 
 #testing
 if __name__ == "__main__":
-    finder = FileLocationFinder()
+    _db = Database()
+    finder = FileLocationFinder(_db)
     finder.get_doc_locations_batched([60426], 1, only_smallest_locations=False)
 #    doc_id_ = 12953
 #    print(finder.get_doc_descriptions(doc_id_))
