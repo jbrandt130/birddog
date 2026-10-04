@@ -458,7 +458,7 @@ class FileLocationFinder:
         # Only run priority2 if at least one document has no priority1 results.
         docs_needing_p2 = []
         identified_locations_per_doc = []
-        district_names_per_doc = [set()] * len(doc_ids)
+        district_names_per_doc = [set() for _ in range(len(doc_ids))]
         all_extracted_p1 = self._location_extractor.extract_locations_batched(
             all_p1_lists, batch_size=batch_size
         )
@@ -616,21 +616,29 @@ class FileLocationFinder:
 
         return unique_locs
 
-    def extract_region_centres(self, descriptions: set[str])-> tuple[set[str], list[list[dict]]]:
+
+    def extract_region_centres(self, descriptions: set[str]) -> tuple[set[str], list[list[dict]]]:
         descriptions_after_extraction = []
         total_region_centres = []
+        seen_ids = set()
+
         for description in descriptions:
-            description_after_extraction, region_centres = self.remove_sentences_with_words(description)
+            description_after_extraction, region_centres = (self.remove_sentences_with_words(description))
             if description_after_extraction:
                 descriptions_after_extraction.append(description_after_extraction)
-            total_region_centres.append(
-                [rc for rc in region_centres if rc not in total_region_centres]
-            )
 
-        descriptions_after_extraction = set(descriptions_after_extraction)
+            unique_for_this_desc = []
+            for rc in region_centres:
+                rc_id = rc.get("location_id")
+                if rc_id not in seen_ids:
+                    seen_ids.add(rc_id)
+                    unique_for_this_desc.append(rc)
 
-        return descriptions_after_extraction, total_region_centres
-        
+            total_region_centres.append(unique_for_this_desc)
+
+        return set(descriptions_after_extraction), total_region_centres
+
+
     def remove_sentences_with_words(self, text: str) -> tuple[str, list[dict]]:
         archive_abbreviations = set(self._regions_2_locations.keys())
         archive_cities = {loc["location"] for loc in self._all_ukraine_locations}
@@ -831,7 +839,11 @@ class FileLocationFinder:
             found_province_ids = found_province_ids | set(curr_province_ids)
 
         archive_province_center_ids = [archive_loc_ids, found_province_ids] + additional_centre_ids
+        # delete empty sets 
         archive_province_center_ids = [s for s in archive_province_center_ids if s]
+        # delete duplicate sets
+        archive_province_center_ids = [set(s) for s in {frozenset(s) for s in archive_province_center_ids}]
+        # order by set size
         archive_province_center_ids = sorted(archive_province_center_ids, key=len)
 
         identified_locations = set()
@@ -879,6 +891,8 @@ class FileLocationFinder:
                             break
                         archive_set_len = len(archive_set)
                         for place_idx, place_id in enumerate(place_ids):
+                            if found_admin_match:
+                                break
                             location = self._matcher.location_name_dict.get(place_id)
                             if not location:
                                 continue
