@@ -262,6 +262,14 @@ class FileLocationFinder:
             "Volhynia": [{"location": "Zhitomir",        "location_id": "-1060903"}],
             "WoÅ‚yÅ„": self._volyn_locations
         }
+        archive_abbreviations = set(self._regions_2_locations.keys())
+        archive_cities = {loc["location"] for loc in self._all_ukraine_locations}
+        self._all_keywords_original_case = archive_abbreviations | archive_cities
+        # Convert target words to lowercase for case-insensitive matching
+        abbreviations_to_check = {word.lower() for word in archive_abbreviations}
+        cities_to_check = {city.lower() for city in archive_cities}
+        self._words_to_delete = abbreviations_to_check | cities_to_check
+        self._words_not_to_delete = set(self._settlement_keywords) | set(self._district_keywords)
 
         self._matcher = LocationMatcher(self._db, self._regions_2_locations,
             self._province_capitals, self._logger)
@@ -640,14 +648,6 @@ class FileLocationFinder:
 
 
     def remove_sentences_with_words(self, text: str) -> tuple[str, list[dict]]:
-        archive_abbreviations = set(self._regions_2_locations.keys())
-        archive_cities = {loc["location"] for loc in self._all_ukraine_locations}
-        all_keywords_original_case = archive_abbreviations | archive_cities
-        # Convert target words to lowercase for case-insensitive matching
-        abbreviations_to_check = {word.lower() for word in archive_abbreviations}
-        cities_to_check = {city.lower() for city in archive_cities}
-        words_not_to_delete = set(self._settlement_keywords) | set(self._district_keywords)
-
         # Normalize Unicode
         text = unicodedata.normalize("NFKC", text)
         # Split text by dots and semicolons (delimiters consumed)
@@ -664,28 +664,22 @@ class FileLocationFinder:
             clean_words = set(re.findall(r"\b[\w/]+\b", sentence.lower()))
 
             # are there words not to delete?
-            matches = words_not_to_delete.intersection(clean_words)
+            matches = self._words_not_to_delete.intersection(clean_words)
             if matches:
                 cleaned_pieces.append(sentence)
                 continue
 
             # Find matches between this sentence and target words
             #first try the cities
-            matches = cities_to_check.intersection(clean_words)
+            matches = self._words_to_delete.intersection(clean_words)
             if matches:
                 found_words.update(matches)
                 self._logger.info(f"Deleting the sentence: '{sentence}'")
             else:
-                # now try the archive abbreviations
-                matches = abbreviations_to_check.intersection(clean_words)
-                if matches:
-                    found_words.update(matches)
-                    self._logger.info(f"Deleting the sentence: '{sentence}'")
-                else:
-                    cleaned_pieces.append(sentence)
+                cleaned_pieces.append(sentence)
 
         # Map lowercase found words back to their original casing from target_words
-        original_casing_found = {word for word in all_keywords_original_case if word.lower() in found_words}
+        original_casing_found = {word for word in self._all_keywords_original_case if word.lower() in found_words}
         region_centres: list[dict[str, str]] = []
         for key in original_casing_found:
             if key in self._regions_2_locations:
