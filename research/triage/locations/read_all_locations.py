@@ -1,6 +1,8 @@
 import re
+from typing import Any
 
-from rapidfuzz import distance
+from rapidfuzz import process
+from rapidfuzz.distance import JaroWinkler
 
 
 def _get_str_from_record(record, key):
@@ -145,52 +147,77 @@ class LocationMatcher:
                 # Skipping the row
                 continue
 
+
     def find_location_id(self, place_to_search: str) -> list[str]:
-        """
-        Finds the best matching location ID using Jaro-Winkler similarity scoring.
+        """Finds the best matching location ID using Jaro-Winkler similarity scoring.
+
         - Normalizes and standardizes search term
-        - Computes similarity scores against all name variants
+        - Computes similarity scores against all name variants using rapidfuzz.process.extract
         - Tracks the best matching location ID
 
         Returns:
-            If match score < threshold (88) - empty list. Otherwise, the list of all location IDs featuring this name.
+            If match score < threshold (91) - empty list. Otherwise, the list of all location IDs featuring this name.
         """
         place_to_search_lower = normalize_name(place_to_search)
 
-        # Set a threshold score (typically between 85 and 90 out of 100)
-        threshold = 91 #88 # 93
-        max_score = 0
+        threshold_100 = 91.0
+        threshold_normalized = threshold_100 / 100.0  # 0.91 for JaroWinkler
+
+        choices: list[str] = list(self.names_with_location_ids.keys())
+
+        # Cast the scorer as Any to satisfy Pyrefly's internal _Scorer Protocol
+        scorer: Any = JaroWinkler.similarity
+
+        results = process.extract(
+            place_to_search_lower,
+            choices=choices,
+            scorer=scorer,
+            score_cutoff=threshold_normalized,
+        )
+
+        if not results:
+            top_match = process.extractOne(
+                place_to_search_lower,
+                choices=choices,
+                scorer=scorer,
+            )
+            best_name = top_match[0] if top_match else ""
+            max_score = (top_match[1] * 100.0) if top_match else 0.0
+
+            self._logger.info(
+                f"No match found for '{place_to_search}'. Maximum score: {max_score}, "
+                f"best candidate {best_name}"
+            )
+            return []
+
+        # Scale 0.0-1.0 scores back up to 0-100 for logging and sorting
+        scored_results = [
+            (matched_name, score * 100.0, idx) for matched_name, score, idx in results
+        ]
+        scored_results.sort(key=lambda x: x[1], reverse=True)
+
+        max_score = scored_results[0][1]
+
         seen: set[str] = set()
         matching_locs_with_scores: list[tuple[str, float]] = []
-        best_name = ""
-        for loc_name in self.names_with_location_ids:
-            score = distance.JaroWinkler.similarity(place_to_search_lower, loc_name) * 100
-            loc_ids = self.names_with_location_ids.get(loc_name, [])
-            if score > max_score:
-                max_score = score
-                best_name = loc_name
-            if score >= threshold:
-                for loc_id in loc_ids:
-                    if loc_id not in seen:
-                        matching_locs_with_scores.append((loc_id, score))
-                        seen.add(loc_id)
 
-        # sort by descending score
-        matching_locs_with_scores.sort(key=lambda x: x[1], reverse=True)
-        matching_ids = [x[0] for x in matching_locs_with_scores]
+        for name, score, _ in scored_results:
+            loc_ids = self.names_with_location_ids.get(name, [])
+            for loc_id in loc_ids:
+                if loc_id not in seen:
+                    matching_locs_with_scores.append((loc_id, score))
+                    seen.add(loc_id)
 
-        if max_score < threshold:
-            self._logger.info(f"No match found for '{place_to_search}'. Maximum score: {max_score}, "
-                          f"best candidate {best_name}")
-        else:
-            msg = f"Location '{place_to_search}' is identified with score {max_score} as one of these locations: "
-            for match in matching_locs_with_scores:
-                loc = self.location_name_dict.get(match[0])
-                if loc:
-                    msg = f"{msg} (loc_id={match[0]}, name={loc.get('main_name')}) "
-            self._logger.info(msg)
+        matching_ids = [loc_id for loc_id, _ in matching_locs_with_scores]
+
+        msg = f"Location '{place_to_search}' is identified with score {max_score} as one of these locations: "
+        for loc_id, _ in matching_locs_with_scores:
+            loc = self.location_name_dict.get(loc_id)
+            if loc:
+                msg += f"(loc_id={loc_id}, name={loc.get('main_name')}) "
+        self._logger.info(msg)
+
         return matching_ids
-
 
 if __name__ == "__main__":
     # For testing, we would need a Database instance, but this requires NocoDB configuration
