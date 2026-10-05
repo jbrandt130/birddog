@@ -230,27 +230,12 @@ The `research/triage/locations` directory contains standalone, experimental tool
 - Returns only locations at the smallest administrative level (e.g., villages)
 
 ### 3. `extract_location_from_descriptors.py`
-- Uses an AI model (Qwen/Qwen2.5-7B-Instruct) to extract locations from text
-- Requires a Hugging Face token or Modal deployment
+- Uses an AI model (Qwen/Qwen2.5-7B-Instruct for Modal, qwen/qwen3.8-27b for groq) to extract locations from text
+- Requires a groq token or Modal deployment
 
 ### 4. `deploy_modal.py` (optional)
 - Deploys the Qwen model via Modal.ai for high-availability processing
 - Requires a Modal account and API key setup
-
-### Example Usage
-
-From a Python interpreter:
-
-```python
-from research.triage.locations.file_location import get_doc_location
-
-# Get location IDs for a document (returns smallest administrative level matches)
-location_ids = get_doc_location(document_id=406970, only_smallest_locations=True)
-```
-
-These tools currently rely on manual testing via `if __name__ == "__main__":` blocks in each script.
-
----
 
 ## Testing
 
