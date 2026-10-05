@@ -980,14 +980,6 @@ def separate_words_by_cyrillic(file_string):
     return cyrillic_space_str, other_space_str, cyrillic_words
 
 
-def contains_word(text: str, target_word: str) -> bool:
-    # Lookarounds: ensure no letters, digits, or hyphens touch the target word
-    pattern = r"(?<![\w-])" + re.escape(target_word) + r"(?![\w-])"
-
-    match = re.search(pattern, text)
-    return bool(match)
-
-
 def remove_words_list(text: str, target_words: list[str], ignore_case: bool = True) -> str:
     # If the list is empty, return the original text immediately
     if not target_words:
@@ -1013,21 +1005,6 @@ def remove_words_list(text: str, target_words: list[str], ignore_case: bool = Tr
     # Fix stray spaces before periods, commas, or semicolons
     cleaned_text = re.sub(r"\s+([.,;])", r"\1", cleaned_text)
 
-    return cleaned_text
-
-
-def remove_specific_word(text: str, target_word: str, ignore_case: bool = True) -> str:
-    # Custom lookarounds to prevent splitting on hyphens
-    pattern = r"(?<![\w-])" + re.escape(target_word) + r"(?![\w-])"
-
-    # Set the flags based on the boolean parameter
-    flags = re.IGNORECASE if ignore_case else 0
-
-    # Remove the word using the configured flags
-    cleaned_text = re.sub(pattern, "", text, flags=flags)
-
-    # Clean up extra whitespace left behind
-    cleaned_text = re.sub(r"\s+", " ", cleaned_text).strip()
     return cleaned_text
 
 
