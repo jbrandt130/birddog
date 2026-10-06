@@ -26,17 +26,12 @@ def convert_pdf_page_to_jpg(pdf_path: str, page_number: int, output_jpg_path: st
     image = page.render(scale=scale).to_pil()
     image.save(output_jpg_path, format="JPEG")
 
-# Example usage:
-# convert_pdf_page_to_jpg("input.pdf", page_number=1, output_jpg_path="page_1.jpg")
 
 def get_pdf_page_count(pdf_path: str) -> int:
     """Returns the total number of pages in a PDF file using pypdf."""
     reader = PdfReader(pdf_path)
     return len(reader.pages)
 
-# Example usage:
-# pages = get_pdf_page_count("example.pdf")
-# print(f"Total pages: {pages}")
 
 def compute_dhash(image_input, hash_size: int = 8) -> str:
     """Computes a difference perceptual hash (dHash) for an image or image path.

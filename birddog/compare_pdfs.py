@@ -24,6 +24,8 @@ from comparing_images import (
     hamming_distance,
 )
 
+from birddog.log import get_logger
+
 
 def download_wikimedia_file(url: str, filepath: str) -> bool:
     """Downloads a file or page image from Wikimedia Commons URLs.
@@ -63,29 +65,29 @@ def download_wikimedia_file(url: str, filepath: str) -> bool:
         print(f"Error downloading {url}: {e}")
         return False
 
-def compare_local_pdfs(results:dict, pdf1_path:str, pdf2_path:str, temp_dir:str, threshold: int = 5) -> dict:
-    # Step 2: Compare page count
-    print("Step 2: Comparing page counts...")
+def compare_local_pdfs(results:dict, logger, pdf1_path:str, pdf2_path:str, temp_dir:str, threshold: int = 5) -> dict:
+    # Compare page count
+    logger.info("Comparing page counts...")
     page_count1 = get_pdf_page_count(pdf1_path)
     page_count2 = get_pdf_page_count(pdf2_path)
 
-    print(f"  PDF 1: {page_count1} pages")
-    print(f"  PDF 2: {page_count2} pages")
+    logger.info(f"  PDF 1: {page_count1} pages")
+    logger.info(f"  PDF 2: {page_count2} pages")
 
     if page_count1 != page_count2:
         results["details"]["page_count1"] = page_count1
         results["details"]["page_count2"] = page_count2
         results["details"]["page_count_diff"] = abs(page_count1 - page_count2)
         results["comparison_result"] = "Different pdf files"
-        print("  ✗ Page counts do not match")
+        logger.info("  ✗ Page counts do not match")
         return results
 
     results["page_counts_match"] = True
     results["details"]["page_count"] = page_count1
-    print(f"  ✓ Page counts match: {page_count1} pages")
+    logger.info(f"  ✓ Page counts match: {page_count1} pages")
 
     # Step 3: Compare first pages using dhash
-    print("Step 3: Comparing first pages using dhash...")
+    logger.info("Step 3: Comparing first pages using dhash...")
     page1_path = os.path.join(temp_dir, "page1_pdf1.jpg")
     page2_path = os.path.join(temp_dir, "page1_pdf2.jpg")
 
@@ -96,27 +98,27 @@ def compare_local_pdfs(results:dict, pdf1_path:str, pdf2_path:str, temp_dir:str,
     hash2 = compute_dhash(page2_path)
     distance = hamming_distance(hash1, hash2)
 
-    print(f"  PDF 1 page 1 hash: {hash1}")
-    print(f"  PDF 2 page 1 hash: {hash2}")
-    print(f"  Hamming distance: {distance}")
+    logger.info(f"  PDF 1 page 1 hash: {hash1}")
+    logger.info(f"  PDF 2 page 1 hash: {hash2}")
+    logger.info(f"  Hamming distance: {distance}")
 
     if distance <= threshold:
         results["first_pages_match"] = True
         results["details"]["first_page_hash1"] = hash1
         results["details"]["first_page_hash2"] = hash2
         results["details"]["first_page_distance"] = distance
-        print(f"  ✓ First pages match (distance <= {threshold})")
+        logger.info(f"  ✓ First pages match (distance <= {threshold})")
     else:
         results["details"]["first_page_distance"] = distance
         results["comparison_result"] = "Different pdf files"
-        print(f"  ✗ First pages differ (distance > {threshold})")
+        logger.info(f"  ✗ First pages differ (distance > {threshold})")
         return results
 
-    # Step 4: If more than 1 page, compare a random page
+    # If more than 1 page, compare a random page
     if page_count1 > 1:
-        print("Step 4: Comparing a random page...")
+        logger.info("Comparing a random page...")
         random_page = random.randint(2, page_count1)  # Avoid page 1 (already compared)
-        print(f"  Comparing page {random_page}...")
+        logger.info(f"  Comparing page {random_page}...")
 
         pageN1_path = os.path.join(temp_dir, f"page{random_page}_pdf1.jpg")
         pageN2_path = os.path.join(temp_dir, f"page{random_page}_pdf2.jpg")
@@ -128,9 +130,9 @@ def compare_local_pdfs(results:dict, pdf1_path:str, pdf2_path:str, temp_dir:str,
         hashN2 = compute_dhash(pageN2_path)
         distanceN = hamming_distance(hashN1, hashN2)
 
-        print(f"  PDF 1 page {random_page} hash: {hashN1}")
-        print(f"  PDF 2 page {random_page} hash: {hashN2}")
-        print(f"  Hamming distance: {distanceN}")
+        logger.info(f"  PDF 1 page {random_page} hash: {hashN1}")
+        logger.info(f"  PDF 2 page {random_page} hash: {hashN2}")
+        logger.info(f"  Hamming distance: {distanceN}")
 
         if distanceN <= threshold:
             results["random_page_match"] = True
@@ -138,19 +140,19 @@ def compare_local_pdfs(results:dict, pdf1_path:str, pdf2_path:str, temp_dir:str,
             results["details"]["random_page_hash1"] = hashN1
             results["details"]["random_page_hash2"] = hashN2
             results["details"]["random_page_distance"] = distanceN
-            print(f"  ✓ Random page matches (distance <= {threshold})")
+            logger.info(f"  ✓ Random page matches (distance <= {threshold})")
         else:
             results["details"]["random_page_distance"] = distanceN
             results["comparison_result"] = "Different pdf files"
-            print(f"  ✗ Random page differs (distance > {threshold})")
+            logger.info(f"  ✗ Random page differs (distance > {threshold})")
             return results
     else:
         results["details"]["random_page_skipped"] = "Only 1 page in document"
-        print("  ⊘ Only 1 page - skipping random page comparison")
+        logger.info("  ⊘ Only 1 page - skipping random page comparison")
 
     # All checks passed
     results["comparison_result"] = "PDF files are almost identical"
-    print("\n✓ PDF files are ALMOST IDENTICAL")
+    logger.info("\n✓ PDF files are ALMOST IDENTICAL")
     return results
 
 
@@ -166,6 +168,7 @@ def compare_online_pdfs(url1: str, url2: str, threshold: int = 5) -> dict:
     Returns:
         Dictionary with comparison results.
     """
+    logger = get_logger()
     results = {
         "downloaded": False,
         "page_counts_match": False,
@@ -176,8 +179,8 @@ def compare_online_pdfs(url1: str, url2: str, threshold: int = 5) -> dict:
     }
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        # Step 1: Download files to temporary directory
-        print("Step 1: Downloading PDF files...")
+        # Download files to temporary directory
+        logger.info("Downloading PDF files...")
         pdf1_path = os.path.join(temp_dir, "pdf1.pdf")
         pdf2_path = os.path.join(temp_dir, "pdf2.pdf")
 
@@ -190,9 +193,9 @@ def compare_online_pdfs(url1: str, url2: str, threshold: int = 5) -> dict:
             return results
 
         results["downloaded"] = True
-        print("  ✓ Both files downloaded successfully")
+        logger.info("  ✓ Both files downloaded successfully")
 
-        results = compare_local_pdfs(results, pdf1_path, pdf2_path, temp_dir, threshold)
+        results = compare_local_pdfs(results, logger, pdf1_path, pdf2_path, temp_dir, threshold)
 
         #delete temporary files
         Path(pdf1_path).unlink(missing_ok=True)
@@ -228,5 +231,6 @@ if __name__ == "__main__":
     pdf1_path_ = r"C:\Users\user\Downloads\kenguru_resized.pdf"
     pdf2_path_ = r"C:\Users\user\Downloads\kenguru_orig.pdf"
     dir_ = r"C:\Users\user\Downloads"
-    results_ = compare_local_pdfs(results_, pdf1_path_, pdf2_path_, dir_, 5)
+    logger_ = get_logger()
+    results_ = compare_local_pdfs(results_, logger_, pdf1_path_, pdf2_path_, dir_, 5)
     print(results_)
