@@ -16,13 +16,13 @@ from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 
 import requests
-from comparing_images import (
+
+from birddog.comparing_images import (
     compute_dhash,
     convert_pdf_page_to_jpg,
     get_pdf_page_count,
     hamming_distance,
 )
-
 from birddog.log import get_logger
 
 
@@ -217,7 +217,12 @@ def compare_online_pdfs(url1: str, url2: str, threshold: int = 5) -> dict[str, A
         return results
 
 
-def test_comparing(url1: str, url2: str) -> None:
+def compare_urls(url1: str, url2: str) -> dict[str, Any]:
+    """Compare two PDF files from URLs and return results."""
+    return compare_online_pdfs(url1, url2)
+
+
+def run_comparison_cli(url1: str, url2: str) -> None:
     print("Comparing PDFs:")
     print(f"  URL 1: {url1}")
     print(f"  URL 2: {url2}\n")
@@ -229,9 +234,16 @@ def test_comparing(url1: str, url2: str) -> None:
 
 
 if __name__ == "__main__":
-    url1_ = "https://upload.wikimedia.org/wikipedia/commons/1/1f/ДАОО_1-2-10_Про_євреїв,_які_висловили_бажання_перейти_з_білоруських_губерній_в_єврейські_колонії_Херсонської_губернії_(1838).pdf"
-    url2_ = "https://upload.wikimedia.org/wikipedia/commons/0/07/%D0%94%D0%90%D0%9E%D0%9E_16-124-15899_%D0%9F%D1%80%D0%BE_%D0%B2%D0%BD%D0%B5%D1%81%D0%B5%D0%BD%D0%BD%D1%8F_%D0%B2_%D0%9E%D0%B4%D0%B5%D1%81%D1%96_%D0%B4%D0%BE_%D0%BC%D0%B5%D1%82%D1%80%D0%B8%D1%87%D0%BD%D0%B8%D1%85_%D0%BA%D0%BD%D0%B8%D0%B3_%D0%B7%D0%BC%D1%96%D0%BD%2C_%D1%89%D0%BE_%D1%81%D1%82%D0%BE%D1%81%D1%83%D1%8E%D1%82%D1%8C%D1%81%D1%8F_%D1%82%D0%B8%D1%85%2C_%D1%85%D1%82%D0%BE_%D0%BF%D1%80%D0%B8%D0%B9%D0%BD%D1%8F%D0%B2_%D0%BF%D1%80%D0%B0%D0%B2%D0%BE%D1%81%D0%BB%D0%B0%D0%B2%27%D1%8F_%281916%29.pdf?utm_source=uk.wikisource.org&utm_campaign=index&utm_content=original"
-    test_comparing(url1_, url2_)
+    import sys
+
+    if len(sys.argv) >= 3:
+        # Run CLI comparison from command-line arguments
+        run_comparison_cli(sys.argv[1], sys.argv[2])
+    else:
+        # Default: compare the two sample PDFs
+        url1_ = "https://upload.wikimedia.org/wikipedia/commons/1/1f/ДАОО_1-2-10_Про_євреїв,_які_висловили_бажання_перейти_з_білоруських_губерній_в_єврейські_колонії_Херсонської_губернії_(1838).pdf"
+        url2_ = "https://upload.wikimedia.org/wikipedia/commons/0/07/%D0%94%D0%90%D0%9E%D0%9E_16-124-15899_%D0%9F%D1%80%D0%BE_%D0%B2%D0%BD%D0%B5%D1%81%D0%B5%D0%BD%D0%BD%D1%8F_%D0%B2_%D0%9E%D0%B4%D0%B5%D1%81%D1%96_%D0%B4%D0%BE_%D0%BC%D0%B5%D1%82%D1%80%D0%B8%D1%87%D0%BD%D0%B8%D1%85_%D0%BA%D0%BD%D0%B8%D0%B3_%D0%B7%D0%BC%D1%96%D0%BD%2C_%D1%89%D0%BE_%D1%81%D1%82%D0%BE%D1%81%D1%83%D1%8E%D1%82%D1%8C%D1%81%D1%8F_%D1%82%D0%B8%D1%85%2C_%D1%85%D1%82%D0%BE_%D0%BF%D1%80%D0%B8%D0%B9%D0%BD%D1%8F%D0%B2_%D0%BF%D1%80%D0%B0%D0%B2%D0%BE%D1%81%D0%BB%D0%B0%D0%B2%27%D1%8F_%281916%29.pdf?utm_source=uk.wikisource.org&utm_campaign=index&utm_content=original"
+        run_comparison_cli(url1_, url2_)
 #    pdf1_path_ = r"C:\Users\user\Downloads\kenguru_resized.pdf"
 #    pdf2_path_ = r"C:\Users\user\Downloads\kenguru_orig.pdf"
 #    dir_ = r"C:\Users\user\Downloads"
