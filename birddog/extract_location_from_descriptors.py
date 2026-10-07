@@ -39,7 +39,7 @@ class BatchDocumentLocationsResponse(BaseModel):
 
 
 # Load batch prompts from JSON file - must be done after BatchDocumentLocationsResponse is defined
-_PROMPTS_PATH = Path(__file__).parent.parent.parent.parent / "resources" / "location_prompt.json"
+_PROMPTS_PATH = r"resources\location_prompt.json"
 with open(_PROMPTS_PATH, encoding="utf8") as f:
     _PROMPTS = json.load(f)
 

@@ -8,18 +8,17 @@ import unicodedata
 import regex
 
 # This explicitly adds your birddog root folder to the search path safely
-root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../research/triage", "..", ".."))
 if root_path not in sys.path:
     sys.path.insert(0, root_path)
 import random
 import re
 from typing import Any, cast
 
-from extract_location_from_descriptors import LocationExtractor
-from read_all_locations import LocationMatcher
-
 from birddog.database import Database
+from birddog.extract_location_from_descriptors import LocationExtractor
 from birddog.log import get_logger
+from birddog.read_all_locations import LocationMatcher
 from birddog.translate import TranslationDisabledError, TranslationError, translation
 
 

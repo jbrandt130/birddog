@@ -5,13 +5,13 @@ sys.path = [p for p in sys.path if "venv-jupyter" not in p]
 import re
 
 import openpyxl
-from file_location import (
+
+from birddog.database import Database
+from birddog.file_location import (
     FileLocationFinder,
     get_unique_random_integers,
     remove_words_list,
 )
-
-from birddog.database import Database
 
 
 class LocationPerformanceEvaluator:
