@@ -115,7 +115,7 @@ def needs_further_analysis(identified_location: frozenset) -> bool:
 
 
 class FileLocationFinder:
-    def __init__(self, db, provider: str = "modal"):
+    def __init__(self, db, provider: str = "groq"):
         """
         For provider "modal" the API key is stored in the environment variable "HF_TOKEN";
         for provider "groq" - in the environment variable "GROQ_LOCATION_KEY". For the latter,
@@ -431,7 +431,7 @@ class FileLocationFinder:
         all_p1_lists: list[list[str]] = []
         all_p2_lists: list[list[str]] = []
         doc_archive_locs_lists: dict = {}
-        error_per_doc = [False] * len(doc_ids)
+        error_per_doc = [False for _  in range(len(doc_ids))]
         for doc_idx, doc_id in enumerate(doc_ids):
             try:
                 self._logger.info(f"***** Processing descriptions for document {doc_id} *****")
@@ -1039,7 +1039,7 @@ def get_doc_record(db, doc_id):
 if __name__ == "__main__":
     _db = Database()
     finder = FileLocationFinder(_db)
-    finder.get_doc_locations_batched([60426], 1, only_smallest_locations=False)
+    finder.get_doc_locations_batched([60426], 1, only_smallest_locations=True)
 #    doc_id_ = 12953
 #    print(finder.get_doc_descriptions(doc_id_))
 
