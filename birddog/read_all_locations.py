@@ -1,23 +1,25 @@
 import re
 from typing import Any
 
+import ftfy
 from rapidfuzz import process
 from rapidfuzz.distance import JaroWinkler
 
 
-def _get_str_from_record(record, key):
+def get_str_from_record(record, key):
     """Extract a string value from a NocoDB record dict, handling None by returning 'nan' to match pandas str(NaN) behavior."""
     val = record.get(key)
     if val is None:
         return "nan"
-    return str(val)
+    return normalize_name(str(val))
 
 
 def normalize_name(text: str) -> str:
-    """Removes all spaces, hyphens, and non-alphanumeric punctuation while retaining Unicode letters."""
-    # Matches anything that is NOT a Unicode word character (letter/digit) or an underscore,
-    # plus the underscore itself if you want to strip it.
-    return re.sub(r"[^\w']|_", "", text.lower())
+    """Removes all spaces, hyphens, and non-alphanumeric punctuation while retaining Unicode letters.
+    Detects and repairs broken Mojibake text."""
+    # Matches anything that is NOT a Unicode word character (letter/digit).
+    text = re.sub(r"[^\w']|_", "", text.lower())
+    return ftfy.fix_text(text).strip()
 
 
 class LocationMatcher:
@@ -36,7 +38,7 @@ class LocationMatcher:
         """
         self._logger = logger
         self._province_capital_ids = {
-            place_name: [loc["location_id"] for loc in province_capitals[place_name]]
+            normalize_name(place_name): [loc["location_id"] for loc in province_capitals[place_name]]
             for place_name in province_capitals
         }
 
@@ -78,18 +80,18 @@ class LocationMatcher:
                     self.names_with_location_ids.setdefault(normalized_main_name, []).append(loc_id)
 
                 # district names using the helper function
-                district_names = [_get_str_from_record(row, "c1900_district"),
-                                  _get_str_from_record(row, "c1930_district"),
-                                  _get_str_from_record(row, "c1950_district"),
-                                  _get_str_from_record(row, "c2000_district")]
+                district_names = [get_str_from_record(row, "c1900_district"),
+                                  get_str_from_record(row, "c1930_district"),
+                                  get_str_from_record(row, "c1950_district"),
+                                  get_str_from_record(row, "c2000_district")]
                 district_names = {s.strip().lower() for s in district_names if s.strip() and s.strip().lower() != 'nan'}
 
                 # province names
-                c1900_province = _get_str_from_record(row, "c1900_province")
+                c1900_province = get_str_from_record(row, "c1900_province")
                 province_cols = [c1900_province,
-                                  _get_str_from_record(row, "c1930_province"),
-                                  _get_str_from_record(row, "c1950_province"),
-                                  _get_str_from_record(row, "c2000_province")]
+                                 get_str_from_record(row, "c1930_province"),
+                                 get_str_from_record(row, "c1950_province"),
+                                 get_str_from_record(row, "c2000_province")]
                 province_names = province_cols.copy()
                 if c1900_province in regions_2_locations:
                     for item in regions_2_locations[c1900_province]:
