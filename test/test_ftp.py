@@ -222,8 +222,14 @@ def _make_tracker(db, tree):
     }
     with patch.object(ftp, "_load_ftp_config", return_value=cfg):
         tracker = FTPSiteManager(db)
-    tracker._sftp = FakeSFTP(tree)      # _ensure_connection() returns this as-is
+    sftp = FakeSFTP(tree)
+    tracker._sftp = tracker.fake = sftp  # _ensure_connection() returns this as-is
     tracker._connected_at = time.monotonic()
+
+    def reconnect():                    # heartbeat() closes its connection when done
+        tracker._sftp = sftp
+        tracker._connected_at = time.monotonic()
+    tracker._connect = reconnect
     tracker._link_batch = 0            # these tests exercise the inventory sweep only
     return tracker
 
@@ -324,7 +330,7 @@ class TestBootstrap(unittest.TestCase):
         db = FakeDB()
         tracker = _make_tracker(db, _TREE)
         tracker.heartbeat()
-        self.assertEqual(tracker._sftp.calls, ["/"])
+        self.assertEqual(tracker.fake.calls, ["/"])
         self.assertEqual(set(db.rows), {"/", "/Berdichev", "/Odessa", "/top.pdf"})
         self.assertEqual(db.rows["/top.pdf"]["type"], "file")
         self.assertEqual(db.rows["/top.pdf"]["size"], 4444)
@@ -344,7 +350,7 @@ class TestBootstrap(unittest.TestCase):
         db = FakeDB()
         tracker = _make_tracker(db, _TREE)
         _run_until_stable(tracker)
-        self.assertNotIn("/.quarantine", tracker._sftp.calls)
+        self.assertNotIn("/.quarantine", tracker.fake.calls)
         self.assertNotIn("/.quarantine", db.rows)
 
 
@@ -360,7 +366,7 @@ class TestFullWalk(unittest.TestCase):
         self.assertEqual(dirs, _ALL_DIR_PATHS | {"/"})
 
         # every directory (root + nested) was discovered and listed
-        self.assertTrue((_ALL_DIR_PATHS | {"/"}).issubset(set(tracker._sftp.calls)))
+        self.assertTrue((_ALL_DIR_PATHS | {"/"}).issubset(set(tracker.fake.calls)))
 
         before = _snapshot(db)
         _run_until_stable(tracker)
@@ -392,30 +398,30 @@ class TestIncremental(unittest.TestCase):
         tracker = _make_tracker(db, _TREE)
         _run_until_stable(tracker)
 
-        tracker._sftp.calls.clear()
-        tracker._sftp.stat_calls.clear()
+        tracker.fake.calls.clear()
+        tracker.fake.stat_calls.clear()
         _run_until_stable(tracker)                       # another full sweep
 
-        self.assertEqual(tracker._sftp.calls, [])        # nothing re-listed
-        self.assertTrue((_ALL_DIR_PATHS | {"/"}).issubset(tracker._sftp.stat_calls))
+        self.assertEqual(tracker.fake.calls, [])        # nothing re-listed
+        self.assertTrue((_ALL_DIR_PATHS | {"/"}).issubset(tracker.fake.stat_calls))
 
     def test_changed_dir_is_relisted_and_new_pdf_added(self):
         db = FakeDB()
         tracker = _make_tracker(db, _TREE)
         _run_until_stable(tracker)
 
-        tracker._sftp.set_children("/Odessa", [
+        tracker.fake.set_children("/Odessa", [
             ("a.pdf", "file", 1, 400),
             ("b.pdf", "file", 2, 500),
         ])
         _run_until_stable(tracker)
         self.assertIn("/Odessa/b.pdf", db.rows)
-        self.assertIn("/Odessa", tracker._sftp.calls)
+        self.assertIn("/Odessa", tracker.fake.calls)
 
         # and it settles back to skipping /Odessa
-        tracker._sftp.calls.clear()
+        tracker.fake.calls.clear()
         _run_until_stable(tracker)
-        self.assertNotIn("/Odessa", tracker._sftp.calls)
+        self.assertNotIn("/Odessa", tracker.fake.calls)
 
     def test_relist_skips_unchanged_files(self):
         db = FakeDB()
@@ -433,13 +439,13 @@ class TestIncremental(unittest.TestCase):
         db.write = spy
 
         # adding a sibling bumps /Berdichev's mtime -> the dir is re-listed
-        tracker._sftp.set_children("/Berdichev", tracker._sftp.tree["/Berdichev"] + [
+        tracker.fake.set_children("/Berdichev", tracker.fake.tree["/Berdichev"] + [
             ("7-7-7.pdf", "file", 777, 250),
         ])
         _run_until_stable(tracker)
 
         self.assertIn("/Berdichev/7-7-7.pdf", db.rows)     # new file written
-        self.assertIn("/Berdichev", tracker._sftp.calls)   # dir was re-listed
+        self.assertIn("/Berdichev", tracker.fake.calls)   # dir was re-listed
         # the three unchanged PDFs already on record are not re-upserted
         for p in ("/Berdichev/1-2-3.pdf", "/Berdichev/1-2-4.pdf",
                   "/Berdichev/weird name (1).pdf"):
@@ -452,7 +458,7 @@ class TestIncremental(unittest.TestCase):
 
         # jewishgen exposes four different files all named "39-2-1?.pdf"
         # (illegal char mangled by the Windows/IIS backing store).
-        tracker._sftp.set_children("/Odessa", [
+        tracker.fake.set_children("/Odessa", [
             ("a.pdf", "file", 1, 400),
             ("39-2-1?.pdf", "file", 95, 401),
             ("39-2-1?.pdf", "file", 42, 402),
@@ -468,7 +474,7 @@ class TestIncremental(unittest.TestCase):
             "path": "/Odessa/39-2-1?.pdf", "folder": "/Odessa", "type": "file",
             "suffix": "pdf", "size": 250, "match_checked": True,
         }])
-        tracker._sftp._bump("/Odessa")
+        tracker.fake._bump("/Odessa")
         _run_until_stable(tracker)
         self.assertNotIn("/Odessa/39-2-1?.pdf", db.rows)
 
@@ -477,13 +483,13 @@ class TestIncremental(unittest.TestCase):
         tracker = _make_tracker(db, _TREE)
         _run_until_stable(tracker)
 
-        tracker._sftp.calls.clear()
+        tracker.fake.calls.clear()
         _run_until_stable(tracker)
-        self.assertNotIn("/", tracker._sftp.calls)       # root skipped when unchanged
+        self.assertNotIn("/", tracker.fake.calls)       # root skipped when unchanged
 
-        tracker._sftp.set_children("/", _TREE["/"] + [("Lviv", "dir", None, 900)])
+        tracker.fake.set_children("/", _TREE["/"] + [("Lviv", "dir", None, 900)])
         _run_until_stable(tracker)
-        self.assertIn("/", tracker._sftp.calls)
+        self.assertIn("/", tracker.fake.calls)
         self.assertIn("/Lviv", db.rows)
 
     def test_file_replaced_without_rename_is_missed_until_relist(self):
@@ -495,12 +501,12 @@ class TestIncremental(unittest.TestCase):
         _run_until_stable(tracker)
 
         # a.pdf grows but /Odessa's mtime is left untouched
-        tracker._sftp.tree["/Odessa"] = [("a.pdf", "file", 9999, 400)]
+        tracker.fake.tree["/Odessa"] = [("a.pdf", "file", 9999, 400)]
         _run_until_stable(tracker)
         self.assertEqual(db.rows["/Odessa/a.pdf"]["size"], 1)     # stale, as expected
 
         # now a sibling is added -> mtime bumps -> the whole dir is re-read
-        tracker._sftp.set_children("/Odessa", [
+        tracker.fake.set_children("/Odessa", [
             ("a.pdf", "file", 9999, 400),
             ("b.pdf", "file", 2, 500),
         ])
@@ -517,14 +523,14 @@ class TestPrune(unittest.TestCase):
 
     def test_prune_stale_file(self):
         db, tracker = self._seed_full()
-        tracker._sftp.set_children("/Odessa", [])        # a.pdf gone, mtime bumped
+        tracker.fake.set_children("/Odessa", [])        # a.pdf gone, mtime bumped
         _run_until_stable(tracker)
         self.assertNotIn("/Odessa/a.pdf", db.rows)
         self.assertIn("/Odessa", db.rows)
 
     def test_prune_stale_subtree(self):
         db, tracker = self._seed_full()
-        tracker._sftp.remove_dir("/Berdichev/sub")
+        tracker.fake.remove_dir("/Berdichev/sub")
         _run_until_stable(tracker)
         self.assertNotIn("/Berdichev/sub", db.rows)
         self.assertNotIn("/Berdichev/sub/9-9-9.pdf", db.rows)
@@ -532,9 +538,9 @@ class TestPrune(unittest.TestCase):
 
     def test_prune_dir_retyped_to_plain_file(self):
         db, tracker = self._seed_full()
-        keep = [e for e in tracker._sftp.tree["/Berdichev"] if e[0] != "sub"]
-        tracker._sftp.set_children("/Berdichev", keep + [("sub", "file", 5, 999)])
-        tracker._sftp.tree.pop("/Berdichev/sub", None)
+        keep = [e for e in tracker.fake.tree["/Berdichev"] if e[0] != "sub"]
+        tracker.fake.set_children("/Berdichev", keep + [("sub", "file", 5, 999)])
+        tracker.fake.tree.pop("/Berdichev/sub", None)
         _run_until_stable(tracker)
         self.assertNotIn("/Berdichev/sub", db.rows)              # not a pdf -> dropped
         self.assertNotIn("/Berdichev/sub/9-9-9.pdf", db.rows)
@@ -550,8 +556,8 @@ class TestPrune(unittest.TestCase):
         self.assertEqual(db.rows["/data.pdf"]["type"], "dir")
         self.assertIn("/data.pdf/inner.pdf", db.rows)
 
-        tracker._sftp.set_children("/", [("data.pdf", "file", 42, 30)])
-        tracker._sftp.tree.pop("/data.pdf", None)
+        tracker.fake.set_children("/", [("data.pdf", "file", 42, 30)])
+        tracker.fake.tree.pop("/data.pdf", None)
         _run_until_stable(tracker)
         self.assertEqual(db.rows["/data.pdf"]["type"], "file")
         self.assertEqual(db.rows["/data.pdf"]["size"], 42)
@@ -561,15 +567,15 @@ class TestPrune(unittest.TestCase):
         db, tracker = self._seed_full()
         n_before = len(db.rows)
 
-        real_listdir = tracker._sftp.listdir_attr
+        real_listdir = tracker.fake.listdir_attr
 
         def flaky(path):
             if path == "/Odessa":
                 raise FileNotFoundError(2, "No such file", path)
             return real_listdir(path)
 
-        tracker._sftp.listdir_attr = flaky
-        tracker._sftp._bump("/Odessa")                   # force a listing attempt
+        tracker.fake.listdir_attr = flaky
+        tracker.fake._bump("/Odessa")                   # force a listing attempt
         _run_until_stable(tracker)
 
         self.assertIn("/Odessa/a.pdf", db.rows)
