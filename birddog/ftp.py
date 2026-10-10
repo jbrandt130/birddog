@@ -90,12 +90,13 @@ _WIKI_HOSTS           = ("commons.wikimedia.org", "wikisource.org", "wikipedia.o
 _FTP_DEFAULT_INTERVAL   = 60      # seconds between heartbeats
 _FTP_DEFAULT_SCAN_BATCH = 50      # directories processed per heartbeat
 _FTP_CONNECT_TIMEOUT    = 30      # seconds
-_FTP_KEEPALIVE          = 15      # seconds; keeps an idle SFTP channel open
-_FTP_MAX_CONN_AGE       = 1800    # seconds; a last-resort proactive recycle so a
-                                  # dead socket can't be stranded forever. jewishgen
-                                  # already drops the connection every ~60-90s, so
-                                  # reactive reconnect does the real work - keep this
-                                  # high to avoid piling on its connection rate limit
+_FTP_MAX_CONN_AGE       = 1800    # seconds; a last-resort proactive recycle within
+                                  # one (unusually long) heartbeat. jewishgen drops
+                                  # idle connections after ~60-90s and ignores
+                                  # keepalive requests, so a connection lives only
+                                  # for the duration of one heartbeat (see heartbeat)
+_FTP_STALE_AFTER        = 30      # seconds; a connection older than this at the
+                                  # start of a heartbeat is assumed dropped
 
 _REQUIRED_CONFIG_KEYS   = ("host", "user", "password", "port")
 
@@ -406,9 +407,6 @@ class FTPSiteManager(HeartbeatManager):
             if old_sock is not None:
                 os.environ["SSH_AUTH_SOCK"] = old_sock
 
-        transport = client.get_transport()
-        if transport is not None:
-            transport.set_keepalive(_FTP_KEEPALIVE)
         return client
 
     def _ensure_connection(self):
@@ -474,9 +472,20 @@ class FTPSiteManager(HeartbeatManager):
     # -- heartbeat --------------------------------------------------------
 
     def heartbeat(self):
+        # jewishgen drops an idle connection within ~60-90s, far shorter than the
+        # heartbeat interval, so never carry a connection between heartbeats:
+        # start each one on a fresh connection and release it when done.
         if self._db is None:
             return
+        if (self._sftp is not None
+                and time.monotonic() - self._connected_at > _FTP_STALE_AFTER):
+            self._close_connection()
+        try:
+            self._heartbeat()
+        finally:
+            self._close_connection()
 
+    def _heartbeat(self):
         try:
             sftp = self._ensure_connection()
         except Exception as e:
@@ -511,12 +520,14 @@ class FTPSiteManager(HeartbeatManager):
 
         # advance the cursor now; a next_cursor of None restarts the sweep on
         # the following heartbeat.
+        prev_cursor = self._cursor
         self._cursor = next_cursor
 
         beat_skipped = 0
         beat_dirs = 0
         pending_writes = []       # rows to upsert, batched across the whole beat
         pending_prune = []        # (path, Id) pairs to delete, batched
+        transport_lost = False
         for dirpath, known_mtime in dirs:
             try:
                 records, prune_pairs, skipped = self._sync_directory(
@@ -529,6 +540,7 @@ class FTPSiteManager(HeartbeatManager):
                 _logger.warning(f"FTPSiteManager: sync failed for {dirpath}: {e}")
                 if self._is_transport_error(e):
                     self._close_connection()
+                    transport_lost = True
                     break
 
         # one write and one delete for the entire heartbeat, rather than a
@@ -547,7 +559,12 @@ class FTPSiteManager(HeartbeatManager):
             f"{beat_pruned} pruned"
         )
 
-        if self._cursor is None:
+        if transport_lost:
+            # the batch was cut short: retry it next heartbeat rather than
+            # skipping its unvisited directories (visited ones are cheap, as
+            # their stored mtime now matches).
+            self._cursor = prev_cursor
+        elif self._cursor is None:
             self._end_sweep()
 
         # maintain the Documents <-> FTP Site relation for a slice of the
