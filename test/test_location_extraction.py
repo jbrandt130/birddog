@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import unittest
@@ -11,11 +12,45 @@ from birddog.file_location import (
 )
 
 UNITTEST_RESOURCE_DIR = 'test/resources'
+REPORT_PATH = f'{UNITTEST_RESOURCE_DIR}/Cumulative Ukraine Research Report.xlsx'
+FIXTURE_PATH = f'{UNITTEST_RESOURCE_DIR}/location_fixture.json'
+TARGET_ROWS = [21, 48, 119, 213, 297, 314, 397, 451, 457, 459]
+
+
+class FixtureDocumentsDatabase:
+    """Database wrapper that serves the Documents and Pages records from a JSON fixture.
+
+    Everything else (e.g. the Locations reference table) is delegated to the real
+    database, so the test does not depend on which documents the active database holds.
+    Regenerate the fixture with test/dump_location_fixture.py."""
+
+    def __init__(self, real_db, fixture: dict):
+        self._real_db = real_db
+        self._docs_by_label = fixture["documents"]
+        self._docs_by_id = {d["Id"]: d for d in fixture["documents"].values()}
+        self._pages = {int(k): v for k, v in fixture["pages"].items()}
+
+    def scan(self, table_name, where=None, **kwargs):
+        if table_name == "Documents" and where and where[0] == "label" and where[1] == "eq":
+            matches = [d for d in self._docs_by_label.values() if d["label"] == where[2]]
+            return matches, None
+        return self._real_db.scan(table_name=table_name, where=where, **kwargs)
+
+    def read(self, table_name, record_id, *args, **kwargs):
+        if table_name == "Documents" and not isinstance(record_id, (list, tuple)):
+            return self._docs_by_id.get(record_id, {})
+        if table_name == "Pages" and not isinstance(record_id, (list, tuple)):
+            return self._pages.get(int(record_id), {})
+        return self._real_db.read(table_name, record_id, *args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._real_db, name)
+
 
 class LocationPerformanceEvaluator:
     """Evaluator helper class that inspects excel data against database records."""
 
-    def __init__(self, file_path: str, provider: str = "groq"):
+    def __init__(self, file_path: str, provider: str = "groq", db=None):
         workbook = openpyxl.load_workbook(file_path, data_only=True)
 
         self.sheet = workbook.active
@@ -23,7 +58,7 @@ class LocationPerformanceEvaluator:
             raise RuntimeError(f"Failure reading the spreadsheet {file_path}")
 
         self.total_data_rows = self.sheet.max_row - 1
-        db = Database()
+        db = db if db is not None else Database()
         self.file_location_finder = FileLocationFinder(db, provider)
         self.num_evaluated_docs = 0
         self.num_docs_evaluated_correctly = 0
@@ -33,6 +68,7 @@ class LocationPerformanceEvaluator:
         self.total_num_extracted_locs = 0
         self.total_num_coinciding_locs = 0
         self.rows_with_wrong_locations = []
+        self.num_resolved_docs = 0
 
     def get_file_towns_from_cumulative_report(self, row_number: int):
         if not self.sheet:
@@ -126,7 +162,10 @@ class LocationPerformanceEvaluator:
         skip_extraction: bool = False,
         batch_size: int = 20,
     ) -> dict:
-        """Evaluates rows and returns dictionary of doc locations and statistics."""
+        """Evaluates rows and returns {file label from the report: extracted location ids}.
+
+        Results are keyed by the report's file label (e.g. "ДАЧкО 8-1-839"), not by
+        database record id, since record ids differ between databases."""
         doc_location_results = {}
         pending: list[tuple[int, str, list[str], int]] = []
 
@@ -138,6 +177,7 @@ class LocationPerformanceEvaluator:
             except ValueError:
                 continue
 
+        self.num_resolved_docs = len(pending)
         if not pending or skip_extraction:
             return doc_location_results
 
@@ -151,10 +191,10 @@ class LocationPerformanceEvaluator:
                 only_smallest_locations=True,
             )
 
-            for row, _, town_list, doc_id in chunk:
+            for row, file, town_list, doc_id in chunk:
                 if not batch_results.get(doc_id, [])[0]:
                     extracted_locs = batch_results.get(doc_id, [])[1]
-                    doc_location_results[doc_id] = extracted_locs
+                    doc_location_results[file] = extracted_locs
 
                     self.evaluate_on_one_doc_from_batch(
                         row,
@@ -210,12 +250,21 @@ class TestLocationVsCumulativeReport(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        report_path = f'{UNITTEST_RESOURCE_DIR}/Cumulative Ukraine Research Report.xlsx'
-        if not os.path.exists(report_path):
-            raise unittest.SkipTest(f"Spreadsheet file not found at: {report_path}")
+        if not os.environ.get("GROQ_LOCATION_KEY"):
+            raise AssertionError(
+                "GROQ_LOCATION_KEY is not set; the location extraction test calls the Groq API "
+                "(free key at console.groq.com)."
+            )
 
-        cls.evaluator = LocationPerformanceEvaluator(report_path, provider="groq")
-        cls.target_rows = [21, 48, 119, 213, 297, 314, 397, 451, 457, 459]
+        for path in (REPORT_PATH, FIXTURE_PATH):
+            if not os.path.exists(path):
+                raise unittest.SkipTest(f"Test resource not found at: {path}")
+
+        with open(FIXTURE_PATH, encoding="utf8") as f:
+            fixture = json.load(f)
+        db = FixtureDocumentsDatabase(Database(), fixture)
+        cls.evaluator = LocationPerformanceEvaluator(REPORT_PATH, provider="groq", db=db)
+        cls.target_rows = TARGET_ROWS
         cls.batch_size = 5
 
         # Execute evaluation once during class setup
@@ -244,26 +293,26 @@ class TestLocationVsCumulativeReport(unittest.TestCase):
 
     def test_reported_locations_per_document(self):
         """Verify exact location IDs reported per document match expected mapping."""
-        # Ground truth mapping: {doc_id: [expected_location_ids]}
+        # Ground truth mapping: {file label in the cumulative report: [expected_location_ids]}
         expected_doc_locations = {
-            76800: ["-1057170"],
-            68945: ["-1037001"],
-            69400: ["-1037001"],
-            69337: ["-1037001"],
-            69397: ["-1037001"],
-            69326: ["-1037001"],
-            69971: ["-1042950"],
-            78959: ["-1037320"],
-            78963: ["-1037320"],
+            "ДАЧкО 702-1-3": ["-1057170"],
+            "ДАЧкО 8-1-839": ["-1037001"],
+            "ДАЧкО 8-1-787": ["-1037001"],
+            "ДАЧкО 8-1-718": ["-1037001"],
+            "ДАЧкО 8-1-784": ["-1037001"],
+            "ДАЧкО 8-1-705": ["-1037001"],
+            "ДАЧкО 18-1-207": ["-1042950"],
+            "ДАЧкО 796-1-2": ["-1037320"],
+            "ДАЧкО 796-1-6": ["-1037320"],
         }
 
-        for doc_id, expected_loc_ids in expected_doc_locations.items():
-            with self.subTest(doc_id=doc_id):
-                actual_loc_ids = self.extracted_doc_locations.get(doc_id, [])
+        for file, expected_loc_ids in expected_doc_locations.items():
+            with self.subTest(file=file):
+                actual_loc_ids = self.extracted_doc_locations.get(file, [])
                 self.assertCountEqual(
                     actual_loc_ids,
                     expected_loc_ids,
-                    f"Doc {doc_id} locations mismatch. Expected: {expected_loc_ids}, Actual: {actual_loc_ids}",
+                    f"{file} locations mismatch. Expected: {expected_loc_ids}, Actual: {actual_loc_ids}",
                 )
 
 
