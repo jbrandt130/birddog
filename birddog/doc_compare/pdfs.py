@@ -17,7 +17,7 @@ from urllib.parse import quote, unquote, urlsplit
 
 import requests
 
-from birddog.comparing_images import (
+from birddog.doc_compare.images import (
     compute_dhash,
     convert_pdf_page_to_jpg,
     get_pdf_page_count,

@@ -7,7 +7,7 @@ import re
 import openpyxl
 
 from birddog.database import Database
-from birddog.file_location import (
+from birddog.locations.finder import (
     FileLocationFinder,
     get_unique_random_integers,
     remove_words_list,

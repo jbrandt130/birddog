@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from birddog.compare_pdfs import compare_local_pdfs, compare_online_pdfs
+from birddog.doc_compare.pdfs import compare_local_pdfs, compare_online_pdfs
 from birddog.log import get_logger
 
 UNITTEST_RESOURCE_DIR = 'test/resources'

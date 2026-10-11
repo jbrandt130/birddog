@@ -6,7 +6,7 @@ import unittest
 import openpyxl
 
 from birddog.database import Database
-from birddog.file_location import (
+from birddog.locations.finder import (
     FileLocationFinder,
     remove_words_list,
 )
