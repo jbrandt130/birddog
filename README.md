@@ -219,17 +219,17 @@ sh/aws_run terminate         # tear down the birddog-env environment
 
 ## Location Processing Tools (experimental)
 
-The `research/triage/locations` directory contains standalone, experimental tools for extracting and matching geographical locations from archival document descriptions. These are not part of the deployed Birddog service.
+The `birddog/locations` package contains experimental tools for extracting and matching geographical locations from archival document descriptions. These are not part of the deployed Birddog service.
 
-### 1. `read_all_locations.py`
+### 1. `birddog/locations/matcher.py`
 - Builds a comprehensive location dictionary from population registers and administrative hierarchies
 - Enables fuzzy matching of place names
 
-### 2. `file_location.py`
+### 2. `birddog/locations/finder.py`
 - Combines location extraction, matching, and filtering
 - Returns only locations at the smallest administrative level (e.g., villages)
 
-### 3. `extract_location_from_descriptors.py`
+### 3. `birddog/locations/extractor.py`
 - Uses an AI model (Qwen/Qwen2.5-7B-Instruct for Modal, qwen/qwen3.8-27b for groq) to extract locations from text
 - Requires a groq token or Modal deployment
 
