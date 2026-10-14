@@ -9,5 +9,5 @@ services:
     environment:
       # audit log grew nc_audit_v2 to ~7 GB / 3.8M rows and wedged the
       # single-connection SQLite pool; not needed on a local dev instance
-      - NC_DISABLE_AUDIT=true
+      - NC_DISABLE_AUDIT=false
     restart: unless-stopped
