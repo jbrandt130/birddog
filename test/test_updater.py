@@ -234,6 +234,31 @@ class TestNormalizeUrl(unittest.TestCase):
             "https://commons.wikimedia.org/wiki/File:Чи_так?).pdf",
         )
 
+    def test_namespaced_title_whitespace_follows_mediawiki(self):
+        # "[[c:File: X.pdf]]" names the same file as "File:X.pdf": MediaWiki
+        # treats spaces/underscores alike, trims them and collapses runs
+        expected = "https://commons.wikimedia.org/wiki/File:350-58_Inwentarz_wsi.pdf"
+        for url in (
+            "https://commons.wikimedia.org/wiki/File:_350-58_Inwentarz_wsi.pdf",
+            "https://commons.wikimedia.org/wiki/File: 350-58 Inwentarz wsi.pdf",
+            "https://commons.wikimedia.org/wiki/File:350-58__Inwentarz  wsi.pdf_",
+            "https://commons.wikimedia.org/wiki/File:350-58%20_Inwentarz_wsi.pdf",
+            "https://uk.wikisource.org/wiki/Файл: 350-58 Inwentarz wsi.pdf",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(normalize_url(url), expected)
+
+    def test_title_whitespace_rule_only_for_known_namespaces(self):
+        # outside a recognized wiki namespace the path is not a wiki title
+        self.assertEqual(
+            normalize_url("https://example.org/wiki/_a__b_"),
+            "https://example.org/wiki/_a__b_",
+        )
+        self.assertEqual(
+            normalize_url("https://example.org/files/a  b.pdf"),
+            "https://example.org/files/a%20%20b.pdf",
+        )
+
     def test_idempotent(self):
         for url in (
             "https://uk.wikisource.org/wiki/Файл:Тест 1.pdf",
@@ -285,8 +310,9 @@ class TestFormDocumentRecord(unittest.TestCase):
     def test_wikisource_file_url_becomes_commons_record(self):
         rec = form_document_record("https://uk.wikisource.org/wiki/Файл:Foo bar.pdf")
         # commons title, so the metadata fetch (commons API, chosen from the
-        # url's host) gets a title commons understands
-        self.assertEqual(rec["title"], "File:Foo bar.pdf")
+        # url's host) gets a title commons understands; underscored, the same
+        # form the metadata fetch writes back
+        self.assertEqual(rec["title"], "File:Foo_bar.pdf")
         self.assertEqual(rec["url"], "https://commons.wikimedia.org/wiki/File:Foo_bar.pdf")
         self.assertEqual(rec["domain"], "commons.wikimedia.org")
         self.assertEqual(rec["wikisource_url"], "https://uk.wikisource.org/wiki/Файл:Foo_bar.pdf")
@@ -300,7 +326,7 @@ class TestFormDocumentRecord(unittest.TestCase):
 
     def test_wikisource_file_question_mark_in_name(self):
         rec = form_document_record("https://uk.wikisource.org/wiki/Файл:Чи так?).pdf")
-        self.assertEqual(rec["title"], "File:Чи так?).pdf")
+        self.assertEqual(rec["title"], "File:Чи_так?).pdf")
         self.assertEqual(rec["url"], "https://commons.wikimedia.org/wiki/File:Чи_так%3F).pdf")
         self.assertEqual(rec["wikisource_url"], "https://uk.wikisource.org/wiki/Файл:Чи_так%3F).pdf")
 
@@ -314,6 +340,20 @@ class TestFormDocumentRecord(unittest.TestCase):
             )
         }
         self.assertEqual(urls, {"https://commons.wikimedia.org/wiki/File:ДАОО_1-2-3.pdf"})
+
+    def test_space_after_namespace_gives_same_record_url(self):
+        # AGAD pages link some files as "[[c:File: X.pdf]]"; that and the
+        # wikisource thumbnail of "X.pdf" must land on one record
+        urls = {
+            form_document_record(u)["url"]
+            for u in (
+                "https://commons.wikimedia.org/wiki/File: Інвентар_містечка_Мошни,_1746_рік.pdf",
+                "https://commons.wikimedia.org/wiki/File:_Інвентар_містечка_Мошни,_1746_рік.pdf",
+                "https://uk.wikisource.org/wiki/Файл:Інвентар_містечка_Мошни,_1746_рік.pdf",
+            )
+        }
+        self.assertEqual(
+            urls, {"https://commons.wikimedia.org/wiki/File:Інвентар_містечка_Мошни,_1746_рік.pdf"})
 
     def test_commons_file_url_has_no_wikisource_url(self):
         rec = form_document_record("https://commons.wikimedia.org/wiki/File:Foo.pdf")

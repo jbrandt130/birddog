@@ -522,11 +522,19 @@ _WIKI_NAMESPACE_CANONICAL = {
     )
 }
 
+# a run of whitespace in a title path: literal "_" or a space already re-encoded
+# as %20 by _URL_PATH_UNSAFE
+_TITLE_WHITESPACE_RUN = re.compile(r"(?:_|%20)+")
+
 def _canonicalize_namespace_prefix(path):
-    """Canonicalize the case of a leading wiki namespace prefix in a /wiki/<title> path
-    (e.g. "/wiki/file:X.pdf" -> "/wiki/File:X.pdf"), matching MediaWiki's own
-    case-insensitive namespace resolution. Only touches the namespace segment; the rest
-    of the title is left as-is since it's genuinely case-sensitive."""
+    """Canonicalize a /wiki/<namespace>:<title> path the way MediaWiki resolves it:
+    the namespace prefix case-insensitively (e.g. "/wiki/file:X.pdf" ->
+    "/wiki/File:X.pdf"), and in the title spaces and underscores are the same
+    character, leading/trailing ones are dropped and runs collapse to one.
+    Without the title rules, a link typed as "[[c:File: X.pdf]]" made a second
+    Document beside "File:X.pdf" (observed on AGAD pages, 2026-10-15). The rest of
+    the title is left as-is since it's genuinely case-sensitive. Only applies to
+    recognized namespaces."""
     if not path.startswith("/wiki/"):
         return path
     title = path[len("/wiki/"):]
@@ -535,6 +543,9 @@ def _canonicalize_namespace_prefix(path):
         return path
     canonical_ns = _WIKI_NAMESPACE_CANONICAL.get(ns.lower())
     if not canonical_ns:
+        return path
+    rest = _TITLE_WHITESPACE_RUN.sub("_", rest).strip("_")
+    if not rest:
         return path
     return f"/wiki/{canonical_ns}:{rest}"
 
@@ -586,7 +597,8 @@ def normalize_url(url):
     - Lowercases scheme and host
     - Fully decodes percent-encoded path characters (Unicode becomes literal)
     - Re-encodes only characters that are unsafe in a URL path (control chars, space, # ?)
-    - Canonicalizes the case of a leading wiki namespace prefix (e.g. File:/Категорія:)
+    - Canonicalizes the case of a leading wiki namespace prefix (e.g. File:/Категорія:),
+      and in such titles treats spaces/underscores as one, trims and collapses them
     - Maps a uk.wikisource file url (Файл:/File:/Зображення:/Image:) to the commons
       file url of the same name
 
