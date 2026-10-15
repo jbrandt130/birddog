@@ -1075,8 +1075,14 @@ def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, she
     mess = ""
     if wiki_spreadsheet:
         sequence = ""
-        for part in necessary_parts:
+        for part_idx, part in enumerate(necessary_parts):
             if part:
+                if part_idx == len(necessary_parts) - 1:
+                    # CDIAK-wiki-20260921.xlsx tab fund 127 includes opuses like '1020/ vol.3' -
+                    # we ignore the part after slash
+                    part = part.split("/", 1)[0]
+                    # we also ignore the -T* part (for volumes)
+                    part = part.split('-T', 1)[0]
                 sequence = f"{sequence}/{part}"
         sequence = re.sub(r'^\D*', '', sequence)
         if not string_contains_part(url, sequence, wiki_spreadsheet):
@@ -1168,7 +1174,7 @@ def case_like_headers_in_row(ws, import_message, header_must_appear):
             if contains_volumes:
                 message = f"Sheet {ws.title} contains volumes"
                 import_message = add_to_message(import_message, message)
-                _logger.warning(message)
+                _logger.info(message)
             elif header_must_appear:
                 raise ValueError(f"No '{FIRST_OPUS_HDR1}' header found in sheet {ws.title}")
     elif header_found == FIRST_OPUS_HDR1:
@@ -1235,7 +1241,7 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url,
 
     if availability != 'linked' and not url:
         # we do not add such pages
-        _logger.warning(f"No link in sheet='{ws.title}', fund {title} - skipping")
+        _logger.info(f"No link in sheet='{ws.title}', fund {title} - skipping")
         return
 
     comments = get_cell_value(ws[f"O{r}"])
@@ -2009,7 +2015,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAMO-D-archives-20260927.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/CDIAK-wiki-20261013.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Difficulties"
 #    process_dir(_dir_path)

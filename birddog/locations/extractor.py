@@ -3,6 +3,7 @@ import builtins
 import json
 import os
 import re
+import time
 from json import JSONDecodeError
 from pathlib import Path
 
@@ -268,7 +269,9 @@ class LocationExtractor:
                 raise ValueError("OpenAI client was not initialized")
 
             # Wrap the initial call in a retry loop to handle 400 BadRequestError
-            # (context window overflow) by reducing max_tokens and retrying.
+            # (context window overflow) by reducing max_tokens and retrying,
+            # and also handle 429 (Too Many Requests) and 5xx (Server Error)
+            # with exponential backoff.
             response = None
             attempt = 0
             effective_max_tokens = total_max_tokens
@@ -284,7 +287,14 @@ class LocationExtractor:
                     )
                     break  # success — exit retry loop
                 except Exception as e:
-                    if "maximum context length" in str(e) and attempt < 3:
+                    err_str = str(e)
+                    # Handle 429 (Too Many Requests) and 5xx (Server Error) with backoff
+                    if ("429" in err_str or any(str(code) in err_str for code in [500, 502, 503, 504])) and attempt < 3:
+                        wait_time = 2 ** attempt  # exponential: 2s, 4s
+                        self._logger.error(f"  (rate limit/server error — backing off {wait_time}s)")
+                        time.sleep(wait_time)
+                        continue
+                    if "maximum context length" in err_str:
                         effective_max_tokens = max(50, effective_max_tokens // 2)
                         self._logger.error(f"  (context overflow — retrying with max_tokens={effective_max_tokens})")
                         continue
@@ -394,6 +404,10 @@ class LocationExtractor:
                 continue
 
             for item in parsed.extracted_locations:
+                if item.document_index < 0 or item.document_index >= len(chunk):
+                    self._logger.warning(f"document_index {item.document_index} out of range (max {len(chunk)-1})")
+                    continue
+
                 # Convert chunk-relative index → global index
                 global_idx = start + item.document_index
 

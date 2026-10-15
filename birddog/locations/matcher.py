@@ -17,9 +17,11 @@ def get_str_from_record(record, key):
 def normalize_name(text: str) -> str:
     """Removes all spaces, hyphens, and non-alphanumeric punctuation while retaining Unicode letters.
     Detects and repairs broken Mojibake text."""
+    # Mojibake fix
+    text = ftfy.fix_text(text)
     # Matches anything that is NOT a Unicode word character (letter/digit).
     text = re.sub(r"[^\w']|_", "", text.lower())
-    return ftfy.fix_text(text).strip()
+    return text.strip()
 
 
 class LocationMatcher:
@@ -84,7 +86,7 @@ class LocationMatcher:
                                   get_str_from_record(row, "c1930_district"),
                                   get_str_from_record(row, "c1950_district"),
                                   get_str_from_record(row, "c2000_district")]
-                district_names = {s.strip().lower() for s in district_names if s.strip() and s.strip().lower() != 'nan'}
+                district_names = {normalize_name(s) for s in district_names if s.strip() and s.strip().lower() != 'nan'}
 
                 # province names
                 c1900_province = get_str_from_record(row, "c1900_province")
@@ -149,6 +151,7 @@ class LocationMatcher:
                 # Skipping the row
                 continue
 
+        self._choices = list(self.names_with_location_ids.keys())
 
     def find_location_id(self, place_to_search: str) -> list[str]:
         """Finds the best matching location ID using Jaro-Winkler similarity scoring.
@@ -165,14 +168,12 @@ class LocationMatcher:
         threshold_100 = 91.0
         threshold_normalized = threshold_100 / 100.0  # 0.91 for JaroWinkler
 
-        choices: list[str] = list(self.names_with_location_ids.keys())
-
         # Cast the scorer as Any to satisfy Pyrefly's internal _Scorer Protocol
         scorer: Any = JaroWinkler.similarity
 
         results = process.extract(
             place_to_search_lower,
-            choices=choices,
+            choices=self._choices,
             scorer=scorer,
             score_cutoff=threshold_normalized,
         )
@@ -180,7 +181,7 @@ class LocationMatcher:
         if not results:
             top_match = process.extractOne(
                 place_to_search_lower,
-                choices=choices,
+                choices=self._choices,
                 scorer=scorer,
             )
             best_name = top_match[0] if top_match else ""
