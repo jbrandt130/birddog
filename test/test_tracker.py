@@ -484,6 +484,24 @@ class TestDocumentMap(unittest.TestCase):
 
         self.assertEqual(result, {"file:Foo.pdf": "https://commons.wikimedia.org/wiki/File:Foo.pdf"})
 
+    def test_check_titles_wikisource_file_matches_commons_document(self):
+        # uk.wikisource file urls normalize onto the commons file url, so a
+        # change event from the wikisource tracker finds the commons record
+        db = _FakeDocumentMapDB()
+        db.all_ids = [1]
+        db.records_by_id = {
+            1: {"Id": 1, "title": "File:Foo bar.pdf", "url": "https://commons.wikimedia.org/wiki/File:Foo_bar.pdf"},
+        }
+        db.view_pages["BD:WDT"] = [([], False)]
+        dm = self.tracker.DocumentMap(db)
+        dm.refresh()
+        dm.refresh()
+        self.assertTrue(dm.refresh())
+
+        result = dm.check_titles("https://uk.wikisource.org", ["Файл:Foo bar.pdf", "Файл:Unknown.pdf"])
+
+        self.assertEqual(result, {"Файл:Foo bar.pdf": "https://commons.wikimedia.org/wiki/File:Foo_bar.pdf"})
+
     def test_refresh_returns_false_immediately_when_lock_contended(self):
         db = _FakeDocumentMapDB()
         db.all_ids = [1]

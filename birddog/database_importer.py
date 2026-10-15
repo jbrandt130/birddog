@@ -1797,6 +1797,9 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         "language",
     }
 
+    # user-curated document fields: conflicting values for one document are logged
+    curated_doc_fields = doc_only_fields | {"comments"}
+
     doc_and_page_fields = {
         "comments",
         "reference_date",
@@ -1931,6 +1934,26 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                         doc_payload[doc_field] = doc_payload[doc_field].strip().upper()
 
                 link = quoted_record["url"]
+                prior_payload = output_docs.get(link)
+                if prior_payload:
+                    # Several links can collapse onto one document (e.g. a wikisource
+                    # and a commons link to the same file -- see normalize_url). The
+                    # last payload wins, as before; keep the wikisource link from
+                    # whichever payload had it, and flag curated values that would
+                    # be silently replaced so they can be reviewed.
+                    if prior_payload.get("wikisource_url") and not doc_payload.get("wikisource_url"):
+                        doc_payload["wikisource_url"] = prior_payload["wikisource_url"]
+                    conflicts = sorted(
+                        k for k in curated_doc_fields
+                        if prior_payload.get(k) and doc_payload.get(k)
+                        and prior_payload[k] != doc_payload[k]
+                    )
+                    if conflicts:
+                        _logger.warning(
+                            f"import: rows linking {link} disagree on {conflicts}; "
+                            f"keeping {[doc_payload[k] for k in conflicts]}, "
+                            f"dropping {[prior_payload[k] for k in conflicts]}"
+                        )
                 output_docs[link] = doc_payload
                 linked_docs = doc_link_dict.get(page["url"], [])
                 linked_docs.append(doc_payload)

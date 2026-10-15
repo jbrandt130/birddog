@@ -189,11 +189,61 @@ class TestNormalizeUrl(unittest.TestCase):
         )
 
     def test_decodes_percent_encoded_unicode_path(self):
-        url = "https://uk.wikisource.org/wiki/%D0%A4%D0%B0%D0%B9%D0%BB:%D0%A2%D0%B5%D1%81%D1%82.pdf"
+        url = "https://uk.wikisource.org/wiki/%D0%90%D1%80%D1%85%D1%96%D0%B2:%D0%94%D0%90%D0%9E%D0%9E/1"
         self.assertEqual(
             normalize_url(url),
-            "https://uk.wikisource.org/wiki/Файл:Тест.pdf",
+            "https://uk.wikisource.org/wiki/Архів:ДАОО/1",
         )
+
+    def test_wikisource_file_maps_to_commons(self):
+        expected = "https://commons.wikimedia.org/wiki/File:Тест.pdf"
+        for url in (
+            "https://uk.wikisource.org/wiki/Файл:Тест.pdf",
+            "https://uk.wikisource.org/wiki/File:Тест.pdf",
+            "https://uk.wikisource.org/wiki/file:Тест.pdf",
+            "https://uk.wikisource.org/wiki/Зображення:Тест.pdf",
+            "https://uk.wikisource.org/wiki/Image:Тест.pdf",
+            "http://UK.Wikisource.org/wiki/%D0%A4%D0%B0%D0%B9%D0%BB:%D0%A2%D0%B5%D1%81%D1%82.pdf",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(normalize_url(url), expected)
+
+    def test_commons_file_url_is_unchanged(self):
+        url = "https://commons.wikimedia.org/wiki/File:Тест.pdf"
+        self.assertEqual(normalize_url(url), url)
+
+    def test_wikisource_non_file_pages_are_not_mapped(self):
+        for url in (
+            "https://uk.wikisource.org/wiki/Архів:ДАОО/1",
+            "https://uk.wikisource.org/wiki/Категорія:Тест",
+            "https://uk.wikisource.org/wiki/Файлова_система",  # main namespace, no ":"
+            "https://uk.wikisource.org/wiki/Файл:",           # empty file name
+        ):
+            with self.subTest(url=url):
+                self.assertTrue(normalize_url(url).startswith("https://uk.wikisource.org/"))
+
+    def test_other_wikisource_languages_are_not_mapped(self):
+        url = "https://en.wikisource.org/wiki/File:X.pdf"
+        self.assertEqual(normalize_url(url), url)
+
+    def test_wikisource_file_mapping_keeps_question_mark_in_name(self):
+        # "?" inside a wiki file name is split off as a query by urlparse; the
+        # mapping must carry it over so form_document_record can re-join it
+        self.assertEqual(
+            normalize_url("https://uk.wikisource.org/wiki/Файл:Чи_так?).pdf"),
+            "https://commons.wikimedia.org/wiki/File:Чи_так?).pdf",
+        )
+
+    def test_idempotent(self):
+        for url in (
+            "https://uk.wikisource.org/wiki/Файл:Тест 1.pdf",
+            "https://uk.wikisource.org/wiki/Архів:ДАОО/1",
+            "https://commons.wikimedia.org/wiki/file:X.pdf",
+            "https://example.org/a%20b",
+        ):
+            with self.subTest(url=url):
+                once = normalize_url(url)
+                self.assertEqual(normalize_url(once), once)
 
     def test_reencodes_unsafe_characters(self):
         # a literal (unencoded) '#' in the input is parsed as a URL fragment
@@ -232,27 +282,66 @@ class TestSourceFromUrl(unittest.TestCase):
 
 
 class TestFormDocumentRecord(unittest.TestCase):
-    def test_wiki_file_url(self):
-        rec = form_document_record("https://uk.wikisource.org/wiki/Файл:Foo.pdf")
-        self.assertTrue(rec["wiki"])
-        self.assertEqual(rec["title"], "Файл:Foo.pdf")
-        self.assertEqual(rec["url"], "https://uk.wikisource.org/wiki/Файл:Foo.pdf")
+    def test_wikisource_file_url_becomes_commons_record(self):
+        rec = form_document_record("https://uk.wikisource.org/wiki/Файл:Foo bar.pdf")
+        # commons title, so the metadata fetch (commons API, chosen from the
+        # url's host) gets a title commons understands
+        self.assertEqual(rec["title"], "File:Foo bar.pdf")
+        self.assertEqual(rec["url"], "https://commons.wikimedia.org/wiki/File:Foo_bar.pdf")
+        self.assertEqual(rec["domain"], "commons.wikimedia.org")
+        self.assertEqual(rec["wikisource_url"], "https://uk.wikisource.org/wiki/Файл:Foo_bar.pdf")
+
+    def test_wikisource_url_keeps_the_prefix_as_linked(self):
+        # wikisource_url is normalized with the pre-existing rules only, which
+        # treat "File:" and "Файл:" as distinct namespaces
+        rec = form_document_record("https://uk.wikisource.org/wiki/file:Foo.pdf")
+        self.assertEqual(rec["url"], "https://commons.wikimedia.org/wiki/File:Foo.pdf")
+        self.assertEqual(rec["wikisource_url"], "https://uk.wikisource.org/wiki/File:Foo.pdf")
+
+    def test_wikisource_file_question_mark_in_name(self):
+        rec = form_document_record("https://uk.wikisource.org/wiki/Файл:Чи так?).pdf")
+        self.assertEqual(rec["title"], "File:Чи так?).pdf")
+        self.assertEqual(rec["url"], "https://commons.wikimedia.org/wiki/File:Чи_так%3F).pdf")
+        self.assertEqual(rec["wikisource_url"], "https://uk.wikisource.org/wiki/Файл:Чи_так%3F).pdf")
+
+    def test_all_link_forms_give_the_same_record_url(self):
+        urls = {
+            form_document_record(u)["url"]
+            for u in (
+                "https://commons.wikimedia.org/wiki/File:ДАОО 1-2-3.pdf",
+                "https://uk.wikisource.org/wiki/Файл:ДАОО_1-2-3.pdf",
+                "https://uk.wikisource.org/wiki/File:ДАОО_1-2-3.pdf",
+            )
+        }
+        self.assertEqual(urls, {"https://commons.wikimedia.org/wiki/File:ДАОО_1-2-3.pdf"})
+
+    def test_commons_file_url_has_no_wikisource_url(self):
+        rec = form_document_record("https://commons.wikimedia.org/wiki/File:Foo.pdf")
+        self.assertEqual(rec["url"], "https://commons.wikimedia.org/wiki/File:Foo.pdf")
+        self.assertNotIn("wikisource_url", rec)
+
+    def test_wikisource_non_file_page_stays_on_wikisource(self):
+        rec = form_document_record("https://uk.wikisource.org/wiki/Архів:ДАОО/1")
+        self.assertEqual(rec["url"], "https://uk.wikisource.org/wiki/Архів:ДАОО/1")
+        self.assertNotIn("wikisource_url", rec)
 
     def test_non_wiki_recognized_document_suffix(self):
         rec = form_document_record("https://example.org/files/report.pdf")
-        self.assertFalse(rec["wiki"])
+        self.assertEqual(rec["url"], "https://example.org/files/report.pdf")
+        self.assertEqual(rec["domain"], "example.org")
         self.assertEqual(rec["title"], "report.pdf")
 
     def test_wiki_path_on_non_wiki_host(self):
         # /wiki/ path but not a wikisource/wikimedia host -> falls into the
-        # generic branch, wiki stays False
-        rec = form_document_record("https://example.org/wiki/SomePage")
-        self.assertFalse(rec["wiki"])
+        # generic branch: url kept as-is, no wiki canonicalization
+        rec = form_document_record("https://example.org/wiki/Some Page")
+        self.assertEqual(rec["url"], "https://example.org/wiki/Some%20Page")
+        self.assertEqual(rec["domain"], "example.org")
+        self.assertNotIn("wikisource_url", rec)
 
     def test_unrecognized_suffix_falls_back_to_url_as_title(self):
         rec = form_document_record("https://example.org/some/page")
         self.assertEqual(rec["title"], "https://example.org/some/page")
-        self.assertFalse(rec["wiki"])
 
 
 class TestSniffSuffix(unittest.TestCase):
@@ -873,6 +962,30 @@ class TestUpdateDocRecordsFromRecords(unittest.TestCase):
         changed = self.updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
         self.assertTrue(changed)
         self.assertEqual(len(self.db.write_calls), 1)
+
+    def test_wikisource_and_commons_links_collapse_to_one_write(self):
+        # a case page links the same file as "c:File:X" (commons) and as an
+        # embedded "Файл:X" thumbnail (wikisource); whichever order they arrive
+        # in, one record is written and it keeps the wikisource link
+        for order in ((0, 1), (1, 0)):
+            with self.subTest(order=order):
+                db = FakeDB()
+                updater = make_updater(db)
+                raw = [
+                    "https://commons.wikimedia.org/wiki/File:X.pdf",
+                    "https://uk.wikisource.org/wiki/Файл:X.pdf",
+                ]
+                raw = [raw[i] for i in order]
+                doc_records = {u: form_document_record(u) for u in raw}
+
+                updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
+
+                self.assertEqual(len(db.write_calls), 1)
+                table, written = db.write_calls[0]
+                self.assertEqual(table, "Documents")
+                self.assertEqual(len(written), 1)
+                self.assertEqual(written[0]["url"], "https://commons.wikimedia.org/wiki/File:X.pdf")
+                self.assertEqual(written[0]["wikisource_url"], "https://uk.wikisource.org/wiki/Файл:X.pdf")
 
     def test_allow_create_false_skips_unknown_url(self):
         # regression test for WikiDocTracker minting new orphan Documents: an
