@@ -424,6 +424,42 @@ def _extract_links_from_wiki_parse(title, parse):
         "external_links": parse.get("externallinks", []),
     }
 
+def _existing_titles(titles, chunk_size=50):
+    """Return the subset of `titles` (canonicalized) that exist on the wiki, per
+    action=query&prop=info -- the authoritative existence check."""
+    titles = sorted({canonicalize_title(t) for t in titles if t})
+    existing = set()
+    for i in range(0, len(titles), chunk_size):
+        params = {
+            "action": "query",
+            "prop": "info",
+            "titles": "|".join(titles[i:i + chunk_size]),
+            "format": "json",
+        }
+        data = fetch_url(API_URL, data=params, return_json=True, method="POST")
+        for page in data.get("query", {}).get("pages", {}).values():
+            if "missing" in page or "invalid" in page:
+                continue
+            existing.add(canonicalize_title(page.get("title")))
+    return existing
+
+def _verify_page_link_existence(links):
+    """Set "exists" on the parent and child links from a live existence query.
+
+    action=parse used to flag existing link targets with an "exists" key, but
+    since uk.wikisource moved to MediaWiki 1.47.0-wmf.24 (rolled out from
+    2026-10-13) it reports every link as missing -- under formatversion=2 too --
+    so no parent or child page was ever linked and deep updates stopped at the
+    first page. Don't trust the parse flag; look the titles up instead."""
+    items = list(links.get("children") or [])
+    if links.get("parent"):
+        items.append(links["parent"])
+    if not items:
+        return
+    existing = _existing_titles(item["title"] for item in items)
+    for item in items:
+        item["exists"] = canonicalize_title(item["title"]) in existing
+
 def _form_page_info_from_title(title):
     title = canonicalize_title(title)
     raw = _get_links(title)
@@ -433,6 +469,8 @@ def _form_page_info_from_title(title):
         "record": _parse_wiki_templates(parse),
         "links": _extract_links_from_wiki_parse(title, parse),
     }
+    if not raw.get("error"):
+        _verify_page_link_existence(info["links"])
     record = info["record"]
     record["title"] = _normalize_title(title)
     record["url"] = normalize_url(page_url_from_title(title))

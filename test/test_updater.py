@@ -12,7 +12,9 @@ from birddog.database_updater import (
     _apply_doc_link_diff,
     _create_links,
     _edit_links,
+    _existing_titles,
     _extract_links_from_wiki_parse,
+    _form_page_info_from_title,
     _form_simple_page_record,
     _get_linked_doc_urls,
     _get_linked_doc_urls_by_title,
@@ -25,6 +27,7 @@ from birddog.database_updater import (
     _replace_links,
     _sniff_suffix,
     _source_from_url,
+    _verify_page_link_existence,
     form_document_record,
     get_child_titles,
     normalize_url,
@@ -382,6 +385,84 @@ class TestExtractLinksFromWikiParse(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # DB-backed helper functions (module level)
 # ---------------------------------------------------------------------------
+
+def _fake_query_info(existing):
+    """fetch_url stand-in for action=query&prop=info: titles in `existing`
+    (MediaWiki display form, spaces) are returned as present, others missing."""
+    calls = []
+
+    def fake_fetch_url(url, data=None, **kwargs):
+        calls.append(data["titles"].split("|"))
+        pages = {}
+        for i, t in enumerate(data["titles"].split("|")):
+            display = t.replace("_", " ")
+            page = {"ns": 116, "title": display}
+            if display not in existing:
+                page["missing"] = ""
+            pages[str(-1 - i) if "missing" in page else str(100 + i)] = page
+        return {"query": {"pages": pages}}
+
+    return fake_fetch_url, calls
+
+
+class TestPageLinkExistence(unittest.TestCase):
+    """action=parse stopped flagging existing links with "exists" (uk.wikisource,
+    MediaWiki 1.47.0-wmf.24, Oct 2026); existence now comes from action=query."""
+
+    def test_existing_titles_filters_missing(self):
+        fake, _ = _fake_query_info({"Архів:ДАОО/4/107"})
+        with patch("birddog.database_updater.fetch_url", fake):
+            result = _existing_titles(["Архів:ДАОО/4/107", "Архів:ДАОО/4/1"])
+        self.assertEqual(result, {"Архів:ДАОО/4/107"})
+
+    def test_existing_titles_chunks_requests(self):
+        titles = [f"Архів:ДАОО/4/{i}" for i in range(120)]
+        fake, calls = _fake_query_info(set())
+        with patch("birddog.database_updater.fetch_url", fake):
+            _existing_titles(titles, chunk_size=50)
+        self.assertEqual([len(c) for c in calls], [50, 50, 20])
+
+    def test_verify_sets_exists_from_query_not_parse(self):
+        links = {
+            "parent": {"title": "Архів:ДАОО/Д", "exists": False},
+            "children": [
+                {"title": "Архів:ДАОО/4/107", "exists": False},  # parse says missing; it isn't
+                {"title": "Архів:ДАОО/4/1", "exists": True},     # parse says present; it isn't
+            ],
+        }
+        fake, _ = _fake_query_info({"Архів:ДАОО/Д", "Архів:ДАОО/4/107"})
+        with patch("birddog.database_updater.fetch_url", fake):
+            _verify_page_link_existence(links)
+        self.assertTrue(links["parent"]["exists"])
+        self.assertEqual(
+            {c["title"]: c["exists"] for c in links["children"]},
+            {"Архів:ДАОО/4/107": True, "Архів:ДАОО/4/1": False},
+        )
+
+    def test_verify_no_links_makes_no_request(self):
+        fake, calls = _fake_query_info(set())
+        with patch("birddog.database_updater.fetch_url", fake):
+            _verify_page_link_existence({"parent": None, "children": []})
+        self.assertEqual(calls, [])
+
+    def test_page_info_children_follow_live_existence(self):
+        # parse output as returned since wmf.24: no "exists" key on any link
+        raw = {"parse": {
+            "title": "Архів:ДАОО/4",
+            "pageid": 1,
+            "links": [
+                {"ns": 116, "*": "Архів:ДАОО/4/107"},
+                {"ns": 116, "*": "Архів:ДАОО/4/1"},
+            ],
+        }}
+        fake, _ = _fake_query_info({"Архів:ДАОО/4/107"})
+        with patch("birddog.database_updater._get_links", return_value=raw), \
+             patch("birddog.database_updater.fetch_url", fake), \
+             patch("birddog.database_updater._get_latest_mod_date", return_value=None):
+            info = _form_page_info_from_title("Архів:ДАОО/4")
+        existing_children = [c["title"] for c in info["links"]["children"] if c["exists"]]
+        self.assertEqual(existing_children, ["Архів:ДАОО/4/107"])
+
 
 class TestEditLinks(unittest.TestCase):
     def setUp(self):
