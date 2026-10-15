@@ -12,7 +12,9 @@ from birddog.database_updater import (
     _apply_doc_link_diff,
     _create_links,
     _edit_links,
+    _existing_titles,
     _extract_links_from_wiki_parse,
+    _form_page_info_from_title,
     _form_simple_page_record,
     _get_linked_doc_urls,
     _get_linked_doc_urls_by_title,
@@ -25,6 +27,7 @@ from birddog.database_updater import (
     _replace_links,
     _sniff_suffix,
     _source_from_url,
+    _verify_page_link_existence,
     form_document_record,
     get_child_titles,
     normalize_url,
@@ -186,11 +189,86 @@ class TestNormalizeUrl(unittest.TestCase):
         )
 
     def test_decodes_percent_encoded_unicode_path(self):
-        url = "https://uk.wikisource.org/wiki/%D0%A4%D0%B0%D0%B9%D0%BB:%D0%A2%D0%B5%D1%81%D1%82.pdf"
+        url = "https://uk.wikisource.org/wiki/%D0%90%D1%80%D1%85%D1%96%D0%B2:%D0%94%D0%90%D0%9E%D0%9E/1"
         self.assertEqual(
             normalize_url(url),
-            "https://uk.wikisource.org/wiki/Файл:Тест.pdf",
+            "https://uk.wikisource.org/wiki/Архів:ДАОО/1",
         )
+
+    def test_wikisource_file_maps_to_commons(self):
+        expected = "https://commons.wikimedia.org/wiki/File:Тест.pdf"
+        for url in (
+            "https://uk.wikisource.org/wiki/Файл:Тест.pdf",
+            "https://uk.wikisource.org/wiki/File:Тест.pdf",
+            "https://uk.wikisource.org/wiki/file:Тест.pdf",
+            "https://uk.wikisource.org/wiki/Зображення:Тест.pdf",
+            "https://uk.wikisource.org/wiki/Image:Тест.pdf",
+            "http://UK.Wikisource.org/wiki/%D0%A4%D0%B0%D0%B9%D0%BB:%D0%A2%D0%B5%D1%81%D1%82.pdf",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(normalize_url(url), expected)
+
+    def test_commons_file_url_is_unchanged(self):
+        url = "https://commons.wikimedia.org/wiki/File:Тест.pdf"
+        self.assertEqual(normalize_url(url), url)
+
+    def test_wikisource_non_file_pages_are_not_mapped(self):
+        for url in (
+            "https://uk.wikisource.org/wiki/Архів:ДАОО/1",
+            "https://uk.wikisource.org/wiki/Категорія:Тест",
+            "https://uk.wikisource.org/wiki/Файлова_система",  # main namespace, no ":"
+            "https://uk.wikisource.org/wiki/Файл:",           # empty file name
+        ):
+            with self.subTest(url=url):
+                self.assertTrue(normalize_url(url).startswith("https://uk.wikisource.org/"))
+
+    def test_other_wikisource_languages_are_not_mapped(self):
+        url = "https://en.wikisource.org/wiki/File:X.pdf"
+        self.assertEqual(normalize_url(url), url)
+
+    def test_wikisource_file_mapping_keeps_question_mark_in_name(self):
+        # "?" inside a wiki file name is split off as a query by urlparse; the
+        # mapping must carry it over so form_document_record can re-join it
+        self.assertEqual(
+            normalize_url("https://uk.wikisource.org/wiki/Файл:Чи_так?).pdf"),
+            "https://commons.wikimedia.org/wiki/File:Чи_так?).pdf",
+        )
+
+    def test_namespaced_title_whitespace_follows_mediawiki(self):
+        # "[[c:File: X.pdf]]" names the same file as "File:X.pdf": MediaWiki
+        # treats spaces/underscores alike, trims them and collapses runs
+        expected = "https://commons.wikimedia.org/wiki/File:350-58_Inwentarz_wsi.pdf"
+        for url in (
+            "https://commons.wikimedia.org/wiki/File:_350-58_Inwentarz_wsi.pdf",
+            "https://commons.wikimedia.org/wiki/File: 350-58 Inwentarz wsi.pdf",
+            "https://commons.wikimedia.org/wiki/File:350-58__Inwentarz  wsi.pdf_",
+            "https://commons.wikimedia.org/wiki/File:350-58%20_Inwentarz_wsi.pdf",
+            "https://uk.wikisource.org/wiki/Файл: 350-58 Inwentarz wsi.pdf",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(normalize_url(url), expected)
+
+    def test_title_whitespace_rule_only_for_known_namespaces(self):
+        # outside a recognized wiki namespace the path is not a wiki title
+        self.assertEqual(
+            normalize_url("https://example.org/wiki/_a__b_"),
+            "https://example.org/wiki/_a__b_",
+        )
+        self.assertEqual(
+            normalize_url("https://example.org/files/a  b.pdf"),
+            "https://example.org/files/a%20%20b.pdf",
+        )
+
+    def test_idempotent(self):
+        for url in (
+            "https://uk.wikisource.org/wiki/Файл:Тест 1.pdf",
+            "https://uk.wikisource.org/wiki/Архів:ДАОО/1",
+            "https://commons.wikimedia.org/wiki/file:X.pdf",
+            "https://example.org/a%20b",
+        ):
+            with self.subTest(url=url):
+                once = normalize_url(url)
+                self.assertEqual(normalize_url(once), once)
 
     def test_reencodes_unsafe_characters(self):
         # a literal (unencoded) '#' in the input is parsed as a URL fragment
@@ -229,27 +307,81 @@ class TestSourceFromUrl(unittest.TestCase):
 
 
 class TestFormDocumentRecord(unittest.TestCase):
-    def test_wiki_file_url(self):
-        rec = form_document_record("https://uk.wikisource.org/wiki/Файл:Foo.pdf")
-        self.assertTrue(rec["wiki"])
-        self.assertEqual(rec["title"], "Файл:Foo.pdf")
-        self.assertEqual(rec["url"], "https://uk.wikisource.org/wiki/Файл:Foo.pdf")
+    def test_wikisource_file_url_becomes_commons_record(self):
+        rec = form_document_record("https://uk.wikisource.org/wiki/Файл:Foo bar.pdf")
+        # commons title, so the metadata fetch (commons API, chosen from the
+        # url's host) gets a title commons understands; underscored, the same
+        # form the metadata fetch writes back
+        self.assertEqual(rec["title"], "File:Foo_bar.pdf")
+        self.assertEqual(rec["url"], "https://commons.wikimedia.org/wiki/File:Foo_bar.pdf")
+        self.assertEqual(rec["domain"], "commons.wikimedia.org")
+        self.assertEqual(rec["wikisource_url"], "https://uk.wikisource.org/wiki/Файл:Foo_bar.pdf")
+
+    def test_wikisource_url_keeps_the_prefix_as_linked(self):
+        # wikisource_url is normalized with the pre-existing rules only, which
+        # treat "File:" and "Файл:" as distinct namespaces
+        rec = form_document_record("https://uk.wikisource.org/wiki/file:Foo.pdf")
+        self.assertEqual(rec["url"], "https://commons.wikimedia.org/wiki/File:Foo.pdf")
+        self.assertEqual(rec["wikisource_url"], "https://uk.wikisource.org/wiki/File:Foo.pdf")
+
+    def test_wikisource_file_question_mark_in_name(self):
+        rec = form_document_record("https://uk.wikisource.org/wiki/Файл:Чи так?).pdf")
+        self.assertEqual(rec["title"], "File:Чи_так?).pdf")
+        self.assertEqual(rec["url"], "https://commons.wikimedia.org/wiki/File:Чи_так%3F).pdf")
+        self.assertEqual(rec["wikisource_url"], "https://uk.wikisource.org/wiki/Файл:Чи_так%3F).pdf")
+
+    def test_all_link_forms_give_the_same_record_url(self):
+        urls = {
+            form_document_record(u)["url"]
+            for u in (
+                "https://commons.wikimedia.org/wiki/File:ДАОО 1-2-3.pdf",
+                "https://uk.wikisource.org/wiki/Файл:ДАОО_1-2-3.pdf",
+                "https://uk.wikisource.org/wiki/File:ДАОО_1-2-3.pdf",
+            )
+        }
+        self.assertEqual(urls, {"https://commons.wikimedia.org/wiki/File:ДАОО_1-2-3.pdf"})
+
+    def test_space_after_namespace_gives_same_record_url(self):
+        # AGAD pages link some files as "[[c:File: X.pdf]]"; that and the
+        # wikisource thumbnail of "X.pdf" must land on one record
+        urls = {
+            form_document_record(u)["url"]
+            for u in (
+                "https://commons.wikimedia.org/wiki/File: Інвентар_містечка_Мошни,_1746_рік.pdf",
+                "https://commons.wikimedia.org/wiki/File:_Інвентар_містечка_Мошни,_1746_рік.pdf",
+                "https://uk.wikisource.org/wiki/Файл:Інвентар_містечка_Мошни,_1746_рік.pdf",
+            )
+        }
+        self.assertEqual(
+            urls, {"https://commons.wikimedia.org/wiki/File:Інвентар_містечка_Мошни,_1746_рік.pdf"})
+
+    def test_commons_file_url_has_no_wikisource_url(self):
+        rec = form_document_record("https://commons.wikimedia.org/wiki/File:Foo.pdf")
+        self.assertEqual(rec["url"], "https://commons.wikimedia.org/wiki/File:Foo.pdf")
+        self.assertNotIn("wikisource_url", rec)
+
+    def test_wikisource_non_file_page_stays_on_wikisource(self):
+        rec = form_document_record("https://uk.wikisource.org/wiki/Архів:ДАОО/1")
+        self.assertEqual(rec["url"], "https://uk.wikisource.org/wiki/Архів:ДАОО/1")
+        self.assertNotIn("wikisource_url", rec)
 
     def test_non_wiki_recognized_document_suffix(self):
         rec = form_document_record("https://example.org/files/report.pdf")
-        self.assertFalse(rec["wiki"])
+        self.assertEqual(rec["url"], "https://example.org/files/report.pdf")
+        self.assertEqual(rec["domain"], "example.org")
         self.assertEqual(rec["title"], "report.pdf")
 
     def test_wiki_path_on_non_wiki_host(self):
         # /wiki/ path but not a wikisource/wikimedia host -> falls into the
-        # generic branch, wiki stays False
-        rec = form_document_record("https://example.org/wiki/SomePage")
-        self.assertFalse(rec["wiki"])
+        # generic branch: url kept as-is, no wiki canonicalization
+        rec = form_document_record("https://example.org/wiki/Some Page")
+        self.assertEqual(rec["url"], "https://example.org/wiki/Some%20Page")
+        self.assertEqual(rec["domain"], "example.org")
+        self.assertNotIn("wikisource_url", rec)
 
     def test_unrecognized_suffix_falls_back_to_url_as_title(self):
         rec = form_document_record("https://example.org/some/page")
         self.assertEqual(rec["title"], "https://example.org/some/page")
-        self.assertFalse(rec["wiki"])
 
 
 class TestSniffSuffix(unittest.TestCase):
@@ -382,6 +514,84 @@ class TestExtractLinksFromWikiParse(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # DB-backed helper functions (module level)
 # ---------------------------------------------------------------------------
+
+def _fake_query_info(existing):
+    """fetch_url stand-in for action=query&prop=info: titles in `existing`
+    (MediaWiki display form, spaces) are returned as present, others missing."""
+    calls = []
+
+    def fake_fetch_url(url, data=None, **kwargs):
+        calls.append(data["titles"].split("|"))
+        pages = {}
+        for i, t in enumerate(data["titles"].split("|")):
+            display = t.replace("_", " ")
+            page = {"ns": 116, "title": display}
+            if display not in existing:
+                page["missing"] = ""
+            pages[str(-1 - i) if "missing" in page else str(100 + i)] = page
+        return {"query": {"pages": pages}}
+
+    return fake_fetch_url, calls
+
+
+class TestPageLinkExistence(unittest.TestCase):
+    """action=parse stopped flagging existing links with "exists" (uk.wikisource,
+    MediaWiki 1.47.0-wmf.24, Oct 2026); existence now comes from action=query."""
+
+    def test_existing_titles_filters_missing(self):
+        fake, _ = _fake_query_info({"Архів:ДАОО/4/107"})
+        with patch("birddog.database_updater.fetch_url", fake):
+            result = _existing_titles(["Архів:ДАОО/4/107", "Архів:ДАОО/4/1"])
+        self.assertEqual(result, {"Архів:ДАОО/4/107"})
+
+    def test_existing_titles_chunks_requests(self):
+        titles = [f"Архів:ДАОО/4/{i}" for i in range(120)]
+        fake, calls = _fake_query_info(set())
+        with patch("birddog.database_updater.fetch_url", fake):
+            _existing_titles(titles, chunk_size=50)
+        self.assertEqual([len(c) for c in calls], [50, 50, 20])
+
+    def test_verify_sets_exists_from_query_not_parse(self):
+        links = {
+            "parent": {"title": "Архів:ДАОО/Д", "exists": False},
+            "children": [
+                {"title": "Архів:ДАОО/4/107", "exists": False},  # parse says missing; it isn't
+                {"title": "Архів:ДАОО/4/1", "exists": True},     # parse says present; it isn't
+            ],
+        }
+        fake, _ = _fake_query_info({"Архів:ДАОО/Д", "Архів:ДАОО/4/107"})
+        with patch("birddog.database_updater.fetch_url", fake):
+            _verify_page_link_existence(links)
+        self.assertTrue(links["parent"]["exists"])
+        self.assertEqual(
+            {c["title"]: c["exists"] for c in links["children"]},
+            {"Архів:ДАОО/4/107": True, "Архів:ДАОО/4/1": False},
+        )
+
+    def test_verify_no_links_makes_no_request(self):
+        fake, calls = _fake_query_info(set())
+        with patch("birddog.database_updater.fetch_url", fake):
+            _verify_page_link_existence({"parent": None, "children": []})
+        self.assertEqual(calls, [])
+
+    def test_page_info_children_follow_live_existence(self):
+        # parse output as returned since wmf.24: no "exists" key on any link
+        raw = {"parse": {
+            "title": "Архів:ДАОО/4",
+            "pageid": 1,
+            "links": [
+                {"ns": 116, "*": "Архів:ДАОО/4/107"},
+                {"ns": 116, "*": "Архів:ДАОО/4/1"},
+            ],
+        }}
+        fake, _ = _fake_query_info({"Архів:ДАОО/4/107"})
+        with patch("birddog.database_updater._get_links", return_value=raw), \
+             patch("birddog.database_updater.fetch_url", fake), \
+             patch("birddog.database_updater._get_latest_mod_date", return_value=None):
+            info = _form_page_info_from_title("Архів:ДАОО/4")
+        existing_children = [c["title"] for c in info["links"]["children"] if c["exists"]]
+        self.assertEqual(existing_children, ["Архів:ДАОО/4/107"])
+
 
 class TestEditLinks(unittest.TestCase):
     def setUp(self):
@@ -792,6 +1002,30 @@ class TestUpdateDocRecordsFromRecords(unittest.TestCase):
         changed = self.updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
         self.assertTrue(changed)
         self.assertEqual(len(self.db.write_calls), 1)
+
+    def test_wikisource_and_commons_links_collapse_to_one_write(self):
+        # a case page links the same file as "c:File:X" (commons) and as an
+        # embedded "Файл:X" thumbnail (wikisource); whichever order they arrive
+        # in, one record is written and it keeps the wikisource link
+        for order in ((0, 1), (1, 0)):
+            with self.subTest(order=order):
+                db = FakeDB()
+                updater = make_updater(db)
+                raw = [
+                    "https://commons.wikimedia.org/wiki/File:X.pdf",
+                    "https://uk.wikisource.org/wiki/Файл:X.pdf",
+                ]
+                raw = [raw[i] for i in order]
+                doc_records = {u: form_document_record(u) for u in raw}
+
+                updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
+
+                self.assertEqual(len(db.write_calls), 1)
+                table, written = db.write_calls[0]
+                self.assertEqual(table, "Documents")
+                self.assertEqual(len(written), 1)
+                self.assertEqual(written[0]["url"], "https://commons.wikimedia.org/wiki/File:X.pdf")
+                self.assertEqual(written[0]["wikisource_url"], "https://uk.wikisource.org/wiki/Файл:X.pdf")
 
     def test_allow_create_false_skips_unknown_url(self):
         # regression test for WikiDocTracker minting new orphan Documents: an

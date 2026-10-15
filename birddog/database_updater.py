@@ -424,6 +424,42 @@ def _extract_links_from_wiki_parse(title, parse):
         "external_links": parse.get("externallinks", []),
     }
 
+def _existing_titles(titles, chunk_size=50):
+    """Return the subset of `titles` (canonicalized) that exist on the wiki, per
+    action=query&prop=info -- the authoritative existence check."""
+    titles = sorted({canonicalize_title(t) for t in titles if t})
+    existing = set()
+    for i in range(0, len(titles), chunk_size):
+        params = {
+            "action": "query",
+            "prop": "info",
+            "titles": "|".join(titles[i:i + chunk_size]),
+            "format": "json",
+        }
+        data = fetch_url(API_URL, data=params, return_json=True, method="POST")
+        for page in data.get("query", {}).get("pages", {}).values():
+            if "missing" in page or "invalid" in page:
+                continue
+            existing.add(canonicalize_title(page.get("title")))
+    return existing
+
+def _verify_page_link_existence(links):
+    """Set "exists" on the parent and child links from a live existence query.
+
+    action=parse used to flag existing link targets with an "exists" key, but
+    since uk.wikisource moved to MediaWiki 1.47.0-wmf.24 (rolled out from
+    2026-10-13) it reports every link as missing -- under formatversion=2 too --
+    so no parent or child page was ever linked and deep updates stopped at the
+    first page. Don't trust the parse flag; look the titles up instead."""
+    items = list(links.get("children") or [])
+    if links.get("parent"):
+        items.append(links["parent"])
+    if not items:
+        return
+    existing = _existing_titles(item["title"] for item in items)
+    for item in items:
+        item["exists"] = canonicalize_title(item["title"]) in existing
+
 def _form_page_info_from_title(title):
     title = canonicalize_title(title)
     raw = _get_links(title)
@@ -433,6 +469,8 @@ def _form_page_info_from_title(title):
         "record": _parse_wiki_templates(parse),
         "links": _extract_links_from_wiki_parse(title, parse),
     }
+    if not raw.get("error"):
+        _verify_page_link_existence(info["links"])
     record = info["record"]
     record["title"] = _normalize_title(title)
     record["url"] = normalize_url(page_url_from_title(title))
@@ -484,11 +522,19 @@ _WIKI_NAMESPACE_CANONICAL = {
     )
 }
 
+# a run of whitespace in a title path: literal "_" or a space already re-encoded
+# as %20 by _URL_PATH_UNSAFE
+_TITLE_WHITESPACE_RUN = re.compile(r"(?:_|%20)+")
+
 def _canonicalize_namespace_prefix(path):
-    """Canonicalize the case of a leading wiki namespace prefix in a /wiki/<title> path
-    (e.g. "/wiki/file:X.pdf" -> "/wiki/File:X.pdf"), matching MediaWiki's own
-    case-insensitive namespace resolution. Only touches the namespace segment; the rest
-    of the title is left as-is since it's genuinely case-sensitive."""
+    """Canonicalize a /wiki/<namespace>:<title> path the way MediaWiki resolves it:
+    the namespace prefix case-insensitively (e.g. "/wiki/file:X.pdf" ->
+    "/wiki/File:X.pdf"), and in the title spaces and underscores are the same
+    character, leading/trailing ones are dropped and runs collapse to one.
+    Without the title rules, a link typed as "[[c:File: X.pdf]]" made a second
+    Document beside "File:X.pdf" (observed on AGAD pages, 2026-10-15). The rest of
+    the title is left as-is since it's genuinely case-sensitive. Only applies to
+    recognized namespaces."""
     if not path.startswith("/wiki/"):
         return path
     title = path[len("/wiki/"):]
@@ -498,7 +544,52 @@ def _canonicalize_namespace_prefix(path):
     canonical_ns = _WIKI_NAMESPACE_CANONICAL.get(ns.lower())
     if not canonical_ns:
         return path
+    rest = _TITLE_WHITESPACE_RUN.sub("_", rest).strip("_")
+    if not rest:
+        return path
     return f"/wiki/{canonical_ns}:{rest}"
+
+# uk.wikisource.org hosts no files of its own: a wikisource File-namespace page
+# displays the Wikimedia Commons file of the same name (MediaWiki's shared-repo
+# rule; verified 2026-10-01 -- every wikisource file record with metadata on prod
+# and stage had a commons description_url). So a wikisource file link and a
+# commons file link with the same name are aliases for one document; mapping the
+# former onto the latter collapses what would otherwise be 2-3 Document records
+# per file (commons "c:File:" link + rendered "Файл:" thumbnail + spreadsheet
+# "File:" link). Keys are lowercase; MediaWiki matches namespaces
+# case-insensitively.
+_WIKISOURCE_FILE_HOST = "uk.wikisource.org"
+_COMMONS_HOST = "commons.wikimedia.org"
+_WIKISOURCE_FILE_NAMESPACES = {"файл", "file", "зображення", "image"}
+
+def _wikisource_file_name(netloc, path):
+    """If (netloc, path) is a uk.wikisource File-namespace page, return the file
+    name (the title after the namespace prefix), else None."""
+    if netloc != _WIKISOURCE_FILE_HOST or not path.startswith("/wiki/"):
+        return None
+    ns, sep, rest = path[len("/wiki/"):].partition(":")
+    if not sep or not rest or ns.lower() not in _WIKISOURCE_FILE_NAMESPACES:
+        return None
+    return rest
+
+def _normalize_url_unmapped(url):
+    """normalize_url() without the wikisource -> commons file mapping."""
+    url = url.strip()
+    parsed = urlparse(url)
+    path = _URL_PATH_UNSAFE.sub(lambda m: quote(m.group(0)), unquote(parsed.path))
+    path = _canonicalize_namespace_prefix(path)
+    return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), path, parsed.params, parsed.query, ''))
+
+def _map_wikisource_file_to_commons(url):
+    """Map an already-normalized uk.wikisource file url to its commons file url;
+    any other url is returned unchanged. The query is carried over untouched
+    because a "?" inside a wiki file name is parsed as a query separator (see
+    form_document_record)."""
+    parsed = urlparse(url)
+    name = _wikisource_file_name(parsed.netloc, parsed.path)
+    if name is None:
+        return url
+    return urlunparse(("https", _COMMONS_HOST, f"/wiki/File:{name}", parsed.params, parsed.query, ''))
 
 def normalize_url(url):
     """Return a canonical form of a URL suitable for use as a unique identifier.
@@ -506,13 +597,14 @@ def normalize_url(url):
     - Lowercases scheme and host
     - Fully decodes percent-encoded path characters (Unicode becomes literal)
     - Re-encodes only characters that are unsafe in a URL path (control chars, space, # ?)
-    - Canonicalizes the case of a leading wiki namespace prefix (e.g. File:/Категорія:)
+    - Canonicalizes the case of a leading wiki namespace prefix (e.g. File:/Категорія:),
+      and in such titles treats spaces/underscores as one, trims and collapses them
+    - Maps a uk.wikisource file url (Файл:/File:/Зображення:/Image:) to the commons
+      file url of the same name
+
+    Idempotent: normalize_url(normalize_url(u)) == normalize_url(u).
     """
-    url = url.strip()
-    parsed = urlparse(url)
-    path = _URL_PATH_UNSAFE.sub(lambda m: quote(m.group(0)), unquote(parsed.path))
-    path = _canonicalize_namespace_prefix(path)
-    return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), path, parsed.params, parsed.query, ''))
+    return _map_wikisource_file_to_commons(_normalize_url_unmapped(url))
 
 def _source_from_url(url):
     """Return "commons", "wikisource", or None based on the URL's domain."""
@@ -527,6 +619,33 @@ def domain_from_url(url):
     """Return the domain (host, e.g. "uk.wikisource.org") of a URL, or None."""
     return urlparse(url).hostname
 
+def _wiki_title_and_url(url):
+    """For a normalized /wiki/ url, return (title, canonical_wiki_url)."""
+    parsed = urlparse(url)
+    # Extract and decode title; normalize spaces to underscores for the canonical link.
+    # A "?" in a wiki filename is not a query separator; urlparse splits on it regardless,
+    # so re-join with the query string when the query contains no "=" (i.e. it's not a
+    # real key=value query string, just a filename fragment like "?).pdf").
+    raw_title = parsed.path[len("/wiki/"):]
+    if parsed.query and "=" not in parsed.query:
+        raw_title = raw_title + "?" + parsed.query
+    title = unquote(raw_title)
+    canonical_title = title.replace(" ", "_").replace("?", "%3F")
+    return title, f"https://{parsed.netloc}/wiki/{canonical_title}"
+
+def _collapse_doc_records_by_url(records):
+    """Collapse document records sharing a canonical url into one per url, keeping
+    "wikisource_url" from whichever record carries it. Without the carry-over, a
+    batch holding both a page's commons link and its wikisource link would keep
+    only the last one seen and could drop the wikisource link every time."""
+    collapsed = {}
+    for record in records:
+        prior = collapsed.get(record["url"])
+        if prior and prior.get("wikisource_url") and not record.get("wikisource_url"):
+            record = {**record, "wikisource_url": prior["wikisource_url"]}
+        collapsed[record["url"]] = record
+    return collapsed
+
 def form_document_record(url):
     """
     Parse a document file URL and return:
@@ -536,24 +655,22 @@ def form_document_record(url):
             OR the url
         "url": canonical_link_or_original
         "domain": host of "url"
+        "wikisource_url": the original wikisource link, only when a uk.wikisource
+            file url was mapped onto its commons file url (see normalize_url)
       }
+    For a mapped wikisource link, "title" is the commons title ("File:X") so the
+    metadata fetch (which picks the API from the url's host) queries commons with
+    a title commons understands.
     """
-    url = normalize_url(url)
+    unmapped_url = _normalize_url_unmapped(url)
+    url = _map_wikisource_file_to_commons(unmapped_url)
     parsed = urlparse(url)
     host = parsed.netloc
     path = parsed.path
 
     # Must be a /wiki/ URL to extract a title
     if path.startswith("/wiki/"):
-        # Extract and decode title; normalize spaces to underscores for the canonical link.
-        # A "?" in a wiki filename is not a query separator; urlparse splits on it regardless,
-        # so re-join with the query string when the query contains no "=" (i.e. it's not a
-        # real key=value query string, just a filename fragment like "?).pdf").
-        raw_title = path[len("/wiki/"):]
-        if parsed.query and "=" not in parsed.query:
-            raw_title = raw_title + "?" + parsed.query
-        title = unquote(raw_title)
-        canonical_title = title.replace(" ", "_").replace("?", "%3F")
+        title, wiki_url = _wiki_title_and_url(url)
     else:
         if _sniff_suffix(url):
             title = unquote(path.rsplit("/", 1)[-1])
@@ -563,25 +680,24 @@ def form_document_record(url):
             "title": title,
             "url": url,
             "domain": domain_from_url(url),
-            "wiki": False,
         }
 
     # wikisource or wikimedia
     if host.endswith(".wikisource.org") or host.endswith(".wikimedia.org"):
-        wiki_url = f"https://{host}/wiki/{canonical_title}"
-        return {
+        record = {
             "title": title,
             "url": wiki_url,
             "domain": domain_from_url(wiki_url),
-            "wiki": True,
         }
+        if url != unmapped_url:
+            record["wikisource_url"] = _wiki_title_and_url(unmapped_url)[1]
+        return record
 
     # anything else
     return {
         "title": title,
         "url": url,
         "domain": domain_from_url(url),
-        "wiki": False,
     }
 
 def _fetch_mediawiki_file_metadata_chunk(titles, source, thumbnails=False, thumbnail_width=300):
@@ -1171,10 +1287,11 @@ class DatabaseUpdater:
 
         tid = threading.get_ident()
 
-        # Multiple raw urls (e.g. differing only in namespace-prefix case) can normalize to
-        # the same canonical url; collapse them to one record per canonical url up front so
-        # a single batch never fetches metadata twice or writes two rows for the same document.
-        doc_records = {record["url"]: record for record in doc_records.values()}
+        # Multiple raw urls (e.g. differing only in namespace-prefix case, or a wikisource
+        # and a commons link to the same file) can normalize to the same canonical url;
+        # collapse them to one record per canonical url up front so a single batch never
+        # fetches metadata twice or writes two rows for the same document.
+        doc_records = _collapse_doc_records_by_url(doc_records.values())
 
         # collect meta data for known sources
         if update_doc_metadata:
