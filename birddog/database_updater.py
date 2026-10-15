@@ -32,6 +32,7 @@ from birddog.utility import (
 from birddog.task import TaskManager
 from birddog.fetch import fetch_url
 from birddog.store import KeyValueStore
+from birddog.env import env_table_name
 
 from birddog.log import get_logger
 _logger = get_logger()
@@ -1614,7 +1615,7 @@ class DatabaseUpdateManager(TaskManager):
 
     def __init__(self, runtime, updater=None):
         self._updater = updater if updater else DatabaseUpdater(runtime)
-        self._state_store = KeyValueStore(table_name="bd_db_update")
+        self._state_store = KeyValueStore(table_name=env_table_name("bd_db_update"))
         self._state_lock = threading.RLock()
         super().__init__("DatabaseUpdateManager")
         

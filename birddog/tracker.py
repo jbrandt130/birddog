@@ -20,6 +20,7 @@ from birddog.wiki import (
     )
 from birddog.database_updater import normalize_url
 from birddog.store import KeyValueStore
+from birddog.env import env_table_name
 from birddog.utility import json_size, HeartbeatManager, utc_now_dt
 from birddog.log import get_logger, LogService
 _logger = get_logger()
@@ -31,7 +32,7 @@ _TRACKER_KV_NS_CHANGE_LOG = "pcl"
 
 class PageChangeLog:
     def __init__(self):
-        self._kv = KeyValueStore(table_name=_TRACKER_KV_TABLE)
+        self._kv = KeyValueStore(table_name=env_table_name(_TRACKER_KV_TABLE))
         self._changes = {
             k: json.loads(v)
             for k, v in self._kv.get_all(_TRACKER_KV_NS_CHANGE_LOG)
@@ -75,7 +76,7 @@ class PageChangeLog:
 class PageTracker:
     def __init__(self):
         self._change_log = PageChangeLog()
-        self._kv = KeyValueStore(table_name=_TRACKER_KV_TABLE)
+        self._kv = KeyValueStore(table_name=env_table_name(_TRACKER_KV_TABLE))
         self._load_cache()
 
     def _load_cache(self):
@@ -410,7 +411,7 @@ class WikiDocTracker(HeartbeatManager):
         self._db = self._runtime.database
 
         self._namespace_id = lookup_namespace_id(self._namespace)
-        self._kv = KeyValueStore(table_name=_WIKI_DOC_TRACKER_KV_TABLE)
+        self._kv = KeyValueStore(table_name=env_table_name(_WIKI_DOC_TRACKER_KV_TABLE))
 
         self._sentinel_kv_namespace = f"{self._base_url}:{self._namespace}:SENTINELS"
 
