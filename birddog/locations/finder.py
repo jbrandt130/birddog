@@ -1,18 +1,17 @@
 import copy
 import json
+import random
+import re
 import string
 import unicodedata
+from typing import Any, cast
 
 import regex
 
-import random
-import re
-from typing import Any, cast
-
 from birddog.database import Database
 from birddog.locations.extractor import LocationExtractor
-from birddog.log import get_logger
 from birddog.locations.matcher import LocationMatcher
+from birddog.log import get_logger
 from birddog.translate import TranslationDisabledError, TranslationError, translation
 
 
@@ -44,6 +43,7 @@ def remove_pattern_words(text: str, substring: str) -> str:
 
     return cleaned
 
+
 def chop_to_max_length(text, max_length):
     # If the text is already short enough, return it immediately
     if len(text) < max_length:
@@ -67,6 +67,7 @@ def has_positive_administrative_level(entry: frozenset) -> bool:
         if k == "administrative_level" and v > 0:
             return True
     return False
+
 
 def get_unique_random_integers(n, k):
     """Returns a list of n unique random integers from 1 to k (inclusive)."""
@@ -134,32 +135,35 @@ class FileLocationFinder:
         self._all_words_to_delete = data["all_words_to_delete"]
         self._religious_terms = data["religious_terms"]
         self._archival_noise = data["archival_noise"]
+        self._combined_words_to_delete = (
+            self._all_words_to_delete + self._religious_terms + self._archival_noise
+        )
 
         self._regions_2_locations = {
-            "MW/Chernigov":     [{"location": "Chernihiv", "location_id": "-1037057"}],
-            "MW/Chernihiv":     [{"location": "Chernihiv", "location_id": "-1037057"}],
-            "MW/Ekaterinoslav": [{"location": "Dnipro",     "location_id": "-1037865"}],
-            "MW/Kherson":       [{"location": "Kherson",    "location_id": "-1041356"}],
-            "MW/Kyiv":          self._kiev_locations,
-            "MW/Podolia":       self._podolia_locations,
-            "MW/Poltava":       [{"location": "Poltava",    "location_id": "-1051195"}],
-            "MW/Vinnitsa":      [{"location": "Vinnitsa",   "location_id": "-1058303"}],
-            "MW/Yekaterinoslav": [{"location": "Dnipro",    "location_id": "-1037865"}],
-            "Bessarabia":       [{"location": "Chişinău",   "location_id": "-2276223"}],
-            "Bukovina":         [{"location": "Chernivtsi", "location_id": "-1037073"}],
-            "CDIAK":            self._all_ukraine_locations,
-            "Moldavia":         [{"location": "Chişinău",   "location_id": "-2276223"}],
-            "Podilia":          self._podolia_locations,
-            "Podillia":         self._podolia_locations,
-            "Podolia":          self._podolia_locations,
-            "Ruthenia":         [{"location": "Uzhhorod",   "location_id": "-1057311"}],
-            "Taurida":          [{"location": "Simferopol", "location_id": "-1054041"}],
-            "Tavriya":          [{"location": "Simferopol", "location_id": "-1054041"}],
-            "Transcarpathia":   [{"location": "Uzhhorod",   "location_id": "-1057311"}],
-            "Ukraine":          self._all_ukraine_locations,
-            "Volhynia":         self._volyn_locations,
-            "Volyn":            self._volyn_locations,
-            "Zakarpattia":      [{"location": "Uzhhorod",   "location_id": "-1057311"}],
+            "MW/Chernigov": [{"location": "Chernihiv", "location_id": "-1037057"}],
+            "MW/Chernihiv": [{"location": "Chernihiv", "location_id": "-1037057"}],
+            "MW/Ekaterinoslav": [{"location": "Dnipro", "location_id": "-1037865"}],
+            "MW/Kherson": [{"location": "Kherson", "location_id": "-1041356"}],
+            "MW/Kyiv": self._kiev_locations,
+            "MW/Podolia": self._podolia_locations,
+            "MW/Poltava": [{"location": "Poltava", "location_id": "-1051195"}],
+            "MW/Vinnitsa": [{"location": "Vinnitsa", "location_id": "-1058303"}],
+            "MW/Yekaterinoslav": [{"location": "Dnipro", "location_id": "-1037865"}],
+            "Bessarabia": [{"location": "Chişinău", "location_id": "-2276223"}],
+            "Bukovina": [{"location": "Chernivtsi", "location_id": "-1037073"}],
+            "CDIAK": self._all_ukraine_locations,
+            "Moldavia": [{"location": "Chişinău", "location_id": "-2276223"}],
+            "Podilia": self._podolia_locations,
+            "Podillia": self._podolia_locations,
+            "Podolia": self._podolia_locations,
+            "Ruthenia": [{"location": "Uzhhorod", "location_id": "-1057311"}],
+            "Taurida": [{"location": "Simferopol", "location_id": "-1054041"}],
+            "Tavriya": [{"location": "Simferopol", "location_id": "-1054041"}],
+            "Transcarpathia": [{"location": "Uzhhorod", "location_id": "-1057311"}],
+            "Ukraine": self._all_ukraine_locations,
+            "Volhynia": self._volyn_locations,
+            "Volyn": self._volyn_locations,
+            "Zakarpattia": [{"location": "Uzhhorod", "location_id": "-1057311"}],
         }
 
         self._archive_locations = {
@@ -292,27 +296,21 @@ class FileLocationFinder:
         return description
 
     def delete_nuisance_words(self, descriptions: set[str]) -> set[str]:
-        all_words_to_delete = self._all_words_to_delete
-        # delete also the religious terms
-        all_words_to_delete.extend(self._religious_terms)
-        # delete also the documentation/archival terms
-        all_words_to_delete.extend(self._archival_noise)
-
         archive_abbreviations = list(self._archive_locations)
         shortened_descriptions = set()
         for description in descriptions:
             # remove Cyrillic characters
             # \p{Cyrillic} matches any character in the Cyrillic script
-            description = regex.sub(r'[\u0400-\u04FF]', '', description)
+            description = regex.sub(r"[\u0400-\u04FF]", "", description)
 
             description = remove_words_list(description, archive_abbreviations, True)
-            description = remove_words_list(description, all_words_to_delete, True)
+            description = remove_words_list(description, self._combined_words_to_delete, True)
 
             description = replace_word(description, "regional", "region")
             description = replace_word(description, "provincial", "province")
             description = replace_word(description, "parish", "village")
             description = replace_word(description, "city", "town")
-            
+
             # case-insensitive replacement
             description = re.sub(re.escape(" M."), " village", description, flags=re.IGNORECASE)
             description = re.sub(re.escape(" Mr."), " village", description, flags=re.IGNORECASE)
@@ -424,7 +422,7 @@ class FileLocationFinder:
         all_p1_lists: list[list[str]] = []
         all_p2_lists: list[list[str]] = []
         doc_archive_locs_lists: dict = {}
-        error_per_doc = [False for _  in range(len(doc_ids))]
+        error_per_doc = [False for _ in range(len(doc_ids))]
         for doc_idx, doc_id in enumerate(doc_ids):
             try:
                 self._logger.info(f"***** Processing descriptions for document {doc_id} *****")
@@ -434,7 +432,7 @@ class FileLocationFinder:
                 priority1 = self.delete_nuisance_words(priority1)
                 priority2, region_centres_p2 = self.extract_region_centres(priority2)
                 priority2 = self.delete_nuisance_words(priority2)
-    
+
                 # flatten list[list[dict]] -> list[dict] (dicts unhashable, so set().union won't work)
                 united_centre_list = ([d for sublist in region_centres_p1 for d in sublist] +
                                       [d for sublist in region_centres_p2 for d in sublist] + doc_archive_locs)
@@ -451,9 +449,26 @@ class FileLocationFinder:
                 })
                 all_p1_lists.append(list(priority1))
                 all_p2_lists.append(list(priority2))
-            except (ValueError, KeyError, TypeError, TranslationError, TranslationDisabledError) as e:
+            except (
+                ValueError,
+                KeyError,
+                TypeError,
+                TranslationError,
+                TranslationDisabledError,
+            ) as e:
                 error_per_doc[doc_idx] = True
-                self._logger.error(f"Failure while processing description for document {doc_id}: {e}")
+                per_doc_inputs.append(
+                    {
+                        "united_centre_list": [],
+                        "additional_centers": [],
+                        "has_priority2": False,
+                    }
+                )
+                all_p1_lists.append([])
+                all_p2_lists.append([])
+                self._logger.error(
+                    f"Failure while processing description for document {doc_id}: {e}"
+                )
 
         # Step 2: Batched AI extraction — priority1 first, then priority2 only if needed.
         # Only run priority2 if at least one document has no priority1 results.
@@ -478,9 +493,18 @@ class FileLocationFinder:
                                                for e in identified_locations) if identified_locations else True
                     if no_settlements_found:
                         docs_needing_p2.append(doc_idx)
-                except (ValueError, KeyError, TypeError, TranslationError, TranslationDisabledError) as e:
+                except (
+                    ValueError,
+                    KeyError,
+                    TypeError,
+                    TranslationError,
+                    TranslationDisabledError,
+                ) as e:
                     error_per_doc[doc_idx] = True
-                    self._logger.error(f"Failure while processing description for document {doc_id}: {e}")
+                    district_names_per_doc[doc_idx] = set()
+                    self._logger.error(
+                        f"Failure while processing description for document {doc_id}: {e}"
+                    )
 
         # Build priority2 lists only for those docs
         if docs_needing_p2:
@@ -505,13 +529,17 @@ class FileLocationFinder:
                         district_names_per_doc[doc_idx] = district_names # include those from priority1
                     except (ValueError, KeyError, TypeError, TranslationError, TranslationDisabledError) as e:
                         error_per_doc[doc_idx] = True
-                        self._logger.error(f"Failure while processing description for document {doc_id}: {e}")
+                        identified_locations_per_doc[doc_idx] = set()
+                        district_names_per_doc[doc_idx] = set()
+                        self._logger.error(
+                            f"Failure while processing description for document {doc_id}: {e}"
+                        )
 
         # Step 3: Dispatch results back to each doc with the priority fallback rule:
         # try priority1; only fall back to priority2 if priority1 yielded nothing.
         results: dict[int, tuple[bool, list[str], list[dict], list[list[dict]], set[str]]] = {}
         for doc_idx, doc_id in enumerate(doc_ids):
-            result = [] # default
+            result = []  # default
             if not error_per_doc[doc_idx]:
                 try:
                     identified_locations = identified_locations_per_doc[doc_idx]
@@ -520,6 +548,10 @@ class FileLocationFinder:
                             centre_list = doc_archive_locs_lists[doc_id]
                         else:
                             centre_list = per_doc_inputs[doc_idx]["united_centre_list"]
+
+                        # Sort in ascending order (smallest to largest) to ensure deterministic result
+                        # in case only_smallest_locations is True
+                        centre_list = sorted(centre_list, key=lambda x: x["loc_id"])
                         for location in centre_list:
                             loc_id = location["location_id"]
                             location = self._matcher.location_name_dict.get(loc_id)
@@ -557,8 +589,13 @@ class FileLocationFinder:
                     error_per_doc[doc_idx] = True
                     self._logger.error(f"Error processing description for document {doc_id}: {e}")
 
-            results[doc_id] = (error_per_doc[doc_idx], result, doc_archive_locs_lists[doc_id],
-                               per_doc_inputs[doc_idx]["additional_centers"], district_names_per_doc[doc_idx])
+            results[doc_id] = (
+                error_per_doc[doc_idx],
+                result,
+                doc_archive_locs_lists[doc_id],
+                per_doc_inputs[doc_idx]["additional_centers"],
+                district_names_per_doc[doc_idx],
+            )
 
         return results
 
@@ -639,7 +676,6 @@ class FileLocationFinder:
 
         return set(descriptions_after_extraction), total_region_centres
 
-
     def remove_sentences_with_words(self, text: str) -> tuple[str, list[dict]]:
         # Normalize Unicode
         text = unicodedata.normalize("NFKC", text)
@@ -663,7 +699,7 @@ class FileLocationFinder:
                 continue
 
             # Find matches between this sentence and target words
-            #first try the cities
+            # first try the cities
             matches = self._words_to_delete.intersection(clean_words)
             if matches:
                 found_words.update(matches)
@@ -749,19 +785,26 @@ class FileLocationFinder:
             priority1.add(str(translated_cyrillic))
 
         # Priority 2: owning_pages descriptions (storage units)
+        visited_ids = set()
         while owning_pages:
             upper_level_pages = []
             for page in owning_pages:
                 page_id = page.get("Id")
+                if page_id in visited_ids:
+                    continue
+                visited_ids.add(page_id)
+
                 page_rec = cast(dict, self._db.read("Pages", page_id))
                 descr = page_rec.get("description", "")
                 if descr:
                     priority2.add(descr)
                 upper_level_page = page_rec.get("parent")
                 if upper_level_page:
-                    if  any(ulp.get('Id') == page_id for ulp in upper_level_page):
-                        self._logger.warning(f"the upper level page for page ID {page_id}, "
-                              f"title {page.get('title')} is this same page!!")
+                    if any(ulp.get("Id") == page_id for ulp in upper_level_page):
+                        self._logger.warning(
+                            f"the upper level page for page ID {page_id}, "
+                            f"title {page.get('title')} is this same page!!"
+                        )
                         upper_level_pages = []
                         break
                     upper_level_pages.extend(upper_level_page)
@@ -834,7 +877,7 @@ class FileLocationFinder:
         archive_province_center_ids = sorted(archive_province_center_ids, key=len)
 
         identified_locations = set()
-    
+
         # Try to match all locations from each extraction
         for loc_admin_unit in loc_admin_units:
             extracted_loc_name = loc_admin_unit["location"]
@@ -845,11 +888,13 @@ class FileLocationFinder:
             for place_id in place_ids:
                 location = self._matcher.location_name_dict.get(place_id)
                 # there may be more than 1 location with this name. is the district right?
-                if location is not None and not district_names.isdisjoint(location["district_names"]):
+                if location is not None and not district_names.isdisjoint(
+                    location["district_names"]
+                ):
                     found_admin_match = True
                     final_id = place_id
                     break
-    
+
             if not found_admin_match:
                 # how many province capitals can there be?
                 max_num_capitals = 1
@@ -896,9 +941,6 @@ class FileLocationFinder:
                                     # entries in province_capital_ids_array are sorted by ascending length
                                     break
 
-#            if not found_admin_match and place_ids:
-#                correct_province = False
-#                final_id = place_ids[0]
 
             if final_id is not None:
                 location = self._matcher.location_name_dict.get(final_id)
@@ -906,7 +948,7 @@ class FileLocationFinder:
                     try:
                         location = copy.deepcopy(location)
                         location.pop("province_capital_ids_array", None)
-                        location.pop("district_names", None) # these were arrays
+                        location.pop("district_names", None)  # these were arrays
                         location.pop("province_names", None)
     
                         location["administrative_level"] = loc_admin_unit["administrative_level"]
@@ -952,23 +994,23 @@ def separate_words_by_cyrillic(file_string):
     if file_string:
         # Split the string using any of the delimiters: _, :, or .
         words = re.split(r"[_:.]", file_string)
-    
+
         # Filter out empty strings caused by consecutive delimiters
         words = [word for word in words if word]
-    
+
         # Check each word for the presence of Cyrillic characters
         for word in words:
             if re.search(r"[\u0400-\u04FF]", word):
                 cyrillic_words.append(word)
             else:
                 other_words.append(word)
-    
+
         # Convert lists into space-separated strings
         cyrillic_space_str = " ".join(cyrillic_words)
         other_space_str = " ".join(other_words)
     else:
-        cyrillic_space_str = ''
-        other_space_str = ''
+        cyrillic_space_str = ""
+        other_space_str = ""
 
     return cyrillic_space_str, other_space_str, cyrillic_words
 
@@ -1015,11 +1057,13 @@ def replace_hyphen_with_number(text: str) -> str:
 
     return text
 
+
 def replace_word(text: str, w1: str, w2: str) -> str:
     # \b ensures we match 'w1' as a standalone word (separated by punctuation or spaces)
     # re.IGNORECASE makes the search case-insensitive
-    pattern = r'\b' + re.escape(w1) + r'\b'
+    pattern = r"\b" + re.escape(w1) + r"\b"
     return re.sub(pattern, w2, text, flags=re.IGNORECASE)
+
 
 def get_doc_record(db, doc_id):
     if not doc_id:
@@ -1028,12 +1072,10 @@ def get_doc_record(db, doc_id):
     return doc_rec
 
 
-#testing
+# testing
 if __name__ == "__main__":
     _db = Database()
     finder = FileLocationFinder(_db)
     finder.get_doc_locations_batched([60426], 1, only_smallest_locations=True)
 #    doc_id_ = 12953
 #    print(finder.get_doc_descriptions(doc_id_))
-
-
