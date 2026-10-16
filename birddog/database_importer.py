@@ -528,7 +528,7 @@ def string_ends_with_file_ext(s: str):
 def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: str, only_check_link: bool):
     modified_import_message, cell_links = get_cell_link_or_str(ws, cell_addr, import_message, False)
     if not cell_links:
-        return import_message, ""
+        return modified_import_message, ""
     ar1 = 'Архіви/'
     ar2 = 'Архів:'
     # we compare the strings up to replacement of ar1 with ar2
@@ -536,7 +536,7 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     if isinstance(cell_links, str) and cell_links.replace(ar1, ar2) == archive_unit_link_replaced:
         if only_check_link:
             cell_links = ""
-        return import_message, cell_links
+        return modified_import_message, cell_links
 
     real_doc = True
     if isinstance(cell_links, list) and len(cell_links) == 1:
@@ -544,7 +544,7 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
         if cell_link_replaced in archive_unit_link_replaced or archive_unit_link_replaced in cell_link_replaced:
             if only_check_link:
                 cell_links = ""
-            return import_message, cell_links
+            return modified_import_message, cell_links
         real_doc = string_ends_with_file_ext(cell_link_replaced)
 
     mess = ''
@@ -1892,7 +1892,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 if child_url and not would_create_cycle(parent_url, child_url, page_dict):
                     safe_child_ids.append(child_id)
                 elif child_url:
-                    _logger.warning(f"Error - Skipping link that would create cycle: {parent_url} -> {child_url}")
+                    _logger.warning(f"Skipping link that would create cycle: {parent_url} -> {child_url}")
 
             if safe_child_ids:
                 _logger.info(f"Linking {len(safe_child_ids)} children for {parent['title']}")
@@ -1955,11 +1955,15 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                         and prior_payload[k] != doc_payload[k]
                     )
                     if conflicts:
-                        _logger.warning(
-                            f"import: rows linking {link} disagree on {conflicts}; "
+                        msg = (f"rows linking {link} disagree on {conflicts}; "
                             f"keeping {[doc_payload[k] for k in conflicts]}, "
-                            f"dropping {[prior_payload[k] for k in conflicts]}"
-                        )
+                            f"dropping {[prior_payload[k] for k in conflicts]}")
+                        import_message = doc_payload.get("import_message", "")
+                        if import_message:
+                            import_message += "; "
+                        import_message += msg
+                        doc_payload["import_message"] = import_message
+                        _logger.warning(f"import: {msg}")
                 output_docs[link] = doc_payload
                 linked_docs = doc_link_dict.get(page["url"], [])
                 linked_docs.append(doc_payload)
@@ -2015,7 +2019,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/CDIAK-wiki-20261013.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAK-archives-20250617.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Difficulties"
 #    process_dir(_dir_path)
