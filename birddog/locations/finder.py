@@ -884,7 +884,6 @@ class FileLocationFinder:
             place_ids = self._matcher.find_location_id(extracted_loc_name)
             found_admin_match = False
             final_id = None
-            correct_province: bool = True  # default
             for place_id in place_ids:
                 location = self._matcher.location_name_dict.get(place_id)
                 # there may be more than 1 location with this name. is the district right?
@@ -941,6 +940,7 @@ class FileLocationFinder:
                                     # entries in province_capital_ids_array are sorted by ascending length
                                     break
 
+            correct_province = found_admin_match
 
             if final_id is not None:
                 location = self._matcher.location_name_dict.get(final_id)
