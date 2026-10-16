@@ -4,7 +4,7 @@ from PIL import Image
 from pypdf import PdfReader
 
 
-def convert_pdf_page_to_jpg(pdf_path: str, page_number: int, output_jpg_path: str, scale: float = 2.0):
+def convert_pdf_page_to_jpg(pdf_path: str, page_number: int, scale: float = 2.0) -> Image.Image:
     """
     Converts a specific PDF page to a JPG image using pypdfium2.
     
@@ -13,18 +13,18 @@ def convert_pdf_page_to_jpg(pdf_path: str, page_number: int, output_jpg_path: st
     :param output_jpg_path: File path where the output image will be saved.
     :param scale: Render scale factor (2.0 gives ~144 DPI for higher resolution).
     """
-    pdf = pdfium.PdfDocument(pdf_path)
-    
-    # Check if page number is valid
-    if page_number < 1 or page_number > len(pdf):
-        raise ValueError(f"Page number {page_number} is out of bounds (1-{len(pdf)})")
-    
-    # pypdfium2 uses 0-based indexing for pages
-    page = pdf[page_number - 1]
-    
-    # Render page to a PIL Image and save as JPG
-    image = page.render(scale=scale).to_pil()
-    image.save(output_jpg_path, format="JPEG")
+    with pdfium.PdfDocument(pdf_path) as pdf:
+        # Check if page number is valid
+        if page_number < 1 or page_number > len(pdf):
+            raise ValueError(f"Page number {page_number} is out of bounds (1-{len(pdf)})")
+
+        # pypdfium2 uses 0-based indexing for pages
+        page = pdf[page_number - 1]
+
+        # Render page to a PIL Image and save as JPG
+        image = page.render(scale=scale).to_pil()
+        return image
+#        image.save(output_jpg_path, format="JPEG")
 
 
 def get_pdf_page_count(pdf_path: str) -> int:

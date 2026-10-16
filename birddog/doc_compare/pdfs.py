@@ -68,14 +68,12 @@ def download_wikimedia_file(url: str, filepath: str | Path, timeout: int = 30) -
 def compare_local_pdfs(
     pdf1_path: str | Path,
     pdf2_path: str | Path,
-    temp_dir: str | Path,
     logger: logging.Logger,
     threshold: int = 5,
 ) -> dict[str, Any]:
     """Compares two local PDF files by page count and visual hash of selected pages."""
     pdf1_path = Path(pdf1_path)
     pdf2_path = Path(pdf2_path)
-    temp_dir = Path(temp_dir)
 
     results: dict[str, Any] = {
         "page_counts_match": False,
@@ -87,39 +85,41 @@ def compare_local_pdfs(
 
     # 1. Compare page count
     logger.info("Comparing page counts...")
-    page_count1 = get_pdf_page_count(str(pdf1_path))
-    page_count2 = get_pdf_page_count(str(pdf2_path))
+    try:
+        page_count1 = get_pdf_page_count(str(pdf1_path))
+        page_count2 = get_pdf_page_count(str(pdf2_path))
 
-    logger.info("  PDF 1: %d pages", page_count1)
-    logger.info("  PDF 2: %d pages", page_count2)
+        logger.info("  PDF 1: %d pages", page_count1)
+        logger.info("  PDF 2: %d pages", page_count2)
 
-    if page_count1 != page_count2:
-        results["details"].update(
-            {
-                "page_count1": page_count1,
-                "page_count2": page_count2,
-                "page_count_diff": abs(page_count1 - page_count2),
-            }
-        )
-        results["comparison_result"] = "Different pdf files"
-        logger.info("  ✗ Page counts do not match")
+        if page_count1 != page_count2:
+            results["details"].update(
+                {
+                    "page_count1": page_count1,
+                    "page_count2": page_count2,
+                    "page_count_diff": abs(page_count1 - page_count2),
+                }
+            )
+            results["comparison_result"] = "Different pdf files"
+            logger.info("  ✗ Page counts do not match")
+            return results
+
+        results["page_counts_match"] = True
+        results["details"]["page_count"] = page_count1
+        logger.info("  ✓ Page counts match: %d pages", page_count1)
+
+        # 2. Compare first pages using dhash
+        logger.info("Comparing first pages using dhash...")
+
+        img1 = convert_pdf_page_to_jpg(str(pdf1_path), 1)
+        img2 = convert_pdf_page_to_jpg(str(pdf2_path), 1)
+
+        hash1 = compute_dhash(img1)
+        hash2 = compute_dhash(img2)
+        distance = hamming_distance(hash1, hash2)
+    except Exception as e:
+        logger.error(e)
         return results
-
-    results["page_counts_match"] = True
-    results["details"]["page_count"] = page_count1
-    logger.info("  ✓ Page counts match: %d pages", page_count1)
-
-    # 2. Compare first pages using dhash
-    logger.info("Comparing first pages using dhash...")
-    page1_path = temp_dir / "page1_pdf1.jpg"
-    page2_path = temp_dir / "page1_pdf2.jpg"
-
-    convert_pdf_page_to_jpg(str(pdf1_path), 1, str(page1_path))
-    convert_pdf_page_to_jpg(str(pdf2_path), 1, str(page2_path))
-
-    hash1 = compute_dhash(str(page1_path))
-    hash2 = compute_dhash(str(page2_path))
-    distance = hamming_distance(hash1, hash2)
 
     logger.info("  PDF 1 page 1 hash: %s", hash1)
     logger.info("  PDF 2 page 1 hash: %s", hash2)
@@ -147,14 +147,11 @@ def compare_local_pdfs(
         random_page = random.randint(2, page_count1)
         logger.info("  Comparing page %d...", random_page)
 
-        page_n1_path = temp_dir / f"page{random_page}_pdf1.jpg"
-        page_n2_path = temp_dir / f"page{random_page}_pdf2.jpg"
+        img1 = convert_pdf_page_to_jpg(str(pdf1_path), random_page)
+        img2 = convert_pdf_page_to_jpg(str(pdf2_path), random_page)
 
-        convert_pdf_page_to_jpg(str(pdf1_path), random_page, str(page_n1_path))
-        convert_pdf_page_to_jpg(str(pdf2_path), random_page, str(page_n2_path))
-
-        hash_n1 = compute_dhash(str(page_n1_path))
-        hash_n2 = compute_dhash(str(page_n2_path))
+        hash_n1 = compute_dhash(img1)
+        hash_n2 = compute_dhash(img2)
         distance_n = hamming_distance(hash_n1, hash_n2)
 
         logger.info("  PDF 1 page %d hash: %s", random_page, hash_n1)
@@ -212,7 +209,7 @@ def compare_online_pdfs(url1: str, url2: str, threshold: int = 5) -> dict[str, A
             }
 
         logger.info("  ✓ Both files downloaded successfully")
-        results = compare_local_pdfs(pdf1_path, pdf2_path, temp_path, logger, threshold)
+        results = compare_local_pdfs(pdf1_path, pdf2_path, logger, threshold)
         results["downloaded"] = True
         return results
 
