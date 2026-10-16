@@ -83,6 +83,12 @@
       </div>
       {% endif %}
 
+      {% if stage %}
+      <div class="d-flex align-items-center">
+        <span class="badge bg-warning text-dark fs-6">===== STAGE =====</span>
+      </div>
+      {% endif %}
+
       <div class="d-flex align-items-center">
         <!-- Logout Button -->
         <a href="{{ url_for('logout') }}" class="btn btn-danger mt-3">Logout</a>

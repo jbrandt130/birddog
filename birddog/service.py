@@ -207,7 +207,8 @@ def home():
         landing_tab=landing_tab,
         runtime_state=runtime.state,
         database_available=runtime.database_update_enabled,
-        debug=app.debug)
+        debug=app.debug,
+        stage=os.environ.get("BIRDDOG_NOCODB_ENV") == "CLOUD_STAGE")
 
 # ---- SESSION MANAGEMENT -----------------------------------------------------
 
