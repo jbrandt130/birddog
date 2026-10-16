@@ -27,6 +27,15 @@ class TestEnvTableName(unittest.TestCase):
                 with self.subTest(name=name):
                     self.assertTrue(env_table_name(name).startswith("bd_"))
 
+    def test_default_dynamodb_kv_table_follows_env(self):
+        from birddog import store
+        for env, expected in (("CLOUD_STAGE", "birddog_key_value_store_STAGE"),
+                              ("CLOUD_PROD", "birddog_key_value_store")):
+            with self.subTest(env=env), patch.dict(os.environ, {"BIRDDOG_NOCODB_ENV": env}), \
+                 patch.object(store, "boto3"), \
+                 patch.object(store.DynamoDBKeyValueStore, "_ensure_table_exists"):
+                self.assertEqual(store.DynamoDBKeyValueStore()._table_name, expected)
+
     def test_task_manager_uses_env_tables(self):
         from birddog import task
         created = []

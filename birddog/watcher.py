@@ -23,6 +23,7 @@ from birddog.cache import (
     CacheMissError,
     )
 from birddog.store import KeyValueStore
+from birddog.env import env_table_name
 from birddog.utility import utc_now_dt, to_utc_format
 
 from birddog.log import get_logger
@@ -32,7 +33,7 @@ _logger = get_logger()
 # unresolved/resolved item, across every watch) compared to the small,
 # low-churn account/watchlist-metadata rows in the default "kv" table
 _WATCHER_TABLE_NAME = "bd_watchers"
-_watcher_kv = KeyValueStore(table_name=_WATCHER_TABLE_NAME)
+_watcher_kv = KeyValueStore(table_name=env_table_name(_WATCHER_TABLE_NAME))
 
 def _watcher_ns(email):
     return f"w:{email}"

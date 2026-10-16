@@ -17,7 +17,9 @@ def detect_environment():
 # to a base -- task queues/state and wiki-tracker watermarks -- would otherwise
 # be shared: tasks queued against one base would run against the other after a
 # repoint, and tracker watermarks advanced on STAGE would make PROD skip
-# changes. PROD and LOCAL keep the original, unsuffixed table names. The suffix
+# changes. Also applied to user-facing state (watchlists, preferences, watcher
+# items) so STAGE and PROD don't cross over. PROD and LOCAL keep the original,
+# unsuffixed table names. The suffix
 # keeps names inside the EB role's "bd_*" IAM resource pattern.
 _TABLE_SUFFIX_BY_NOCODB_ENV = {
     "CLOUD_STAGE": "_STAGE",

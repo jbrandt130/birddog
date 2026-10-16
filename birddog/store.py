@@ -18,7 +18,7 @@ from boto3.dynamodb.conditions import Key
 
 from decimal import Decimal
 
-from birddog.env import detect_environment
+from birddog.env import detect_environment, env_table_name
 from birddog.utility import json_size
 from birddog.log import get_logger, LogService
 _logger = get_logger()
@@ -803,7 +803,12 @@ class SQLiteKeyValueStore(AbstractKeyValueStore):
 _DDB_BATCH_MAX_WORKERS = 10
 
 class DynamoDBKeyValueStore:
-    def __init__(self, table_name='birddog_key_value_store'):
+    def __init__(self, table_name=None):
+        # the default table holds per-base state (accounts' watchlists and
+        # preferences, the archive-root registry), so it is split by NocoDB
+        # base like the task/tracker tables -- see env.env_table_name
+        if table_name is None:
+            table_name = env_table_name('birddog_key_value_store')
         self._table_name = table_name
         self._dynamodb = boto3.resource('dynamodb')
         self._client = boto3.client('dynamodb')
