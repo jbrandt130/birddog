@@ -77,11 +77,15 @@ else:
     import boto3
 
     CACHE_NAME = 'birddog-data'
+    # STAGE keeps all of its S3 state under "stage/" in the same bucket (the EB
+    # role's S3 policy only covers the birddog-data bucket); PROD keeps the
+    # bucket root. See env.env_table_name for the matching DynamoDB split.
+    _KEY_PREFIX = 'stage/' if os.environ.get('BIRDDOG_NOCODB_ENV') == 'CLOUD_STAGE' else ''
     s3 = boto3.client('s3')
     bucket_created = False
     bucket_creation_lock = Lock()
 
-    _logger.info(f'Using AWS S3 bucket {CACHE_NAME} for storage.')
+    _logger.info(f'Using AWS S3 bucket {CACHE_NAME}/{_KEY_PREFIX} for storage.')
 
     def _create_bucket():
         global bucket_created
@@ -107,13 +111,13 @@ else:
         #_logger.info(f"{f'saving {path}: {len(json_object)}'}")
         s3.put_object(
             Bucket=CACHE_NAME,
-            Key=path,
+            Key=_KEY_PREFIX + path,
             Body=json_object
         )
 
     def _get_item(path):
         try:
-            response = s3.get_object(Bucket=CACHE_NAME, Key=path)
+            response = s3.get_object(Bucket=CACHE_NAME, Key=_KEY_PREFIX + path)
         except s3.exceptions.NoSuchKey:
             return None
         return response['Body'].read().decode("utf-8")
@@ -142,4 +146,4 @@ else:
     def remove_cached_object(object_path):
         _create_bucket()
         with LogService("S3", "remove", path=object_path):
-            s3.delete_object(Bucket=CACHE_NAME, Key=object_path)
+            s3.delete_object(Bucket=CACHE_NAME, Key=_KEY_PREFIX + object_path)

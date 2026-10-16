@@ -15,6 +15,7 @@ _logger = get_logger()
 
 
 from birddog.store import StringQueue, KeyValueStore
+from birddog.env import env_table_name
 
 _DDB_TASK_MGR_TEST=0
 if _DDB_TASK_MGR_TEST:
@@ -123,8 +124,8 @@ class TaskManager(HeartbeatManager):
     """
 
     def __init__(self, manager_name, auto_start=False):
-        self._queue_store = StringQueue(table_name=_QUEUE_TABLE_NAME)
-        self._key_value_store = KeyValueStore(table_name=_KV_STORE_TABLE_NAME)
+        self._queue_store = StringQueue(table_name=env_table_name(_QUEUE_TABLE_NAME))
+        self._key_value_store = KeyValueStore(table_name=env_table_name(_KV_STORE_TABLE_NAME))
         self._name = manager_name
 
         # ---- KV Store namespaces
