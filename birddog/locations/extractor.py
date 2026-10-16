@@ -199,8 +199,9 @@ class LocationExtractor:
             return []
 
         # If batch_size not set, default to all in one call
+        num_batches = len(batches)
         if batch_size is None:
-            batch_size = len(batches)
+            batch_size = num_batches
 
         # Token budget plan for the 4096 context:
         # - Fixed overhead: ~700 tokens (system prompt + few-shot examples)
@@ -216,16 +217,18 @@ class LocationExtractor:
         MAX_BATCH_SIZE = 10
         batch_size = min(batch_size, MAX_BATCH_SIZE)
 
-        all_results: list[list[str] | None] = [None] * len(batches)
+        all_results: list[list[str] | None] = [None] * num_batches
 
         # Process each batch chunk
-        for start in range(0, len(batches), batch_size):
+        for start in range(0, num_batches, batch_size):
             chunk = batches[start:start + batch_size]
 
             # Build the user content: one block per document, all descriptors grouped
             # so the model produces exactly one result entry per document_index.
             doc_blocks = []
             for doc_idx, descr_list in enumerate(chunk):
+                # Sort by length ascending to get consistent results when running several times
+                descr_list = sorted(descr_list, key=len)
                 descs = "\n".join(f"  - {json.dumps(d)}" for d in descr_list)
                 doc_blocks.append(f"Document {doc_idx}:\n{descs}")
             user_content = (
@@ -313,7 +316,7 @@ class LocationExtractor:
                     if response is None:
                         self._logger.error(f"No response object for batch starting at {start}")
                         # Fill remaining with empty lists
-                        for i in range(start, min(start + batch_size, len(batches))):
+                        for i in range(start, min(start + batch_size, num_batches)):
                             if all_results[i] is None:
                                 all_results[i] = []
                         break  # exit retry loop — nothing more to try
@@ -322,7 +325,7 @@ class LocationExtractor:
                         self._logger.error(f"Received empty content from AI response for batch starting at {start} "
                             f"(finish_reason={response.choices[0].finish_reason})")
                         # Fill remaining with empty lists
-                        for i in range(start, min(start + batch_size, len(batches))):
+                        for i in range(start, min(start + batch_size, num_batches)):
                             if all_results[i] is None:
                                 all_results[i] = []
                         break  # exit retry loop — nothing more to try
@@ -355,7 +358,7 @@ class LocationExtractor:
                         )
                         continue  # re-run the while loop with more tokens
                     # Otherwise (parse error or max_retries exhausted): give up
-                    for i in range(start, min(start + batch_size, len(batches))):
+                    for i in range(start, min(start + batch_size, num_batches)):
                         if all_results[i] is None:
                             all_results[i] = []
                     break  # exit retry loop
@@ -385,7 +388,7 @@ class LocationExtractor:
                         )
                         continue
                     self._logger.error(f"constructing BatchDocumentLocationsResponse (after {retry_count} retries): {e}")
-                    for i in range(start, min(start + batch_size, len(batches))):
+                    for i in range(start, min(start + batch_size, num_batches)):
                         if all_results[i] is None:
                             all_results[i] = []
                     break  # exit retry loop
@@ -398,7 +401,7 @@ class LocationExtractor:
             # If the retry loop never produced a valid parsed response, fill the
             # remaining slots with empty lists and skip result assignment.
             if parsed is None:
-                for i in range(start, min(start + batch_size, len(batches))):
+                for i in range(start, min(start + batch_size, num_batches)):
                     if all_results[i] is None:
                         all_results[i] = []
                 continue
@@ -413,7 +416,7 @@ class LocationExtractor:
 
                 if not item.locations:
                     # Document had no locations — fill slot if not already filled
-                    if 0 <= global_idx < len(batches) and all_results[global_idx] is None:
+                    if 0 <= global_idx < num_batches and all_results[global_idx] is None:
                         all_results[global_idx] = []
                     continue
 
@@ -426,7 +429,7 @@ class LocationExtractor:
                     if loc:
                         cleaned.append(loc)
 
-                if 0 <= global_idx < len(batches):
+                if 0 <= global_idx < num_batches:
                     slot = all_results[global_idx]
                     if slot is None:
                         all_results[global_idx] = cleaned
@@ -437,7 +440,7 @@ class LocationExtractor:
                             builtins.dict.fromkeys(slot)
                         )
                 else:
-                    self._logger.warning(f"global_idx {global_idx} out of range (max {len(batches)-1})")
+                    self._logger.warning(f"global_idx {global_idx} out of range (max {num_batches-1})")
 
         # Ensure all slots are filled (in case some batches failed), and return
         # as list[list[str]] — pyrefly can't track the in-place None→[] fill above.
