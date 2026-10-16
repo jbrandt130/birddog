@@ -1504,7 +1504,28 @@ def _parse_wiki_text(wikitext, page_title, title, revid=None):
             target_title = canonicalize_title(link_target)
             return bool(target_title) and target_title != page_title and is_root_title(target_title)
         sub_pages = [link for link in page_links["internal_links"] if _is_child_link(link)]
-        if sub_pages:
+        # "Архів 2.0" landing pages list their children as card templates,
+        # e.g. {{Архів 2.0/картка |/Д |Title |Description}}, with the subpage
+        # target as a positional parameter rather than a [[wikilink]]
+        card_children = []
+        for template in wikicode.filter_templates():
+            if not str(template.name).strip().startswith("Архів 2.0/картка"):
+                continue
+            if not template.params:
+                continue
+            target = str(template.params[0].value).strip()
+            if not target.startswith("/"):
+                continue
+            link = expand_link_target(target, page_title)
+            if not link:
+                continue
+            label = str(template.params[1].value).strip() if len(template.params) > 1 else ""
+            card_children.append((link, label or target.strip("./ ")))
+        if card_children:
+            for link, label in card_children:
+                all_page_links.add(link)
+                children.append([{'text': form_text_item(label), 'link': link}])
+        elif sub_pages:
             # synthesize a table from list of links to subpages
             for link_target in sub_pages:
                 link = expand_link_target(link_target, page_title)
