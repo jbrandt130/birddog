@@ -1794,7 +1794,7 @@ function alert_row_html(row) {
     const breadcrumb_html = segments.map((seg, i) => i < segments.length - 1
         ? `<a href="#" class="alert-browse-link" title="Open ${escape_attr(seg.path)}" data-browse-path="${escape_attr(seg.path)}">${escape_attr(seg.label)}</a>`
         : escape_attr(seg.label)
-    ).join(' / ');
+    ).join('<span class="alert-crumb-sep">/</span>');
     const label_html = meta.moved_to
         ? `${breadcrumb_html} <span class="text-danger small">(archive moved to "${escape_attr(meta.moved_to)}" -- resolving removes it from your watchlist)</span>`
         : breadcrumb_html;
@@ -1807,7 +1807,7 @@ function alert_row_html(row) {
     const subtree_btn = parent_path
         ? `<button
                type="button"
-               class="btn btn-sm btn-link p-0 ms-1 alert-subtree-select-btn"
+               class="btn btn-sm btn-link px-1 py-0 ms-1 alert-subtree-select-btn"
                title="Select this and everything under ${escape_attr(parent_path)}"
                data-select-prefix="${escape_attr(parent_path)}"
            >

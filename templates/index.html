@@ -23,6 +23,27 @@
     padding-top: 70px; /* Adjust based on navbar height */
   }
   </style>
+  <!-- roomier breadcrumb: bigger click targets with clear gaps between them (#157) -->
+  <style>
+    #breadcrumb .breadcrumb-item {
+      padding-left: 0.75rem;
+    }
+    #breadcrumb .breadcrumb-item::before {
+      padding-right: 0.75rem;
+    }
+    #breadcrumb .breadcrumb-item a {
+      display: inline-block;
+      padding: 0.25rem 0.4rem;
+      border-radius: 0.25rem;
+    }
+    .alert-crumb-sep {
+      padding: 0 0.3rem;
+      color: #6c757d;
+    }
+    #breadcrumb .breadcrumb-item a:hover {
+      background-color: rgba(13, 110, 253, 0.1);
+    }
+  </style>
   <style>
     #browse-page-content {
       position: relative;
