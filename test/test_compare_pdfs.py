@@ -20,7 +20,7 @@ class TestComparePDFs(unittest.TestCase):
         pdf2_path_ = f'{UNITTEST_RESOURCE_DIR}/unittest_compare_pdf_resized.pdf'
 
         logger_ = get_logger()
-        results = compare_local_pdfs(pdf1_path_, pdf2_path_, UNITTEST_RESOURCE_DIR, logger_, 5)
+        results = compare_local_pdfs(pdf1_path_, pdf2_path_, logger_, 5)
 
         # Clean the temporary files
         dir_path = Path(UNITTEST_RESOURCE_DIR)
