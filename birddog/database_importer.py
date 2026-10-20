@@ -204,22 +204,23 @@ def verify_opus_format(text: str):
 def verify_fond_format(text: str):
     """
     Allowed formats:
-    - a word consisting of letters, then a space, then one letter, then a hyphen, and then an integer
-    - a word with the space, or a letter with the hyphen, or both, may be absent
-    The letters may be Latin or Cyrillic.
-    If the string conforms to one of these formats, the function returns `True` and also
-    the integer that stands at the end of this string. Otherwise, the function returns `false` and 0.
+    - Mix of letters (Latin or Cyrillic) and hyphens, optionally followed by an integer.
+    - NEW/UPDATED: The letter/hyphen part can be completely absent (just an integer is accepted).
+
+    Returns:
+    - (True, integer) if the format matches.
+    - (False, 0) otherwise.
     """
     # Pattern breakdown:
-    # 1. (?:([a-zA-Z\u0400-\u04FF]+) )? -> Optional initial word MUST be followed by a space
-    # 2. (?:([a-zA-Z\u0400-\u04FF])-?)? -> Optional single letter, optionally followed by a hyphen
-    # 3. (\d+)$                       -> Trailing integer
+    # 1. (?:[a-zA-Z\u0400-\u04FF\-]+)? -> Optional mix of letters and hyphens
+    # 2. (\d+)$                       -> Trailing integer
 
-    pattern = r"^(?:([a-zA-Z\u0400-\u04FF]+) )?(?:([a-zA-Z\u0400-\u04FF])-?)?(\d+)$"
+    pattern = r"^([a-zA-Z\u0400-\u04FF\-]+)?(\d+)$"
 
     match = re.match(pattern, text)
     if match:
-        return True, int(match.group(3))
+        # match.group(2) captures the trailing integer
+        return True, int(match.group(2))
     return False, 0
 
 
@@ -1766,11 +1767,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
     if wiki_spreadsheet:
         substring = "-wiki"
 
-    last_slash_pos = max(sw_filepath.rfind('/'), sw_filepath.rfind('\\'))
-    if last_slash_pos != -1:
-        file_name = sw_filepath[last_slash_pos + 1:]
-    else:
-        file_name = sw_filepath
+    file_name = os.path.basename(sw_filepath)
     archive_substring_position = file_name.find(substring)
     if archive_substring_position != -1:
         archive_name = file_name[0: archive_substring_position]
@@ -1839,15 +1836,8 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 break
             except InvalidFieldValue as err:
                 _logger.error(f"malformed value: {err}, title: {page_payload["title"]}")
-                if not err.value:
-                    abort_page = True
-                    break
-                # replace unrecognized value and save a note in import_message
-                page_payload[err.field] = ""
-                prior_msg = page_payload.get("import_message")
-                msg = f"malformed: {err.field}: {err.value}"
-                page_payload["import_message"] = add_to_message(prior_msg, msg)
-                # retry record normalization
+                abort_page = True
+                break
 
         if abort_page:
             _logger.error(f"skipping malformed page record: {title}")
@@ -1906,7 +1896,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 except FailedIO as e:
                     _logger.error(f"Failed to link children for {parent['title']} ({parent['Id']}): {e}")
             else:
-                _logger.warning(f"Error - no safe children to link for {parent['title']} (all would create cycles)")
+                _logger.warning(f"No safe children to link for {parent['title']} (all would create cycles)")
 
     # Step 6: create records for all linked docs
     output_docs = {}
@@ -2019,7 +2009,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAK-archives-20250617.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
     import_spreadsheet(filepath, True)
-#    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Difficulties"
+#    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(_dir_path)
