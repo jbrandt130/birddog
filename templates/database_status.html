@@ -47,7 +47,8 @@
 
       const rows = names.map(name => {
         const t = tasks[name];
-        const deep = t.deep ? 'Yes' : 'No';
+        // location update tasks have no deep setting
+        const deep = t.deep === undefined ? '' : (t.deep ? 'Yes' : 'No');
         return `
           <tr>
             <td>${t.kind ?? ''}</td>

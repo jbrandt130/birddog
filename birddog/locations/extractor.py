@@ -3,13 +3,22 @@ import builtins
 import json
 import os
 import re
-import time
 from json import JSONDecodeError
 from pathlib import Path
 
-from openai import OpenAI
-from openai.types.chat import ChatCompletionMessageParam
+import requests
 from pydantic import BaseModel, Field, ValidationError
+
+from birddog.fetch import fetch_url
+
+
+# Rate-limit waits up to this long are sat through (inside fetch_url); longer
+# ones (e.g. an exhausted tokens-per-day quota) raise birddog.fetch.RateLimitedError
+# so the caller decides whether to wait, defer or give up.
+_MAX_INLINE_RATE_LIMIT_WAIT_S = 120.0
+# a batched completion of up to ~1000 output tokens can take well over
+# fetch_url's default 10s
+_COMPLETION_TIMEOUT_S = 90
 
 
 # 1. Define the data structure to capture location hierarchy
@@ -162,23 +171,57 @@ class LocationExtractor:
             case _:
                 raise ValueError(f"Invalid provider {provider}")
 
-        self._client: OpenAI | None = None  # initialized on the first location extraction
+    def _create_completion(self, messages: list[dict], max_tokens: int, num_docs: int) -> dict:
+        """POSTs an OpenAI-compatible chat completion request and returns the
+        response JSON.
 
-    def make_client(self) -> OpenAI:
-        """Create an OpenAI-compatible API client for the Qwen inference service."""
-        if not self._client:
-            self._client = OpenAI(
-            base_url=self._provider_url,
-            api_key=self._provider_api_key,
+        Goes through birddog.fetch, so calls share the per-host throttle (see the
+        api.groq.com:api profile). Rate limits that clear within
+        _MAX_INLINE_RATE_LIMIT_WAIT_S are waited out; longer ones raise
+        RateLimitedError with the wait in retry_after. Other 4xx errors raise
+        requests.HTTPError with the response text in the message.
+
+        Logs the token usage the service reports for the call, so the daily
+        token budget can be checked against real numbers."""
+        response = fetch_url(
+            f"{self._provider_url}/chat/completions",
+            method="POST",
+            send_json={
+                "model": self._model,
+                "messages": messages,
+                "response_format": {"type": "json_object"},
+                "max_tokens": max_tokens,
+                "temperature": 0.1,
+            },
+            headers={"Authorization": f"Bearer {self._provider_api_key}"},
+            return_json=True,
+            timeout=_COMPLETION_TIMEOUT_S,
+            max_retry_after=_MAX_INLINE_RATE_LIMIT_WAIT_S,
         )
-        return self._client
+        self._log_usage(response, num_docs, max_tokens)
+        return response
+
+    def _log_usage(self, response: dict, num_docs: int, max_tokens: int) -> None:
+        usage = response.get("usage") if isinstance(response, dict) else None
+        if not usage:
+            self._logger.info(f"location extraction usage: {num_docs} docs, no usage reported")
+            return
+        prompt = usage.get("prompt_tokens", 0)
+        completion = usage.get("completion_tokens", 0)
+        total = usage.get("total_tokens", prompt + completion)
+        choices = response.get("choices") or [{}]
+        self._logger.info(
+            f"location extraction usage: {num_docs} docs, prompt={prompt} "
+            f"completion={completion}/{max_tokens} total={total} tokens "
+            f"({total / max(num_docs, 1):.0f}/doc), finish_reason={choices[0].get('finish_reason')}"
+        )
 
 
     # Batched extraction: N descriptors in 1 API call
     def extract_locations_batched(self,
         batches: list[list[str]],          # list of descriptor lists, one per document
         batch_size: int | None = None     # if None, batches = all descriptors in 1 call
-    ) -> list[list[str]]:
+    ) -> list[list[str] | None]:
         """
         Extract geographical locations from many documents in batched API calls.
 
@@ -192,8 +235,16 @@ class LocationExtractor:
         max_tokens to leave room for output.
 
         Returns:
-            list[list[str]]: outer list indexed by document number, inner list is
+            list[list[str] | None]: outer list indexed by document number, inner list is
             the extracted locations for that document (unique, cleaned, deduped).
+            [] means the model found no locations; None means extraction failed for
+            that document (unparseable/empty response, or the document was missing
+            from the model's reply).
+
+        Raises:
+            birddog.fetch.RateLimitedError: the service is rate limited for longer
+                than _MAX_INLINE_RATE_LIMIT_WAIT_S (e.g. a daily token quota).
+            birddog.fetch.FetchUrlFailError / requests.HTTPError: the request failed.
         """
         if not batches:
             return []
@@ -261,49 +312,34 @@ class LocationExtractor:
                       f"input≈{input_tokens_estimate} tokens, "
                       f"max_tokens={total_max_tokens}")
 
-            messages: list[ChatCompletionMessageParam] = [
+            messages: list[dict] = [
                 {"role": "system", "content": batch_system_prompt}
             ]
             messages.extend(BATCH_FEW_SHOT_MESSAGES)
             messages.append({"role": "user", "content": user_content})
 
-            client = self.make_client()
-            if not client:
-                raise ValueError("OpenAI client was not initialized")
-
             # Wrap the initial call in a retry loop to handle 400 BadRequestError
-            # (context window overflow) by reducing max_tokens and retrying,
-            # and also handle 429 (Too Many Requests) and 5xx (Server Error)
-            # with exponential backoff.
+            # (context window overflow) by reducing max_tokens and retrying.
+            # Rate limits and 5xx errors are handled by fetch_url; a rate limit
+            # too long to wait out raises RateLimitedError, which propagates.
             response = None
             attempt = 0
             effective_max_tokens = total_max_tokens
             while attempt < 3:
                 attempt += 1
                 try:
-                    response = client.chat.completions.create(
-                        model=self._model,
-                        messages=messages,
-                        response_format={"type": "json_object"},
-                        max_tokens=effective_max_tokens,
-                        temperature=0.1,
-                    )
+                    response = self._create_completion(messages, effective_max_tokens, len(chunk))
                     break  # success — exit retry loop
-                except Exception as e:
-                    err_str = str(e)
-                    # Handle 429 (Too Many Requests) and 5xx (Server Error) with backoff
-                    if ("429" in err_str or any(str(code) in err_str for code in [500, 502, 503, 504])) and attempt < 3:
-                        wait_time = 2 ** attempt  # exponential: 2s, 4s
-                        self._logger.error(f"  (rate limit/server error — backing off {wait_time}s)")
-                        time.sleep(wait_time)
-                        continue
-                    if "maximum context length" in err_str:
+                except requests.exceptions.HTTPError as e:
+                    if "maximum context length" in str(e):
                         effective_max_tokens = max(50, effective_max_tokens // 2)
                         self._logger.error(f"  (context overflow — retrying with max_tokens={effective_max_tokens})")
                         continue
                     raise
 
-            # Parse the batch response, with retry on truncation (finish_reason="length")
+            # Parse the batch response, with retry on truncation (finish_reason="length").
+            # Every failure path below leaves the chunk's slots as None, so callers
+            # can tell a failed extraction from a document with no locations.
             parsed = None
             content_str: str | None = None
             retry_count = 0
@@ -312,30 +348,20 @@ class LocationExtractor:
             while retry_count < max_retries:
                 retry_count += 1
 
+                if response is None:
+                    self._logger.error(f"No response object for batch starting at {start}")
+                    break  # exit retry loop — nothing more to try
+                choice = response["choices"][0]
+                finish_reason = choice.get("finish_reason")
                 try:
-                    if response is None:
-                        self._logger.error(f"No response object for batch starting at {start}")
-                        # Fill remaining with empty lists
-                        for i in range(start, min(start + batch_size, num_batches)):
-                            if all_results[i] is None:
-                                all_results[i] = []
-                        break  # exit retry loop — nothing more to try
-                    content_str = response.choices[0].message.content
+                    content_str = choice["message"].get("content")
                     if not content_str:
                         self._logger.error(f"Received empty content from AI response for batch starting at {start} "
-                            f"(finish_reason={response.choices[0].finish_reason})")
-                        # Fill remaining with empty lists
-                        for i in range(start, min(start + batch_size, num_batches)):
-                            if all_results[i] is None:
-                                all_results[i] = []
+                            f"(finish_reason={finish_reason})")
                         break  # exit retry loop — nothing more to try
                     raw_json = json.loads(content_str)
                 except (JSONDecodeError, ValidationError) as e:
                     preview = (content_str or "")[:2000]
-                    finish_reason = (
-                        getattr(response.choices[0], "finish_reason", None)
-                        if response is not None else None
-                    )
                     self._logger.error(f"parsing batched AI response (attempt {retry_count}): {e}\n"
                           f"  finish_reason={finish_reason}\n"
                           f"  content_preview: {preview!r}")
@@ -349,18 +375,9 @@ class LocationExtractor:
                                         max(100, 4096 - input_tokens_estimate - 50),
                                         1000)
                         self._logger.error(f"  (truncated — retrying with max_tokens={new_total})")
-                        response = client.chat.completions.create(
-                            model=self._model,
-                            messages=messages,
-                            response_format={"type": "json_object"},
-                            max_tokens=new_total,
-                            temperature=0.1,
-                        )
+                        response = self._create_completion(messages, new_total, len(chunk))
                         continue  # re-run the while loop with more tokens
                     # Otherwise (parse error or max_retries exhausted): give up
-                    for i in range(start, min(start + batch_size, num_batches)):
-                        if all_results[i] is None:
-                            all_results[i] = []
                     break  # exit retry loop
 
                 # Successfully parsed JSON — validate against schema
@@ -370,27 +387,14 @@ class LocationExtractor:
                 except ValidationError as e:
                     # Schema validation failed. Check if we were truncated; if so,
                     # retry with more tokens before giving up.
-                    finish_reason = (
-                        getattr(response.choices[0], "finish_reason", None)
-                        if response is not None else None
-                    )
                     if finish_reason == "length" and retry_count < max_retries:
                         extra_tokens = len(chunk) * per_doc_output_tokens + 50
                         new_total = min(total_max_tokens + extra_tokens,
                                         max(100, 4096 - input_tokens_estimate - 50))
                         self._logger.error(f"  (schema error / truncated — retrying with max_tokens={new_total})")
-                        response = client.chat.completions.create(
-                            model=self._model,
-                            messages=messages,
-                            response_format={"type": "json_object"},
-                            max_tokens=new_total,
-                            temperature=0.1,
-                        )
+                        response = self._create_completion(messages, new_total, len(chunk))
                         continue
                     self._logger.error(f"constructing BatchDocumentLocationsResponse (after {retry_count} retries): {e}")
-                    for i in range(start, min(start + batch_size, num_batches)):
-                        if all_results[i] is None:
-                            all_results[i] = []
                     break  # exit retry loop
 
             # Assign each document's locations to the correct result slot.
@@ -398,12 +402,9 @@ class LocationExtractor:
             # We must map it to the global position via (start + chunk_index).
             ordinal_pattern = re.compile(r"^\s*\d+(st|nd|rd|th)\s+", re.IGNORECASE)
 
-            # If the retry loop never produced a valid parsed response, fill the
-            # remaining slots with empty lists and skip result assignment.
+            # If the retry loop never produced a valid parsed response, leave the
+            # chunk's slots as None (failed) and skip result assignment.
             if parsed is None:
-                for i in range(start, min(start + batch_size, num_batches)):
-                    if all_results[i] is None:
-                        all_results[i] = []
                 continue
 
             for item in parsed.extracted_locations:
@@ -442,9 +443,10 @@ class LocationExtractor:
                 else:
                     self._logger.warning(f"global_idx {global_idx} out of range (max {num_batches-1})")
 
-        # Ensure all slots are filled (in case some batches failed), and return
-        # as list[list[str]] — pyrefly can't track the in-place None→[] fill above.
-        return [r if r is not None else [] for r in all_results]
+        # A slot still None means extraction failed for that document: its chunk's
+        # call failed, or the model left the document out of its reply. A document
+        # with no descriptors has nothing to fail on, so it is [] either way.
+        return [r if r is not None or batches[i] else [] for i, r in enumerate(all_results)]
 
 
     def locations_to_admin_units(self,

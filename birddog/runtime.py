@@ -44,10 +44,12 @@ _ENABLE_DB_HOUSEKEEPING = True
 _ENABLE_DOC_TRACKER = True
 _ENABLE_FTP_MANAGER = True
 _ENABLE_SIGNIFICANCE_SWEEP = True
+_ENABLE_LOCATION_UPDATES = True
 if _ENABLE_DB_SYNC:
     from birddog.database_updater import DatabaseUpdater, DatabaseUpdateManager
     from birddog.database import Database
     from birddog.ftp import FTPSiteManager
+    from birddog.locations.manager import LocationUpdateManager
 
 from birddog.log import get_logger, ServiceLogger, EventLogger
 _logger = get_logger()
@@ -336,9 +338,12 @@ class Runtime:
             self._database_updater = DatabaseUpdater(
                 self,
                 db=self._database)
+            self._location_update_manager = (
+                LocationUpdateManager(db=self._database) if _ENABLE_LOCATION_UPDATES else None)
             self._database_update_manager = DatabaseUpdateManager(
                 self, 
-                updater=self._database_updater)
+                updater=self._database_updater,
+                location_manager=self._location_update_manager)
             if _ENABLE_DOC_TRACKER:
                 # shared by both trackers so the (potentially large) full-table
                 # build happens once, not once per wiki site.
@@ -368,6 +373,7 @@ class Runtime:
             self._database = None
             self._database_updater = None
             self._database_update_manager = None
+            self._location_update_manager = None
             self._commons_doc_tracker = None
             self._wikisource_doc_tracker = None
             self._ftp_manager = None
@@ -408,6 +414,8 @@ class Runtime:
             self._update_manager.start()
             if self._database_update_manager:
                 self._database_update_manager.start()
+            if self._location_update_manager:
+                self._location_update_manager.start()
             if self.translation_enabled:
                 self._translation_manager.start()
             if self._commons_doc_tracker:
@@ -430,6 +438,8 @@ class Runtime:
             self._update_manager.hold()
             if self._database_update_manager:
                 self._database_update_manager.hold()
+            if self._location_update_manager:
+                self._location_update_manager.hold()
             self._translation_manager.hold()
             if self._commons_doc_tracker:
                 self._commons_doc_tracker.hold()
@@ -450,6 +460,8 @@ class Runtime:
             self._update_manager.release()
             if self._database_update_manager:
                 self._database_update_manager.release()
+            if self._location_update_manager:
+                self._location_update_manager.release()
             self._translation_manager.release()
             if self._commons_doc_tracker:
                 self._commons_doc_tracker.release()
@@ -515,23 +527,31 @@ class Runtime:
     def database_update_enabled(self):
         return _ENABLE_DB_SYNC
 
-    def update_to_database(self, titles, deep=False):
+    def update_to_database(self, titles, deep=False, update_locations=False):
         if self.database_update_enabled:
-            self._database_update_manager.start_update(titles, deep)
+            self._database_update_manager.start_update(titles, deep, update_locations=update_locations)
 
-    def update_documents_to_database(self, doc_urls):
+    def update_documents_to_database(self, doc_urls, update_locations=False):
         if self.database_update_enabled:
-            self._database_update_manager.start_document_update(doc_urls)
+            self._database_update_manager.start_document_update(doc_urls, update_locations=update_locations)
 
     @property
     def active_database_updates(self):
         if self.database_update_enabled:
-            return self._database_update_manager.status()
+            # location update tasks are listed alongside the database updates
+            # that start them; task names are unique across both (DBU_/DBD_/LOC_)
+            updates = self._database_update_manager.status()
+            if self._location_update_manager:
+                updates.update(self._location_update_manager.status())
+            return updates
         return None
 
     def cancel_update(self, task_name):
         if self.database_update_enabled:
-            self._database_update_manager.cancel(task_name)
+            if self._location_update_manager and task_name in self._location_update_manager.status():
+                self._location_update_manager.cancel(task_name)
+            else:
+                self._database_update_manager.cancel(task_name)
 
     def run_database_housekeeping(self):
         if self.database_update_enabled and _ENABLE_DB_HOUSEKEEPING:

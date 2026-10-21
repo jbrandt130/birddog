@@ -461,17 +461,18 @@ function update_database() {
 
   // Default deep update off (or preserve prior state if you prefer)
   document.getElementById("db-update-deep-checkbox").checked = false;
+  document.getElementById("db-update-locations-checkbox").checked = false;
 
   const modal_el = document.getElementById("dbUpdateConfirmModal");
   const modal = bootstrap.Modal.getOrCreateInstance(modal_el);
   modal.show();
 }
 
-async function do_database_update(deep=false) {
+async function do_database_update(deep=false, update_locations=false) {
     const page_title = current_page.title;
     console.log('database update:', page_title);
-    
-    const response = await fetch(`/database_update?title=${page_title}&deep=${deep}`);
+
+    const response = await fetch(`/database_update?title=${page_title}&deep=${deep}&update_locations=${update_locations}`);
     if (!response.ok) {
         if (response.status === 404) {
             alert('Your session may have expired. Please log in again.');
@@ -2327,6 +2328,7 @@ async function on_loaded() {
 
         btn.addEventListener("click", async () => {
             const deep = document.getElementById("db-update-deep-checkbox").checked;
+            const update_locations = document.getElementById("db-update-locations-checkbox").checked;
 
             // Close modal immediately
             const modal_el = document.getElementById("dbUpdateConfirmModal");
@@ -2334,7 +2336,7 @@ async function on_loaded() {
 
             // Call your existing backend update logic here
             // Replace this stub with your existing implementation.
-            await do_database_update(deep);
+            await do_database_update(deep, update_locations);
         });
 
         // ------------------ EXPORT HANDLER ------------------

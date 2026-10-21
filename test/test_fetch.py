@@ -39,10 +39,18 @@ class FakeThrottle:
         self.http_reports = []
         self.exc_reports = []
 
+        self.block_calls = []
+
     @contextmanager
-    def acquire(self, url_or_key: str):
+    def acquire(self, url_or_key: str, max_wait=None):
         self.acquire_calls.append(url_or_key)
         yield
+
+    def block(self, url_or_key, seconds):
+        self.block_calls.append((url_or_key, seconds))
+
+    def key_from(self, url_or_key):
+        return reqmod.RESOLVER.key_from(url_or_key)
 
     def report_http(self, url_or_key, status_code, headers=None, *, is_rate_limited_payload=False):
         self.http_reports.append((url_or_key, status_code, dict(headers or {}), bool(is_rate_limited_payload)))
@@ -162,6 +170,55 @@ class TestFetchUrl(unittest.TestCase):
             # Ensure we did NOT sleep exponential backoff (base_backoff=10 would show huge values).
             self.assertTrue(all(0.04 <= s <= 0.20 for s in self.sleep_calls), msg=f"sleep_calls={self.sleep_calls}")
 
+    def test_fetch_url_429_longer_than_max_retry_after_raises_rate_limited(self):
+        resp = ResponseStub(status_code=429, ok=False, text="rate limited", headers={"Retry-After": "3600"})
+        with patch.object(reqmod.requests, "post", return_value=resp) as mpost:
+            with self.assertRaises(reqmod.RateLimitedError) as cm:
+                fetch_url("https://api.groq.com/openai/v1/chat/completions", method="POST",
+                          send_json={}, max_retry_after=120)
+        self.assertEqual(cm.exception.retry_after, 3600.0)
+        self.assertEqual(mpost.call_count, 1)  # no retry
+        self.assertEqual(self.fake_throttle.block_calls[0][1], 3600.0)
+
+    def test_fetch_url_429_body_hint_counts_toward_max_retry_after(self):
+        # Groq puts the real wait in the message; Retry-After may be shorter or missing
+        resp = ResponseStub(
+            status_code=429, ok=False,
+            text="Rate limit reached ... on tokens per day (TPD): Limit 200000, Used 199953, "
+                 "Requested 900. Please try again in 7m12.5s.")
+        with patch.object(reqmod.requests, "post", return_value=resp):
+            with self.assertRaises(reqmod.RateLimitedError) as cm:
+                fetch_url("https://api.groq.com/openai/v1/chat/completions", method="POST",
+                          send_json={}, max_retry_after=120)
+        self.assertAlmostEqual(cm.exception.retry_after, 432.5)
+
+    def test_fetch_url_short_429_retried_under_max_retry_after(self):
+        resp1 = ResponseStub(status_code=429, ok=False, text="try again in 2s", headers={"Retry-After": "2"})
+        resp2 = ResponseStub(status_code=200, ok=True, json_obj={"ok": 1})
+        with patch.object(reqmod.requests, "post", side_effect=[resp1, resp2]):
+            out = fetch_url("https://api.groq.com/x", method="POST", send_json={},
+                            return_json=True, max_retry_after=120)
+        self.assertEqual(out, {"ok": 1})
+        self.assertEqual(self.fake_throttle.block_calls, [])
+
+    def test_fetch_url_logs_each_429(self):
+        resp1 = ResponseStub(status_code=429, ok=False,
+                             text="Rate limit reached on tokens per minute (TPM). Please try again in 2s.")
+        resp2 = ResponseStub(status_code=200, ok=True, json_obj={"ok": 1})
+        with patch.object(reqmod.requests, "post", side_effect=[resp1, resp2]):
+            fetch_url("https://api.groq.com/x", method="POST", send_json={}, return_json=True, max_retry_after=120)
+        warning = reqmod._logger.warning.call_args.args[0]
+        self.assertIn("HTTP 429 from api.groq.com:api", warning)
+        self.assertIn("retry after 2.0s", warning)
+        self.assertIn("tokens per minute (TPM)", warning)
+
+    def test_fetch_url_429_retries_exhausted_raises_rate_limited(self):
+        resp = ResponseStub(status_code=429, ok=False, text="slow down", headers={"Retry-After": "5"})
+        with patch.object(reqmod.requests, "get", return_value=resp):
+            with self.assertRaises(reqmod.RateLimitedError) as cm:
+                fetch_url("https://commons.wikimedia.org/w/api.php", max_retries=2)
+        self.assertEqual(cm.exception.retry_after, 5.0)
+
     def test_fetch_url_mediawiki_ratelimited_payload_marks_throttle(self):
         resp = ResponseStub(
             status_code=200,
@@ -236,6 +293,21 @@ class TestAdaptiveThrottle(unittest.TestCase):
     def tearDown(self):
         for p in reversed(self.patches):
             p.stop()
+
+    def test_acquire_max_wait_raises_when_blocked_longer(self):
+        self.th.block("https://example.com/x", 600.0)
+        with self.assertRaises(reqmod.RateLimitedError) as cm:
+            self.th.acquire("https://example.com/x", max_wait=120.0)
+        self.assertAlmostEqual(cm.exception.retry_after, 600.0)
+        self.assertEqual(self.sleep_calls, [])
+        # the in-flight semaphore was released on the way out
+        self.assertEqual(self.th._hosts["example.com:api"].sem._value, self.profile.max_in_flight)
+
+    def test_acquire_max_wait_sleeps_through_short_block(self):
+        self.th.block("https://example.com/x", 30.0)
+        with self.th.acquire("https://example.com/x", max_wait=120.0):
+            pass
+        self.assertAlmostEqual(sum(self.sleep_calls), 30.0)
 
     def test_unknown_host_warns_once_uses_default_profile(self):
         with self.th.acquire("https://unknown.example/api"):

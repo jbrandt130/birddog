@@ -41,9 +41,37 @@ def _parse_retry_after(headers: Optional[Mapping[str, str]]) -> Optional[float]:
         return None
     ra = ra.strip()
     try:
-        return max(0.0, float(int(ra)))
+        return max(0.0, float(ra))
     except Exception:
         return None
+
+
+_TRY_AGAIN_PATTERN = re.compile(
+    r"try again in\s+(?:(?P<h>\d+(?:\.\d+)?)h)?(?:(?P<m>\d+(?:\.\d+)?)m(?!s))?"
+    r"(?:(?P<s>\d+(?:\.\d+)?)s)?(?:(?P<ms>\d+(?:\.\d+)?)ms)?",
+    re.IGNORECASE,
+)
+
+
+def _parse_try_again(text: Optional[str]) -> Optional[float]:
+    """Parses a 'Please try again in 1h2m3.5s' hint (as sent by Groq) into seconds."""
+    match = _TRY_AGAIN_PATTERN.search(text or "")
+    if not match or not any(match.groupdict().values()):
+        return None
+    parts = {k: float(v) if v else 0.0 for k, v in match.groupdict().items()}
+    return parts["h"] * 3600 + parts["m"] * 60 + parts["s"] + parts["ms"] / 1000
+
+
+def _retry_after_hint(response) -> Optional[float]:
+    """Seconds until a 429'd request may be retried: the longer of the
+    Retry-After header and any 'try again in' hint in the body."""
+    hints = [
+        h for h in (
+            _parse_retry_after(getattr(response, "headers", None)),
+            _parse_try_again(getattr(response, "text", None)),
+        ) if h is not None
+    ]
+    return max(hints) if hints else None
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +412,10 @@ class AdaptiveThrottle:
 
     # ---------------------------------------------------------------------
 
-    def acquire(self, url_or_key: str) -> Lease:
+    def acquire(self, url_or_key: str, max_wait: Optional[float] = None) -> Lease:
+        """Blocks until a request to the host may proceed. With max_wait, raises
+        RateLimitedError instead of sleeping through a host block (Retry-After or
+        block()) that has longer than max_wait seconds left to run."""
         host_key = self.key_from(url_or_key)
 
         with self._lock:
@@ -403,6 +434,9 @@ class AdaptiveThrottle:
 
                     if st.blocked_until > now:
                         sleep_s = st.blocked_until - now
+                        if max_wait is not None and sleep_s > max_wait:
+                            raise RateLimitedError(
+                                f"{host_key} rate limited for another {sleep_s:.0f}s", sleep_s)
                     else:
                         self._refill(st, now)
                         self._refill_budget(st, now)
@@ -471,6 +505,12 @@ class AdaptiveThrottle:
 
     def report_exception(self, url_or_key: str) -> None:
         self._on_transient(self.key_from(url_or_key))
+
+    def block(self, url_or_key: str, seconds: float) -> None:
+        """Blocks all requests to the host for at least `seconds`."""
+        with self._lock:
+            st = self._get_state(self.key_from(url_or_key))
+            st.blocked_until = max(st.blocked_until, _now() + seconds)
 
     # ---------------------------------------------------------------------
     # internal adjustments
@@ -681,6 +721,20 @@ PROFILES: Dict[str, HostProfile] = {
         max_in_flight=4,
         target_rps=100.0 / 60.0, target_capacity=500.0,
     ),
+    # Groq chat completions (location extraction). The free tier allows ~30
+    # requests/min, but each batched extraction call is up to ~4k tokens, so the
+    # per-minute token limit is what actually binds -- keep requests slow and
+    # serialized. Long 429s (an exhausted daily token quota) are not slept
+    # through: callers pass fetch_url(max_retry_after=...) and get a
+    # RateLimitedError instead.
+    "api.groq.com:api": HostProfile(
+        initial_rps=0.2, min_rps=0.02, max_rps=0.5, bucket_capacity=2.0,
+        ai_step=0.05, increase_every_s=60.0,
+        md_429=0.5, md_transient=0.9,
+        transient_cooldown_s=(1.0, 3.0),
+        burst_error_window_s=60.0, burst_error_threshold=3, burst_md=0.7, burst_cooldown_s=(5.0, 15.0),
+        max_in_flight=2,
+    ),
 }
 
 DEFAULT_PROFILE = HostProfile(
@@ -751,11 +805,22 @@ class FetchUrlFailError(RuntimeError):
     """Raised when fetch_url fails after exhausting all retries."""
     pass
 
+class RateLimitedError(FetchUrlFailError):
+    """Raised when a host is rate limited for longer than the caller is willing
+    to wait. retry_after is the wait in seconds, or None if the host gave none."""
+    def __init__(self, message, retry_after=None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
 class _RateLimitedPayload(Exception):
     pass
 
 class _TransientPayload(Exception):
     pass
+
+# enough of a 429 body to show which limit was hit (e.g. Groq's
+# "... on tokens per minute (TPM): Limit 6000, Used 5800, Requested 900 ...")
+_429_LOG_TEXT_LIMIT = 400
 
 # Retry only truly transient HTTP statuses (excluding 429; handled separately)
 _TRANSIENT_HTTP = {408, 500, 502, 503, 504}
@@ -826,6 +891,7 @@ def fetch_url(
     base_backoff=BASE_BACKOFF,
     max_backoff=MAX_BACKOFF,
     retry_read_timeout=True,
+    max_retry_after=None,
 ):
     """
     Fetch a URL using an adaptive, per-host throttled HTTP client.
@@ -891,6 +957,14 @@ def fetch_url(
     max_backoff : float, default MAX_BACKOFF
         Maximum backoff duration (seconds) for transient error retries.
 
+    max_retry_after : float, optional
+        Longest rate-limit wait (seconds) this call will sit through. A 429
+        whose Retry-After header or "try again in" body hint asks for longer,
+        or a host already blocked for longer, raises RateLimitedError (with
+        retry_after set) instead of sleeping. The host stays blocked for the
+        full wait, so other calls with max_retry_after fail fast too. None
+        (default) waits as long as the throttle says.
+
     Returns
     -------
     str | bytes | dict
@@ -903,6 +977,10 @@ def fetch_url(
     ------
     FetchUrlFailError
         If the request fails after exhausting all retries.
+
+    RateLimitedError
+        (a FetchUrlFailError) If max_retry_after is set and the host is rate
+        limited for longer than that, or if retries run out on 429s.
 
     RuntimeError
         For non-retryable HTTP errors such as 404, with response text preserved.
@@ -949,7 +1027,7 @@ def fetch_url(
             if data is not None:
                 kwargs["data"] = data
         try:
-            with THROTTLE.acquire(url):
+            with THROTTLE.acquire(url, max_wait=max_retry_after):
                 response = req(url, **kwargs)
 
             # MediaWiki JSON “error.code” detection
@@ -976,6 +1054,20 @@ def fetch_url(
 
             # 429: retryable, but DO NOT exponential-sleep here; throttle will gate the next attempt
             if response.status_code == 429:
+                wait_s = _retry_after_hint(response)
+                # logged here because a 429 that's waited out and retried is
+                # otherwise invisible -- only the throttle's reduced rate shows it
+                _logger.warning(
+                    f"HTTP 429 from {THROTTLE.key_from(url)} (attempt {attempt + 1}/{max_retries}, "
+                    f"retry after {wait_s if wait_s is not None else '?'}s): "
+                    f"{(getattr(response, 'text', '') or '')[:_429_LOG_TEXT_LIMIT]}"
+                )
+                if max_retry_after is not None:
+                    if wait_s is not None and wait_s > max_retry_after:
+                        # the body hint may be longer than Retry-After, which is
+                        # all report_http() saw
+                        THROTTLE.block(url, wait_s)
+                        raise RateLimitedError(f"HTTP 429: {response.text}", wait_s)
                 raise requests.exceptions.HTTPError(
                     f"HTTP 429: {getattr(response, 'text', '')}",
                     response=response,
@@ -1055,6 +1147,9 @@ def fetch_url(
         time.sleep(wait)
         attempt += 1
 
+    last_response = getattr(last_exception, "response", None)
+    if getattr(last_response, "status_code", None) == 429:
+        raise RateLimitedError(str(last_exception), _retry_after_hint(last_response))
     raise FetchUrlFailError(
         f"Failed to fetch after {max_retries} retries: {url}"
     ) from last_exception

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from birddog.runtime import PageUpdateManager
+from birddog.runtime import PageUpdateManager, Runtime
 from birddog.store import SQLiteKeyValueStore
 
 
@@ -152,6 +152,31 @@ class PageUpdateManagerHeartbeatMoveTests(unittest.TestCase):
             manager.heartbeat()
 
         self.assertEqual(manager._kv_store.get_all(manager._PENDING_TITLE_UPDATES), [])
+
+
+class RuntimeDatabaseUpdateStatusTests(unittest.TestCase):
+    def make_runtime(self, with_locations=True):
+        runtime = Runtime.__new__(Runtime)
+        runtime._database_update_manager = mock.MagicMock()
+        runtime._database_update_manager.status.return_value = {"DBU_1": {"kind": "update_pages"}}
+        runtime._location_update_manager = mock.MagicMock() if with_locations else None
+        if with_locations:
+            runtime._location_update_manager.status.return_value = {"LOC_1": {"kind": "update_locations"}}
+        return runtime
+
+    def test_status_includes_location_tasks(self):
+        self.assertEqual(set(self.make_runtime().active_database_updates), {"DBU_1", "LOC_1"})
+
+    def test_status_without_location_manager(self):
+        self.assertEqual(set(self.make_runtime(False).active_database_updates), {"DBU_1"})
+
+    def test_cancel_routes_by_owning_manager(self):
+        runtime = self.make_runtime()
+        runtime.cancel_update("LOC_1")
+        runtime._location_update_manager.cancel.assert_called_once_with("LOC_1")
+        runtime._database_update_manager.cancel.assert_not_called()
+        runtime.cancel_update("DBU_1")
+        runtime._database_update_manager.cancel.assert_called_once_with("DBU_1")
 
 
 if __name__ == "__main__":

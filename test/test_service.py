@@ -659,6 +659,40 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
         mock_update.assert_not_called()
 
 
+class TestDatabaseUpdateRoute(unittest.TestCase):
+    def setUp(self):
+        app.config["TESTING"] = True
+        app.secret_key = "test_secret"
+        service.serializer = URLSafeTimedSerializer(app.secret_key)
+
+        service.runtime = MagicMock()
+        service.runtime.state = "running"
+        service.runtime.database_update_enabled = True
+        service.runtime.active_database_updates = {}
+        service.users = MagicMock()
+        service.users.lookup.return_value = MagicMock(email=TEST_EMAIL)
+
+        self.client = app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"email": TEST_EMAIL, "name": TEST_NAME}
+
+    def test_update_locations_flag_passed_through(self):
+        resp = self.client.get("/database_update?title=T&deep=false&update_locations=true")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.get_json()["update_locations"])
+        service.runtime.update_to_database.assert_called_once_with("T", deep=False, update_locations=True)
+
+    def test_update_locations_defaults_off(self):
+        resp = self.client.get("/database_update?title=T&deep=true")
+        self.assertFalse(resp.get_json()["update_locations"])
+        service.runtime.update_to_database.assert_called_once_with("T", deep=True, update_locations=False)
+
+    def test_update_locations_unavailable_is_400(self):
+        service.runtime.update_to_database.side_effect = ValueError("requires a location manager")
+        resp = self.client.get("/database_update?title=T&update_locations=1")
+        self.assertEqual(resp.status_code, 400)
+
+
 class TestPageDataNoEarlierVersion(unittest.TestCase):
     """
     /page?compare= 's 'no_earlier_version' flag (issue #138 UI investigation):

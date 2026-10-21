@@ -473,7 +473,7 @@ class FileLocationFinder:
         # Step 2: Batched AI extraction — priority1 first, then priority2 only if needed.
         # Only run priority2 if at least one document has no priority1 results.
         docs_needing_p2 = []
-        identified_locations_per_doc = []
+        identified_locations_per_doc = [set() for _ in range(len(doc_ids))]
         district_names_per_doc = [set() for _ in range(len(doc_ids))]
         all_extracted_p1 = self._location_extractor.extract_locations_batched(
             all_p1_lists, batch_size=batch_size
@@ -482,12 +482,14 @@ class FileLocationFinder:
             if not error_per_doc[doc_idx]:
                 try:
                     extracted_p1 = all_extracted_p1[doc_idx]
+                    if extracted_p1 is None:
+                        raise ValueError("location extraction failed for priority1 descriptions")
                     self._logger.info(f"***** Extracted locations for document {doc_id}: {extracted_p1} *****")
                     district_names = district_names_per_doc[doc_idx]
                     identified_locations, district_names = self.match_places_to_location_ids(doc_id,
                         extracted_p1, doc_archive_locs_lists.get(doc_id, []),
                         per_doc_inputs[doc_idx]["additional_centers"], district_names)
-                    identified_locations_per_doc.append(identified_locations)
+                    identified_locations_per_doc[doc_idx] = identified_locations
                     district_names_per_doc[doc_idx] = district_names
                     no_settlements_found = all(needs_further_analysis(e)
                                                for e in identified_locations) if identified_locations else True
@@ -519,6 +521,11 @@ class FileLocationFinder:
                     try:
                         identified_locations = identified_locations_per_doc[doc_idx]
                         extracted_p2 = all_extracted_p2[doc_idx]
+                        if extracted_p2 is None:
+                            if doc_idx in docs_needing_p2:
+                                raise ValueError("location extraction failed for priority2 descriptions")
+                            # not sent any priority2 descriptions, so nothing failed
+                            extracted_p2 = []
                         self._logger.info(f"***** Second extraction for document {doc_id}: {extracted_p2} *****")
                         district_names = district_names_per_doc[doc_idx]
                         identified_locations_p2, district_names = self.match_places_to_location_ids(doc_id,
@@ -551,7 +558,7 @@ class FileLocationFinder:
 
                         # Sort in ascending order (smallest to largest) to ensure deterministic result
                         # in case only_smallest_locations is True
-                        centre_list = sorted(centre_list, key=lambda x: x["loc_id"])
+                        centre_list = sorted(centre_list, key=lambda x: x["location_id"])
                         for location in centre_list:
                             loc_id = location["location_id"]
                             location = self._matcher.location_name_dict.get(loc_id)
@@ -592,7 +599,7 @@ class FileLocationFinder:
             results[doc_id] = (
                 error_per_doc[doc_idx],
                 result,
-                doc_archive_locs_lists[doc_id],
+                doc_archive_locs_lists.get(doc_id, []),
                 per_doc_inputs[doc_idx]["additional_centers"],
                 district_names_per_doc[doc_idx],
             )

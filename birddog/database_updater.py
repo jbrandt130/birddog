@@ -1613,8 +1613,11 @@ class DatabaseUpdateManager(TaskManager):
     _PAGE_UPDATE_KIND = "update_pages"
     _DOC_UPDATE_KIND = "update_docs"
 
-    def __init__(self, runtime, updater=None):
+    def __init__(self, runtime, updater=None, location_manager=None):
         self._updater = updater if updater else DatabaseUpdater(runtime)
+        # birddog.locations.manager.LocationUpdateManager; optional, needed only
+        # for start_document_update(update_locations=True)
+        self._location_manager = location_manager
         self._state_store = KeyValueStore(table_name=env_table_name("bd_db_update"))
         self._state_lock = threading.RLock()
         super().__init__("DatabaseUpdateManager")
@@ -1683,6 +1686,32 @@ class DatabaseUpdateManager(TaskManager):
         _logger.info(f"DatabaseUpdateManager: complete task {task_desc['task_id']}")
         # clean up update task progress state if present
         self._remove_state(task_desc["name"])
+        if not is_cancelled:
+            self._start_location_update(subtasks)
+
+    def _start_location_update(self, subtasks):
+        # a doc update started with update_locations=True chains a location
+        # update once it's done, so inference runs on the refreshed descriptions.
+        # Only completed batches are passed on: a failed batch's docs may not
+        # have the metadata the location inference reads.
+        urls = []
+        for subtask in subtasks:
+            payload = subtask.get("payload") or {}
+            if subtask.get("status") == "completed" and payload.get("update_locations"):
+                urls.extend(payload.get("urls", []))
+        self._start_location_update_for_urls(urls)
+
+    def _start_location_update_for_urls(self, urls):
+        if not urls:
+            return
+        if not self._location_manager:
+            _logger.error(f"DatabaseUpdateManager: no location manager, skipping location update of {len(urls)} docs")
+            return
+        try:
+            task_name = self._location_manager.start_location_update(urls)
+            _logger.info(f"DatabaseUpdateManager: started location update {task_name} for {len(urls)} docs")
+        except Exception as err:
+            _logger.error(f"DatabaseUpdateManager: exception starting location update: {err}")
 
     # ------------------------------------------------------------------
     # update tasks
@@ -1709,8 +1738,9 @@ class DatabaseUpdateManager(TaskManager):
             )
             raise
 
+        update_locations = bool(batch.get("update_locations", False))
         try:
-            self._update_doc_metadata(titles)
+            self._update_doc_metadata(titles, update_locations=update_locations)
         except Exception as err:
             _logger.error(
                 f"DatabaseUpdateManager: exception during doc metadata update: {err}, {batch}"
@@ -1718,7 +1748,7 @@ class DatabaseUpdateManager(TaskManager):
 
         if batch.get("deep"):
             try:
-                self._start_child_page_update_task(titles)
+                self._start_child_page_update_task(titles, update_locations=update_locations)
             except Exception as err:
                 _logger.error(
                     f"DatabaseUpdateManager: exception during child page update task: {err}, {batch}"
@@ -1729,11 +1759,12 @@ class DatabaseUpdateManager(TaskManager):
             "updated": updated,
             "titles": titles,
             "deep": batch.get("deep", False),
+            "update_locations": update_locations,
         }
 
         self._update_progress(subtask["task_id"], len(titles))
 
-    def _start_child_page_update_task(self, parent_titles):
+    def _start_child_page_update_task(self, parent_titles, update_locations=False):
         if not isinstance(parent_titles, (list, tuple)) or not all(
             [isinstance(title, str) for title in parent_titles]
         ):
@@ -1746,9 +1777,9 @@ class DatabaseUpdateManager(TaskManager):
             child_titles = get_child_titles(self._updater._db, parent_titles)
             child_titles = list(set(child_titles))
             if child_titles:
-                self.start_update(child_titles, deep=True)
+                self.start_update(child_titles, deep=True, update_locations=update_locations)
 
-    def _update_doc_metadata(self, titles):
+    def _update_doc_metadata(self, titles, update_locations=False):
         # these urls come from Pages.doc_links, which update_page_records() (called
         # immediately before this, for the same titles) just populated from the
         # page's own content -- content-derived doc discovery, same trust level as
@@ -1771,8 +1802,15 @@ class DatabaseUpdateManager(TaskManager):
                     update_doc_urls.extend(doc_urls)
                 else:
                     task_name = f"DBD_{new_id()}"
+                    # update_locations rides along so the deferred task's
+                    # complete_task() chains the location update for these docs
                     batches = [
-                        {"kind": self._DOC_UPDATE_KIND, "urls": doc_urls[i:i + self._BATCH_SIZE], "allow_create": True}
+                        {
+                            "kind": self._DOC_UPDATE_KIND,
+                            "urls": doc_urls[i:i + self._BATCH_SIZE],
+                            "allow_create": True,
+                            "update_locations": update_locations,
+                        }
                         for i in range(0, len(doc_urls), self._BATCH_SIZE)
                     ]
                     self._create_task(task_name, self._DOC_UPDATE_KIND, title, len(doc_urls), batches, deep=False)
@@ -1783,6 +1821,11 @@ class DatabaseUpdateManager(TaskManager):
                 self._updater.update_doc_records(update_doc_urls, update_doc_metadata=True, allow_create=True)
             except Exception as err:
                 _logger.error(f"DatabaseUpdateManager: exception during doc metadata update for {update_doc_urls}: {err}")
+                return
+            if update_locations:
+                # these were refreshed inline just now, so their location
+                # update can start right away
+                self._start_location_update_for_urls(update_doc_urls)
 
     def _execute_doc_update_subtask(self, subtask):
         _logger.info(f"DatabaseUpdateManager: doc update subtask {subtask['task_id']}.{subtask['index']}")
@@ -1813,6 +1856,7 @@ class DatabaseUpdateManager(TaskManager):
             "kind": batch.get("kind"),
             "updated": updated,
             "urls": urls,
+            "update_locations": bool(batch.get("update_locations", False)),
         }
         self._update_progress(subtask["task_id"], len(urls))
 
@@ -1822,7 +1866,14 @@ class DatabaseUpdateManager(TaskManager):
     def complete_translation(self, task_name, translation_map):
         self._updater.complete_translation(task_name, translation_map)
 
-    def start_document_update(self, doc_urls):
+    def start_document_update(self, doc_urls, update_locations=False):
+        """Queues a metadata refresh of existing Documents rows. With
+        update_locations=True, a location update task for the same urls is
+        started once the refresh completes (see complete_task)."""
+        if update_locations and not self._location_manager:
+            raise ValueError(
+                "DatabaseUpdateManager.start_document_update: update_locations requires a location manager"
+            )
         if isinstance(doc_urls, str):
             doc_urls = [doc_urls]
         if not isinstance(doc_urls, (list, tuple)) or not all(
@@ -1842,14 +1893,26 @@ class DatabaseUpdateManager(TaskManager):
         # these urls, so creation must stay explicitly disallowed.
         task_name = f"DBD_{new_id()}"
         batches = [
-            {"kind": self._DOC_UPDATE_KIND, "urls": doc_urls[i:i + self._BATCH_SIZE], "allow_create": False}
+            {
+                "kind": self._DOC_UPDATE_KIND,
+                "urls": doc_urls[i:i + self._BATCH_SIZE],
+                "allow_create": False,
+                "update_locations": update_locations,
+            }
             for i in range(0, total, self._BATCH_SIZE)
         ]
         urls_str = ", ".join(doc_urls[:50]) + ("..." if total > 50 else "")
         self._create_task(task_name, self._DOC_UPDATE_KIND, urls_str, total, batches, deep=False)
         return task_name
 
-    def start_update(self, page_titles, deep=False):
+    def start_update(self, page_titles, deep=False, update_locations=False):
+        """Queues an update of the given pages (and, if deep, their descendants).
+        With update_locations=True, location inference is also run on each
+        page's documents once their metadata has been refreshed."""
+        if update_locations and not self._location_manager:
+            raise ValueError(
+                "DatabaseUpdateManager.start_update: update_locations requires a location manager"
+            )
         if isinstance(page_titles, str):
             page_titles = [page_titles]
         if not isinstance(page_titles, (list, tuple)) or not all(
@@ -1869,6 +1932,7 @@ class DatabaseUpdateManager(TaskManager):
             "kind": self._PAGE_UPDATE_KIND,
             "titles": page_titles[i:i + self._BATCH_SIZE],
             "deep": deep,
+            "update_locations": update_locations,
             } for i in range(0, total, self._BATCH_SIZE)]
         titles_str = ", ".join(page_titles[:50]) + ("..." if total > 50 else "")
         self._create_task(task_name, self._PAGE_UPDATE_KIND, titles_str, total, batches, deep=deep)

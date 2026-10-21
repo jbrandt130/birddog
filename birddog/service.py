@@ -795,6 +795,12 @@ def translate(user):
 
 # ---- DATABASE SYNC  -------------------------------------------------
 
+def _flag_arg(name):
+    value = request.args.get(name)
+    if value in ("0", "false", "False"):
+        return False
+    return bool(value)
+
 def _active_updates():
     #return [{
     #    'name': task["name"],
@@ -807,18 +813,20 @@ def _active_updates():
 @login_required
 def database_update(user):
     page_title = request.args.get('title')
-    deep = request.args.get('deep')
-    if deep in ("0", "false", "False"):
-        deep = False
-    else:
-        deep = bool(deep)
+    deep = _flag_arg('deep')
+    # also run location inference on the updated pages' documents
+    update_locations = _flag_arg('update_locations')
     if page_title:
         # start new update
-        _logger.info(f"starting database update: {page_title} (deep={deep})")
-        runtime.update_to_database(page_title, deep=deep)
+        _logger.info(f"starting database update: {page_title} (deep={deep}, update_locations={update_locations})")
+        try:
+            runtime.update_to_database(page_title, deep=deep, update_locations=update_locations)
+        except ValueError as err:
+            return jsonify({'error': str(err)}), 400
     return jsonify({
         'title': page_title,
         'deep': deep,
+        'update_locations': update_locations,
         'enabled': runtime.database_update_enabled,
         'tasks': _active_updates()}), 200
 

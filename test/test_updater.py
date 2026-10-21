@@ -1,7 +1,7 @@
 import threading
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from birddog.abstract_database import InvalidRecordId
 from birddog.task import TaskManager
@@ -174,6 +174,7 @@ def make_manager():
     manager = DatabaseUpdateManager.__new__(DatabaseUpdateManager)
     manager._state_lock = threading.RLock()
     manager._state_store = FakeKVStore()
+    manager._location_manager = None
     return manager
 
 
@@ -1343,8 +1344,8 @@ class TestExecutePageUpdateSubtask(unittest.TestCase):
         self.manager = make_manager()
         self.progress_calls = []
         self.manager._update_progress = lambda tid, inc: self.progress_calls.append((tid, inc))
-        self.manager._update_doc_metadata = lambda titles: None
-        self.manager._start_child_page_update_task = lambda titles: None
+        self.manager._update_doc_metadata = lambda titles, **kw: None
+        self.manager._start_child_page_update_task = lambda titles, **kw: None
 
     def test_success_path_records_updated_result(self):
         self.manager._updater = SimpleNamespace(
@@ -1374,7 +1375,7 @@ class TestExecutePageUpdateSubtask(unittest.TestCase):
 
         self.manager._updater = SimpleNamespace(update_page_records=boom)
         followup_calls = []
-        self.manager._update_doc_metadata = lambda titles: followup_calls.append(titles)
+        self.manager._update_doc_metadata = lambda titles, **kw: followup_calls.append(titles)
 
         subtask = {"task_id": "t1", "index": 0, "payload": {"kind": "update_pages", "titles": ["A"]}}
         with self.assertRaises(RuntimeError):
@@ -1388,7 +1389,7 @@ class TestExecutePageUpdateSubtask(unittest.TestCase):
             update_page_records=lambda titles, update_doc_metadata: True
         )
         child_calls = []
-        self.manager._start_child_page_update_task = lambda titles: child_calls.append(titles)
+        self.manager._start_child_page_update_task = lambda titles, **kw: child_calls.append(titles)
 
         subtask = {"task_id": "t1", "index": 0, "payload": {"kind": "update_pages", "titles": ["A"], "deep": True}}
         self.manager._execute_page_update_subtask(subtask)
@@ -1578,6 +1579,108 @@ class TestCompleteTaskAndStatus(unittest.TestCase):
         self.manager._state_store.insert("db_update", "taskB", '{"completed": 2}')
         result = self.manager.status()
         self.assertEqual(result, {"taskA": {"completed": 1}, "taskB": {"completed": 2}})
+
+
+class TestChainedLocationUpdate(unittest.TestCase):
+    def setUp(self):
+        self.manager = make_manager()
+        self.location_manager = MagicMock()
+        self.location_manager.start_location_update.return_value = "LOC_1"
+        self.manager._location_manager = self.location_manager
+
+    @staticmethod
+    def subtask(status, urls, update_locations=True):
+        return {"status": status, "payload": {
+            "kind": "update_docs", "urls": urls, "update_locations": update_locations}}
+
+    def test_start_document_update_tags_batches(self):
+        captured = {}
+        self.manager._create_task = lambda name, kind, desc, total, batches, deep=False: captured.update(batches=batches)
+        self.manager.start_document_update(["u1", "u2"], update_locations=True)
+        self.assertTrue(all(b["update_locations"] for b in captured["batches"]))
+        self.manager.start_document_update(["u1"])
+        self.assertFalse(captured["batches"][0]["update_locations"])
+
+    def test_update_locations_requires_location_manager(self):
+        self.manager._location_manager = None
+        with self.assertRaises(ValueError):
+            self.manager.start_document_update(["u1"], update_locations=True)
+
+    def test_completion_starts_location_update_for_completed_batches(self):
+        self.manager.complete_task({"task_id": "t1", "name": "DBD_x"}, [
+            self.subtask("completed", ["u1", "u2"]),
+            self.subtask("failed", ["u3"]),
+            self.subtask("completed", ["u4"]),
+        ])
+        self.location_manager.start_location_update.assert_called_once_with(["u1", "u2", "u4"])
+
+    def test_completion_without_flag_or_when_cancelled_starts_nothing(self):
+        self.manager.complete_task({"task_id": "t1", "name": "DBD_x"},
+                                   [self.subtask("completed", ["u1"], update_locations=False)])
+        self.manager.complete_task({"task_id": "t2", "name": "DBD_y"},
+                                   [self.subtask("completed", ["u1"])], is_cancelled=True)
+        self.location_manager.start_location_update.assert_not_called()
+
+    def test_start_update_tags_page_batches(self):
+        captured = {}
+        self.manager._create_task = lambda name, kind, desc, total, batches, deep=False: captured.update(batches=batches)
+        self.manager.start_update(["A", "B"], deep=True, update_locations=True)
+        self.assertTrue(all(b["update_locations"] for b in captured["batches"]))
+
+    def test_start_update_requires_location_manager(self):
+        self.manager._location_manager = None
+        with self.assertRaises(ValueError):
+            self.manager.start_update(["A"], update_locations=True)
+
+    def run_page_subtask(self, update_locations, deep=False):
+        calls = {}
+        self.manager._updater = SimpleNamespace(update_page_records=lambda titles, update_doc_metadata: True)
+        self.manager._update_progress = lambda tid, inc: None
+        self.manager._update_doc_metadata = lambda titles, **kw: calls.update(metadata=kw)
+        self.manager._start_child_page_update_task = lambda titles, **kw: calls.update(children=kw)
+        sub = {"task_id": "t1", "index": 0, "payload": {
+            "kind": "update_pages", "titles": ["A"], "deep": deep, "update_locations": update_locations}}
+        self.manager.execute_subtask(sub)
+        return calls, sub
+
+    def test_page_subtask_passes_flag_to_docs_and_children(self):
+        calls, sub = self.run_page_subtask(True, deep=True)
+        self.assertEqual(calls["metadata"], {"update_locations": True})
+        self.assertEqual(calls["children"], {"update_locations": True})
+        self.assertTrue(sub["payload"]["update_locations"])
+
+    def test_inline_doc_refresh_starts_location_update(self):
+        self.manager._updater = SimpleNamespace(_db=None, update_doc_records=lambda urls, update_doc_metadata, allow_create=False: True)
+        with patch("birddog.database_updater._get_linked_doc_urls_by_title", return_value={"A": ["u1", "u2"]}):
+            self.manager._update_doc_metadata(["A"], update_locations=True)
+        self.location_manager.start_location_update.assert_called_once_with(["u1", "u2"])
+
+    def test_inline_doc_refresh_failure_skips_location_update(self):
+        def fail(urls, update_doc_metadata, allow_create=False):
+            raise RuntimeError("boom")
+        self.manager._updater = SimpleNamespace(_db=None, update_doc_records=fail)
+        with patch("birddog.database_updater._get_linked_doc_urls_by_title", return_value={"A": ["u1"]}):
+            self.manager._update_doc_metadata(["A"], update_locations=True)
+        self.location_manager.start_location_update.assert_not_called()
+
+    def test_deferred_doc_batches_carry_flag(self):
+        created = []
+        self.manager._create_task = lambda name, kind, desc, total, batches, deep=False: created.append(batches)
+        self.manager._updater = SimpleNamespace(_db=None, update_doc_records=lambda urls, update_doc_metadata, allow_create=False: True)
+        urls = [f"u{i}" for i in range(10)]  # over _BATCHED_DOC_UPDATE_THRESHOLD
+        with patch("birddog.database_updater._get_linked_doc_urls_by_title", return_value={"A": urls}):
+            self.manager._update_doc_metadata(["A"], update_locations=True)
+        self.assertTrue(all(b["update_locations"] for b in created[0]))
+        self.location_manager.start_location_update.assert_not_called()  # chained on completion instead
+
+    def test_doc_update_subtask_carries_flag_to_result(self):
+        self.manager._updater = MagicMock()
+        self.manager._updater.update_doc_records.return_value = 1
+        self.manager._update_progress = lambda task_id, n: None
+        sub = {"task_id": "t1", "index": 0, "payload": {
+            "kind": "update_docs", "urls": ["u1"], "allow_create": False, "update_locations": True}}
+        self.manager.execute_subtask(sub)
+        self.assertTrue(sub["payload"]["update_locations"])
 
 
 class TestCancel(unittest.TestCase):
