@@ -286,7 +286,7 @@ def url_to_title(url: str) -> str:
             result = params["title"][0]
             ns_prefix = f"{WIKI_NAMESPACE}:"
             result = result.removeprefix(ns_prefix)
-            return result
+            return str(result)
     if "redlink" in url:
         url = urlparse(url).path
     return get_title(unquote(url), include_namespace=False)
@@ -847,7 +847,7 @@ def find_header_in_row(ws, row, start_col, end_col, header):
         contents = get_cell_value(ws[cell_addr], True)
         if contents is None:
             continue
-        if header in contents:
+        if contents and header in contents:
             return i
     return None
 
@@ -864,7 +864,7 @@ def find_header_in_col(ws, start_row, end_row, col, headers):
                 continue
             if contents == header:
                 return i, header
-            if header == FIRST_OPUS_HDR4 and header in contents:
+            if header == FIRST_OPUS_HDR4 and contents and header in contents:
                 # it can be something like "NEW NUMBERING (listed here 06/2025)"
                 return i, header
     return None, None
@@ -908,7 +908,7 @@ def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cy
     row = 3
     source_col = find_header_in_row(ws, row, "B", "Z", SRC_HDR)
     daho_fund_list = False
-    if source_col is None:  # and 'DAHO' in archive_unit_name and not wiki_spreadsheet:
+    if source_col is None:
         # try SRC_NO_COLON_HDR
         source_col = find_header_in_row(ws, row, "B", "Z", SRC_NO_COLON_HDR)
         if source_col is None:
@@ -1158,7 +1158,11 @@ def case_like_headers_in_row(ws, import_message, header_must_appear):
     possible_hyphen_in_case_num = False
     old_numbering_column = "A"
     case_amount_column = case_num_col
-    contains_volumes = False
+    contains_volumes, _, _ = sheet_contains_volumes(ws)
+    if contains_volumes:
+        message = f"Sheet {ws.title} contains volumes"
+        import_message = add_to_message(import_message, message)
+        _logger.info(message)
     additional_column = False
     if hdr_row is None:
         # in CDIAK-wiki-20260510.xlsx sheet "CDIAK 1600-1" this header cell is empty,
@@ -1172,11 +1176,7 @@ def case_like_headers_in_row(ws, import_message, header_must_appear):
         if hdr_row is None:
             #could it be a sheet with volumes and not cases?
             contains_volumes, case_num_col, hdr_row = sheet_contains_volumes(ws)
-            if contains_volumes:
-                message = f"Sheet {ws.title} contains volumes"
-                import_message = add_to_message(import_message, message)
-                _logger.info(message)
-            elif header_must_appear:
+            if not contains_volumes and header_must_appear:
                 raise ValueError(f"No '{FIRST_OPUS_HDR1}' header found in sheet {ws.title}")
     elif header_found == FIRST_OPUS_HDR1:
         # in DAHMO-R-wiki-20260415.xlsx sheet DAHMO R-6193-12 summary the headers are "Case #, link" in column A
@@ -1697,7 +1697,7 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
                     date = get_cell_value(sheet[cell_addr])
                     _logger.warning(f"No 'change date:' column, proceeding anyway with date {date}")
                 else:
-                    raise ValueError("No 'reference date:' column")
+                    raise ValueError("No 'reference date:' column in worksheet: {sheet.title}")
 
             num_attributes, fund_opus_attributes = count_fund_opus_attributes(sheet, change_date_col)
             archive_unit_name = archive_name  #unit is either archive, or fund, or opus
@@ -1762,22 +1762,29 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
 def import_spreadsheet(sw_filepath, actually_write=True):
     db = Database()
     workbook = load_workbook(sw_filepath, data_only=True)
-    wiki_spreadsheet = "-wiki" in sw_filepath.lower()
-    substring = "-archive"
-    if wiki_spreadsheet:
+    archive_name = ""  # default
+    archive_cyrillic_name = ""  # default
+    substring = ""  # default
+    if "-wiki" in sw_filepath.lower():
+        wiki_spreadsheet = True
         substring = "-wiki"
+    else:
+        wiki_spreadsheet = False
+        if "-archive" in sw_filepath.lower():
+            substring = "-archive"
 
-    file_name = os.path.basename(sw_filepath)
-    archive_substring_position = file_name.find(substring)
-    if archive_substring_position != -1:
-        archive_name = file_name[0: archive_substring_position]
-    else:
-        _logger.error(f"Spreadsheet file name {file_name} contains neither 'wiki' nor 'archive'")
-        return
-    if wiki_spreadsheet:
-        archive_cyrillic_name = archive_name  # default for wiki
-    else:
-        archive_cyrillic_name = archive_name_to_cyrillic(archive_name)
+    if substring:
+        file_name = os.path.basename(sw_filepath)
+        archive_substring_position = file_name.find(substring)
+        if archive_substring_position != -1:
+            archive_name = file_name[0: archive_substring_position]
+        else:
+            _logger.error(f"Spreadsheet file name {file_name} contains neither 'wiki' nor 'archive'")
+            return
+        if wiki_spreadsheet:
+            archive_cyrillic_name = archive_name  # default for wiki
+        else:
+            archive_cyrillic_name = archive_name_to_cyrillic(archive_name)
 
     inp_page_data = process_worksheets(workbook, wiki_spreadsheet, archive_name, archive_cyrillic_name)
 
@@ -1851,13 +1858,13 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         page["Id"] = record_id
 
     # Step 3: form dict by page title
-    page_dict = {page["url"]: page for page in output_pages}
+    page_dict: dict[str, dict[str, Any]] = {page["url"]: page for page in output_pages}
 
     # Step 4: locate all parents and link to children
-    parent_dict = {}
+    parent_dict: dict[str, dict[str, Any]] = {}
     for page in page_dict.values():
         parent_url = page.get("parent_url")
-        if parent_url:
+        if isinstance(parent_url, str):
             parent_page = parent_dict.get(parent_url)
             if not parent_page:
                 parent_page = page_dict.get(parent_url)
@@ -1873,7 +1880,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
 
     for parent in parent_dict.values():
         child_ids = parent.get("child_ids")
-        if child_ids:
+        if isinstance(child_ids, list) and child_ids:
             parent_url = parent["url"]
             # Filter out child IDs that would create cycles
             safe_child_ids = []
@@ -1899,8 +1906,8 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 _logger.warning(f"No safe children to link for {parent['title']} (all would create cycles)")
 
     # Step 6: create records for all linked docs
-    output_docs = {}
-    doc_link_dict = {}
+    output_docs: dict[str, dict[str, Any]] = {}
+    doc_link_dict: dict[str, list[dict[str, Any]]] = {}
     for page in output_pages:
         doc_links = page.get("doc_links")
         if doc_links:
@@ -1913,7 +1920,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 # quote for document titles that contain protected characters such as "?"
                 quoted_record = form_document_record(doc_link)
 
-                doc_payload = {"page_description": page["description"]}
+                doc_payload: dict[str, Any] = {"page_description": page["description"]}
 
                 for joint_field in doc_and_page_fields:
                     if joint_field in page:
@@ -2009,7 +2016,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DADO-archives-20261020.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(_dir_path)
