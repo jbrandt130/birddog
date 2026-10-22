@@ -257,5 +257,47 @@ class PageCompareTests(unittest.TestCase):
         self.assertIs(result, page)
 
 
+class RevertToCachingTests(unittest.TestCase):
+    """revert_to() must cache historical revisions even on detached copies
+    (compare() always works on detached copies), without re-querying the wiki."""
+    HISTORY = [
+        {"revid": 3, "modified": "2026-08-26T00:00:00Z", "link": "https://x?title=T&oldid=3"},
+        {"revid": 2, "modified": "2026-08-20T00:00:00Z", "link": "https://x?title=T&oldid=2"},
+    ]
+
+    def _detached(self):
+        with patch.object(Page, "_cache_load", return_value=True):
+            page = Page("Архів:ДАЖО/Д/999")
+        page._page = {"lastmod": "2026-08-26T00:00:00Z"}
+        return page.detached_copy()
+
+    def test_old_revision_is_read_with_known_lastmod_and_cached(self):
+        page = self._detached()
+        with patch.object(Page, "history", return_value=self.HISTORY), \
+             patch.object(Page, "_cache_load", return_value=False), \
+             patch("birddog.core.mw_read_page", return_value={"lastmod": "2026-08-20T00:00:00Z"}) as read, \
+             patch("birddog.core.save_cached_object") as save:
+            page.revert_to("2026-08-21T00:00:00Z")  # newest <= cutoff is rev 2
+        # history[-1] is rev 2; it is not history[0], so cheap historical read
+        read.assert_called_once_with(page.title, "2", lastmod="2026-08-20T00:00:00Z")
+        save.assert_called_once()
+        self.assertTrue(save.call_args.args[1].endswith("/2026-08-20T00:00:00Z.json"))
+
+    def test_newest_revision_gets_full_read(self):
+        page = self._detached()
+        with patch.object(Page, "history", return_value=self.HISTORY[:1]), \
+             patch.object(Page, "_cache_load", return_value=False), \
+             patch("birddog.core.mw_read_page", return_value={"lastmod": "x"}) as read, \
+             patch("birddog.core.save_cached_object"):
+            page.revert_to("2026-08-27T00:00:00Z")
+        read.assert_called_once_with(page.title, "3", lastmod=None)
+
+    def test_detached_copy_still_never_saves_live_cache(self):
+        page = self._detached()
+        with patch("birddog.core.save_cached_object") as save:
+            page._cache_save()
+        save.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1128,6 +1128,53 @@ class TestPageSignificance(unittest.TestCase):
         self.assertFalse(_table_significant(table, ref_table))
 
 
+# ── page history paging (mocked network) ────────────────────────────────────
+
+def _history_response(timestamps, start_revid, rvcontinue=None):
+    revs = [{"revid": start_revid - i, "timestamp": ts} for i, ts in enumerate(timestamps)]
+    result = {"query": {"pages": {"1": {"revisions": revs}}}}
+    if rvcontinue:
+        result["continue"] = {"rvcontinue": rvcontinue}
+    return result
+
+class TestHistoryFromCutoff(unittest.TestCase):
+    def test_exhausted_in_one_call(self):
+        from birddog.wiki import get_page_history_from_cutoff
+        resp = _history_response(["2026-03-01T00:00:00Z", "2026-02-01T00:00:00Z"], 2)
+        with patch("birddog.wiki.fetch_url", return_value=resp) as fetch:
+            history = get_page_history_from_cutoff("Архів:Тест", "2000")
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual([h["revid"] for h in history], [2, 1])
+        self.assertTrue(history[-1].get("created"))
+
+    def test_stops_at_first_entry_at_or_before_cutoff(self):
+        from birddog.wiki import get_page_history_from_cutoff
+        resp = _history_response(
+            ["2026-03-01T00:00:00Z", "2026-02-01T00:00:00Z", "2026-01-01T00:00:00Z"], 3,
+            rvcontinue="more")
+        with patch("birddog.wiki.fetch_url", return_value=resp) as fetch:
+            history = get_page_history_from_cutoff("Архів:Тест", "2026-02-15T00:00:00Z")
+        self.assertEqual(fetch.call_count, 1)  # cutoff reached: no need to continue
+        self.assertEqual([h["revid"] for h in history], [3, 2])
+        self.assertFalse(history[-1].get("created"))
+
+    def test_follows_continuation_token(self):
+        from birddog.wiki import get_page_history_from_cutoff
+        first = _history_response(["2026-03-01T00:00:00Z"], 3, rvcontinue="tok|2")
+        second = _history_response(["2026-02-01T00:00:00Z", "2026-01-01T00:00:00Z"], 2)
+        with patch("birddog.wiki.fetch_url", side_effect=[first, second]) as fetch:
+            history = get_page_history_from_cutoff("Архів:Тест", "2000")
+        self.assertEqual(fetch.call_count, 2)
+        self.assertIn("rvcontinue=", fetch.call_args_list[1].args[0])
+        self.assertEqual([h["revid"] for h in history], [3, 2, 1])
+        self.assertTrue(history[-1].get("created"))
+
+    def test_unknown_page_returns_empty(self):
+        from birddog.wiki import get_page_history_from_cutoff
+        resp = {"query": {"pages": {"-1": {"missing": ""}}}}
+        with patch("birddog.wiki.fetch_url", return_value=resp):
+            self.assertEqual(get_page_history_from_cutoff("Архів:Нема", "2000"), [])
+
 # ── mw_read_page (mocked network) ────────────────────────────────────────────
 
 class TestMwReadPage(unittest.TestCase):
@@ -1156,6 +1203,20 @@ class TestMwReadPage(unittest.TestCase):
                 }
             }
         }
+
+    def test_known_lastmod_skips_timestamp_and_existence_queries(self):
+        with (
+            patch("birddog.wiki._read_wiki_text",
+                  return_value=(self.WIKITEXT, self.REVID, "ДАЖО/П-141")),
+            patch("birddog.wiki.fetch_url") as fetch,
+            patch("birddog.wiki._check_page_existence_chunked") as exist,
+        ):
+            page = mw_read_page("Архів:ДАЖО/П-141", oldid=self.REVID,
+                                lastmod="2020-01-01T00:00:00Z")
+        fetch.assert_not_called()
+        exist.assert_not_called()
+        self.assertEqual(page["lastmod"], "2020-01-01T00:00:00Z")
+        self.assertTrue(page["tables"][0]["children"][0][0]["exists"])
 
     def _read_page(self, wikitext=None):
         if wikitext is None:

@@ -10,6 +10,7 @@ import json
 import re
 import os
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from urllib.parse import quote, unquote, urlparse
 from itertools import islice
@@ -846,21 +847,35 @@ def _nonexistent_page(page_title):
 def _is_table(tag):
     return tag.tag == "table" and [entry for entry in tag.attributes if "wikitable" in entry] != []
 
+# matches the uk.wikisource throttle profile's max_in_flight (fetch.PROFILES)
+_EXISTENCE_CHECK_WORKERS = 4
+
 def _check_page_existence_chunked(page_links, chunk_size=50):
     exists_map = {}
     title_map = {get_title(link): link for link in page_links}
     titles = list(title_map.keys())
     title_map = {key.replace(" ", "_").lower(): link for key, link in title_map.items()}
 
-    for i in range(0, len(titles), chunk_size):
-        title_batch = "|".join(titles[i:i+chunk_size])
+    def query_chunk(batch):
         params = {
             'action': 'query',
             'prop': 'info',
-            'titles': title_batch,
+            'titles': "|".join(batch),
             'format': 'json'
         }
-        data = fetch_url(API_URL, data=params, return_json=True, method="POST")
+        return fetch_url(API_URL, data=params, return_json=True, method="POST")
+
+    # a large finding-aid page has thousands of links: the chunks are
+    # independent, so run them concurrently (fetch_url's per-host throttle
+    # still caps the overall request rate)
+    chunks = [titles[i:i+chunk_size] for i in range(0, len(titles), chunk_size)]
+    if len(chunks) > 1:
+        with ThreadPoolExecutor(max_workers=_EXISTENCE_CHECK_WORKERS) as pool:
+            responses = list(pool.map(query_chunk, chunks))
+    else:
+        responses = [query_chunk(chunk) for chunk in chunks]
+
+    for data in responses:
         for page_data in data['query']['pages'].values():
             title = page_data['title'].replace(" ", "_").lower()
             # If invalid or missing, mark as False
@@ -1378,9 +1393,10 @@ def _extract_table(table_code, page_title, page_links, all_page_links):
         "children": children
     }
 
-def _check_table_link_existence(tables, all_page_links):
+def _check_table_link_existence(tables, all_page_links, lookup=True):
     # Collect unique linked page titles (relative titles like '/1/' etc.)
-    link_existence = _check_page_existence_chunked(all_page_links)
+    # lookup=False skips the wiki query: every link is assumed to exist
+    link_existence = _check_page_existence_chunked(all_page_links) if lookup else {}
     for table in tables:
         for row in table["children"]:
             for cell in row:
@@ -1402,13 +1418,16 @@ def _normalize_child_link_positions(tables):
                         del child[pos]["exists"]
                         break
 
-def _parse_wiki_text(wikitext, page_title, title, revid=None):
+def _parse_wiki_text(wikitext, page_title, title, revid=None, check_links=True):
     """
     Core parser that turns wikitext into a `page` dict.
 
     - `page_title`: canonical title used for resolving relative links (e.g. 'Архів:...').
     - `title`: display title (usually without namespace, or whatever you want to show).
     - `revid`: optional, stored in the page dict if provided.
+    - `check_links`: query the wiki for the existence of linked child pages.
+      Historical revisions pass False -- current existence says nothing about
+      them and the extra round trip is wasted.
     """
     # Close any unclosed wikitables so mwparserfromhell can parse them as tags.
     # A page saved mid-edit (or with a formatting bug) may omit the closing |}.
@@ -1558,7 +1577,7 @@ def _parse_wiki_text(wikitext, page_title, title, revid=None):
             })
 
     # determine if linked items in tables are to existing pages
-    _check_table_link_existence(tables, all_page_links)
+    _check_table_link_existence(tables, all_page_links, lookup=check_links)
 
     _normalize_child_link_positions(tables)
 
@@ -1571,7 +1590,10 @@ def _parse_wiki_text(wikitext, page_title, title, revid=None):
 
     return page
 
-def mw_read_page(page_title, oldid=None):
+def mw_read_page(page_title, oldid=None, lastmod=None):
+    # lastmod: known timestamp of the requested revision (e.g. from page
+    # history); saves the extra timestamp query. Implies a historical read, so
+    # linked-page existence is not looked up either.
     # extract title from url if necessary
     page_title = get_title(page_title)
     # _logger.info(f"mw_read_page: {page_title}")
@@ -1588,7 +1610,12 @@ def mw_read_page(page_title, oldid=None):
         return _nonexistent_page(page_title)
 
     # shared parsing logic
-    page = _parse_wiki_text(wikitext, page_title=page_title, title=title, revid=revid)
+    page = _parse_wiki_text(wikitext, page_title=page_title, title=title, revid=revid,
+                            check_links=lastmod is None)
+
+    if lastmod:
+        page["lastmod"] = lastmod
+        return page
 
     # Last modified date via API `revisions` (for this oldid)
     params_rev = {
@@ -1957,21 +1984,26 @@ def page_revision_url(page_title, revid):
     return ('https://uk.wikisource.org/w/index.php?'
             f'title={canonicalize_title(page_title)}&oldid={revid}')
 
-def get_page_history(page_title, limit=10):
-    result = fetch_url(history_url(page_title, limit=limit), return_json=True)
+def _fetch_history_page(page_title, limit, rvcontinue=None):
+    """One history API call. Returns (history, rvcontinue) where rvcontinue is
+    None when the revisions are exhausted."""
+    url = history_url(page_title, limit=limit)
+    if rvcontinue:
+        url += f'&rvcontinue={quote(rvcontinue)}'
+    result = fetch_url(url, return_json=True)
     query = result.get('query')
     #_logger.info(f'get_page_history({page_title}, limit={limit}): result={query}')
 
     if not query:
         _logger.error(f'get_page_history({page_title}, limit={limit}): no result returned')
-        return []
+        return [], None
     pages = query.get('pages')
     if not pages:
         _logger.error(f'get_page_history({page_title}, limit={limit}): empty result returned')
-        return []
+        return [], None
     if '-1' in pages:
         _logger.error(f'get_page_history({page_title}, limit={limit}): unrecognized page name')
-        return []
+        return [], None
     # assume only one page is returned (in future, pass multiple to reduce api calls)
     for page in pages.values():
         history = [ {
@@ -1979,31 +2011,37 @@ def get_page_history(page_title, limit=10):
             'modified': rev['timestamp'],
             'link': page_revision_url(page_title, rev['revid'])
         } for rev in page.get('revisions') ]
-        return history
+        return history, (result.get('continue') or {}).get('rvcontinue')
     _logger.error(f'get_page_history({page_title}, limit={limit}): unexpected result returned')
-    return []
+    return [], None
+
+def get_page_history(page_title, limit=10):
+    return _fetch_history_page(page_title, limit)[0]
+
+# max rvlimit the API grants to non-bot accounts
+_HISTORY_PAGE_SIZE = 500
 
 def get_page_history_from_cutoff(page_title, cutoff_date):
-    # search increasingly for cutoff date  because
-    # api does not allow for paging through search results
-    last_result_length = 0
-    attempt = 50
+    # Page through the revisions (newest first, following the API's rvcontinue
+    # token) until one at or before cutoff_date turns up or they run out. A
+    # typical page fits in a single call.
+    history = []
+    rvcontinue = None
     while True:
-        result = get_page_history(page_title, limit=attempt)
-        if not result:
-            _logger.error(f'get_page_history({page_title}, cutoff_date={cutoff_date}): empty history')
-            return []
-        if len(result) == last_result_length:
-            result[-1]['created'] = True
-            return result # no more history to be had
-        if result[-1]['modified'] <= cutoff_date:
-            for index, item in enumerate(result):
+        batch, rvcontinue = _fetch_history_page(
+            page_title, _HISTORY_PAGE_SIZE, rvcontinue)
+        if not batch:
+            if not history:
+                _logger.error(f'get_page_history({page_title}, cutoff_date={cutoff_date}): empty history')
+            return history
+        history.extend(batch)
+        if batch[-1]['modified'] <= cutoff_date:
+            for index, item in enumerate(history):
                 if item['modified'] <= cutoff_date:
-                    return result[:(index+1)]
-            return result
-        # increase limit length and try again
-        last_result_length = len(result)
-        attempt *= 2
+                    return history[:(index+1)]
+        if not rvcontinue:
+            history[-1]['created'] = True
+            return history # no more history to be had
 
 
 # -------------------------------------------------------------------------------

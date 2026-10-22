@@ -129,6 +129,14 @@ class Page:
             #_logger.info(f"Saving page to cache: {self.name}[{self.lastmod}]")
             save_cached_object(self._page, path)
 
+    def _cache_save_version(self, version):
+        """Cache page contents under a historical version's modification date.
+
+        Unlike _cache_save(), allowed on detached/comparison pages: a past
+        revision is immutable, so it can never poison the cache.
+        """
+        save_cached_object(self._page, f'{self._cache_path}/{version}.json')
+
     def evict_from_cache(self):
         if self.lastmod:
             remove_cached_object(f'{self._cache_path}/{self.lastmod}.json')
@@ -180,8 +188,12 @@ class Page:
         if match:
             oldid = match.group(1)
             _logger.info(f'Loading page: {self.name}, modified: {version["modified"]}')
-            self._page = mw_read_page(self.title, oldid)
-            self._cache_save()
+            # the newest revision shares its cache entry with the live page,
+            # so it needs the full read (link existence); older ones don't
+            is_newest = version is history[0]
+            self._page = mw_read_page(
+                self.title, oldid, lastmod=None if is_newest else version["modified"])
+            self._cache_save_version(version["modified"])
             return self
         raise ValueError("URL does not contain oldid: unknown version")
 
