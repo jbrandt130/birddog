@@ -252,6 +252,35 @@ class TestFetchUrl(unittest.TestCase):
 
 # ------------------ ADAPTIVE THROTTLE TESTS ------------------
 
+class TestWikimediaProfile(unittest.TestCase):
+    """Wikimedia's API rate limit is per client across its sites, so the
+    wiki API hosts share one throttle profile kept under that limit."""
+
+    def test_wiki_api_hosts_share_one_key(self):
+        for url in ("https://uk.wikisource.org/w/api.php",
+                    "https://commons.wikimedia.org/w/api.php?action=query",
+                    "uk.wikisource.org:api",
+                    "commons.wikimedia.org"):
+            with self.subTest(url=url):
+                self.assertEqual(reqmod.RESOLVER.key_from(url), "wikimedia:api")
+
+    def test_media_host_keeps_its_own_profile(self):
+        url = "https://upload.wikimedia.org/wikipedia/commons/a/ab/x.pdf"
+        self.assertEqual(reqmod.RESOLVER.key_from(url), "upload.wikimedia.org:api")
+
+    def test_host_mentioned_elsewhere_in_url_does_not_match(self):
+        url = "https://api.groq.com/x?ref=https://uk.wikisource.org/"
+        self.assertEqual(reqmod.RESOLVER.key_from(url), "api.groq.com:api")
+
+    def test_profile_stays_under_wikimedia_limits(self):
+        # 200 requests/min and at most 3 concurrent for an unauthenticated bot
+        profile = reqmod.PROFILES["wikimedia:api"]
+        self.assertLess(profile.max_rps * 60, 200)
+        self.assertLessEqual(profile.max_in_flight, 3)
+        self.assertNotIn("uk.wikisource.org:api", reqmod.PROFILES)
+        self.assertNotIn("commons.wikimedia.org:api", reqmod.PROFILES)
+
+
 class TestAdaptiveThrottle(unittest.TestCase):
     def setUp(self):
         self.t = 1000.0

@@ -1,8 +1,12 @@
 # The code below uses the free Inference Client to query Qwen/Qwen2.5-7B-Instruct. We use Pydantic directly to enforce the JSON structure so the model returns only valid data.
 import builtins
+import hashlib
 import json
 import os
 import re
+import threading
+import time
+from collections import OrderedDict
 from json import JSONDecodeError
 from pathlib import Path
 
@@ -19,6 +23,15 @@ _MAX_INLINE_RATE_LIMIT_WAIT_S = 120.0
 # a batched completion of up to ~1000 output tokens can take well over
 # fetch_url's default 10s
 _COMPLETION_TIMEOUT_S = 90
+
+# Completed responses are kept for a while, keyed on the exact request, so a
+# batch that's retried after a rate limit reuses the calls it already paid
+# for. Without this, near the daily token limit a batch needing several calls
+# spends each freed slice of tokens on its first call, is refused on a later
+# one, and starts over -- never finishing. The TTL covers retries spread
+# over a day-limit wait; the size bounds memory (responses are ~1KB).
+_RESPONSE_CACHE_TTL_S = 12 * 60 * 60
+_RESPONSE_CACHE_SIZE = 256
 
 
 # 1. Define the data structure to capture location hierarchy
@@ -171,6 +184,34 @@ class LocationExtractor:
             case _:
                 raise ValueError(f"Invalid provider {provider}")
 
+        # request key -> (stored at, response); see _RESPONSE_CACHE_TTL_S
+        self._response_cache: OrderedDict[str, tuple[float, dict]] = OrderedDict()
+        self._response_cache_lock = threading.Lock()
+
+    def _cache_key(self, messages: list[dict], max_tokens: int) -> str:
+        request = json.dumps([self._provider_url, self._model, messages, max_tokens],
+                             sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(request.encode("utf-8")).hexdigest()
+
+    def _cached_response(self, key: str) -> dict | None:
+        with self._response_cache_lock:
+            entry = self._response_cache.get(key)
+            if entry is None:
+                return None
+            stored_at, response = entry
+            if time.monotonic() - stored_at > _RESPONSE_CACHE_TTL_S:
+                del self._response_cache[key]
+                return None
+            self._response_cache.move_to_end(key)
+            return response
+
+    def _cache_response(self, key: str, response: dict) -> None:
+        with self._response_cache_lock:
+            self._response_cache[key] = (time.monotonic(), response)
+            self._response_cache.move_to_end(key)
+            while len(self._response_cache) > _RESPONSE_CACHE_SIZE:
+                self._response_cache.popitem(last=False)
+
     def _create_completion(self, messages: list[dict], max_tokens: int, num_docs: int) -> dict:
         """POSTs an OpenAI-compatible chat completion request and returns the
         response JSON.
@@ -182,7 +223,15 @@ class LocationExtractor:
         requests.HTTPError with the response text in the message.
 
         Logs the token usage the service reports for the call, so the daily
-        token budget can be checked against real numbers."""
+        token budget can be checked against real numbers.
+
+        A response to an identical earlier request is reused from the cache
+        (see _RESPONSE_CACHE_TTL_S) without calling the service."""
+        key = self._cache_key(messages, max_tokens)
+        cached = self._cached_response(key)
+        if cached is not None:
+            self._logger.info(f"location extraction usage: {num_docs} docs, cached response reused (0 tokens)")
+            return cached
         response = fetch_url(
             f"{self._provider_url}/chat/completions",
             method="POST",
@@ -199,6 +248,7 @@ class LocationExtractor:
             max_retry_after=_MAX_INLINE_RATE_LIMIT_WAIT_S,
         )
         self._log_usage(response, num_docs, max_tokens)
+        self._cache_response(key, response)
         return response
 
     def _log_usage(self, response: dict, num_docs: int, max_tokens: int) -> None:

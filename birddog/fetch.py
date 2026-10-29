@@ -653,19 +653,20 @@ class AdaptiveThrottle:
 # ---------------------------------------------------------------------------
 
 PROFILES: Dict[str, HostProfile] = {
-    "uk.wikisource.org:api": HostProfile(
-        initial_rps=4.0, min_rps=0.2, max_rps=50.0, bucket_capacity=5.0,
+    # uk.wikisource.org and commons.wikimedia.org APIs, shared (see RESOLVER).
+    # Wikimedia enforces global API rate limits since 2026: an unauthenticated
+    # bot with a compliant User-Agent gets 200 requests/min across all its
+    # sites, and should keep to 3 or fewer concurrent requests
+    # (https://www.mediawiki.org/wiki/Wikimedia_APIs/Rate_limits). The limit
+    # is per client, not per site -- both hosts 429 at the same moment once
+    # their combined rate goes over it -- so they share one budget here.
+    # max_rps=3.0 is 180/min, leaving headroom under the 200/min limit.
+    "wikimedia:api": HostProfile(
+        initial_rps=2.0, min_rps=0.2, max_rps=3.0, bucket_capacity=3.0,
         ai_step=0.25, increase_every_s=15.0,
         md_429=0.6, md_transient=0.9,
         transient_cooldown_s=(0.2, 0.6),
-        max_in_flight=4,
-    ),
-    "commons.wikimedia.org:api": HostProfile(
-        initial_rps=4.0, min_rps=0.2, max_rps=50.0, bucket_capacity=5.0,
-        ai_step=0.25, increase_every_s=15.0,
-        md_429=0.6, md_transient=0.9,
-        transient_cooldown_s=(0.2, 0.6),
-        max_in_flight=4,
+        max_in_flight=3,
     ),
     # upload.wikimedia.org serves the original media files (byte-range reads for
     # the FTP<->Documents fingerprint match). It answers 403 with a robot-policy
@@ -752,6 +753,13 @@ RESOLVER = HostKeyResolver(
 
         # NocoDB Cloud (nocodb.com) — match URL or bare hostname
         "nocodb.cloud:api": r"(?i)(?:https?://)?([a-z0-9-]+\.)*nocodb\.com(?:[:/]|$)",
+
+        # Wikimedia APIs share one rate limit across sites (see the
+        # wikimedia:api profile). Anchored at the start so a url merely
+        # mentioning one of these hosts (e.g. in a query string) doesn't
+        # match; upload.wikimedia.org serves media, not the API, and keeps
+        # its own profile.
+        "wikimedia:api": r"(?i)^(?:https?://)?(?:uk\.wikisource\.org|commons\.wikimedia\.org)(?:[:/]|$)",
     }
 )
 

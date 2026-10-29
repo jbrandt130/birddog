@@ -1344,6 +1344,12 @@ class DatabaseUpdater:
                     doc_update.append(record)
             elif allow_create:
                 record["last_birddog_update"] = timestamp
+                # queue the new document for location inference; the
+                # LocationUpdateManager sweep picks it up from the
+                # BD:Need Locations view once its page lookups are done.
+                # Only this creation path sets it -- the spreadsheet importer
+                # writes Documents directly and never queues its rows.
+                record["location_status"] = "pending"
                 doc_update.append(record)
             else:
                 _logger.warning(

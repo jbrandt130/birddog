@@ -81,5 +81,70 @@ class TestExtractLocationsBatched(unittest.TestCase):
         self.assertIsNotNone(kwargs["max_retry_after"])
 
 
+class TestResponseCache(unittest.TestCase):
+    """A batch retried after a rate limit must reuse the calls it already
+    paid for, or it can never finish near the daily token limit."""
+
+    def setUp(self):
+        self.extractor = LocationExtractor(MagicMock(), provider="groq")
+        self.messages = [{"role": "user", "content": "x"}]
+
+    def test_identical_request_is_served_from_cache(self):
+        reply = locations_reply((0, ["Kyiv"]))
+        with patch("birddog.locations.extractor.fetch_url", return_value=reply) as fetch:
+            first = self.extractor._create_completion(self.messages, 100, 1)
+            second = self.extractor._create_completion(self.messages, 100, 1)
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual(first, second)
+
+    def test_retried_batch_only_repeats_the_refused_call(self):
+        # two chunks of 10 docs: the first call succeeds, the second is
+        # refused; on retry only the second goes to the service
+        batches = [[f"doc {i}"] for i in range(20)]
+        ok = locations_reply(*[(i, []) for i in range(10)])
+        with patch("birddog.locations.extractor.fetch_url",
+                   side_effect=[ok, RateLimitedError("TPD", 600)]) as fetch:
+            with self.assertRaises(RateLimitedError):
+                self.extractor.extract_locations_batched(batches, batch_size=10)
+        self.assertEqual(fetch.call_count, 2)
+        with patch("birddog.locations.extractor.fetch_url", return_value=ok) as fetch:
+            out = self.extractor.extract_locations_batched(batches, batch_size=10)
+        self.assertEqual(fetch.call_count, 1)
+        self.assertEqual(out, [[]] * 20)
+
+    def test_different_max_tokens_is_a_different_request(self):
+        reply = locations_reply((0, []))
+        with patch("birddog.locations.extractor.fetch_url", return_value=reply) as fetch:
+            self.extractor._create_completion(self.messages, 100, 1)
+            self.extractor._create_completion(self.messages, 200, 1)
+        self.assertEqual(fetch.call_count, 2)
+
+    def test_failed_request_is_not_cached(self):
+        reply = locations_reply((0, []))
+        with patch("birddog.locations.extractor.fetch_url",
+                   side_effect=[RateLimitedError("TPD", 600), reply]) as fetch:
+            with self.assertRaises(RateLimitedError):
+                self.extractor._create_completion(self.messages, 100, 1)
+            self.extractor._create_completion(self.messages, 100, 1)
+        self.assertEqual(fetch.call_count, 2)
+
+    def test_entries_expire(self):
+        reply = locations_reply((0, []))
+        with patch("birddog.locations.extractor.fetch_url", return_value=reply) as fetch, \
+             patch("birddog.locations.extractor.time.monotonic", side_effect=[0.0, 13 * 3600.0, 13 * 3600.0]):
+            # stored at 0h; looked up again at 13h, past the 12h TTL
+            self.extractor._create_completion(self.messages, 100, 1)
+            self.extractor._create_completion(self.messages, 100, 1)
+        self.assertEqual(fetch.call_count, 2)
+
+    def test_cache_is_bounded(self):
+        import birddog.locations.extractor as extractor_module
+        with patch.object(extractor_module, "_RESPONSE_CACHE_SIZE", 2), \
+             patch("birddog.locations.extractor.fetch_url", return_value=locations_reply((0, []))):
+            for i in range(3):
+                self.extractor._create_completion([{"role": "user", "content": str(i)}], 100, 1)
+        self.assertEqual(len(self.extractor._response_cache), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

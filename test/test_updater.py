@@ -1051,6 +1051,23 @@ class TestUpdateDocRecordsFromRecords(unittest.TestCase):
         self.assertEqual(len(self.db.write_calls), 1)
 
 
+    def test_new_doc_is_queued_for_location_inference(self):
+        doc_records = {"https://x/1": {"url": "https://x/1", "title": "1"}}
+        self.updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
+        _, written = self.db.write_calls[0]
+        self.assertEqual(written[0]["location_status"], "pending")
+
+    def test_updated_doc_is_not_requeued_for_location_inference(self):
+        # an existing doc keeps whatever location_status it has (blank for
+        # older and imported docs, or a finished status)
+        self.db.lookup_map["Documents"] = {"https://x/1": "d1"}
+        self.db.records["Documents"] = {"d1": {"Id": "d1", "url": "https://x/1", "title": "old"}}
+        doc_records = {"https://x/1": {"url": "https://x/1", "title": "new"}}
+        self.updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
+        _, written = self.db.write_calls[0]
+        self.assertNotIn("location_status", written[0])
+
+
 class TestLinkHashDuplicates(unittest.TestCase):
     """
     link_hash_duplicates() makes two independent scan() sequences against

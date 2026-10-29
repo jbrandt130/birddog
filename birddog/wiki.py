@@ -847,8 +847,8 @@ def _nonexistent_page(page_title):
 def _is_table(tag):
     return tag.tag == "table" and [entry for entry in tag.attributes if "wikitable" in entry] != []
 
-# matches the uk.wikisource throttle profile's max_in_flight (fetch.PROFILES)
-_EXISTENCE_CHECK_WORKERS = 4
+# matches the wikimedia:api throttle profile's max_in_flight (fetch.PROFILES)
+_EXISTENCE_CHECK_WORKERS = 3
 
 def _check_page_existence_chunked(page_links, chunk_size=50):
     exists_map = {}

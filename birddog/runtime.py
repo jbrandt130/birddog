@@ -559,6 +559,12 @@ class Runtime:
             self._database_update_manager.update_document_metadata()
             self._database_updater.refresh_doc_lookups()
             self._database_updater.link_hash_duplicates()
+            if self._location_update_manager:
+                try:
+                    self._location_update_manager.sweep()
+                except Exception as err:
+                    # e.g. a base without the BD:Need Locations view yet
+                    _logger.error(f"Runtime: location sweep failed: {err}")
 
     @property
     def database(self):

@@ -12,9 +12,21 @@ class FakeDB:
         self.docs = docs  # url -> Id
         self.locations = locations  # location_id -> Id
         self.links = links or {}  # doc Id -> list of Location Ids
+        self.statuses = {}  # url -> location_status written
+        self.backlog = []  # urls in the BD:Need Locations view
+        self.scan_calls = []
 
     def lookup(self, table, key_set):
         return {u: self.docs[u] for u in key_set if u in self.docs}
+
+    def write(self, table, records):
+        for r in records:
+            self.statuses[r["url"]] = r["location_status"]
+        return [self.docs.get(r["url"]) for r in records]
+
+    def scan(self, table, view_name=None, fields=None, limit=100, cursor=None):
+        self.scan_calls.append((table, view_name, limit))
+        return [{"Id": self.docs.get(u), "url": u} for u in self.backlog[:limit]], None
 
     def scan_all(self, table, where=None, fields=None, sort=None, view_name=None):
         return [{"Id": i, "location_id": loc} for loc, i in self.locations.items()]
@@ -56,13 +68,16 @@ class TestUpdateLocations(unittest.TestCase):
         self.assertEqual(db.links[1], [100])
         self.assertEqual(db.links[2], [200])
         self.assertEqual(summary["updated"], 2)
-        self.assertEqual(finder.calls, [([1, 2], True)])
+        # ids arrive in set-iteration order, which varies between runs
+        self.assertEqual([(sorted(ids), smallest) for ids, smallest in finder.calls], [([1, 2], True)])
+        self.assertEqual(db.statuses, {"u1": "found", "u2": "found"})
 
     def test_unchanged_links_reported(self):
         db = FakeDB({"u1": 1}, {"-10": 100}, links={1: [100]})
         finder = FakeFinder({1: (False, ["-10"], [], [], set())})
         summary = make_manager(db, finder).update_locations(["u1"])
         self.assertEqual((summary["updated"], summary["unchanged"]), (0, 1))
+        self.assertEqual(db.statuses, {"u1": "found"})
 
     def test_error_and_empty_results_leave_links_alone(self):
         db = FakeDB({"u1": 1, "u2": 2}, {"-10": 100}, links={1: [100], 2: [100]})
@@ -70,6 +85,7 @@ class TestUpdateLocations(unittest.TestCase):
         summary = make_manager(db, finder).update_locations(["u1", "u2"])
         self.assertEqual(db.links, {1: [100], 2: [100]})
         self.assertEqual((summary["errors"], summary["empty"]), (1, 1))
+        self.assertEqual(db.statuses, {"u1": "failed", "u2": "none"})
 
     def test_missing_docs_and_unknown_locations(self):
         db = FakeDB({"u1": 1}, {"-10": 100})
@@ -78,6 +94,8 @@ class TestUpdateLocations(unittest.TestCase):
         self.assertEqual(summary["not_found"], 1)
         self.assertEqual(summary["errors"], 1)
         self.assertEqual(db.links, {})
+        # unknown location ids count as failed; a missing doc gets no status
+        self.assertEqual(db.statuses, {"u1": "failed"})
 
     def test_url_with_comma_is_found(self):
         url = "https://commons.wikimedia.org/wiki/File:A,_B.pdf"
@@ -91,6 +109,98 @@ class TestUpdateLocations(unittest.TestCase):
         summary = make_manager(FakeDB({}, {}), finder).update_locations(["nope"])
         self.assertEqual(finder.calls, [])
         self.assertEqual(summary["not_found"], 1)
+
+
+    def test_rate_limit_leaves_statuses_alone(self):
+        class LimitedFinder:
+            def get_doc_locations_batched(self, *a, **kw):
+                raise RateLimitedError("TPD", 600)
+        db = FakeDB({"u1": 1}, {})
+        with self.assertRaises(RateLimitedError):
+            make_manager(db, LimitedFinder()).update_locations(["u1"])
+        self.assertEqual(db.statuses, {})
+
+
+class TestSweep(unittest.TestCase):
+    def make(self, backlog, active=()):
+        db = FakeDB({u: i for i, u in enumerate(backlog, 1)}, {})
+        db.backlog = list(backlog)
+        m = make_manager(db, FakeFinder({}))
+        m.active_tasks = lambda: [{"name": n, "task_id": n} for n in active]
+        m.status = lambda: {n: {"completed": 40, "total": 100} for n in active}
+        self.started = []
+        m.start_location_update = lambda urls, task_prefix=None: self.started.append((urls, task_prefix)) or f"{task_prefix}_1"
+        return m, db
+
+    def sweep_log(self, m, **kw):
+        with patch("birddog.locations.manager._logger") as logger:
+            result = m.sweep(**kw)
+        return result, logger.info.call_args.args[0]
+
+    def test_starts_sweep_task_from_view(self):
+        m, db = self.make(["u1", "u2"])
+        result, line = self.sweep_log(m)
+        self.assertEqual(result, "LOS_1")
+        self.assertIn("sweep: started LOS_1 for 2 doc(s)", line)
+        self.assertNotIn("more may be pending", line)
+        self.assertEqual(self.started, [(["u1", "u2"], "LOS")])
+        self.assertEqual(db.scan_calls, [("Documents", "BD:Need Locations", m._SWEEP_LIMIT)])
+
+    def test_full_batch_notes_more_may_be_pending(self):
+        m, _ = self.make(["u1", "u2", "u3"])
+        _, line = self.sweep_log(m, limit=2)
+        self.assertIn("for 2 doc(s), more may be pending", line)
+
+    def test_no_new_sweep_while_one_is_active(self):
+        m, db = self.make(["u1"], active=["LOS_0"])
+        result, line = self.sweep_log(m)
+        self.assertIsNone(result)
+        self.assertEqual(db.scan_calls, [])
+        self.assertIn("sweep: LOS_0 still running (40/100)", line)
+
+    def test_manual_task_does_not_block_sweep(self):
+        m, _ = self.make(["u1"], active=["LOC_0"])
+        self.assertEqual(m.sweep(), "LOS_1")
+
+    def test_empty_backlog_starts_nothing(self):
+        m, _ = self.make([])
+        result, line = self.sweep_log(m)
+        self.assertIsNone(result)
+        self.assertEqual(self.started, [])
+        self.assertIn("sweep: nothing pending", line)
+
+
+class TestFailedBatches(unittest.TestCase):
+    def test_batches_out_of_retries_are_marked_failed(self):
+        db = FakeDB({"u1": 1, "u2": 2, "u3": 3}, {})
+        m = make_manager(db, FakeFinder({}))
+        m._remove_state = lambda name: None
+        m._get_state = lambda name: {}
+        m.complete_task({"task_id": "t1", "name": "LOS_1"}, [
+            {"status": "failed", "payload": {"kind": "update_locations", "urls": ["u1", "u2"]}},
+            {"status": "completed", "payload": {"kind": "update_locations", "urls": ["u3"]}},
+        ])
+        self.assertEqual(db.statuses, {"u1": "failed", "u2": "failed"})
+
+    def test_task_summary_totals_batches(self):
+        db = FakeDB({}, {})
+        m = make_manager(db, FakeFinder({}))
+        m._remove_state = lambda name: None
+        m._get_state = lambda name: {"started": 1000.0}
+        subtasks = [
+            {"status": "completed", "payload": {"urls": ["a"] * 20, "updated": 5, "unchanged": 3,
+                                                "empty": 10, "errors": 2, "not_found": 0, "rate_limit_wait_s": 432.5}},
+            {"status": "completed", "payload": {"urls": ["b"] * 5, "updated": 1, "unchanged": 0,
+                                                "empty": 4, "errors": 0, "not_found": 0, "rate_limit_wait_s": 0}},
+            {"status": "failed", "payload": {"urls": ["c"] * 20}},
+        ]
+        with patch("birddog.locations.manager._logger") as logger, \
+             patch("birddog.locations.manager.time.time", return_value=1600.0):
+            m._log_task_summary("LOS_1", subtasks, 1000.0, False)
+        line = logger.info.call_args.args[0]
+        self.assertIn("LOS_1 finished: 45 docs in 600s (rate-limit waits 432s)", line)
+        self.assertIn("found=9 (updated=6) none=14 failed=2 not_found=0", line)
+        self.assertIn("batches: 3 total, 1 failed, 0 cancelled", line)
 
 
 class TestRateLimitedSubtask(unittest.TestCase):
