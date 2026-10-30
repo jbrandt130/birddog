@@ -2,6 +2,7 @@
 # Licensed under the MIT License. See LICENSE file in the project root.
 
 import json
+import os
 import threading
 import time
 
@@ -9,6 +10,7 @@ from birddog.database import Database
 from birddog.database_updater import _replace_links
 from birddog.env import env_table_name
 from birddog.fetch import RateLimitedError
+from birddog.locations.extractor import PROVIDER_KEY_ENV
 from birddog.store import KeyValueStore
 from birddog.task import TaskManager
 from birddog.utility import new_id
@@ -51,9 +53,18 @@ class LocationUpdateManager(TaskManager):
         self._provider = provider
         self._finder_lock = threading.Lock()
         self._location_record_ids = None
-        self._state_store = KeyValueStore(table_name=env_table_name("bd_loc_update"))
+        # shares DatabaseUpdateManager's table under its own namespace; the EB
+        # role can't create tables, so each new one is a manual setup step
+        self._state_store = KeyValueStore(table_name=env_table_name("bd_db_update"))
         self._state_lock = threading.RLock()
         super().__init__("LocationUpdateManager")
+
+    def _missing_key(self):
+        """Name of the provider's API key variable if it isn't set, else None.
+        Without a key every call fails, which would mark each document
+        failed instead of leaving it pending until the key is configured."""
+        name = PROVIDER_KEY_ENV.get(self._provider)
+        return name if name and not os.environ.get(name) else None
 
     # ------------------------------------------------------------------
     # state helpers
@@ -94,6 +105,26 @@ class LocationUpdateManager(TaskManager):
             "started": time.time(),
         })
         self.create(task_name, batches)
+
+    def start(self):
+        super().start()
+        # off the startup path: a slow or unreachable provider mustn't delay boot
+        threading.Thread(target=self._log_credential_check, daemon=True).start()
+
+    def _log_credential_check(self):
+        """Logs one line at startup saying whether location inference can run."""
+        try:
+            from birddog.locations.extractor import LocationExtractor
+            ok, message = LocationExtractor(_logger, provider=self._provider).check_credentials()
+        except Exception as err:
+            ok, message = None, f"could not verify credentials: {err}"
+        line = f"LocationUpdateManager: {self._provider} credential check: {message}"
+        if ok:
+            _logger.info(line)
+        elif ok is False:
+            _logger.error(line + " - location inference will not run until this is fixed")
+        else:
+            _logger.warning(line)
 
     # ------------------------------------------------------------------
     # lazy resources
@@ -321,6 +352,10 @@ class LocationUpdateManager(TaskManager):
         total = len(doc_urls)
         if total <= 0:
             return None
+        missing = self._missing_key()
+        if missing:
+            _logger.warning(f"LocationUpdateManager: {missing} is not set - skipping location update of {total} doc(s)")
+            return None
 
         task_name = f"{task_prefix or self._TASK_PREFIX}_{new_id()}"
         batches = [
@@ -342,6 +377,10 @@ class LocationUpdateManager(TaskManager):
         Logs one line per call, so the log shows the sweep is alive and what
         it's doing: waiting on a running task, idle, or starting one."""
         limit = limit or self._SWEEP_LIMIT
+        missing = self._missing_key()
+        if missing:
+            _logger.warning(f"LocationUpdateManager: sweep: {missing} is not set - leaving documents pending")
+            return None
         active = [t for t in self.active_tasks() if t.get("name", "").startswith(f"{self._SWEEP_PREFIX}_")]
         if active:
             task_name = active[0].get("name")

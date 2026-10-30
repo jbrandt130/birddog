@@ -57,6 +57,8 @@ def make_manager(db, finder):
     m._finder = finder
     m._finder_lock = threading.Lock()
     m._location_record_ids = None
+    # a provider with no key variable, so the missing-key guard stays out of the way
+    m._provider = "test"
     return m
 
 
@@ -168,6 +170,64 @@ class TestSweep(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(self.started, [])
         self.assertIn("sweep: nothing pending", line)
+
+
+class TestMissingKey(unittest.TestCase):
+    """Without an API key every call fails; documents must stay pending
+    instead of being marked failed."""
+
+    def make(self):
+        m = make_manager(FakeDB({"u1": 1}, {}), FakeFinder({}))
+        m._provider = "groq"
+        m.active_tasks = lambda: []
+        m._create_task = lambda *a: self.fail("task created without a key")
+        return m
+
+    def test_sweep_skips_without_key(self):
+        m = self.make()
+        with patch.dict("os.environ", {}, clear=True), \
+             patch("birddog.locations.manager._logger") as logger:
+            self.assertIsNone(m.sweep())
+        self.assertIn("GROQ_LOCATION_KEY is not set", logger.warning.call_args.args[0])
+        self.assertEqual(m._db.scan_calls, [])
+
+    def test_start_skips_without_key(self):
+        m = self.make()
+        with patch.dict("os.environ", {}, clear=True), \
+             patch("birddog.locations.manager._logger"):
+            self.assertIsNone(m.start_location_update(["u1"]))
+
+    def test_start_runs_with_key(self):
+        m = self.make()
+        created = []
+        m._create_task = lambda *a: created.append(a)
+        with patch.dict("os.environ", {"GROQ_LOCATION_KEY": "test-key"}, clear=True):
+            name = m.start_location_update(["u1"])
+        self.assertTrue(name.startswith("LOC_"))
+        self.assertEqual(len(created), 1)
+
+
+class TestStartupCredentialCheck(unittest.TestCase):
+    def log_for(self, result):
+        m = make_manager(FakeDB({}, {}), FakeFinder({}))
+        m._provider = "groq"
+        with patch("birddog.locations.extractor.LocationExtractor.check_credentials", return_value=result), \
+             patch("birddog.locations.manager._logger") as logger:
+            m._log_credential_check()
+        return logger
+
+    def test_good_credentials_logged_as_info(self):
+        logger = self.log_for((True, "key accepted, model m available"))
+        self.assertIn("groq credential check: key accepted", logger.info.call_args.args[0])
+        logger.error.assert_not_called()
+
+    def test_bad_credentials_logged_as_error(self):
+        logger = self.log_for((False, "key rejected by groq (HTTP 401)"))
+        self.assertIn("will not run until this is fixed", logger.error.call_args.args[0])
+
+    def test_inconclusive_check_logged_as_warning(self):
+        logger = self.log_for((None, "could not verify credentials: down"))
+        self.assertIn("could not verify", logger.warning.call_args.args[0])
 
 
 class TestFailedBatches(unittest.TestCase):

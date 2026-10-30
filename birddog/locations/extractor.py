@@ -33,6 +33,13 @@ _COMPLETION_TIMEOUT_S = 90
 _RESPONSE_CACHE_TTL_S = 12 * 60 * 60
 _RESPONSE_CACHE_SIZE = 256
 
+# the startup credential check gives up after this long rather than holding
+# anything up
+_CREDENTIAL_CHECK_TIMEOUT_S = 15
+
+# environment variable holding each provider's API key
+PROVIDER_KEY_ENV = {"modal": "HF_TOKEN", "groq": "GROQ_LOCATION_KEY"}
+
 
 # 1. Define the data structure to capture location hierarchy
 class ExtractedLocation(BaseModel):
@@ -172,14 +179,15 @@ class LocationExtractor:
         setting the model and provider link
         """
         self._logger = logger
+        self._provider = provider
         match provider:
             case "modal":
                 self._provider_url = "https://ztatyan--qwen-inference-service-serve.modal.run/v1"
-                self._provider_api_key = os.getenv("HF_TOKEN", "")
+                self._provider_api_key = os.getenv(PROVIDER_KEY_ENV["modal"], "")
                 self._model = "Qwen/Qwen2.5-7B-Instruct"
             case "groq":
                 self._provider_url = "https://api.groq.com/openai/v1"
-                self._provider_api_key = os.getenv("GROQ_LOCATION_KEY", "")
+                self._provider_api_key = os.getenv(PROVIDER_KEY_ENV["groq"], "")
                 self._model = "qwen/qwen3.8-27b"  # Updated to the current active free-tier ID
             case _:
                 raise ValueError(f"Invalid provider {provider}")
@@ -211,6 +219,34 @@ class LocationExtractor:
             self._response_cache.move_to_end(key)
             while len(self._response_cache) > _RESPONSE_CACHE_SIZE:
                 self._response_cache.popitem(last=False)
+
+    def check_credentials(self) -> tuple[bool | None, str]:
+        """Checks the API key against the provider's model list, which costs
+        no tokens. Returns (ok, message): ok is True if the key is accepted
+        and the model is listed, False if the key is missing or rejected or
+        the model isn't offered, and None if the check itself couldn't run
+        (network trouble, provider outage)."""
+        if not self._provider_api_key:
+            return False, f"{PROVIDER_KEY_ENV[self._provider]} is not set"
+        try:
+            response = fetch_url(
+                f"{self._provider_url}/models",
+                headers={"Authorization": f"Bearer {self._provider_api_key}"},
+                return_json=True,
+                timeout=_CREDENTIAL_CHECK_TIMEOUT_S,
+                max_retry_after=_CREDENTIAL_CHECK_TIMEOUT_S,
+            )
+        except requests.exceptions.HTTPError as err:
+            status = getattr(getattr(err, "response", None), "status_code", None)
+            if status in (401, 403):
+                return False, f"key rejected by {self._provider} (HTTP {status})"
+            return None, f"could not verify credentials: {str(err)[:200]}"
+        except Exception as err:
+            return None, f"could not verify credentials: {str(err)[:200]}"
+        models = {m.get("id") for m in (response or {}).get("data", []) if isinstance(m, dict)}
+        if models and self._model not in models:
+            return False, f"key accepted, but model {self._model} is not offered by {self._provider}"
+        return True, f"key accepted, model {self._model} available"
 
     def _create_completion(self, messages: list[dict], max_tokens: int, num_docs: int) -> dict:
         """POSTs an OpenAI-compatible chat completion request and returns the

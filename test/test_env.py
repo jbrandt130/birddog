@@ -22,7 +22,7 @@ class TestEnvTableName(unittest.TestCase):
     def test_stage_names_stay_inside_iam_pattern(self):
         # the EB role's DynamoDB policy only covers "bd_*" / "birddog_*" tables
         with patch.dict(os.environ, {"BIRDDOG_NOCODB_ENV": "CLOUD_STAGE"}):
-            for name in ("bd_task_queue", "bd_task_kv_store", "bd_db_update", "bd_loc_update",
+            for name in ("bd_task_queue", "bd_task_kv_store", "bd_db_update",
                          "bd_tracker_kv_store", "bd_doc_tracker"):
                 with self.subTest(name=name):
                     self.assertTrue(env_table_name(name).startswith("bd_"))

@@ -81,6 +81,46 @@ class TestExtractLocationsBatched(unittest.TestCase):
         self.assertIsNotNone(kwargs["max_retry_after"])
 
 
+class TestCheckCredentials(unittest.TestCase):
+    def setUp(self):
+        self.extractor = LocationExtractor(MagicMock(), provider="groq")
+        self.extractor._provider_api_key = "test-key"
+
+    def check(self, **fetch):
+        with patch("birddog.locations.extractor.fetch_url", **fetch) as call:
+            return self.extractor.check_credentials(), call
+
+    def test_accepted_key_and_listed_model(self):
+        (ok, message), call = self.check(return_value={"data": [{"id": self.extractor._model}]})
+        self.assertTrue(ok)
+        self.assertIn("key accepted", message)
+        self.assertEqual(call.call_args.args[0], "https://api.groq.com/openai/v1/models")
+
+    def test_model_missing_from_list(self):
+        (ok, message), _ = self.check(return_value={"data": [{"id": "other-model"}]})
+        self.assertFalse(ok)
+        self.assertIn("is not offered", message)
+
+    def test_rejected_key(self):
+        response = MagicMock(status_code=401)
+        err = requests.exceptions.HTTPError("HTTP 401: Invalid API Key", response=response)
+        (ok, message), _ = self.check(side_effect=err)
+        self.assertFalse(ok)
+        self.assertIn("HTTP 401", message)
+
+    def test_missing_key_makes_no_request(self):
+        self.extractor._provider_api_key = ""
+        (ok, message), call = self.check()
+        self.assertFalse(ok)
+        self.assertIn("GROQ_LOCATION_KEY is not set", message)
+        call.assert_not_called()
+
+    def test_outage_is_inconclusive(self):
+        (ok, message), _ = self.check(side_effect=requests.exceptions.ConnectionError("down"))
+        self.assertIsNone(ok)
+        self.assertIn("could not verify", message)
+
+
 class TestResponseCache(unittest.TestCase):
     """A batch retried after a rate limit must reuse the calls it already
     paid for, or it can never finish near the daily token limit."""

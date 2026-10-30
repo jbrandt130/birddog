@@ -131,8 +131,8 @@ def _classify_item(email, archive_title, item_title, entry, runtime):
     # (Page fetch + revert_to), so a hung sweep shows exactly which item it
     # was working on -- a "classifying" line with no matching "classified"
     # line before the next heartbeat tick (or its absence) pins the hang down.
-    if did_work:
-        _logger.info(f"significance sweep: classifying {item_title} ({from_date} -> {to_date})")
+    #if did_work:
+    #    _logger.info(f"significance sweep: classifying {item_title} ({from_date} -> {to_date})")
     try:
         verdict = _classify(item_title, from_date, to_date, runtime)
     except Exception:
