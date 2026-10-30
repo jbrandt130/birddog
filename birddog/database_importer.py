@@ -1805,6 +1805,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         "processor",
         "when_transcribed",
         "language",
+        "filename",
     }
 
     # user-curated document fields: conflicting values for one document are logged
@@ -2017,7 +2018,7 @@ def process_dir(dir_path, actually_write=True):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DADO-archives-20261020.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-D-wiki-20261015.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(_dir_path)
