@@ -538,6 +538,36 @@ class UserTest(unittest.TestCase):
         self.assertEqual(items, [f"{title}/1", f"{title}/2"])
         self.assertEqual(now, resolved_at)
 
+    def test_resolve_rechecks_watch_so_newer_edits_come_back(self):
+        # issue #158: a resolve made from a long-open page acted on the last
+        # check's entries; edits the tracker picked up since then only
+        # surfaced on some later page load. Both resolve paths now re-check
+        # and return that result.
+        u = User(name="Test", email="recheck@example.com", password="pw", runtime=object())
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
+        self.watcher.resolve_result = {}
+        self.watcher.check_result = {f"{title}/1": {"modified": "2026-01-01T00:00:00Z"}}
+
+        result, _ = u.resolve_item(title, f"{title}/1")
+        self.assertEqual([r["name"] for r in result], [f"{title}/1"])
+        self.assertEqual(len(self.watcher.check_calls), 1)
+
+        result, _ = u.resolve_many(title, [f"{title}/1"])
+        self.assertEqual([r["name"] for r in result], [f"{title}/1"])
+        self.assertEqual(len(self.watcher.check_calls), 2)
+
+    def test_resolve_skips_recheck_when_watch_retired(self):
+        u = User(name="Test", email="recheck2@example.com", password="pw", runtime=object())
+        title = _watch_title("DAARK", "D")
+        u.add_to_watchlist(title, "2020,01,01,00:00")
+        self.watcher.resolve_result = {}
+        self.watcher.watcher_exists = False
+
+        result, _ = u.resolve_item(title, title)
+        self.assertEqual(result, [])
+        self.assertEqual(self.watcher.check_calls, [])
+
     def test_user_undo_resolve_calls_watcher_and_formats_result(self):
         # issue #83
         u = User(name="Test", email="undo@example.com", password="pw")

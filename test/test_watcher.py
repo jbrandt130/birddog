@@ -560,6 +560,45 @@ class CheckWatcherTests(WatcherTestBase):
         self.assertEqual(entry["user"], "alice")
         self.assertEqual(watcher_mod.get_watcher(self.EMAIL, self.TITLE)["last_checked_date"], "2026-01-01T10:00:00Z")
 
+    def test_check_flags_never_resolved_items(self):
+        # issue #158: an item with no resolve history reports the watch's
+        # cutoff as last_resolved -- flagged so the UI can say "never"
+        # instead of a years-old date
+        item = f"{self.TITLE}/100/1/5"
+        manager = FakePageUpdateManager({item: {"timestamp": "2026-01-01T10:00:00Z", "user": "alice"}})
+
+        entry = self._check(manager)[item]
+
+        self.assertTrue(entry["never_resolved"])
+        self.assertEqual(entry["last_resolved"], "2025-01-01T00:00:00Z")
+
+    def test_never_resolved_flag_cleared_by_resolve(self):
+        item = f"{self.TITLE}/100/1/5"
+        updates = {item: {"timestamp": "2026-01-01T10:00:00Z", "user": "alice"}}
+        manager = FakePageUpdateManager(updates)
+        self._check(manager)
+
+        watcher_mod.resolve_watcher(self.EMAIL, self.TITLE, item, now="2026-01-02T00:00:00Z")
+        history = watcher_mod.get_resolved(self.EMAIL, self.TITLE, item)
+        self.assertNotIn("never_resolved", history[-1])
+
+        # a newer edit after a real resolve is not "never resolved"
+        updates[item] = {"timestamp": "2026-01-03T10:00:00Z", "user": "bob"}
+        entry = self._check(manager)[item]
+        self.assertNotIn("never_resolved", entry)
+        self.assertEqual(entry["last_resolved"], "2026-01-02T00:00:00Z")
+
+
+    def test_undo_of_only_resolve_restores_never_resolved_flag(self):
+        item = f"{self.TITLE}/100/1/5"
+        manager = FakePageUpdateManager({item: {"timestamp": "2026-01-01T10:00:00Z", "user": "alice"}})
+        self._check(manager)
+
+        watcher_mod.resolve_watcher(self.EMAIL, self.TITLE, item, now="2026-01-02T00:00:00Z")
+        watcher_mod.undo_resolve_many(self.EMAIL, self.TITLE, [(item, "2026-01-02T00:00:00Z")])
+
+        self.assertTrue(watcher_mod.get_unresolved(self.EMAIL, self.TITLE, item)["never_resolved"])
+
     def test_check_passes_last_checked_date_as_cutoff(self):
         updates = {
             f"{self.TITLE}/100/1/5": {"timestamp": "2026-01-01T10:00:00Z", "user": "alice"},

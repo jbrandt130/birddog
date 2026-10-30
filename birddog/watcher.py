@@ -470,6 +470,16 @@ def _ensure_migrated(email, archive_title, runtime):
 # ---------------------------------------------------------------------
 # business logic (replaces ArchiveWatcher.check() / .resolve())
 
+def _mark_never_resolved(entry, resolved_history):
+    # issue #158: an item with no resolve history gets the watch's cutoff
+    # as its last_resolved (still the right baseline for diffing), but
+    # showing that date in the UI made a brand-new page read as "not
+    # resolved for years" -- flag it so the client can say "never" instead
+    if resolved_history:
+        entry.pop("never_resolved", None)
+    else:
+        entry["never_resolved"] = True
+
 def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=None):
     _ensure_migrated(email, archive_title, runtime)
     try:
@@ -541,6 +551,7 @@ def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=N
                         "user": user,
                         "moved_to": target_title,
                     }
+                    _mark_never_resolved(new_unresolved[item], resolved_history)
                 elif action in ("delete", "move"):
                     # nothing left to review at this title -- auto-resolve
                     # rather than surfacing a dead/relocated page as a
@@ -567,6 +578,7 @@ def check_watcher(email, archive_title, runtime, include, cutoff_date, exclude=N
                         "last_resolved": resolved_history[-1]["last_resolved"] if resolved_history else header["cutoff_date"],
                         "user": user,
                     }
+                    _mark_never_resolved(new_unresolved[item], resolved_history)
         if new_unresolved:
             _watcher_kv.insert_many(_unresolved_ns(email, archive_title), {k: json.dumps(v) for k, v in new_unresolved.items()})
         if new_resolved:
@@ -616,6 +628,7 @@ def resolve_watcher(email, archive_title, item, runtime=None, deep=False, now=No
             new_resolved = {}
             for key, entry in matches.items():
                 entry["last_resolved"] = now
+                entry.pop("never_resolved", None)
                 history = resolved_by_item.get(key, [])
                 history.append(entry)
                 new_resolved[key] = history
@@ -635,6 +648,7 @@ def resolve_watcher(email, archive_title, item, runtime=None, deep=False, now=No
             entry = None
         if entry is not None:
             entry["last_resolved"] = now
+            entry.pop("never_resolved", None)
             # write resolved before clearing unresolved -- see the matching
             # comment in the deep branch above; a kill between these two
             # calls otherwise loses the item from both instead of just
@@ -691,6 +705,7 @@ def resolve_many(email, archive_title, items, runtime=None, now=None):
         new_resolved = {}
         for key, entry in matches.items():
             entry["last_resolved"] = now
+            entry.pop("never_resolved", None)
             history = resolved_by_item.get(key, [])
             history.append(entry)
             new_resolved[key] = history
@@ -749,6 +764,7 @@ def undo_resolve_many(email, archive_title, items, runtime=None):
         # this same field: the resolve-before-last's timestamp, or this
         # item's never-before-resolved cutoff if there wasn't one
         entry["last_resolved"] = history[-1]["last_resolved"] if history else header["cutoff_date"]
+        _mark_never_resolved(entry, history)
         new_unresolved[item] = entry
         restored.append(item)
         if history:

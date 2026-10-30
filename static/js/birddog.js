@@ -1778,6 +1778,14 @@ function alert_row_html(row) {
     const last_resolved = meta.last_resolved || '';
     const cutoff = get_watch_cutoff(watch_title);
     const checked = checked_paths.has(path);
+    // issue #158: a never-resolved item's last_resolved is just the watch's
+    // cutoff (kept as the diff baseline), which read as "unresolved for
+    // years" -- say "never" instead. Entries surfaced before the server
+    // started setting never_resolved fall back to matching the cutoff.
+    const never_resolved = meta.never_resolved || (last_resolved && last_resolved === cutoff);
+    const last_resolved_html = never_resolved
+        ? '<span class="text-muted">never</span>'
+        : (last_resolved ? format_date(last_resolved, false) : '');
 
     let badges = '';
     if (meta.new_page) badges += ' <span class="badge bg-success">NEW</span>';
@@ -1822,7 +1830,7 @@ function alert_row_html(row) {
           <td>${label_html}${badges}${subtree_btn}</td>
           <td>${modified ? format_date(modified, false) : ''}</td>
           <td>${escape_attr(meta.user || '')}</td>
-          <td>${last_resolved ? format_date(last_resolved, false) : ''}</td>
+          <td>${last_resolved_html}</td>
           <td>${cutoff ? format_date(cutoff, false) : ''}</td>
           <td class="text-nowrap">
             <button

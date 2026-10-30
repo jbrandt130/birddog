@@ -260,17 +260,37 @@ class User:
         watcher.remove_watcher(self.email, title)
         return True
 
+    def _check_watchlist_item_locked(self, title):
+        # caller holds self._lock; title is already canonical
+        watchlist_item = _get_watch_item(self.email, title)  # raises KeyError if not watched
+        unresolved = watcher.check_watcher(
+            self.email, title, self._runtime,
+            include=watchlist_item['include'],
+            cutoff_date=watchlist_item['cutoff_date'],
+            exclude=watchlist_item.get('exclude'))
+        watchlist_item["last_checked_date"] = _to_utc(utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ'))
+        _save_watch_item(self.email, title, watchlist_item)
+        return unresolved
+
+    def _recheck_after_resolve(self, title, unresolved):
+        # issue #158: a resolve acts on the unresolved entries the *last*
+        # check stored, and a watchlist page left open for hours never
+        # re-checks on its own -- so edits the tracker picked up since then
+        # (e.g. a newer edit to the very item just resolved, or new child
+        # pages under it) stayed invisible until some later page load, where
+        # they surfaced looking like the resolve had been lost. Re-checking
+        # here hands them back in the resolve response itself.
+        if self._runtime is None:
+            return unresolved
+        try:
+            return self._check_watchlist_item_locked(title)
+        except KeyError:
+            return unresolved  # watch (or its wl: entry) already gone
+
     def check_watchlist_item(self, title, tree=False):
         title = canonicalize_title(title)
         with self._lock:
-            watchlist_item = _get_watch_item(self.email, title)  # raises KeyError if not watched
-            unresolved = watcher.check_watcher(
-                self.email, title, self._runtime,
-                include=watchlist_item['include'],
-                cutoff_date=watchlist_item['cutoff_date'],
-                exclude=watchlist_item.get('exclude'))
-            watchlist_item["last_checked_date"] = _to_utc(utc_now_dt().strftime('%Y-%m-%dT%H:%M:%SZ'))
-            _save_watch_item(self.email, title, watchlist_item)
+            unresolved = self._check_watchlist_item_locked(title)
 
         if tree:
             return watcher.unresolved_tree(unresolved)
@@ -302,6 +322,8 @@ class User:
                 if not _is_watchlist_migrated(self.email):
                     _get_watchlist(self.email)  # fold in any un-migrated sibling entries first
                 _kv_store.remove(_watchlist_namespace(self.email), title)
+            else:
+                unresolved = self._recheck_after_resolve(title, unresolved)
 
         if tree:
             result = watcher.unresolved_tree(unresolved)
@@ -326,6 +348,8 @@ class User:
                 if not _is_watchlist_migrated(self.email):
                     _get_watchlist(self.email)
                 _kv_store.remove(_watchlist_namespace(self.email), title)
+            else:
+                unresolved = self._recheck_after_resolve(title, unresolved)
 
         if tree:
             result = watcher.unresolved_tree(unresolved)
