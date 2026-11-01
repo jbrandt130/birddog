@@ -1592,7 +1592,8 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
                   curr_source_type, fund_name, label: str | Any, level, opus_name,
                   opus_title: str | None | Any, opus_url: str, page_table: dict[Any, Any] | Any, r: int, raw_url: str,
                   timestamp: str | None, title, wiki_spreadsheet, ws, language):
-    necessary_parts = [fund_name, opus_name, normalize_to_int_str(str(case_num_cell.value))]
+    case_name = normalize_to_int_str(str(case_num_cell.value))
+    necessary_parts = [fund_name, opus_name, case_name]
     curr_import_message = check_url_sanity(raw_url, curr_import_message, wiki_spreadsheet,
                                            necessary_parts, ws.title, case_num_cell_addr)
 
@@ -1617,6 +1618,12 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
         content_code_col_offs = content_code_col_offs + 1
         process_code_col_offs = process_code_col_offs + 1
 
+    filename = combine_cell_value(ws[file_name_cell_addr1], ws[file_name_cell_addr2])
+    root_label = get_root_label(label)
+    if not filename:
+        tail = label[len(root_label):] if root_label and label.startswith(root_label) else label
+        filename = tail.lstrip("/").replace("/", "-")
+
     process_code = get_cell_value(ws[f"{chr(ord(case_num_col) + process_code_col_offs)}{r}"], True)  # F
     process_code, curr_import_message = normalize_process_code(process_code, curr_import_message)
     when_transcribed = ws[when_transcribed_cell_addr].value
@@ -1630,7 +1637,7 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
         "title": title,
         "url": raw_url,
         "label": label,
-        "root_label": get_root_label(label),
+        "root_label": root_label,
         "seq_label": sequential_page_label(label),
         "level": level,
         "change_date": change_date,
@@ -1647,7 +1654,7 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
         "import_message": curr_import_message,
         # the columns for the following cells are not fixed
         "comments": get_cell_value(ws[comments_cell_addr]),
-        "filename": combine_cell_value(ws[file_name_cell_addr1], ws[file_name_cell_addr2]),
+        "filename": filename,
         "processor": combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2]),
         "pages_processed": get_cell_int_value(ws[pages_processed_cell_addr1]) +
                            get_cell_int_value(ws[pages_processed_cell_addr2]),
@@ -2018,7 +2025,7 @@ def process_dir(dir_path, actually_write=True):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-D-wiki-20261015.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAKO-D-fund280-wiki-20261013.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(_dir_path)
