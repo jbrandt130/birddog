@@ -660,6 +660,14 @@ def add_page(page: dict, page_table: list, update_existing_page: bool) -> None:
                 # get rid of duplicates
                 doc_links = list(set(doc_links))
                 existing_page["doc_links"] = doc_links
+            description = page["description"]
+            if description:
+                existing_description = existing_page.get("description", "")
+                if existing_description and len(description) > len(existing_description):
+                    mess = f"Description changed from '{existing_description}' to '{description}'"
+                    existing_page["import_message"] = add_to_message(existing_page["import_message"], mess)
+                    existing_page["description"] = description
+                        
             return
 
     page_table.append(page)
@@ -1856,6 +1864,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         "seq_label",
         "root_label",
         "years",
+        "description",
     }
 
     # Step 1: validate all page records, remove any invalid ones
