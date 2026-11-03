@@ -1869,6 +1869,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
 
     # Step 1: validate all page records, remove any invalid ones
     output_pages_dict = {}
+    page_data_dict = {}
     _logger.info(f"Upserting: {len(page_data)} pages")
 
     for page in page_data:
@@ -1896,6 +1897,8 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         # check whether we have already a page with the same URL -
         # if yes, unite the document lists
         url = page.get("url")
+        page_data_dict[url] = page
+
         if url in output_pages_dict:
             existing_payload = output_pages_dict[url]
             doc_links1 = existing_payload.get("doc_links")
@@ -1919,8 +1922,8 @@ def import_spreadsheet(sw_filepath, actually_write=True):
     # Step 2: batch write the page records and preserve id
     _logger.info(f"Writing {len(output_pages)} page records to db")
     output_ids = db.write("Pages", output_pages)
-    for page, record_id in zip(output_pages, output_ids):
-        page["Id"] = record_id
+    for output_page, record_id in zip(output_pages, output_ids):
+        output_page["Id"] = record_id
 
     # Step 3: form dict by page title
     page_dict: dict[str, dict[str, Any]] = {page["url"]: page for page in output_pages}
@@ -1973,8 +1976,8 @@ def import_spreadsheet(sw_filepath, actually_write=True):
     # Step 6: create records for all linked docs
     output_docs: dict[str, dict[str, Any]] = {}
     doc_link_dict: dict[str, list[dict[str, Any]]] = {}
-    for page in output_pages:
-        doc_links = page.get("doc_links")
+    for output_page in output_pages:
+        doc_links = output_page.get("doc_links")
         if doc_links:
             if isinstance(doc_links, str):
                 doc_links = [doc_links]
@@ -1985,13 +1988,15 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 # quote for document titles that contain protected characters such as "?"
                 quoted_record = form_document_record(doc_link)
 
-                doc_payload: dict[str, Any] = {"page_description": page["description"]}
+                doc_payload: dict[str, Any] = {"page_description": output_page["description"]}
 
                 for joint_field in doc_and_page_fields:
-                    if joint_field in page:
-                        doc_payload[joint_field] = page[joint_field]
+                    if joint_field in output_page:
+                        doc_payload[joint_field] = output_page[joint_field]
                 doc_payload.update(quoted_record)
 
+                page_url = output_page.get("url")
+                page = page_data_dict.get(page_url)
                 for k in doc_only_fields:
                     if k in page:
                         doc_payload[k] = page[k]
@@ -2026,9 +2031,9 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                         doc_payload["import_message"] = import_message
                         _logger.warning(f"import: {msg}")
                 output_docs[link] = doc_payload
-                linked_docs = doc_link_dict.get(page["url"], [])
+                linked_docs = doc_link_dict.get(output_page["url"], [])
                 linked_docs.append(doc_payload)
-                doc_link_dict[page["url"]] = linked_docs
+                doc_link_dict[output_page["url"]] = linked_docs
 
     # Step 7: write doc records to db
     all_docs = list(output_docs.values())
