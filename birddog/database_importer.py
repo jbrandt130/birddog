@@ -345,7 +345,7 @@ def parse_hyphen_triplet(s: str):
     return nums, True
 
 
-def get_case_title(url, curr_parent_title, opus_name, cell, wiki_spreadsheet,
+def get_case_title(curr_parent_title, opus_name, cell, wiki_spreadsheet,
                    possible_hyphen_in_case_num, archive_unit_name, archive_unit_cyrillic_name):
     if wiki_spreadsheet:
         if possible_hyphen_in_case_num:
@@ -355,7 +355,10 @@ def get_case_title(url, curr_parent_title, opus_name, cell, wiki_spreadsheet,
                 title = f"{curr_parent_title}/{three_numbers[1]}/{three_numbers[2]}"
                 return title, title
 
-        title = url_to_title(url)
+#        title = url_to_title(url)
+        title = cell_to_title(cell, archive_unit_cyrillic_name)
+        latin_title = cell_to_title(cell, archive_unit_name)
+
         if curr_parent_title not in title:
             value = cell.value
             if isinstance(value, float) and value.is_integer() or isinstance(value, int):
@@ -363,13 +366,12 @@ def get_case_title(url, curr_parent_title, opus_name, cell, wiki_spreadsheet,
             else:
                 case_id = value
             title = f"{curr_parent_title}/{opus_name}/{case_id}"
-
-        return title, title
-
+            latin_title = title
     else:
         title = cell_to_title(cell, archive_unit_cyrillic_name)
         latin_title = cell_to_title(cell, archive_unit_name)
-        return latin_title, title
+
+    return latin_title, title
 
 
 def get_cell_link(cell):
@@ -434,32 +436,32 @@ def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spr
         link_contains_necessary_part = string_contains_part(link, necessary_part, wiki_spreadsheet)
         if coincides:
             if not link_contains_necessary_part and wiki_spreadsheet:
-                mess = (f"cell {cell_address} in worksheet {sheet_title} contents and link '{contents}'"
+                mess = (f"cell {cell_address} in worksheet '{sheet_title}' contents and link '{contents}'"
                         f" were supposed to include '{necessary_part}'")
         else:
             #contents vs link
             if '/forum.j-roots.info' in link:
-                mess = (f"the link '{link}' in cell {cell_address}, sheet {sheet_title},"
+                mess = (f"the link '{link}' in cell {cell_address}, sheet '{sheet_title}',"
                         f" differs from its contents '{contents}'")
             elif link_contains_necessary_part:
-                mess = (f"using the link '{link}' in cell {cell_address}, sheet {sheet_title},"
+                mess = (f"using the link '{link}' in cell {cell_address}, sheet '{sheet_title}',"
                         f" that differs from its contents '{contents}'")
             elif string_contains_part(contents, necessary_part, wiki_spreadsheet):
-                mess = (f"using the contents '{contents}' in cell {cell_address}, sheet {sheet_title},"
+                mess = (f"using the contents '{contents}' in cell {cell_address}, sheet '{sheet_title}',"
                         f" instead of the apparently wrong link '{link}'")
                 link = contents
             else:
-                mess = f"the link '{link}' in cell {cell_address} in sheet {sheet_title} is apparently wrong"
+                mess = f"the link '{link}' in cell {cell_address} in sheet '{sheet_title}' is apparently wrong"
                 if wiki_spreadsheet:
                     raise TypeError(mess)
     elif contents != "":
         if contents.upper().startswith('HTTP'):
             link = contents
-            mess = f"cell {cell_address} in sheet {sheet_title} does not have a link, using instead its contents '{contents}'"
+            mess = f"cell {cell_address} in sheet '{sheet_title}' does not have a link, using instead its contents '{contents}'"
         else:
-            mess = f"cell {cell_address} in sheet {sheet_title} does not have a link and contains text '{contents}'"
+            mess = f"cell {cell_address} in sheet '{sheet_title}' does not have a link and contains text '{contents}'"
     else:
-        mess = f"cell {cell_address} in sheet {sheet_title} does not have a link"
+        mess = f"cell {cell_address} in sheet '{sheet_title}' does not have a link"
         raise TypeError(mess)
 
     import_message = add_to_message(import_message, mess)
@@ -622,7 +624,7 @@ def delete_part_between_hyphen_and_slash(s: str) -> str:
     return result
 
 
-def add_page(page: dict, page_table: dict) -> None:
+def add_page(page: dict, page_table: list) -> None:
     """Merge a page entry into the page_table by title."""
     #(re)set some fields
     page = check_redlink(page)
@@ -633,10 +635,7 @@ def add_page(page: dict, page_table: dict) -> None:
     page["last_imported"] = str(utc_now_dt().replace(microsecond=0))
     page["label"] = delete_part_between_hyphen_and_slash(page["label"])
 
-    # ensure an entry exists for this URL
-    entry = page_table.setdefault(url, {})
-    # update/merge keys
-    entry.update(page)
+    page_table.append(page)
 
 
 def normalize_to_int_str(s: str) -> str:
@@ -1068,8 +1067,9 @@ def general_page_label(latin_title, cyrillic_title, wiki_spreadsheet):
         return latin_title
 
 
-def check_url_sanity(url, import_message, wiki_spreadsheet, necessary_parts, sheet_title, cell_address):
-    if irregular_url(url):
+def check_url_sanity(additional_column: bool, url: str, import_message: str, wiki_spreadsheet, necessary_parts,
+                     sheet_title: str, cell_address) -> str:
+    if additional_column or irregular_url(url):
         # URLs in some domains do not contain fond number etc
         return import_message
 
@@ -1272,7 +1272,7 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url,
 def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyrillic_name,
                           change_date_col, ref_date_col, page_table=None):
     if not page_table:
-        page_table = {}
+        page_table = []
     archive_name, _, archive_url, import_message, comments = get_url_and_parent_title(ws, wiki_spreadsheet,
                                                                             archive_latin_name, archive_cyrillic_name)
     if wiki_spreadsheet:
@@ -1338,9 +1338,10 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
                 else:
                     curr_source_type, label = get_label_source_type(latin_title, source_type, title, wiki_spreadsheet)
                     language, import_message = get_language(ws, f"O{r}", import_message)
-                    add_case_page(False, fund_num_cell, fund_num_cell_addr, "A", change_date, ord("G"), import_message,
-                        curr_source_type, '', label, lower_level, '',
-                        archive_name, archive_url, page_table, r, url, timestamp, title, wiki_spreadsheet, ws, language)
+                    add_case_page(False, False, fund_num_cell, fund_num_cell_addr,
+                        "A", change_date, ord("G"), import_message, curr_source_type, '',
+                        label, lower_level, '', archive_name, archive_url,
+                        page_table, r, url, timestamp, title, wiki_spreadsheet, ws, language)
             case _:
                 for fund_id in fund_ids:
                     title = f"{archive_cyrillic_name}/{fund_id}"
@@ -1355,7 +1356,7 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
                        change_date_col, ref_date_col, page_table=None):
     fund_name = f"{archive_name}/{fund_id}"
     if not page_table:
-        page_table = {}
+        page_table = []
     parent_name, parent_latin_name, fund_url, import_message, comments = get_url_and_parent_title(ws, wiki_spreadsheet,
                                                                                         fund_name, fund_cyrillic_name)
     source_type = get_source_type(ws)
@@ -1419,7 +1420,7 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
                 continue
 
             necessary_parts = [fund_id, normalize_to_int_str(str(opus_num_cell.value))]
-            curr_import_message = check_url_sanity(raw_url, curr_import_message, wiki_spreadsheet,
+            curr_import_message = check_url_sanity(False, raw_url, curr_import_message, wiki_spreadsheet,
                                                    necessary_parts, ws.title, opus_num_cell_addr)
             label = general_page_label(latin_title, title, wiki_spreadsheet)
             add_opus_page(page_table, ws, r, title, raw_url, label, change_date, timestamp,
@@ -1430,7 +1431,7 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
 def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_cyrillic_name, fund_name, opus_name,
                        fund_url, change_date_col, ref_date_col, import_message = "", page_table=None):
     if not page_table:
-        page_table = {}
+        page_table = []
     opus_title, opus_latin_title, opus_url, import_message, comments = get_url_and_parent_title(ws, wiki_spreadsheet,
         fund_and_opus_name, fund_and_opus_cyrillic_name, import_message)
     label = general_page_label(opus_latin_title, opus_title, wiki_spreadsheet)
@@ -1531,7 +1532,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                 _logger.warning(f"Apparently cells in row {r} are empty but have link {case_num_cell.value} - skipping")
                 continue
 
-            latin_title, title = get_case_title(raw_url, curr_parent_title, opus_name, case_num_cell, wiki_spreadsheet,
+            latin_title, title = get_case_title(curr_parent_title, opus_name, case_num_cell, wiki_spreadsheet,
                                                 possible_hyphen_in_case_num, fund_and_opus_name,
                                                 fund_and_opus_cyrillic_name)
             if title is None:
@@ -1564,7 +1565,8 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                               fund_url, level, availability, curr_import_message)
             else:
                 language, curr_import_message = get_language(ws, f"{chr(comments_col + 8)}{r}", curr_import_message)
-                add_case_page(additional_column, case_num_cell, case_num_cell_addr, case_num_col, change_date,
+                add_case_page(additional_column, possible_hyphen_in_case_num,
+                    case_num_cell, case_num_cell_addr, case_num_col, change_date,
                     comments_col, curr_import_message, curr_source_type, fund_name, label, level, opus_name,
                     opus_title, opus_url, page_table, r, raw_url, timestamp, title, wiki_spreadsheet, ws, language)
 
@@ -1586,16 +1588,17 @@ def normalize_doc_type(doc_type: str | None) -> str | None:
         doc_type = "V"
     return doc_type
 
-def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: str, case_num_col: str,
+def add_case_page(additional_column: bool, possible_hyphen_in_case_num: bool,
+                  case_num_cell, case_num_cell_addr: str, case_num_col: str,
                   change_date: str | None, comments_col: int,
                   curr_import_message: Literal['', 'Document without a page', 'Old case numbering', 'Other case numbering'] | Any,
                   curr_source_type, fund_name, label: str | Any, level, opus_name,
-                  opus_title: str | None | Any, opus_url: str, page_table: dict[Any, Any] | Any, r: int, raw_url: str,
+                  opus_title: str | None | Any, opus_url: str, page_table: list, r: int, raw_url: str,
                   timestamp: str | None, title, wiki_spreadsheet, ws, language):
     case_name = normalize_to_int_str(str(case_num_cell.value))
     necessary_parts = [fund_name, opus_name, case_name]
-    curr_import_message = check_url_sanity(raw_url, curr_import_message, wiki_spreadsheet,
-                                           necessary_parts, ws.title, case_num_cell_addr)
+    curr_import_message = check_url_sanity(additional_column or possible_hyphen_in_case_num, raw_url,
+        curr_import_message, wiki_spreadsheet, necessary_parts, ws.title, case_num_cell_addr)
 
     comments_cell_addr          = f"{chr(comments_col    )}{r}"  # default f"G{r}"
     file_name_cell_addr1        = f"{chr(comments_col + 1)}{r}"  # default f"H{r}"
@@ -1621,8 +1624,7 @@ def add_case_page(additional_column: bool, case_num_cell, case_num_cell_addr: st
     filename = combine_cell_value(ws[file_name_cell_addr1], ws[file_name_cell_addr2])
     root_label = get_root_label(label)
     if not filename:
-        tail = label[len(root_label):] if root_label and label.startswith(root_label) else label
-        filename = tail.lstrip("/").replace("/", "-")
+        filename = label.lstrip("/").replace("/", "-")
 
     process_code = get_cell_value(ws[f"{chr(ord(case_num_col) + process_code_col_offs)}{r}"], True)  # F
     process_code, curr_import_message = normalize_process_code(process_code, curr_import_message)
@@ -1681,7 +1683,7 @@ def normalize_process_code(process_code: str | None, import_message: str) -> tup
 
 def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyrillic_name, page_table=None):
     if not page_table:
-        page_table = {}
+        page_table = []
     hdr_row = 1
     archive_url = ''  #we assume the archive sheet is the first in the spreadshee
     fund_url = ''  #we assume the opus sheets come after the corresponding fund sheet -
@@ -1793,14 +1795,10 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         else:
             archive_cyrillic_name = archive_name_to_cyrillic(archive_name)
 
-    inp_page_data = process_worksheets(workbook, wiki_spreadsheet, archive_name, archive_cyrillic_name)
+    page_data = process_worksheets(workbook, wiki_spreadsheet, archive_name, archive_cyrillic_name)
 
     if not actually_write:
         return
-
-    if not isinstance(inp_page_data, dict):
-        raise TypeError("inp_page_data is not a dictionary")
-    page_data = list(inp_page_data.values())
 
     doc_only_fields_all_caps = {
         "doc_type",
@@ -1832,7 +1830,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
     }
 
     # Step 1: validate all page records, remove any invalid ones
-    output_pages = []
+    output_pages_dict = {}
     _logger.info(f"Upserting: {len(page_data)} pages")
 
     for page in page_data:
@@ -1857,7 +1855,28 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         if abort_page:
             _logger.error(f"skipping malformed page record: {title}")
             continue
-        output_pages.append(page_payload)
+        # check whether we have already a page with the same URL -
+        # if yes, unite the document lists
+        url = page.get("url")
+        if url in output_pages_dict:
+            existing_payload = output_pages_dict[url]
+            doc_links1 = existing_payload.get("doc_links")
+            if doc_links1:
+                doc_links2 = page_payload.get("doc_links")
+                if doc_links2:
+                    doc_links = doc_links1 + doc_links2
+                else:
+                    doc_links = doc_links1
+                # delete duplicates
+                doc_links = list(set(doc_links))
+                if doc_links and doc_links1 != doc_links2:
+                    _logger.info(f"Uniting document lists for pages {page.get('title')} and "
+                                 f"{existing_payload.get("title")}")
+                    page_payload["doc_links"] = doc_links
+
+        output_pages_dict[url] = page_payload
+
+    output_pages = list(output_pages_dict.values())
 
     # Step 2: batch write the page records and preserve id
     _logger.info(f"Writing {len(output_pages)} page records to db")
@@ -1935,10 +1954,9 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                         doc_payload[joint_field] = page[joint_field]
                 doc_payload.update(quoted_record)
 
-                relevant_page_data = inp_page_data[page["url"]]
                 for k in doc_only_fields:
-                    if k in relevant_page_data:
-                        doc_payload[k] = relevant_page_data[k]
+                    if k in page:
+                        doc_payload[k] = page[k]
 
                 for doc_field in doc_only_fields_all_caps:
                     if doc_field in doc_payload and doc_payload[doc_field] is not None:
@@ -2025,7 +2043,7 @@ def process_dir(dir_path, actually_write=True):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAKO-D-fund280-wiki-20261013.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DASO-R-wiki-20261028.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(_dir_path)
