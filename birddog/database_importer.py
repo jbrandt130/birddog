@@ -531,14 +531,14 @@ def string_ends_with_file_ext(s: str):
 def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: str, only_check_link: bool):
     modified_import_message, cell_links = get_cell_link_or_str(ws, cell_addr, import_message, False)
     if not cell_links:
-        return modified_import_message, ""
+        return modified_import_message, []
     ar1 = 'Архіви/'
     ar2 = 'Архів:'
     # we compare the strings up to replacement of ar1 with ar2
     archive_unit_link_replaced = canonical_wiki_url(archive_unit_link.rstrip(" /").replace(ar1, ar2))
     if isinstance(cell_links, str) and cell_links.replace(ar1, ar2) == archive_unit_link_replaced:
         if only_check_link:
-            cell_links = ""
+            cell_links = []
         return modified_import_message, cell_links
 
     real_doc = True
@@ -546,7 +546,7 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
         cell_link_replaced = cell_links[0].rstrip(" /").replace(ar1, ar2)
         if cell_link_replaced in archive_unit_link_replaced or archive_unit_link_replaced in cell_link_replaced:
             if only_check_link:
-                cell_links = ""
+                cell_links = []
             return modified_import_message, cell_links
         real_doc = string_ends_with_file_ext(cell_link_replaced)
 
@@ -561,6 +561,8 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
         _logger.warning(mess)
     if real_doc and only_check_link:
         _logger.warning(f"Adding document links {cell_links} found in cell '{cell_addr}', sheet '{ws.title}'")
+    if isinstance(cell_links, str):
+        cell_links = [cell_links]
 
     return modified_import_message, cell_links
 
@@ -624,8 +626,11 @@ def delete_part_between_hyphen_and_slash(s: str) -> str:
     return result
 
 
-def add_page(page: dict, page_table: list) -> None:
-    """Merge a page entry into the page_table by title."""
+def add_page(page: dict, page_table: list, update_existing_page: bool) -> None:
+    """Merge a page entry into the page_table by title.
+    If update_existing_page is True and a page with the necessary URL already exists,
+    we update it instead of adding a new one.
+    """
     #(re)set some fields
     page = check_redlink(page)
     url = page["url"]
@@ -634,6 +639,28 @@ def add_page(page: dict, page_table: list) -> None:
     page["domain"] = domain_from_url(url)
     page["last_imported"] = str(utc_now_dt().replace(microsecond=0))
     page["label"] = delete_part_between_hyphen_and_slash(page["label"])
+
+    if update_existing_page:
+        # look for a page with this URL
+        existing_page = next((item for item in page_table if item.get("url") == url), None)
+        if existing_page:
+            # update the existing page
+            comments = page["comments"]
+            if comments:
+                existing_comments = existing_page["comments"]
+                if existing_comments:
+                    if existing_comments != comments:
+                        existing_page["comments"] = f"{existing_comments}; {comments}"
+                else:
+                    existing_page["comments"] = comments
+            doc_links = page["doc_links"]
+            if doc_links:
+                existing_doc_links = existing_page.get("doc_links", [])
+                doc_links = doc_links + existing_doc_links
+                # get rid of duplicates
+                doc_links = list(set(doc_links))
+                existing_page["doc_links"] = doc_links
+            return
 
     page_table.append(page)
 
@@ -1232,7 +1259,7 @@ def add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, 
         "parent_url": parent_url,
         "comments": get_cell_value(ws[f"O{r}"]),
         "import_message": import_message,
-    }, page_table)
+    }, page_table, False)
 
 
 def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url, title, latin_title, url,
@@ -1266,7 +1293,7 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url,
         "parent": archive_title,
         "parent_url": archive_url,
         "comments": comments,
-    }, page_table)
+    }, page_table, False)
 
 
 def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyrillic_name,
@@ -1303,7 +1330,7 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
         "parent": "",
         "parent_url": "",
         "comments": comments,
-    }, page_table)
+    }, page_table, False)
 
     fund_dictionary = {}
 
@@ -1386,6 +1413,7 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
             "comments": comments,
         },
         page_table,
+        True
     )
 
     #the header row can be 5, 6 or 7
@@ -1475,6 +1503,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
             "comments": comments,
         },
         page_table,
+        True
     )
 
     usual_case_number_found = False
@@ -1662,7 +1691,7 @@ def add_case_page(additional_column: bool, possible_hyphen_in_case_num: bool,
                            get_cell_int_value(ws[pages_processed_cell_addr2]),
         "when_transcribed": when_transcribed,
         "language": language,
-    }, page_table)
+    }, page_table, False)
 
 
 def normalize_process_code(process_code: str | None, import_message: str) -> tuple[str | None, str]:
@@ -2043,7 +2072,7 @@ def process_dir(dir_path, actually_write=True):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DASO-R-wiki-20261028.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/TSDIAL-wiki-20261102.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(_dir_path)
