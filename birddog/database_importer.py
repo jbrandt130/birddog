@@ -555,8 +555,6 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     if len(mess) > 0:
         modified_import_message = add_to_message(modified_import_message, mess)
         _logger.warning(mess)
-    if real_doc:
-        _logger.warning(f"Adding document links {cell_links} found in cell '{cell_addr}', sheet '{ws.title}'")
     if isinstance(cell_links, str):
         cell_links = [cell_links]
 
@@ -2084,7 +2082,7 @@ def process_dir(dir_path, actually_write=True):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-D-wiki-20261103.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-R-wiki-20261101.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(_dir_path)
