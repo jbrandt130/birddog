@@ -314,18 +314,18 @@ def get_page_title_from_link(cell, wiki_spreadsheet, archive_unit_name, latin_ar
                     return url, url
                 except ValueError:
                     return None, None
-        latin_title = latin_archive_unit_name
+
+        try:
+            int_contents = str(int(float(cell.value)))
+        except ValueError:
+            int_contents = ""
+
         if 'wiki' in url:
             title = url_to_title(url)
         else:
             #for URLs like https://forum.j-roots.info/viewtopic.php?p=106843/5/1
-            title = archive_unit_name
-            try:
-                int_contents = str(int(float(cell.value)))
-                title = f"{title}/{int_contents}"
-                latin_title = f"{latin_archive_unit_name}/{int_contents}"
-            except ValueError:
-                pass
+            title = f"{archive_unit_name}/{int_contents}"
+        latin_title = f"{latin_archive_unit_name}/{int_contents}"
 
         return title, latin_title
     else:
@@ -528,7 +528,7 @@ def string_ends_with_file_ext(s: str):
     return s.endswith((".PDF", ".DJVU", ".ZIP"))
 
 
-def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: str, only_check_link: bool):
+def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: str):
     modified_import_message, cell_links = get_cell_link_or_str(ws, cell_addr, import_message, False)
     if not cell_links:
         return modified_import_message, []
@@ -537,21 +537,17 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     # we compare the strings up to replacement of ar1 with ar2
     archive_unit_link_replaced = canonical_wiki_url(archive_unit_link.rstrip(" /").replace(ar1, ar2))
     if isinstance(cell_links, str) and cell_links.replace(ar1, ar2) == archive_unit_link_replaced:
-        if only_check_link:
-            cell_links = []
         return modified_import_message, cell_links
 
     real_doc = True
     if isinstance(cell_links, list) and len(cell_links) == 1:
         cell_link_replaced = cell_links[0].rstrip(" /").replace(ar1, ar2)
         if cell_link_replaced in archive_unit_link_replaced or archive_unit_link_replaced in cell_link_replaced:
-            if only_check_link:
-                cell_links = []
             return modified_import_message, cell_links
         real_doc = string_ends_with_file_ext(cell_link_replaced)
 
     mess = ''
-    if not real_doc and only_check_link:
+    if not real_doc:
         mess = (f" Link {cell_links} in cell '{cell_addr}', sheet '{ws.title}' "
                 f"differs from the page url {archive_unit_link}")
         cell_links = ""
@@ -559,7 +555,7 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     if len(mess) > 0:
         modified_import_message = add_to_message(modified_import_message, mess)
         _logger.warning(mess)
-    if real_doc and only_check_link:
+    if real_doc:
         _logger.warning(f"Adding document links {cell_links} found in cell '{cell_addr}', sheet '{ws.title}'")
     if isinstance(cell_links, str):
         cell_links = [cell_links]
@@ -1043,6 +1039,8 @@ def archive_name_to_cyrillic(latin_name: str) -> str:
             return "ДАМО"
         case "DAOO":
             return "ДАОО"
+        case "DAOO-R":
+            return "ДАОО-Р"
         case "DAVO":
             return "ДАВО"
         case "TSDAHOU":
@@ -1248,7 +1246,7 @@ def opus_like_sheet(ws):
 
 def add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, source_type,
                   parent_name, parent_url, level, availability, import_message):
-    import_message, doc_links = get_doc_links(ws, f"B{r}", import_message, url, True)
+    import_message, doc_links = get_doc_links(ws, f"B{r}", import_message, url)
     add_page({
         "title": title,
         "url": url,
@@ -1282,7 +1280,7 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url,
 
     comments = get_cell_value(ws[f"O{r}"])
     label = general_page_label(latin_title, title, wiki_spreadsheet)
-    import_message, doc_links = get_doc_links(ws, f"B{r}", "", url, True)
+    import_message, doc_links = get_doc_links(ws, f"B{r}", "", url)
     add_page({
         "title": title,
         "url": url,
@@ -1670,7 +1668,7 @@ def add_case_page(additional_column: bool, possible_hyphen_in_case_num: bool,
     doc_type = get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True)  # D
     doc_type = normalize_doc_type(doc_type)
     curr_import_message, doc_links = get_doc_links(
-        ws, f"{chr(ord(case_num_col) + description_col_offs)}{r}", curr_import_message, raw_url, False)
+        ws, f"{chr(ord(case_num_col) + description_col_offs)}{r}", curr_import_message, raw_url)
 
     add_page({
         "title": title,
@@ -2086,7 +2084,7 @@ def process_dir(dir_path, actually_write=True):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/TSDIAL-wiki-20261102.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-D-wiki-20261103.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(_dir_path)
