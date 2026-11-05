@@ -1303,6 +1303,8 @@ def _strip_category_namespace(title: str) -> str:
             return t[len(p):].strip()
     return t
 
+_internal_doc_link_re = re.compile(r'(?:File|Файл|Index|Індекс):', re.IGNORECASE)
+
 def mw_page_doc_url(page):
     # Build filtered internal link list up front (exclude categories and images)
     category_links = page.get("other_links", {}).get("category_links", [])
@@ -1336,9 +1338,12 @@ def mw_page_doc_url(page):
     if links:
         return links[0]
 
-    # 3) Other internal links (non-File: or non-PDF)
-    if internal:
-        return expand_link_target(internal[0], page["title"]["uk"])
+    # 3) Other internal file links (e.g. File:foo.djvu, Index:foo.djvu). Ordinary
+    #    wiki pages are not documents: a place link on a case page must not win
+    #    over a real scan link further down (#159).
+    internal_doc = next((l for l in internal if _internal_doc_link_re.match(l)), None)
+    if internal_doc:
+        return expand_link_target(internal_doc, page["title"]["uk"])
 
     # 4) Any "other" commons links (non-notes bucket)
     links = page.get("other_links", {}).get("commons_links", [])
@@ -2162,6 +2167,16 @@ def _collect_doc_links_from_page(page):
     # Deduplicate
     return _deduplicate_links(links)
 
+def _existence_result_key(wiki_title, base):
+    """
+    Return the key batch_page_exists() uses for wiki_title. On the archive wiki
+    its keys are canonicalized from the API's own titles, which spell the file
+    namespace "Файл:". A key mismatch would read as "exists" (#159).
+    """
+    if base != ARCHIVE_BASE:
+        return wiki_title
+    return canonicalize_title(re.sub(r'^file:', 'Файл:', wiki_title, flags=re.IGNORECASE))
+
 def batch_fetch_document_links(titles, map_to_url=True, chunk_size=20):
     """
     Fetch document links for a list of archive page titles.
@@ -2223,7 +2238,7 @@ def batch_fetch_document_links(titles, map_to_url=True, chunk_size=20):
     for base, title_map in wiki_titles.items():
         results = batch_page_exists(list(title_map.keys()), base_url=base)
         for wiki_title, url in title_map.items():
-            existence[url] = results.get(wiki_title, True)
+            existence[url] = results.get(_existence_result_key(wiki_title, base), True)
 
     # Pass 3: build final result
     return {

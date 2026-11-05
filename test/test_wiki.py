@@ -325,11 +325,21 @@ class TestMwPageDocUrl(unittest.TestCase):
         page = self._page(notes={"commons_links": [url]})
         self.assertEqual(mw_page_doc_url(page), url)
 
-    def test_falls_back_to_internal_link(self):
-        page = self._page(internal=["SomeOtherPage"])
-        result = mw_page_doc_url(page)
-        self.assertIsNotNone(result)
-        self.assertIn("SomeOtherPage", result)
+    def test_falls_back_to_internal_file_link(self):
+        for link in ("File:scan.djvu", "Файл:scan.djvu", "Index:scan.djvu", "Індекс:scan.djvu"):
+            with self.subTest(link=link):
+                result = mw_page_doc_url(self._page(internal=[link]))
+                self.assertIsNotNone(result)
+                self.assertIn(link, result)
+
+    def test_ordinary_internal_page_is_not_a_document(self):
+        self.assertIsNone(mw_page_doc_url(self._page(internal=["SomeOtherPage"])))
+
+    def test_external_link_wins_over_ordinary_internal_page(self):
+        # #159: a place link on a case page must not hide the real scan link
+        url = "https://drive.google.com/drive/folders/abc"
+        page = self._page(internal=["Ярмолинці (Гайсинський район)"], external=[url])
+        self.assertEqual(mw_page_doc_url(page), url)
 
     def test_falls_back_to_other_commons(self):
         url = "https://commons.wikimedia.org/wiki/File:scan.pdf"
@@ -1736,6 +1746,20 @@ class TestBatchFetchDocumentLinks(unittest.TestCase):
         called_titles = mock_bpe.call_args[0][0]
         self.assertIn("File:A;B.pdf", called_titles)
         self.assertNotIn("File:A", called_titles)
+
+    def test_missing_archive_wiki_page_returns_exists_false(self):
+        # batch_page_exists() canonicalizes archive wiki keys, adding the namespace
+        url = "https://uk.wikisource.org/wiki/Ярмолинці_(район)"
+        result, _ = self._run([url], bpe_return={"Архів:Ярмолинці_(район)": False})
+        self.assertFalse(result[canonicalize_title(self.TITLE)][0]["exists"])
+
+    def test_missing_archive_wiki_file_returns_exists_false(self):
+        # the API reports both file namespace spellings as "Файл:"
+        for prefix in ("File", "Файл"):
+            with self.subTest(prefix=prefix):
+                url = f"https://uk.wikisource.org/wiki/{prefix}:Скан.pdf"
+                result, _ = self._run([url], bpe_return={"Архів:Файл:Скан.pdf": False})
+                self.assertFalse(result[canonicalize_title(self.TITLE)][0]["exists"])
 
     def test_page_missing_from_content_api_returns_empty_links(self):
         result, _ = self._run([], has_revision=False)
