@@ -1542,9 +1542,7 @@ class DatabaseUpdater:
             label = update.get("label")
             if not label:
                 continue
-            root_label = update.get("root_label") or ""
-            tail = label[len(root_label):] if root_label and label.startswith(root_label) else label
-            update["filename"] = tail.lstrip("/").replace("/", "-")
+            update["filename"] = label.lstrip("/").replace("/", "-")
 
         _logger.info(f"refresh_doc_lookups: writing {len(updates)} updates")
         return bool(self._db.write("Documents", updates))
