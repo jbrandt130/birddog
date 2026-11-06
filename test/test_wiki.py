@@ -40,6 +40,7 @@ from birddog.wiki import (
     get_all_pages,
     get_recent_changes,
     batch_fetch_document_links,
+    batch_page_exists,
     check_page_changes,
     report_page_changes,
     page_significance,
@@ -1764,6 +1765,46 @@ class TestBatchFetchDocumentLinks(unittest.TestCase):
     def test_page_missing_from_content_api_returns_empty_links(self):
         result, _ = self._run([], has_revision=False)
         self.assertEqual(result[canonicalize_title(self.TITLE)], [])
+
+    def test_commons_hosted_wikisource_file_exists_end_to_end(self):
+        # #160: batch_page_exists() is deliberately not mocked here. The API
+        # responses have the shape uk.wikisource.org really returns.
+        url = "https://uk.wikisource.org/wiki/File:Скан.pdf"
+        existence_response = {"query": {"pages": {"-1": {
+            "ns": 6, "title": "Файл:Скан.pdf", "missing": "", "known": "",
+        }}}}
+        with (
+            patch("birddog.wiki.fetch_url",
+                  side_effect=[self._content_response(self.TITLE), existence_response]),
+            patch("birddog.wiki._check_page_existence_chunked", return_value={}),
+            patch("birddog.wiki._collect_doc_links_from_page", return_value=[url]),
+        ):
+            result = batch_fetch_document_links([self.TITLE])
+        self.assertTrue(result[canonicalize_title(self.TITLE)][0]["exists"])
+
+
+class TestBatchPageExists(unittest.TestCase):
+    def _exists(self, page):
+        with patch("birddog.wiki.fetch_url",
+                   return_value={"query": {"pages": {"1": page}}}):
+            return batch_page_exists([page["title"]])
+
+    def test_local_page_exists(self):
+        result = self._exists({"ns": 116, "title": "Архів:ДАЖО/1", "pageid": 7})
+        self.assertTrue(result["Архів:ДАЖО/1"])
+
+    def test_missing_page_does_not_exist(self):
+        result = self._exists({"ns": 0, "title": "Ярмолинці", "missing": ""})
+        self.assertFalse(result["Архів:Ярмолинці"])
+
+    def test_missing_file_does_not_exist(self):
+        result = self._exists({"ns": 6, "title": "Файл:Скан.pdf", "missing": ""})
+        self.assertFalse(result["Архів:Файл:Скан.pdf"])
+
+    def test_commons_hosted_file_exists(self):
+        result = self._exists(
+            {"ns": 6, "title": "Файл:Скан.pdf", "missing": "", "known": ""})
+        self.assertTrue(result["Архів:Файл:Скан.pdf"])
 
 
 # ── Live network tests (skipped in offline environments) ──────────────────────

@@ -793,7 +793,9 @@ def batch_page_exists(titles, base_url=None, batch_size=50):
             pages = response.get("query", {}).get("pages", {})
             for page in pages.values():
                 title = _normalize(page.get("title"))
-                results[title] = "missing" not in page
+                # a file hosted on Commons has no local page: the API reports it
+                # as both "missing" and "known" (#160)
+                results[title] = "missing" not in page or "known" in page
         except Exception as e:
             for title in batch:
                 results[_normalize(title)] = False
