@@ -224,6 +224,13 @@ def verify_fond_format(text: str):
     return False, 0
 
 
+def strip_trailing_pattern(text: str) -> str:
+    """Strips a trailing slash followed by any digits or dash/hyphen characters."""
+    # \d matches any digit
+    # \p{Dash_Punctuation} matches any Unicode dash/hyphen (requires Unicode flag or listing dash variants)
+    return re.sub(r"/[0-9\-\u2010-\u2015\u2212]+$", "", text)
+
+
 def parent_title_no_ns(title, wiki_spreadsheet, archive_unit_name):
     if wiki_spreadsheet:
         result = parent_title(title)
@@ -1099,7 +1106,7 @@ def general_page_label(latin_title, cyrillic_title, wiki_spreadsheet):
 
 
 def check_url_sanity(additional_column: bool, url: str, import_message: str, wiki_spreadsheet, necessary_parts,
-                     sheet_title: str, cell_address) -> str:
+                     case_title: str, sheet_title: str, cell_address) -> str:
     if additional_column or irregular_url(url):
         # URLs in some domains do not contain fond number etc
         return import_message
@@ -1117,7 +1124,7 @@ def check_url_sanity(additional_column: bool, url: str, import_message: str, wik
                     part = part.split('-T', 1)[0]
                 sequence = f"{sequence}/{part}"
         sequence = re.sub(r'^\D*', '', sequence)
-        if not string_contains_part(url, sequence, wiki_spreadsheet):
+        if not string_contains_part(url, sequence, wiki_spreadsheet) and not case_title in url:
             mess = (f"url {url} in cell {cell_address} in worksheet '{sheet_title}'"
                     f" was supposed to include '{sequence}'")
 
@@ -1307,7 +1314,8 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
     archive_name, _, archive_url, import_message, comments = get_url_and_parent_title(ws, wiki_spreadsheet,
                                                                             archive_latin_name, archive_cyrillic_name)
     if wiki_spreadsheet:
-        archive_cyrillic_name = archive_name
+        # in DASO-R we have URLs like https://uk.wikisource.org/wiki/Архів:ДАСО/Р/5001–6000
+        archive_cyrillic_name = strip_trailing_pattern(archive_name)
     source_type = get_source_type(ws)
     change_date, timestamp = get_dates(ws, archive_name, change_date_col, ref_date_col)
     label = general_page_label(archive_latin_name, archive_name, wiki_spreadsheet)
@@ -1453,7 +1461,7 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
 
             necessary_parts = [fund_id, normalize_to_int_str(str(opus_num_cell.value))]
             curr_import_message = check_url_sanity(False, raw_url, curr_import_message, wiki_spreadsheet,
-                                                   necessary_parts, ws.title, opus_num_cell_addr)
+                necessary_parts, title, ws.title, opus_num_cell_addr)
             label = general_page_label(latin_title, title, wiki_spreadsheet)
             add_opus_page(page_table, ws, r, title, raw_url, label, change_date, timestamp,
                           source_type, parent_name, fund_url, "opus", availability, curr_import_message)
@@ -1566,8 +1574,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                 continue
 
             latin_title, title = get_case_title(curr_parent_title, opus_name, case_num_cell, wiki_spreadsheet,
-                                                possible_hyphen_in_case_num, fund_and_opus_name,
-                                                fund_and_opus_cyrillic_name)
+                                                possible_hyphen_in_case_num, opus_latin_title, opus_title)
             if title is None:
                 # If it is a comment, like "Index files linked at top of page" - skip this line
                 continue
@@ -1631,7 +1638,7 @@ def add_case_page(additional_column: bool, possible_hyphen_in_case_num: bool,
     case_name = normalize_to_int_str(str(case_num_cell.value))
     necessary_parts = [fund_name, opus_name, case_name]
     curr_import_message = check_url_sanity(additional_column or possible_hyphen_in_case_num, raw_url,
-        curr_import_message, wiki_spreadsheet, necessary_parts, ws.title, case_num_cell_addr)
+        curr_import_message, wiki_spreadsheet, necessary_parts, title, ws.title, case_num_cell_addr)
 
     comments_cell_addr          = f"{chr(comments_col    )}{r}"  # default f"G{r}"
     file_name_cell_addr1        = f"{chr(comments_col + 1)}{r}"  # default f"H{r}"
@@ -2082,7 +2089,7 @@ def process_dir(dir_path, actually_write=True):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-R-wiki-20261101.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-D-wiki-20261103.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(_dir_path)
