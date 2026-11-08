@@ -1897,13 +1897,13 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         if abort_page:
             _logger.error(f"skipping malformed page record: {title}")
             continue
-        # check whether we have already a page with the same URL -
-        # if yes, unite the document lists
         url = page.get("url")
         page_data_dict[url] = page
 
+        # check whether we have already a page with the same URL
         if url in output_pages_dict:
             existing_payload = output_pages_dict[url]
+            # unite the document lists
             doc_links1 = existing_payload.get("doc_links")
             if doc_links1:
                 doc_links2 = page_payload.get("doc_links")
@@ -1911,12 +1911,26 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                     doc_links = doc_links1 + doc_links2
                 else:
                     doc_links = doc_links1
-                # delete duplicates
+                # delete duplicate links
                 doc_links = list(set(doc_links))
                 if doc_links and doc_links1 != doc_links2:
-                    _logger.info(f"Uniting document lists for pages {page.get('title')} and "
+                    _logger.warning(f"Uniting document lists for pages {page.get('title')} and "
                                  f"{existing_payload.get("title")}")
                     page_payload["doc_links"] = doc_links
+            # fix the title and the label
+            title1 = existing_payload.get("title")
+            title2 = page_payload.get("title")
+            if title1 != title2:
+                new_title = url_to_title(url)
+                page_payload["title"] = new_title
+                _logger.warning(f"Instead of titles {title1} and {title2}, using {new_title}")
+            label1 = existing_payload.get("label")
+            label2 = page_payload.get("label")
+            if label1 != label2:
+                new_label = page_label(page_payload["title"])
+                page_payload["label"] = new_label
+                _logger.warning(f"Instead of labels {label1} and {label2}, using {new_label}")
+
 
         output_pages_dict[url] = page_payload
 
