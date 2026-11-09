@@ -59,13 +59,30 @@ def confirm(env_name, table_name, total):
     except EOFError:
         return False
 
-def delete_records(db, table_name, ids):
-    for start in range(0, len(ids), DELETE_BATCH_SIZE):
-        db.delete(table_name, ids[start:start + DELETE_BATCH_SIZE])
-        done = min(start + DELETE_BATCH_SIZE, len(ids))
-        print(f"\r{table_name}: {done}/{len(ids)} ({done * 100 // len(ids)}%)",
-              end="", flush=True)
-    print()
+def first_page(db, table_name):
+    """Return (ids, total): the ids of the first DELETE_BATCH_SIZE records and
+    the table's total row count, from a single request."""
+    data = db._fetch(db._records_url(db._table_id(table_name)),
+                     params={"limit": DELETE_BATCH_SIZE, "fields": "Id"})
+    ids = [rec["Id"] for rec in data.get("list") or []]
+    return ids, (data.get("pageInfo") or {}).get("totalRows", len(ids))
+
+def delete_records(db, table_name, total):
+    """Delete the first page of records until the table is empty, without
+    listing the whole table up front. Returns the number deleted, or None if
+    NocoDB stops deleting the records it lists (so the loop can't spin)."""
+    deleted = 0
+    while True:
+        ids, _ = first_page(db, table_name)
+        if not ids:
+            print()
+            return deleted
+        count = db.delete(table_name, ids)
+        if not count:
+            print(f"\nNocoDB deleted none of the records {ids[:5]}..., stopping.")
+            return None
+        deleted += count
+        print(f"\r{table_name}: deleted {deleted}/{total}", end="", flush=True)
 
 def main(argv=None):
     args = parse_args(argv)
@@ -81,8 +98,8 @@ def main(argv=None):
                   f"{', '.join(db._table_id_map)}", file=sys.stderr)
             return 1
 
-        ids = db.get_all_ids(args.table)
-        print(f"{args.table}: {len(ids)} records")
+        ids, total = first_page(db, args.table)
+        print(f"{args.table}: {total} records")
         if not ids:
             print("Nothing to delete.")
             return 0
@@ -90,12 +107,11 @@ def main(argv=None):
         if args.table in SCHEMA_TABLES:
             print(f"WARNING: {args.table} is configuration. "
                   "Without it the app runs schema-less.")
-        if not confirm(args.env, args.table, len(ids)):
+        if not confirm(args.env, args.table, total):
             print("Aborted. Nothing was deleted.")
             return 1
 
-        delete_records(db, args.table, ids)
-        remaining = len(db.get_all_ids(args.table))
+        deleted = delete_records(db, args.table, total)
     except ConfigError as err:
         print(f"Configuration error: {err}", file=sys.stderr)
         return 1
@@ -104,10 +120,9 @@ def main(argv=None):
               "Run again to continue.", file=sys.stderr)
         return 1
 
-    if remaining:
-        print(f"Done, but {remaining} records remain. Run again to clear them.")
+    if deleted is None:
         return 1
-    print(f"Done. Deleted {len(ids)} records from {args.table}.")
+    print(f"Done. Deleted {deleted} records from {args.table}.")
     return 0
 
 if __name__ == "__main__":
