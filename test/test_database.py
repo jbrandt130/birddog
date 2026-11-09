@@ -747,6 +747,66 @@ class TestDatabase(unittest.TestCase):
         self.assertTrue(all(n <= _GET_LINKS_TARGET_CHUNK_SIZE for n in chunk_sizes))
         self.assertEqual(sum(chunk_sizes), len(requested))
 
+    def _mk_pages(self, names):
+        ids = [self.db.write("Pages", {"title": self._mk_page_title(n), "url": self._mk_page_url(n)})
+               for n in names]
+        self.created_page_ids.extend(ids)
+        return ids
+
+    def _page_exists(self, page_id):
+        return bool(self.db.read("Pages", page_id))
+
+    def test_count(self):
+        before = self.db.count("Pages")
+        self.assertIsInstance(before, int)
+        ids = self._mk_pages(["count a", "count b"])
+        self.assertEqual(self.db.count("Pages"), before + 2)
+        self.db.delete("Pages", ids)
+        self.assertEqual(self.db.count("Pages"), before)
+        with self.assertRaises(InvalidTableName):
+            self.db.count("No Such Table")
+
+    def test_delete_skips_already_deleted_records(self):
+        """
+        NocoDB rejects a whole bulk DELETE if any id in it is missing. delete()
+        must still remove the ids that exist and treat missing ones as done.
+        """
+        gone, live1, live2 = self._mk_pages(["del gone", "del live1", "del live2"])
+        self.assertEqual(self.db.delete("Pages", gone), 1)
+
+        self.assertEqual(self.db.delete("Pages", [live1, gone, live2]), 2)
+        self.assertFalse(self._page_exists(live1))
+        self.assertFalse(self._page_exists(live2))
+        self.assertEqual(self.db.delete("Pages", [gone, live1]), 0)
+
+    def test_delete_survives_retry_after_lost_response(self):
+        """
+        fetch_url retries a DELETE whose response timed out. When the server
+        had already deleted the batch, the retry gets ERR_RECORD_NOT_FOUND;
+        delete() must treat that as done rather than raise.
+        """
+        ids = self._mk_pages(["retry a", "retry b"])
+        real_fetch = self.db._fetch
+
+        def lost_response(url, params=None, json=None, method="GET", **kwargs):
+            if method == "DELETE" and not lost_response.done:
+                lost_response.done = True
+                real_fetch(url, params=params, json=json, method=method, **kwargs)
+                raise FailedIO('Failed to fetch (404): {"error":"ERR_RECORD_NOT_FOUND"}')
+            return real_fetch(url, params=params, json=json, method=method, **kwargs)
+        lost_response.done = False
+
+        with patch.object(self.db, "_fetch", side_effect=lost_response):
+            self.assertEqual(self.db.delete("Pages", ids), 0)
+        self.assertFalse(any(self._page_exists(i) for i in ids))
+
+    def test_delete_other_errors_still_raise(self):
+        page_id, = self._mk_pages(["del error"])
+        with patch.object(self.db, "_fetch", side_effect=FailedIO("HTTP 500: server error")):
+            with self.assertRaises(FailedIO):
+                self.db.delete("Pages", page_id)
+        self.assertTrue(self._page_exists(page_id))
+
 
 if __name__ == "__main__":
     unittest.main()

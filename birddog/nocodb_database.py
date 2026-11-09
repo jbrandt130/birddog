@@ -842,6 +842,12 @@ class NocoDBDatabase(Database):
         table_schema = self._schema[table_name]
         return [_encode_record(table_schema, record) for record in records]
 
+    def count(self, table_name):
+        """Read the row count from pageInfo.totalRows of a one-record page."""
+        data = self._fetch(self._records_url(self._table_id(table_name)),
+                           params={"limit": 1, "fields": "Id"})
+        return (data.get("pageInfo") or {})["totalRows"]
+
     def get_all_ids(self, table_name):
         table_id = self._table_id(table_name)
         offset = 0
@@ -1406,6 +1412,11 @@ class NocoDBDatabase(Database):
 
         Semantics / atomicity:
             - The implementation issues one or more batch DELETE requests to NocoDB.
+            - NocoDB rejects a whole batch if any of its ids is missing. That happens
+              both for ids that never existed and when fetch_url retries a DELETE
+              whose response timed out after the server had already deleted the
+              batch. Either way the batch is narrowed to the ids that still exist
+              and sent again; records removed by the lost attempt aren't counted.
             - On FailedIO, partial deletions may have occurred.
 
         Errors:
@@ -1416,14 +1427,30 @@ class NocoDBDatabase(Database):
         url = self._records_url(table_id)
         if not isinstance(record_id, (list, tuple)):
             record_id = [record_id]
-        result = dict()
         count = 0
         with LogService("NocoDB", "delete", size=json_size(record_id)):
             for i in range(0, len(record_id), _NOCODB_BATCH_SIZE):
-                batch = [{"Id": i} for i in record_id[i:i + _NOCODB_BATCH_SIZE]]
-                data = self._fetch(url, json=batch, method="DELETE")
-                count += len(data)
+                count += self._delete_batch(url, record_id[i:i + _NOCODB_BATCH_SIZE])
         return count
+
+    def _delete_batch(self, url, ids, attempts=3):
+        """DELETE one batch of ids, narrowing it to the ids that still exist
+        whenever NocoDB rejects it for a missing record (see delete())."""
+        for _ in range(attempts):
+            try:
+                return len(self._fetch(url, json=[{"Id": i} for i in ids], method="DELETE"))
+            except FailedIO as err:
+                if "ERR_RECORD_NOT_FOUND" not in str(err):
+                    raise
+            data = self._fetch(url, params={
+                "where": f"(Id,in,{','.join(str(i) for i in ids)})",
+                "fields": "Id",
+                "limit": len(ids),
+            })
+            ids = [rec["Id"] for rec in data.get("list") or []]
+            if not ids:
+                return 0
+        raise FailedIO(f"delete kept reporting missing records; still present: {ids}")
 
     def _edit_link(self, table_name, link_field, source_record, target_records, method):
         table_id = self._table_id(table_name)

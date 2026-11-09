@@ -183,6 +183,19 @@ class Database:
         """
         raise NotImplementedError
 
+    def count(self, table_name):
+        """
+        Return the number of records in a table.
+
+        Meant to be cheap: implementations should get the count from the
+        backend in a single request rather than by scanning the table.
+
+        Errors:
+            - InvalidTableName
+            - FailedIO
+        """
+        raise NotImplementedError
+
     def lookup(self, table_name, key_set):
         """
         Look up record_id(s) by the table’s key field.

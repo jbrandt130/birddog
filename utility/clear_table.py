@@ -26,7 +26,9 @@ import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCHEMA_TABLES = ("Schema", "Schema Values")
-DELETE_BATCH_SIZE = 100
+# Records listed and deleted per round. The backend may return fewer per page
+# (NocoDB Cloud caps pages at 100), and delete() splits large requests itself.
+PAGE_SIZE = 1000
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Delete all records from a NocoDB table.")
@@ -59,48 +61,46 @@ def confirm(env_name, table_name, total):
     except EOFError:
         return False
 
-def first_page(db, table_name):
-    """Return (ids, total): the ids of the first DELETE_BATCH_SIZE records and
-    the table's total row count, from a single request."""
-    data = db._fetch(db._records_url(db._table_id(table_name)),
-                     params={"limit": DELETE_BATCH_SIZE, "fields": "Id"})
-    ids = [rec["Id"] for rec in data.get("list") or []]
-    return ids, (data.get("pageInfo") or {}).get("totalRows", len(ids))
-
 def delete_records(db, table_name, total):
     """Delete the first page of records until the table is empty, without
-    listing the whole table up front. Returns the number deleted, or None if
-    NocoDB stops deleting the records it lists (so the loop can't spin)."""
+    listing the whole table up front. Returns True once the table is empty, or
+    False if a record is still listed after deleting it (so the loop can't spin).
+
+    Progress counts the ids listed rather than delete()'s result, which can be
+    lower: a delete retried after a lost response finds those records already
+    gone (see NocoDBDatabase.delete)."""
     deleted = 0
+    last_first = None
     while True:
-        ids, _ = first_page(db, table_name)
+        records, _ = db.scan(table_name, limit=PAGE_SIZE, fields=["Id"])
+        ids = [rec["Id"] for rec in records]
         if not ids:
             print()
-            return deleted
-        count = db.delete(table_name, ids)
-        if not count:
-            print(f"\nNocoDB deleted none of the records {ids[:5]}..., stopping.")
-            return None
-        deleted += count
+            return True
+        if ids[0] == last_first:
+            print(f"\nRecord {ids[0]} is still listed after deleting it, stopping.")
+            return False
+        last_first = ids[0]
+        db.delete(table_name, ids)
+        deleted += len(ids)
         print(f"\r{table_name}: deleted {deleted}/{total}", end="", flush=True)
 
 def main(argv=None):
     args = parse_args(argv)
 
     sys.path.insert(0, REPO_ROOT)
-    from birddog.abstract_database import ConfigError, FailedIO
+    from birddog.abstract_database import ConfigError, FailedIO, InvalidTableName
 
     try:
         db = connect(args.env)
-        print(f"Target: {args.env} ({db._host}, base {db._base_id})")
-        if args.table not in db._table_id_map:
-            print(f"No table named {args.table!r}. Tables: "
-                  f"{', '.join(db._table_id_map)}", file=sys.stderr)
+        print(f"Target: {args.env}")
+        try:
+            total = db.count(args.table)
+        except InvalidTableName:
+            print(f"No table named {args.table!r}.", file=sys.stderr)
             return 1
-
-        ids, total = first_page(db, args.table)
         print(f"{args.table}: {total} records")
-        if not ids:
+        if not total:
             print("Nothing to delete.")
             return 0
 
@@ -111,7 +111,7 @@ def main(argv=None):
             print("Aborted. Nothing was deleted.")
             return 1
 
-        deleted = delete_records(db, args.table, total)
+        emptied = delete_records(db, args.table, total)
     except ConfigError as err:
         print(f"Configuration error: {err}", file=sys.stderr)
         return 1
@@ -120,9 +120,9 @@ def main(argv=None):
               "Run again to continue.", file=sys.stderr)
         return 1
 
-    if deleted is None:
+    if not emptied:
         return 1
-    print(f"Done. Deleted {deleted} records from {args.table}.")
+    print(f"Done. {args.table} is empty.")
     return 0
 
 if __name__ == "__main__":
