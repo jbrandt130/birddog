@@ -222,7 +222,7 @@ class LocationUpdateManager(TaskManager):
 
     def _write_statuses(self, status_by_url):
         if status_by_url:
-            self._db.write("Documents", [
+            self._db.update("Documents", [
                 {"url": url, self._STATUS_FIELD: status}
                 for url, status in status_by_url.items()
             ])

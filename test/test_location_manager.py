@@ -24,6 +24,9 @@ class FakeDB:
             self.statuses[r["url"]] = r["location_status"]
         return [self.docs.get(r["url"]) for r in records]
 
+    def update(self, table, records):
+        return self.write(table, records)
+
     def scan(self, table, view_name=None, fields=None, limit=100, cursor=None):
         self.scan_calls.append((table, view_name, limit))
         return [{"Id": self.docs.get(u), "url": u} for u in self.backlog[:limit]], None

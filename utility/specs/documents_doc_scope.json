@@ -1,0 +1,10 @@
+{
+  "table": "Documents",
+  "field": "doc_scope",
+  "type": "multi_select",
+  "description": "Whether the document is about one person (Individual) or a set of people (Group); a document can have both",
+  "values": [
+    ["Individual", "Focused on one person, such as a personal file, passport application or court case about one defendant"],
+    ["Group", "Covers a set of people, such as a census, a list of names or a membership register"]
+  ]
+}

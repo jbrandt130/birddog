@@ -1,0 +1,11 @@
+{
+  "table": "Documents",
+  "field": "extract_status",
+  "type": "single_select",
+  "description": null,
+  "values": [
+    ["internal", null],
+    ["external", null],
+    ["not_indexed", null]
+  ]
+}

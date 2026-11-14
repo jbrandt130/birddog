@@ -1690,9 +1690,9 @@ def add_case_page(additional_column: bool, possible_hyphen_in_case_num: bool,
         "parent": opus_title,
         "parent_url": opus_url,
         "doc_links": doc_links,  # B
-        "doc_type": doc_type,  
-        "content_code": get_cell_value(ws[f"{chr(ord(case_num_col) + content_code_col_offs)}{r}"], True),  # E
-        "process_code": process_code,
+        "OLD_doc_type": doc_type,  
+        "OLD_content_code": get_cell_value(ws[f"{chr(ord(case_num_col) + content_code_col_offs)}{r}"], True),  # E
+        "OLD_process_code": process_code,
         "import_message": curr_import_message,
         # the columns for the following cells are not fixed
         "comments": get_cell_value(ws[comments_cell_addr]),
@@ -1719,6 +1719,75 @@ def normalize_process_code(process_code: str | None, import_message: str) -> tup
             process_code = error_code
 
     return process_code, import_message
+
+
+# Legacy spreadsheet codes -> the new Documents fields (Nov 2026 schema). Codes
+# not listed here (doc types C and L, process code E, or anything
+# unrecognized) have no direct equivalent and leave the new field blank.
+OLD_DOC_TYPE_MAP = {
+    "V": "Vitals",
+    "M": "Vitals",  # obsolete code for V, see normalize_doc_type
+    "P": "Residence & Identity",
+    "O": "Other",
+}
+
+OLD_PROCESS_CODE_MAP = {
+    "C1": "check",
+    "C2": "check",
+    "P1": "save",
+    "P2": "save",
+    "C3": "save",   # also flagged as an anomaly, see OLD_PROCESS_CODE_ANOMALIES
+    "DP": "duplicate",
+    "NO": "reject",
+    "FX": "defer",
+}
+
+# old process codes that also set the anomaly flag, with its anomaly_comment
+OLD_PROCESS_CODE_ANOMALIES = {
+    "C3": "formerly C3 process code",
+}
+
+_OLD_CODE_SPLIT_RE = re.compile(r"[,/\s]+")
+
+def map_old_doc_type(old_doc_type) -> list[str]:
+    """Map an OLD_doc_type value (one code, a "/" or "," separated string, or a
+    list of codes) to a list of new doc_type values; empty if none map."""
+    if not old_doc_type:
+        return []
+    codes = old_doc_type if isinstance(old_doc_type, (list, tuple)) else \
+        _OLD_CODE_SPLIT_RE.split(str(old_doc_type))
+    result = []
+    for code in codes:
+        new_value = OLD_DOC_TYPE_MAP.get(str(code).strip().upper())
+        if new_value and new_value not in result:
+            result.append(new_value)
+    return result
+
+def map_old_process_code(old_process_code) -> str | None:
+    """Map an OLD_process_code value to the new process_code, or None if it
+    has no equivalent."""
+    if not old_process_code:
+        return None
+    return OLD_PROCESS_CODE_MAP.get(str(old_process_code).strip().upper())
+
+def new_codes_from_old(doc_payload: dict) -> dict:
+    """New doc_type / process_code values derived from the OLD_* fields of a
+    Documents payload. Each new field is included whenever its old field is in
+    the payload, as None when the old code has no equivalent, so a re-import
+    clears a value set since the last import (the spreadsheet is the source).
+    An old process code listed in OLD_PROCESS_CODE_ANOMALIES also sets anomaly
+    and anomaly_comment; other codes leave those fields alone."""
+    result = {}
+    if "OLD_doc_type" in doc_payload:
+        result["doc_type"] = map_old_doc_type(doc_payload["OLD_doc_type"]) or None
+    if "OLD_process_code" in doc_payload:
+        old_code = doc_payload["OLD_process_code"]
+        result["process_code"] = map_old_process_code(old_code)
+        anomaly = OLD_PROCESS_CODE_ANOMALIES.get(str(old_code or "").strip().upper())
+        if anomaly:
+            result["anomaly"] = True
+            result["anomaly_comment"] = anomaly
+    return result
 
 
 def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyrillic_name, page_table=None):
@@ -1841,9 +1910,9 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         return
 
     doc_only_fields_all_caps = {
-        "doc_type",
-        "content_code",
-        "process_code",
+        "OLD_doc_type",
+        "OLD_content_code",
+        "OLD_process_code",
     }
     doc_only_fields = doc_only_fields_all_caps | {
         "pages_processed",
@@ -2021,6 +2090,9 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 for doc_field in doc_only_fields_all_caps:
                     if doc_field in doc_payload and doc_payload[doc_field] is not None:
                         doc_payload[doc_field] = doc_payload[doc_field].strip().upper()
+
+                # carry the legacy codes over to the new doc_type / process_code
+                doc_payload.update(new_codes_from_old(doc_payload))
 
                 link = quoted_record["url"]
                 prior_payload = output_docs.get(link)

@@ -1,0 +1,6 @@
+{
+  "table": "Documents",
+  "field": "anomaly_comment",
+  "type": "text",
+  "description": "Describes the anomalous condition flagged by anomaly"
+}

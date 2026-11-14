@@ -278,10 +278,54 @@ def _allowed_doc_link(link):
 # processor notes, etc.) that must not be silently lost if the live wiki
 # page's link set no longer references it.
 _DOC_PROCESSING_STATE_FIELDS = (
-    "last_imported", "doc_type", "content_code", "process_code", "comments",
+    "last_imported", "OLD_doc_type", "OLD_content_code", "OLD_process_code", "comments",
     "reference_date", "processor", "language", "when_transcribed",
     "pages_processed", "import_message",
 )
+
+# Workflow state for a Document birddog discovers on its own. Imported docs are
+# already in the old spreadsheet system, so they never get it: a doc with a
+# process code (old or new) or a last_imported date is left alone, even when
+# its old code had no new equivalent and left process_code blank on purpose.
+_NEW_PROCESS_CODE = "new"
+# set by link_hash_duplicates on every doc that gets a duplicate_of link
+_DUPLICATE_PROCESS_CODE = "duplicate"
+
+# Flagged when a wiki file's content changes under a url birddog already knows.
+# sha1_hash only comes from the MediaWiki file metadata, so this is wiki-only.
+_CONTENT_CHANGED_COMMENT = "Document content changed"
+
+def _in_duplicate_group(doc_rec):
+    # num_duplicates / is_duplicate are rollup counts of the duplicates /
+    # duplicate_of links, returned by a full read of the record
+    return bool(doc_rec.get("num_duplicates") or doc_rec.get("is_duplicate"))
+
+def _content_change_fields(current_rec, record):
+    """Fields to write for a content change, or {} when the stored and freshly
+    fetched sha1 hashes don't both exist or are equal. Always the anomaly flag
+    (an existing anomaly_comment is kept, with this note appended once).
+    A doc outside any duplicate group also gets dupes_checked reset, so
+    link_hash_duplicates checks the new hash; a doc in a group (prevailing or
+    duplicate) is left for special handling: links and dupes_checked untouched."""
+    old_hash, new_hash = current_rec.get("sha1_hash"), record.get("sha1_hash")
+    if not old_hash or not new_hash or old_hash == new_hash:
+        return {}
+    in_group = _in_duplicate_group(current_rec)
+    note = _CONTENT_CHANGED_COMMENT
+    if in_group:
+        role = "a duplicate" if current_rec.get("is_duplicate") else "the prevailing document"
+        note = f"{note} (part of a duplicate group, as {role})"
+    comment = current_rec.get("anomaly_comment") or ""
+    if _CONTENT_CHANGED_COMMENT not in comment:
+        comment = f"{comment}; {note}" if comment else note
+    fields = {"anomaly": True, "anomaly_comment": comment}
+    if not in_group:
+        fields["dupes_checked"] = False
+    return fields
+
+def _needs_new_process_code(doc_rec):
+    return not any(doc_rec.get(field)
+                   for field in ("process_code", "OLD_process_code", "last_imported"))
 
 def _has_processing_state(doc_rec):
     return any(doc_rec.get(field) for field in _DOC_PROCESSING_STATE_FIELDS)
@@ -1243,7 +1287,7 @@ class DatabaseUpdater:
                 if unknown_ids:
                     unknown_recs = self._db.read("Documents", list(unknown_ids), fields="url")
                     id_to_url.update({rec["Id"]: rec["url"] for rec in unknown_recs if rec and rec.get("url")})
-                self._db.write("Documents", [
+                self._db.update("Documents", [
                     {"url": id_to_url[doc_id], "lookup_status": "invalid"}
                     for doc_id in affected_doc_ids if doc_id in id_to_url
                 ])
@@ -1339,11 +1383,19 @@ class DatabaseUpdater:
                     k not in current_rec or current_rec[k] != v
                     for k, v in record.items()
                 )
+                # a doc birddog created before process_code existed enters the
+                # workflow on its next refresh; this alone is enough to write it
+                if _needs_new_process_code(current_rec):
+                    record["process_code"] = _NEW_PROCESS_CODE
+                    changed = True
+                # the sha1 change already makes this record "changed"
+                record.update(_content_change_fields(current_rec, record))
                 if changed:
                     record["last_birddog_update"] = timestamp
                     doc_update.append(record)
             elif allow_create:
                 record["last_birddog_update"] = timestamp
+                record["process_code"] = _NEW_PROCESS_CODE
                 # queue the new document for location inference; the
                 # LocationUpdateManager sweep picks it up from the
                 # BD:Need Locations view once its page lookups are done.
@@ -1436,7 +1488,7 @@ class DatabaseUpdater:
                         affected_doc_ids.update(self._db.get_links("Pages", "doc_links", page_id))
                 if affected_doc_ids:
                     doc_recs = self._db.read("Documents", list(affected_doc_ids), fields="url")
-                    self._db.write("Documents", [
+                    self._db.update("Documents", [
                         {"url": rec["url"], "lookup_status": "invalid"}
                         for rec in doc_recs if rec and rec.get("url")
                     ])
@@ -1545,7 +1597,7 @@ class DatabaseUpdater:
             update["filename"] = label.lstrip("/").replace("/", "-")
 
         _logger.info(f"refresh_doc_lookups: writing {len(updates)} updates")
-        return bool(self._db.write("Documents", updates))
+        return any(self._db.update("Documents", updates))
 
     def link_hash_duplicates(self, limit=200, hash_chunk_size=50):
         unchecked_recs, _ = self._db.scan(
@@ -1581,6 +1633,9 @@ class DatabaseUpdater:
 
         unchecked_ids = {r["Id"] for r in unchecked_recs}
         groups_touched = 0
+        # url -> fields to write; every doc with a duplicate_of link is marked
+        # process_code "duplicate", whatever state it had before
+        updates_by_url = {r["url"]: {"url": r["url"], "dupes_checked": True} for r in unchecked_recs}
 
         for members in members_by_hash.values():
             if len(members) < 2:
@@ -1604,11 +1659,13 @@ class DatabaseUpdater:
             _create_links(self._db, "Documents", "duplicates", primary_id, other_ids)
             for other_id in other_ids:
                 _create_links(self._db, "Documents", "duplicate_of", other_id, [primary_id])
+                url = members[other_id]["url"]
+                updates_by_url.setdefault(url, {"url": url})["process_code"] = _DUPLICATE_PROCESS_CODE
             groups_touched += 1
 
-        updates = [{"url": r["url"], "dupes_checked": True} for r in unchecked_recs]
+        updates = list(updates_by_url.values())
         _logger.info(f"link_hash_duplicates: checked {len(updates)} docs, {groups_touched} groups touched")
-        return bool(self._db.write("Documents", updates))
+        return any(self._db.update("Documents", updates))
 
 class DatabaseUpdateManager(TaskManager):
     _BATCH_SIZE = 20

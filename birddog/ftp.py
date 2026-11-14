@@ -669,7 +669,7 @@ class FTPSiteManager(HeartbeatManager):
                 recheck_paths.add(row["path"])
 
         try:
-            self._db.write(_DOC_TABLE, doc_fp_clear)
+            self._db.update(_DOC_TABLE, doc_fp_clear)
             if recheck_paths:
                 self._db.write(
                     _FTP_TABLE,
@@ -883,7 +883,7 @@ class FTPSiteManager(HeartbeatManager):
         fp = _fp_wiki(doc["url"])                 # may raise _FingerprintUnavailable
         if fp is not None:
             try:
-                self._db.write(_DOC_TABLE, [{"url": doc["url"], "content_fp": fp}])
+                self._db.update(_DOC_TABLE, [{"url": doc["url"], "content_fp": fp}])
             except Exception as e:
                 _logger.warning(
                     f"FTPSiteManager: doc content_fp write failed for {doc['url']}: {e}"

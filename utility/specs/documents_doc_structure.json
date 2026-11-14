@@ -1,0 +1,10 @@
+{
+  "table": "Documents",
+  "field": "doc_structure",
+  "type": "multi_select",
+  "description": "How the document's content is laid out: register-style entries (Template) or running text (Narrative); a document can have both",
+  "values": [
+    ["Template", "Largely a register of repeated entries in a fixed layout with many distinct names, such as a census"],
+    ["Narrative", "Dense running text with few distinct names, such as a court transcript"]
+  ]
+}

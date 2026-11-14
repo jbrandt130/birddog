@@ -1211,8 +1211,38 @@ class NocoDBDatabase(Database):
             return result[0]
         return result
 
-    def _do_write_patch(self, url, batch):
-        self._fetch(url, json=batch, method="PATCH")
+    def _do_write_patch(self, url, batch, attempts=3):
+        """PATCH one batch of records by Id. NocoDB rejects the whole batch if
+        any Id no longer exists (deleted since it was looked up), so narrow the
+        batch to the Ids that still exist and resend. A PATCH never creates a
+        record; each dropped record gets "Id" set to None so callers can tell."""
+        remaining = batch
+        for _ in range(attempts):
+            try:
+                self._fetch(url, json=remaining, method="PATCH")
+                return
+            except FailedIO as err:
+                if "ERR_RECORD_NOT_FOUND" not in str(err):
+                    raise
+            existing = set(self._existing_ids(url, [rec["Id"] for rec in remaining]))
+            dropped = [rec for rec in remaining if rec["Id"] not in existing]
+            for rec in dropped:
+                _logger.info(f"write: record {rec['Id']} was deleted before it could be updated; skipping")
+                rec["Id"] = None
+            remaining = [rec for rec in remaining if rec["Id"] is not None]
+            if not remaining:
+                return
+        raise FailedIO(f"update kept reporting missing records; still present: "
+                       f"{[rec['Id'] for rec in remaining]}")
+
+    def _existing_ids(self, url, ids):
+        """The subset of ids that still exist in the table at url."""
+        data = self._fetch(url, params={
+            "where": f"(Id,in,{','.join(str(i) for i in ids)})",
+            "fields": "Id",
+            "limit": len(ids),
+        })
+        return [rec["Id"] for rec in data.get("list") or []]
 
     def _do_write_post(self, url, batch):
         data = self._fetch(url, json=batch, method="POST", retry_read_timeout=False)
@@ -1350,6 +1380,8 @@ class NocoDBDatabase(Database):
         Returns:
             - If records is a single dict: the record_id (NocoDB "Id") of the written record.
             - If records is a batch: list of record_ids in the same order as input.
+            - None in place of a record_id when an existing record was deleted
+              between its lookup and its update (the update is skipped).
 
         Semantics / atomicity:
             - All-or-none for validation errors:
@@ -1390,6 +1422,43 @@ class NocoDBDatabase(Database):
             result = self._write_unique(table_name, table_id, record_dict)
         else:
             result = self._write_non_unique(table_id, records)
+        if singleton:
+            return result[0]
+        return result
+
+    @timer.timed
+    def update(self, table_name, records, raw=False):
+        """
+        Update existing record(s) in a table using the table's key field. Unlike
+        write(), never creates a record: see the abstract Database.update().
+        """
+        table_id = self._table_id(table_name)
+        key_field_name = self.key_field_name(table_name)   # SchemaError if none
+        if isinstance(records, dict):
+            records = [records]
+            singleton = True
+        elif not isinstance(records, (list, tuple)):
+            raise TypeError("records must be a single dict or sequence of dicts")
+        elif not all(isinstance(record, dict) for record in records):
+            raise TypeError("records must be a single dict or sequence of dicts")
+        else:
+            singleton = False
+
+        if not raw:
+            records = self.encode_records(table_name, records)
+        record_dict = {record[key_field_name]: copy(record) for record in records}
+        with LogService("NocoDB", "update", size=json_size(list(record_dict.values()))):
+            known_key_map = self.lookup(table_name, set(record_dict))
+            for key, rec in record_dict.items():
+                rec["Id"] = known_key_map.get(key)
+            missing = [key for key, rec in record_dict.items() if rec["Id"] is None]
+            if missing:
+                _logger.info(f"update: {table_name}: no record for {len(missing)} key(s), "
+                             f"skipping: {missing[:5]}{'...' if len(missing) > 5 else ''}")
+            existing_records = [rec for rec in record_dict.values() if rec["Id"] is not None]
+            url = self._records_url(table_id)
+            self._run_write_batched(lambda batch: self._do_write_patch(url, batch), existing_records)
+        result = [record_dict[record[key_field_name]]["Id"] for record in records]
         if singleton:
             return result[0]
         return result
@@ -1442,12 +1511,7 @@ class NocoDBDatabase(Database):
             except FailedIO as err:
                 if "ERR_RECORD_NOT_FOUND" not in str(err):
                     raise
-            data = self._fetch(url, params={
-                "where": f"(Id,in,{','.join(str(i) for i in ids)})",
-                "fields": "Id",
-                "limit": len(ids),
-            })
-            ids = [rec["Id"] for rec in data.get("list") or []]
+            ids = self._existing_ids(url, ids)
             if not ids:
                 return 0
         raise FailedIO(f"delete kept reporting missing records; still present: {ids}")

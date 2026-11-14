@@ -297,6 +297,8 @@ class Database:
         Returns:
             - If records is a single dict: the record_id (NocoDB "Id") of the written record.
             - If records is a batch: list of record_ids in the same order as input.
+            - None in place of a record_id when an existing record was deleted
+              between its lookup and its update (the update is skipped).
 
         Semantics / atomicity:
             - All-or-none for validation errors:
@@ -310,6 +312,41 @@ class Database:
         Errors:
             - InvalidTableName
             - MissingKey
+            - InvalidFieldName
+            - InvalidFieldValue
+            - FailedIO
+        """
+        raise NotImplementedError
+
+    def update(self, table_name, records):
+        """
+        Update existing record(s) in a table using the table's key field. Never
+        creates a record: use this for bookkeeping writes to records that are
+        expected to exist, where write() would create a bare record if the key
+        had been deleted in the meantime.
+
+        Args:
+            table_name:
+                Logical table name. The table must have a key field.
+
+            records:
+                Either a single dict or a list/tuple of dicts, as for write().
+                Partial update and validation semantics are the same as write().
+
+        Returns:
+            - If records is a single dict: the record_id of the updated record,
+              or None if no record has that key.
+            - If records is a batch: list of record_ids (or None) in input order.
+
+        Semantics:
+            - Keys with no record are skipped (logged), not created.
+            - A record deleted between the key lookup and the update is
+              skipped the same way.
+            - On FailedIO, partial updates may have occurred.
+
+        Errors:
+            - InvalidTableName
+            - SchemaError (table has no key field)
             - InvalidFieldName
             - InvalidFieldValue
             - FailedIO

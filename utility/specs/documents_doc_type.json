@@ -1,0 +1,20 @@
+{
+  "table": "Documents",
+  "field": "doc_type",
+  "type": "multi_select",
+  "description": "Document category; a document can belong to several",
+  "values": [
+    ["Vitals", "Examples include births, marriages, divorces, name changes, deaths, burial records, cemetery info"],
+    ["Residence & Identity", "Examples include census, revision lists, household books, family lists, lustration, residence permits, migration, resettlement, passports"],
+    ["Persecution", "Examples include pogrom victims, damage claims, deportations, ghettos, forced labor, holocaust, survivor records"],
+    ["Military", "Examples include recruitment, conscription, military service, personnel, casualties"],
+    ["Taxes & Voting", "Examples include tax lists, assessments, voter lists, election info"],
+    ["Legal & Land", "Examples include court cases, notarial records, legal documents, land registers, land allotments, property ownership"],
+    ["Police", "Examples include police files, criminal investigations, filtration cases, security files"],
+    ["Education", "Examples include student lists, enrollment, school records, academic records"],
+    ["Organizations", "Examples include artels, clubs, associations, societies, businesses, membership registers, Kehillas, charitable institutions"],
+    ["Indexes", "Examples include alphabets, indexes"],
+    ["Bibliographical", "Examples include finding aids, archival inventories, description files, bibliographies, population statistics, history"],
+    ["Other", "Everything else"]
+  ]
+}

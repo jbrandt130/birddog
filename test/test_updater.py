@@ -64,6 +64,8 @@ class FakeDB:
         self.create_calls = []
         self.delete_calls = []
         self.write_calls = []
+        self.update_calls = []
+        self.deleted_keys = set()   # keys update() treats as having no record
         self.get_links_calls = []
         self._next_id = 0
 
@@ -95,6 +97,23 @@ class FakeDB:
             rid = rec.get("Id") or f"new{self._next_id}"
             self.records.setdefault(table_name, {})[rid] = dict(rec)
             ids.append(rid)
+        return ids[0] if singleton else ids
+
+    def update(self, table_name, records):
+        # update-only: a key in deleted_keys has no record and is skipped
+        self.update_calls.append((table_name, records))
+        singleton = isinstance(records, dict)
+        if singleton:
+            records = [records]
+        key_field = "url" if table_name == "Documents" else self.key_field_name(table_name)
+        ids = []
+        for rec in records:
+            key = rec.get(key_field)
+            if key in self.deleted_keys:
+                ids.append(None)
+                continue
+            self._next_id += 1
+            ids.append(self.lookup_map.get(table_name, {}).get(key) or f"upd{self._next_id}")
         return ids[0] if singleton else ids
 
     def scan(self, table_name, limit=100, cursor=None, where=None,
@@ -651,7 +670,7 @@ class TestHasProcessingState(unittest.TestCase):
         self.assertFalse(_has_processing_state({"url": "https://x", "owning_pages": []}))
 
     def test_blank_string_and_zero_are_not_state(self):
-        rec = {"comments": "", "pages_processed": 0, "doc_type": None}
+        rec = {"comments": "", "pages_processed": 0, "OLD_doc_type": None}
         self.assertFalse(_has_processing_state(rec))
 
     def test_any_populated_field_counts(self):
@@ -988,7 +1007,8 @@ class TestUpdateDocRecordsFromRecords(unittest.TestCase):
 
     def test_unchanged_doc_is_not_written(self):
         self.db.lookup_map["Documents"] = {"https://x/1": "d1"}
-        self.db.records["Documents"] = {"d1": {"Id": "d1", "url": "https://x/1", "title": "1"}}
+        self.db.records["Documents"] = {"d1": {"Id": "d1", "url": "https://x/1", "title": "1",
+                                               "process_code": "check"}}
         doc_records = {"https://x/1": {"url": "https://x/1", "title": "1"}}
 
         changed = self.updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
@@ -1068,6 +1088,120 @@ class TestUpdateDocRecordsFromRecords(unittest.TestCase):
         self.assertNotIn("location_status", written[0])
 
 
+    # --- process_code workflow state ---
+
+    def _write_existing(self, **fields):
+        self.db.lookup_map["Documents"] = {"https://x/1": "d1"}
+        self.db.records["Documents"] = {"d1": {"Id": "d1", "url": "https://x/1", "title": "1", **fields}}
+        doc_records = {"https://x/1": {"url": "https://x/1", "title": "1"}}
+        self.updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
+        return self.db.write_calls
+
+    def test_new_doc_gets_process_code_new(self):
+        doc_records = {"https://x/1": {"url": "https://x/1", "title": "1"}}
+        self.updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
+        _, written = self.db.write_calls[0]
+        self.assertEqual(written[0]["process_code"], "new")
+
+    def test_blank_unimported_doc_is_marked_new_even_if_unchanged(self):
+        calls = self._write_existing(process_code=None, OLD_process_code=None, last_imported=None)
+        self.assertEqual(len(calls), 1)
+        _, written = calls[0]
+        self.assertEqual(written[0]["process_code"], "new")
+        self.assertIn("last_birddog_update", written[0])
+
+    def test_existing_process_code_is_kept(self):
+        self.assertEqual(self._write_existing(process_code="review"), [])
+
+    def test_old_process_code_blocks_new(self):
+        # imported with a code that had no new equivalent: blank on purpose
+        self.assertEqual(self._write_existing(OLD_process_code="C3"), [])
+
+    def test_imported_doc_with_blank_codes_is_not_marked_new(self):
+        self.assertEqual(self._write_existing(last_imported="2026-11-13"), [])
+
+    def test_changed_doc_with_process_code_does_not_get_new(self):
+        self.db.lookup_map["Documents"] = {"https://x/1": "d1"}
+        self.db.records["Documents"] = {"d1": {"Id": "d1", "url": "https://x/1", "title": "old",
+                                               "process_code": "save"}}
+        doc_records = {"https://x/1": {"url": "https://x/1", "title": "new"}}
+        self.updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
+        _, written = self.db.write_calls[0]
+        self.assertNotIn("process_code", written[0])
+
+
+    # --- content change under a known url ---
+
+    def _refresh(self, current, fresh):
+        self.db.lookup_map["Documents"] = {"https://x/1": "d1"}
+        self.db.records["Documents"] = {"d1": {"Id": "d1", "url": "https://x/1", "title": "1",
+                                               "process_code": "save", **current}}
+        doc_records = {"https://x/1": {"url": "https://x/1", "title": "1", **fresh}}
+        self.updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
+        return [rec for _, recs in self.db.write_calls for rec in recs]
+
+    def test_sha1_change_flags_anomaly(self):
+        written = self._refresh({"sha1_hash": "aaa"}, {"sha1_hash": "bbb"})
+        self.assertEqual(len(written), 1)
+        self.assertIs(written[0]["anomaly"], True)
+        self.assertEqual(written[0]["anomaly_comment"], "Document content changed")
+        self.assertEqual(written[0]["sha1_hash"], "bbb")
+        self.assertIs(written[0]["dupes_checked"], False)  # recheck under the new hash
+        self.assertNotIn("process_code", written[0])
+
+    def test_sha1_change_on_duplicate_only_flags_anomaly(self):
+        written = self._refresh({"sha1_hash": "aaa", "process_code": "duplicate",
+                                 "is_duplicate": 1, "num_duplicates": 0},
+                                {"sha1_hash": "bbb"})
+        self.assertIs(written[0]["anomaly"], True)
+        self.assertEqual(written[0]["anomaly_comment"],
+                         "Document content changed (part of a duplicate group, as a duplicate)")
+        self.assertNotIn("dupes_checked", written[0])
+        self.assertNotIn("process_code", written[0])
+
+    def test_sha1_change_on_prevailing_doc_only_flags_anomaly(self):
+        written = self._refresh({"sha1_hash": "aaa", "is_duplicate": 0, "num_duplicates": 2},
+                                {"sha1_hash": "bbb"})
+        self.assertIs(written[0]["anomaly"], True)
+        self.assertEqual(written[0]["anomaly_comment"],
+                         "Document content changed (part of a duplicate group, as the prevailing document)")
+        self.assertNotIn("dupes_checked", written[0])
+        self.assertEqual(self.db.create_calls, [])
+        self.assertEqual(self.db.delete_calls, [])
+
+    def test_sha1_change_appends_to_existing_comment(self):
+        written = self._refresh({"sha1_hash": "aaa", "anomaly": True, "anomaly_comment": "pages out of order"},
+                                {"sha1_hash": "bbb"})
+        self.assertEqual(written[0]["anomaly_comment"], "pages out of order; Document content changed")
+
+    def test_sha1_change_note_is_not_repeated(self):
+        written = self._refresh({"sha1_hash": "aaa", "anomaly": True,
+                                 "anomaly_comment": "Document content changed"},
+                                {"sha1_hash": "bbb"})
+        self.assertEqual(written[0]["anomaly_comment"], "Document content changed")
+
+    def test_same_sha1_is_not_an_anomaly(self):
+        self.assertEqual(self._refresh({"sha1_hash": "aaa"}, {"sha1_hash": "aaa"}), [])
+
+    def test_first_sha1_is_not_an_anomaly(self):
+        # metadata arriving for the first time is not a content change
+        written = self._refresh({"sha1_hash": None}, {"sha1_hash": "aaa"})
+        self.assertEqual(len(written), 1)
+        self.assertNotIn("anomaly", written[0])
+        self.assertNotIn("dupes_checked", written[0])
+
+    def test_missing_fresh_sha1_is_not_an_anomaly(self):
+        # e.g. the file is unlinked and no metadata came back
+        written = self._refresh({"sha1_hash": "aaa"}, {"availability": "unlinked"})
+        self.assertNotIn("anomaly", written[0])
+
+    def test_new_doc_is_not_an_anomaly(self):
+        doc_records = {"https://x/1": {"url": "https://x/1", "title": "1", "sha1_hash": "aaa"}}
+        self.updater._update_doc_records_from_records(doc_records, update_doc_metadata=False)
+        _, written = self.db.write_calls[0]
+        self.assertNotIn("anomaly", written[0])
+
+
 class TestLinkHashDuplicates(unittest.TestCase):
     """
     link_hash_duplicates() makes two independent scan() sequences against
@@ -1095,6 +1229,7 @@ class TestLinkHashDuplicates(unittest.TestCase):
         self.db.scan_pages_by_view[("Documents", "BD:Need Dupe Check")] = [([], False)]
         result = self.updater.link_hash_duplicates()
         self.assertFalse(result)
+        self.assertEqual(self.db.update_calls, [])
         self.assertEqual(self.db.write_calls, [])
         self.assertEqual(self.db.create_calls, [])
 
@@ -1106,7 +1241,7 @@ class TestLinkHashDuplicates(unittest.TestCase):
 
         self.assertTrue(result)
         self.assertEqual(self.db.create_calls, [])
-        _, updates = self.db.write_calls[0]
+        _, updates = self.db.update_calls[0]
         self.assertEqual(updates, [{"url": "https://x/1", "dupes_checked": True}])
 
     def test_fresh_group_of_two_new_docs(self):
@@ -1121,8 +1256,10 @@ class TestLinkHashDuplicates(unittest.TestCase):
         self.assertEqual(self.db.links[("Documents", "duplicate_of", "d2")], {"d1"})
         self.assertNotIn(("Documents", "duplicates", "d2"), self.db.links)
         self.assertNotIn(("Documents", "duplicate_of", "d1"), self.db.links)
-        urls_checked = {u["url"] for _, updates in self.db.write_calls for u in updates}
+        urls_checked = {u["url"] for _, updates in self.db.update_calls for u in updates}
         self.assertEqual(urls_checked, {"https://x/1", "https://x/2"})
+        codes = {u["url"]: u.get("process_code") for _, updates in self.db.update_calls for u in updates}
+        self.assertEqual(codes, {"https://x/1": None, "https://x/2": "duplicate"})
 
     def test_new_doc_joins_already_linked_group(self):
         self.db.links[("Documents", "duplicates", "d1")] = {"d2"}
@@ -1138,8 +1275,12 @@ class TestLinkHashDuplicates(unittest.TestCase):
         self.assertEqual(self.db.links[("Documents", "duplicates", "d1")], {"d2", "d3"})
         self.assertEqual(self.db.links[("Documents", "duplicate_of", "d3")], {"d1"})
         self.assertEqual(self.db.links[("Documents", "duplicate_of", "d2")], {"d1"})
-        _, updates = self.db.write_calls[0]
-        self.assertEqual(updates, [{"url": "https://x/3", "dupes_checked": True}])
+        _, updates = self.db.update_calls[0]
+        # every duplicate_of member of a touched group is (re)marked duplicate
+        self.assertCountEqual(updates, [
+            {"url": "https://x/3", "dupes_checked": True, "process_code": "duplicate"},
+            {"url": "https://x/2", "process_code": "duplicate"},
+        ])
 
     def test_primary_can_be_an_already_checked_older_member(self):
         # d1 has the lower Id (created earlier) but is only now getting its
@@ -1155,8 +1296,11 @@ class TestLinkHashDuplicates(unittest.TestCase):
         self.assertTrue(result)
         self.assertEqual(self.db.links[("Documents", "duplicates", "d1")], {"d9"})
         self.assertEqual(self.db.links[("Documents", "duplicate_of", "d9")], {"d1"})
-        _, updates = self.db.write_calls[0]
-        self.assertEqual(updates, [{"url": "https://x/1", "dupes_checked": True}])
+        _, updates = self.db.update_calls[0]
+        self.assertCountEqual(updates, [
+            {"url": "https://x/1", "dupes_checked": True},
+            {"url": "https://x/9", "process_code": "duplicate"},
+        ])
 
     def test_mixed_batch_grouped_and_ungrouped(self):
         d1 = {"Id": "d1", "url": "https://x/1", "sha1_hash": "hA"}
@@ -1170,8 +1314,11 @@ class TestLinkHashDuplicates(unittest.TestCase):
         self.assertEqual(self.db.links[("Documents", "duplicates", "d1")], {"d2"})
         self.assertNotIn(("Documents", "duplicates", "d3"), self.db.links)
         self.assertNotIn(("Documents", "duplicate_of", "d3"), self.db.links)
-        urls_checked = {u["url"] for _, updates in self.db.write_calls for u in updates}
+        urls_checked = {u["url"] for _, updates in self.db.update_calls for u in updates}
         self.assertEqual(urls_checked, {"https://x/1", "https://x/2", "https://x/3"})
+        self.assertEqual(self.db.write_calls, [])  # bookkeeping goes through update()
+        codes = {u["url"]: u.get("process_code") for _, updates in self.db.update_calls for u in updates}
+        self.assertEqual(codes, {"https://x/1": None, "https://x/2": "duplicate", "https://x/3": None})
 
 
 class TestUpdateDocRecordsValidation(unittest.TestCase):
@@ -1281,7 +1428,9 @@ class TestCompleteTranslation(unittest.TestCase):
         self.assertEqual(len(pages_write[1]), 1)
         self.assertEqual(pages_write[1][0]["description"], "Translated 1")
 
-        docs_write = [c for c in self.db.write_calls if c[0] == "Documents"][0]
+        # bookkeeping write: update-only, so a deleted doc can't be recreated
+        self.assertEqual([c for c in self.db.write_calls if c[0] == "Documents"], [])
+        docs_write = [c for c in self.db.update_calls if c[0] == "Documents"][0]
         self.assertEqual(docs_write[1], [{"url": "https://x/1", "lookup_status": "invalid"}])
 
     def test_no_matching_translation_writes_nothing(self):

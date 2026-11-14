@@ -1,0 +1,6 @@
+{
+  "table": "Documents",
+  "field": "anomaly",
+  "type": "bool",
+  "description": "Flags an anomalous condition on the document; see anomaly_comment"
+}

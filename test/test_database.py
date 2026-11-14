@@ -161,13 +161,13 @@ class TestDatabase(unittest.TestCase):
         self.assertTrue(expected_titles.issubset(read_titles))
 
         # -----------------------
-        # 4) batch write: Documents (with multiselect doc_type as list)
+        # 4) batch write: Documents (with multiselect OLD_doc_type as list)
         # -----------------------
         batch_docs = [
             {
                 "url": self._mk_doc_link(i),
                 "title": f"test {self._run_suffix} doc_{i}",
-                "doc_type": ["O", "C", "L", "V"],
+                "OLD_doc_type": ["O", "C", "L", "V"],
             }
             for i in range(5)
         ]
@@ -765,6 +765,72 @@ class TestDatabase(unittest.TestCase):
         self.assertEqual(self.db.count("Pages"), before)
         with self.assertRaises(InvalidTableName):
             self.db.count("No Such Table")
+
+    def test_update_changes_existing_and_never_creates(self):
+        live, = self._mk_pages(["upd live"])
+        missing_url = self._mk_page_url("upd never existed")
+        before = self.db.count("Pages")
+
+        result = self.db.update("Pages", [
+            {"url": self._mk_page_url("upd live"), "description": "updated"},
+            {"url": missing_url, "description": "should not exist"},
+        ])
+
+        self.assertEqual(result, [live, None])
+        self.assertEqual(self.db.read("Pages", live)["description"], "updated")
+        self.assertIsNone(self.db.lookup("Pages", missing_url))
+        self.assertEqual(self.db.count("Pages"), before)
+        self.assertIsNone(self.db.update("Pages", {"url": missing_url, "description": "x"}))
+
+    def _stale_lookup(self, stale):
+        """lookup() that still reports keys in stale (key -> old Id) after
+        their records were deleted: the window between lookup and PATCH."""
+        real_lookup = self.db.lookup
+
+        def lookup(table_name, key_set):
+            result = real_lookup(table_name, key_set)
+            if isinstance(key_set, set):
+                result.update({k: v for k, v in stale.items() if k in key_set})
+            return result
+        return patch.object(self.db, "lookup", side_effect=lookup)
+
+    def test_update_skips_record_deleted_after_lookup(self):
+        """
+        NocoDB rejects a whole bulk PATCH if any Id in it is missing. update()
+        must still update the records that exist and skip the deleted one.
+        """
+        gone, live = self._mk_pages(["upd gone", "upd live2"])
+        gone_url, live_url = self._mk_page_url("upd gone"), self._mk_page_url("upd live2")
+        self.db.delete("Pages", gone)
+        before = self.db.count("Pages")
+
+        with self._stale_lookup({gone_url: gone}):
+            result = self.db.update("Pages", [
+                {"url": gone_url, "description": "late"},
+                {"url": live_url, "description": "updated"},
+            ])
+
+        self.assertEqual(result, [None, live])
+        self.assertEqual(self.db.read("Pages", live)["description"], "updated")
+        self.assertIsNone(self.db.lookup("Pages", gone_url))
+        self.assertEqual(self.db.count("Pages"), before)
+
+    def test_write_skips_record_deleted_after_lookup(self):
+        """write() updates existing records the same way, so it gets the same
+        narrowing: the deleted record is skipped (Id None), not recreated."""
+        gone, live = self._mk_pages(["wr gone", "wr live"])
+        gone_url, live_url = self._mk_page_url("wr gone"), self._mk_page_url("wr live")
+        self.db.delete("Pages", gone)
+
+        with self._stale_lookup({gone_url: gone}):
+            result = self.db.write("Pages", [
+                {"url": gone_url, "description": "late"},
+                {"url": live_url, "description": "updated"},
+            ])
+
+        self.assertEqual(result, [None, live])
+        self.assertEqual(self.db.read("Pages", live)["description"], "updated")
+        self.assertIsNone(self.db.lookup("Pages", gone_url))
 
     def test_delete_skips_already_deleted_records(self):
         """

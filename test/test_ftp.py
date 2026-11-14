@@ -829,6 +829,16 @@ class _MatchDB:
             src[rec[key]].update(rec)
         return [src[rec[key]]["Id"] for rec in records]
 
+    def update(self, table, records):
+        # update-only: keys with no record are skipped
+        if isinstance(records, dict):
+            records = [records]
+        src = self.docs if table == ftp._DOC_TABLE else self.ftp
+        key = "url" if table == ftp._DOC_TABLE else "path"
+        present = [rec for rec in records if rec[key] in src]
+        self.write(table, present)
+        return [src[rec[key]]["Id"] if rec[key] in src else None for rec in records]
+
     # -- links (symmetric m:m) --
     def get_links(self, table, field, rec_id):
         if table == ftp._FTP_TABLE:
