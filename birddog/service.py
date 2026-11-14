@@ -173,6 +173,16 @@ def login_required(f):
         return f(user, *args, **kwargs)
     return wrapper
 
+def admin_required(f):
+    # login_required plus role check; use instead of (not with) login_required
+    @wraps(f)
+    @login_required
+    def wrapper(user, *args, **kwargs):
+        if user.role != 'admin':
+            return jsonify({'error': 'Forbidden'}), 403
+        return f(user, *args, **kwargs)
+    return wrapper
+
 # ---- FRONT END PAGES --------------------------------------------------------
 
 # Home Route (Shows the landing page)
@@ -843,27 +853,28 @@ def database_cancel_task(user):
         return jsonify({'error': f'Task not found: {task_name}'}), 404
 
 @app.route('/database_status', methods=['GET'])
-@login_required
+@admin_required
 def database_status(user):
     return render_template('database_status.html')
 
 # ---- LOG ACCESS ---------------------------------------------------------------
 
 @app.route('/log', methods=['GET'])
-@login_required
+@admin_required
 def get_log(user):
     limit = request.args.get('limit', type=int)
     return jsonify(get_log_buffer().get_logs(limit)), 200
 
 @app.route("/logs", methods=['GET'])
-@login_required
+@admin_required
 def logs_view(user):
     return render_template("logs.html")
 
 # ---- SERVICE LOG ACCESS ---------------------------------------------------------------
 
 @app.route("/service_usage", methods=['GET'])
-def service_usage_dashboard():
+@admin_required
+def service_usage_dashboard(user):
     range_opt = request.args.get("range", "1h")
     by_resource_opt = request.args.get("by_resource", None)
     now = datetime.now(UTC)

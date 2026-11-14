@@ -693,6 +693,94 @@ class TestDatabaseUpdateRoute(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
+class TestAdminNavLinks(unittest.TestCase):
+    """
+    Logs / Usage / DB Status nav links render only for admin users.
+    Renders the real index.html (no render_template patch).
+    """
+    ADMIN_HREFS = ('href="/logs"', 'href="/service_usage"', 'href="/database_status"')
+
+    def setUp(self):
+        app.config["TESTING"] = True
+        app.secret_key = "test_secret"
+        service.serializer = URLSafeTimedSerializer(app.secret_key)
+        service.runtime = MagicMock(state="running", database_update_enabled=False)
+        service.users = MagicMock()
+        self.client = app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"email": TEST_EMAIL, "name": TEST_NAME}
+
+    def _home_html(self, role):
+        user = MagicMock()
+        user.role = role
+        user.get_preference.return_value = None
+        user.get_watchlist.return_value = []
+        service.users.lookup.return_value = user
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 200)
+        return resp.get_data(as_text=True)
+
+    def test_admin_sees_admin_links(self):
+        html = self._home_html("admin")
+        for href in self.ADMIN_HREFS:
+            self.assertIn(href, html)
+
+    def test_non_admin_does_not_see_admin_links(self):
+        html = self._home_html("user")
+        for href in self.ADMIN_HREFS:
+            self.assertNotIn(href, html)
+        # the rest of the logged-in nav is still there
+        self.assertIn('id="nav-profile-tab"', html)
+        self.assertIn('id="nav-help-link"', html)
+
+    def test_nav_ids_are_unique(self):
+        html = self._home_html("admin")
+        self.assertEqual(html.count('id="nav-profile-tab"'), 1)
+
+
+class TestAdminRoutes(unittest.TestCase):
+    """
+    /logs, /log, /service_usage and /database_status are admin only on the
+    server too, not just hidden from the nav.
+    """
+    ADMIN_ROUTES = ("/logs", "/log", "/service_usage", "/database_status")
+
+    def setUp(self):
+        app.config["TESTING"] = True
+        app.secret_key = "test_secret"
+        service.serializer = URLSafeTimedSerializer(app.secret_key)
+        service.runtime = MagicMock(state="running")
+        service.users = MagicMock()
+        self.client = app.test_client()
+
+    def _login(self, role):
+        user = MagicMock()
+        user.role = role
+        service.users.lookup.return_value = user
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"email": TEST_EMAIL, "name": TEST_NAME}
+
+    def test_non_admin_is_forbidden(self):
+        self._login("user")
+        for route in self.ADMIN_ROUTES:
+            with self.subTest(route=route):
+                self.assertEqual(self.client.get(route).status_code, 403)
+
+    def test_logged_out_is_rejected(self):
+        for route in self.ADMIN_ROUTES:
+            with self.subTest(route=route):
+                self.assertNotEqual(self.client.get(route).status_code, 200)
+
+    def test_admin_is_allowed(self):
+        self._login("admin")
+        with patch("birddog.service.render_template", return_value="ok"), \
+             patch("birddog.service.get_log_buffer") as mock_buffer:
+            mock_buffer.return_value.get_logs.return_value = []
+            for route in ("/logs", "/log", "/database_status"):
+                with self.subTest(route=route):
+                    self.assertEqual(self.client.get(route).status_code, 200)
+
+
 class TestPageDataNoEarlierVersion(unittest.TestCase):
     """
     /page?compare= 's 'no_earlier_version' flag (issue #138 UI investigation):

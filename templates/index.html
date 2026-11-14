@@ -91,10 +91,12 @@
           <a class="nav-link" id="nav-browse-tab" data-bs-toggle="tab" href="#nav-browse" role="tab">Browse</a>
           <a class="nav-link" id="nav-archives-tab" data-bs-toggle="tab" href="#nav-archives" role="tab">Archives</a>
           <a class="nav-link" id="nav-profile-tab" data-bs-toggle="tab" href="#nav-profile" role="tab">Profile</a>
-          <a class="nav-link" id="nav-profile-tab" href="/logs" target="birddog_logs">Logs</a>
-          <a class="nav-link" id="nav-profile-tab" href="/service_usage" target="birddog_usage">Usage</a>
-          <a class="nav-link" id="nav-profile-tab" href="/database_status" target="birddog_db_status">DB Status</a>
-          <a class="nav-link" id="nav-profile-tab" href="https://github.com/jbrandt130/birddog/blob/main/docs/help.md" target="birddog_help">Help</a>
+          {% if user.role == 'admin' %}
+            <a class="nav-link" id="nav-logs-link" href="/logs" target="birddog_logs">Logs</a>
+            <a class="nav-link" id="nav-usage-link" href="/service_usage" target="birddog_usage">Usage</a>
+            <a class="nav-link" id="nav-db-status-link" href="/database_status" target="birddog_db_status">DB Status</a>
+          {% endif %}
+          <a class="nav-link" id="nav-help-link" href="https://github.com/jbrandt130/birddog/blob/main/docs/help.md" target="birddog_help">Help</a>
         {% endif %}
       </div>
 
