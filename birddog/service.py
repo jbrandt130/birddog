@@ -820,7 +820,7 @@ def _active_updates():
     return runtime.active_database_updates
 
 @app.route('/database_update', methods=['GET'])
-@login_required
+@admin_required
 def database_update(user):
     page_title = request.args.get('title')
     deep = _flag_arg('deep')

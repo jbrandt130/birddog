@@ -670,7 +670,7 @@ class TestDatabaseUpdateRoute(unittest.TestCase):
         service.runtime.database_update_enabled = True
         service.runtime.active_database_updates = {}
         service.users = MagicMock()
-        service.users.lookup.return_value = MagicMock(email=TEST_EMAIL)
+        service.users.lookup.return_value = MagicMock(email=TEST_EMAIL, role="admin")
 
         self.client = app.test_client()
         with self.client.session_transaction() as sess:
@@ -691,6 +691,12 @@ class TestDatabaseUpdateRoute(unittest.TestCase):
         service.runtime.update_to_database.side_effect = ValueError("requires a location manager")
         resp = self.client.get("/database_update?title=T&update_locations=1")
         self.assertEqual(resp.status_code, 400)
+
+    def test_non_admin_is_forbidden(self):
+        service.users.lookup.return_value = MagicMock(email=TEST_EMAIL, role="user")
+        resp = self.client.get("/database_update?title=T")
+        self.assertEqual(resp.status_code, 403)
+        service.runtime.update_to_database.assert_not_called()
 
 
 class TestAdminNavLinks(unittest.TestCase):
