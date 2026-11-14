@@ -1321,6 +1321,93 @@ class TestLinkHashDuplicates(unittest.TestCase):
         self.assertEqual(codes, {"https://x/1": None, "https://x/2": "duplicate", "https://x/3": None})
 
 
+    # --- imported records prevail ---
+
+    def _updates_by_url(self):
+        result = {}
+        for _, updates in self.db.update_calls:
+            for u in updates:
+                result.setdefault(u["url"], {}).update(u)
+        return result
+
+    def test_imported_doc_prevails_over_lower_id(self):
+        d1 = {"Id": "d1", "url": "https://x/1", "sha1_hash": "hA"}
+        d2 = {"Id": "d2", "url": "https://x/2", "sha1_hash": "hA",
+              "last_imported": "2026-11-14", "process_code": "save"}
+        self._seed([d1, d2], [d1, d2])
+
+        self.updater.link_hash_duplicates()
+
+        self.assertEqual(self.db.links[("Documents", "duplicates", "d2")], {"d1"})
+        self.assertEqual(self.db.links[("Documents", "duplicate_of", "d1")], {"d2"})
+        updates = self._updates_by_url()
+        self.assertEqual(updates["https://x/1"]["process_code"], "duplicate")
+        self.assertNotIn("process_code", updates["https://x/2"])
+
+    def test_imported_non_prevailing_keeps_code_and_is_flagged(self):
+        d1 = {"Id": "d1", "url": "https://x/1", "sha1_hash": "hA",
+              "last_imported": "2026-11-14", "process_code": "save"}
+        d2 = {"Id": "d2", "url": "https://x/2", "sha1_hash": "hA",
+              "last_imported": "2026-11-14", "process_code": "check",
+              "anomaly_comment": "formerly C3 process code"}
+        self._seed([d1, d2], [d1, d2])
+
+        self.updater.link_hash_duplicates()
+
+        self.assertEqual(self.db.links[("Documents", "duplicate_of", "d2")], {"d1"})
+        updates = self._updates_by_url()
+        self.assertNotIn("process_code", updates["https://x/2"])
+        self.assertIs(updates["https://x/2"]["anomaly"], True)
+        self.assertEqual(updates["https://x/2"]["anomaly_comment"],
+                         "formerly C3 process code; hash duplicate of https://x/1")
+        self.assertNotIn("anomaly", updates["https://x/1"])
+
+    def test_imported_duplicate_does_not_prevail_and_is_not_flagged(self):
+        # the spreadsheet already marked d1 a duplicate (DP)
+        d1 = {"Id": "d1", "url": "https://x/1", "sha1_hash": "hA",
+              "last_imported": "2026-11-14", "process_code": "duplicate"}
+        d2 = {"Id": "d2", "url": "https://x/2", "sha1_hash": "hA",
+              "last_imported": "2026-11-14", "process_code": "save"}
+        self._seed([d1, d2], [d1, d2])
+
+        self.updater.link_hash_duplicates()
+
+        self.assertEqual(self.db.links[("Documents", "duplicates", "d2")], {"d1"})
+        self.assertEqual(self._updates_by_url()["https://x/1"], {"url": "https://x/1", "dupes_checked": True})
+
+    def test_existing_prevailing_doc_is_kept(self):
+        # d5 already prevails; an imported doc with a lower Id joining later
+        # does not take over
+        self.db.links[("Documents", "duplicates", "d5")] = {"d6"}
+        d1 = {"Id": "d1", "url": "https://x/1", "sha1_hash": "hA",
+              "last_imported": "2026-11-14", "process_code": "save"}
+        d5 = {"Id": "d5", "url": "https://x/5", "sha1_hash": "hA", "num_duplicates": 1}
+        d6 = {"Id": "d6", "url": "https://x/6", "sha1_hash": "hA", "process_code": "duplicate"}
+        self._seed([d1], [d1, d5, d6])
+
+        self.updater.link_hash_duplicates()
+
+        self.assertEqual(self.db.links[("Documents", "duplicates", "d5")], {"d1", "d6"})
+        self.assertEqual(self.db.links[("Documents", "duplicate_of", "d1")], {"d5"})
+        updates = self._updates_by_url()
+        self.assertNotIn("process_code", updates["https://x/1"])
+        self.assertEqual(updates["https://x/1"]["anomaly_comment"], "hash duplicate of https://x/5")
+        # d6 is already "duplicate": nothing to write
+        self.assertNotIn("https://x/6", updates)
+
+    def test_hash_duplicate_note_is_not_repeated(self):
+        d1 = {"Id": "d1", "url": "https://x/1", "sha1_hash": "hA", "num_duplicates": 1,
+              "last_imported": "2026-11-14", "process_code": "save"}
+        d2 = {"Id": "d2", "url": "https://x/2", "sha1_hash": "hA",
+              "last_imported": "2026-11-14", "process_code": "save",
+              "anomaly": True, "anomaly_comment": "hash duplicate of https://x/1"}
+        self._seed([d2], [d1, d2])
+
+        self.updater.link_hash_duplicates()
+
+        self.assertEqual(self._updates_by_url()["https://x/2"], {"url": "https://x/2", "dupes_checked": True})
+
+
 class TestUpdateDocRecordsValidation(unittest.TestCase):
     def setUp(self):
         self.updater = make_updater()

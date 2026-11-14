@@ -288,7 +288,8 @@ _DOC_PROCESSING_STATE_FIELDS = (
 # process code (old or new) or a last_imported date is left alone, even when
 # its old code had no new equivalent and left process_code blank on purpose.
 _NEW_PROCESS_CODE = "new"
-# set by link_hash_duplicates on every doc that gets a duplicate_of link
+# set by link_hash_duplicates on a birddog-created doc that gets a duplicate_of
+# link (imported docs keep their process_code, see _mark_hash_duplicate)
 _DUPLICATE_PROCESS_CODE = "duplicate"
 
 # Flagged when a wiki file's content changes under a url birddog already knows.
@@ -322,6 +323,45 @@ def _content_change_fields(current_rec, record):
     if not in_group:
         fields["dupes_checked"] = False
     return fields
+
+# Hash-duplicate groups (link_hash_duplicates). Fields read for every member.
+_DUPE_GROUP_FIELDS = ["url", "sha1_hash", "last_imported", "process_code",
+                      "num_duplicates", "anomaly_comment"]
+
+def _choose_prevailing(members):
+    """Pick the prevailing document of a hash group ({Id: rec}).
+
+    A group that already has one (a member with duplicates links, i.e.
+    num_duplicates > 0) keeps it. Otherwise imported records prevail, since
+    they carry the spreadsheet's curated state: first an imported member not
+    marked "duplicate", then any imported member, then any member, with ties
+    going to the lowest Id (the first created)."""
+    current = sorted(rid for rid, rec in members.items() if rec.get("num_duplicates"))
+    if current:
+        return current[0]
+    def rank(rid):
+        rec = members[rid]
+        imported = bool(rec.get("last_imported"))
+        not_duplicate = rec.get("process_code") != _DUPLICATE_PROCESS_CODE
+        return (not (imported and not_duplicate), not imported, rid)
+    return min(members, key=rank)
+
+def _mark_hash_duplicate(rec, prevailing):
+    """Fields to write on a non-prevailing member of a hash group. A
+    birddog-created doc becomes process_code "duplicate". An imported doc keeps
+    its curated process_code and is flagged for review instead (unless it is
+    already "duplicate"), with the note added to anomaly_comment once."""
+    if not rec.get("last_imported"):
+        if rec.get("process_code") == _DUPLICATE_PROCESS_CODE:
+            return {}
+        return {"process_code": _DUPLICATE_PROCESS_CODE}
+    if rec.get("process_code") == _DUPLICATE_PROCESS_CODE:
+        return {}
+    note = f"hash duplicate of {prevailing['url']}"
+    comment = rec.get("anomaly_comment") or ""
+    if note in comment:
+        return {}
+    return {"anomaly": True, "anomaly_comment": f"{comment}; {note}" if comment else note}
 
 def _needs_new_process_code(doc_rec):
     return not any(doc_rec.get(field)
@@ -1622,7 +1662,7 @@ class DatabaseUpdater:
                 recs, cursor = self._db.scan(
                     "Documents",
                     where=("sha1_hash", "in", chunk),
-                    fields=["url", "sha1_hash"],
+                    fields=_DUPE_GROUP_FIELDS,
                     limit=100,
                     cursor=cursor,
                 )
@@ -1633,8 +1673,7 @@ class DatabaseUpdater:
 
         unchecked_ids = {r["Id"] for r in unchecked_recs}
         groups_touched = 0
-        # url -> fields to write; every doc with a duplicate_of link is marked
-        # process_code "duplicate", whatever state it had before
+        # url -> fields to write (see _choose_prevailing / _mark_hash_duplicate)
         updates_by_url = {r["url"]: {"url": r["url"], "dupes_checked": True} for r in unchecked_recs}
 
         for members in members_by_hash.values():
@@ -1643,10 +1682,8 @@ class DatabaseUpdater:
             if unchecked_ids.isdisjoint(members):
                 continue  # already fully linked in a prior cycle - nothing new to do
 
-            # Id order == creation order -> primary is always the first-created
-            # member, and adding later (higher-Id) members never changes it
-            member_ids = sorted(members)
-            primary_id, other_ids = member_ids[0], member_ids[1:]
+            primary_id = _choose_prevailing(members)
+            other_ids = sorted(rid for rid in members if rid != primary_id)
 
             # ensure primary -> everyone-else, and everyone-else -> primary.
             # Neither side can be skipped based on new-vs-already-checked: hash
@@ -1659,8 +1696,10 @@ class DatabaseUpdater:
             _create_links(self._db, "Documents", "duplicates", primary_id, other_ids)
             for other_id in other_ids:
                 _create_links(self._db, "Documents", "duplicate_of", other_id, [primary_id])
-                url = members[other_id]["url"]
-                updates_by_url.setdefault(url, {"url": url})["process_code"] = _DUPLICATE_PROCESS_CODE
+                other = members[other_id]
+                fields = _mark_hash_duplicate(other, members[primary_id])
+                if fields:
+                    updates_by_url.setdefault(other["url"], {"url": other["url"]}).update(fields)
             groups_touched += 1
 
         updates = list(updates_by_url.values())
