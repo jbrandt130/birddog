@@ -1,0 +1,7 @@
+{
+  "table": "Documents",
+  "field": "OLD_page_description",
+  "type": "text",
+  "column_type": "LongText",
+  "description": "Legacy page description from the spreadsheet import, preserved when page_description is refreshed from the wiki"
+}

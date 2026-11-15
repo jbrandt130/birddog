@@ -12,6 +12,7 @@ Spec file (see utility/specs/):
       "field": "doc_type",
       "type": "multi_select",              # a Schema field_type, see UIDT below
       "description": "...",                # Schema row description
+      "column_type": "LongText",           # optional, see COLUMN_TYPES below
       "values": [["Vitals", "Examples include ..."], ...]   # selects only
     }
 
@@ -40,6 +41,9 @@ UIDT = {
     "text": "SingleLineText",
 }
 SELECT_TYPES = {"single_select", "multi_select"}
+# Optional "column_type" overrides allowed per Schema field_type; the Schema row
+# keeps the plain field_type (e.g. page_description is a "text" LongText column).
+COLUMN_TYPES = {"text": {"SingleLineText", "LongText"}}
 # Values that would be split apart: NocoDB joins multiselect values with ","
 # and birddog also splits multiselect strings on "/".
 FORBIDDEN_CHARS = ",/"
@@ -60,6 +64,9 @@ def parse_args(argv=None):
 def is_select(spec):
     return spec["type"] in SELECT_TYPES
 
+def column_uidt(spec):
+    return spec.get("column_type") or UIDT[spec["type"]]
+
 def load_spec(path):
     with open(path, encoding="utf-8") as f:
         spec = json.load(f)
@@ -70,6 +77,9 @@ def load_spec(path):
     if spec.get("type") not in UIDT:
         errors.append(f"{path}: type must be one of {sorted(UIDT)}")
         return spec, errors
+    if "column_type" in spec and spec["column_type"] not in COLUMN_TYPES.get(spec["type"], ()):
+        errors.append(f"{path}: column_type for {spec['type']} must be one of "
+                      f"{sorted(COLUMN_TYPES.get(spec['type'], ()))}")
     if is_select(spec):
         names = [v[0] for v in spec.get("values", [])]
         if not names:
@@ -109,8 +119,8 @@ def plan(db, spec):
     if column is None:
         steps.append(("create column", values))
     else:
-        if column["uidt"] != UIDT[spec["type"]]:
-            raise ValueError(f"{table}.{field} exists as {column['uidt']}, not {UIDT[spec['type']]}")
+        if column["uidt"] != column_uidt(spec):
+            raise ValueError(f"{table}.{field} exists as {column['uidt']}, not {column_uidt(spec)}")
         missing = [v for v in values if v not in column_options(column)]
         if missing:
             steps.append(("add options", missing))
@@ -141,7 +151,7 @@ def describe(spec, step):
     where = f"{spec['table']}.{spec['field']}"
     if kind == "create column":
         extra = f" with {len(data)} options" if is_select(spec) else ""
-        return f"create {UIDT[spec['type']]} column {where}{extra}"
+        return f"create {column_uidt(spec)} column {where}{extra}"
     if kind == "add options":
         return f"add options to {where}: {data}"
     if kind == "Schema row":
@@ -157,7 +167,7 @@ def apply(db, spec, step):
     table, field = spec["table"], spec["field"]
     table_id = db._table_id(table)
     if kind == "create column":
-        payload = {"title": field, "column_name": field, "uidt": UIDT[spec["type"]]}
+        payload = {"title": field, "column_name": field, "uidt": column_uidt(spec)}
         if is_select(spec):
             payload["colOptions"] = {
                 "options": [{"title": v, "order": i + 1} for i, v in enumerate(data)]

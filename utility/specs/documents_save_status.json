@@ -1,11 +1,12 @@
 {
   "table": "Documents",
-  "field": "extract_status",
+  "field": "save_status",
   "type": "single_select",
   "description": null,
   "values": [
-    ["internal", null],
-    ["external", null],
+    ["pending", null],
+    ["internally_indexed", null],
+    ["externally_indexed", null],
     ["not_indexed", null]
   ]
 }

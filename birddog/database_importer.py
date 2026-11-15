@@ -1749,6 +1749,7 @@ OLD_PROCESS_CODE_MAP = {
 }
 
 # old process codes that also set the anomaly flag, with its anomaly_comment
+_EXTERNALLY_INDEXED = "externally_indexed"
 OLD_PROCESS_CODE_ANOMALIES = {
     "C3": "formerly C3 process code",
 }
@@ -1782,13 +1783,18 @@ def new_codes_from_old(doc_payload: dict) -> dict:
     the payload, as None when the old code has no equivalent, so a re-import
     clears a value set since the last import (the spreadsheet is the source).
     An old process code listed in OLD_PROCESS_CODE_ANOMALIES also sets anomaly
-    and anomaly_comment; other codes leave those fields alone."""
+    and anomaly_comment; other codes leave those fields alone. save_status goes
+    with process_code: "externally_indexed" for a "save" document with a
+    when_transcribed value, otherwise blank."""
     result = {}
     if "OLD_doc_type" in doc_payload:
         result["doc_type"] = map_old_doc_type(doc_payload["OLD_doc_type"]) or None
     if "OLD_process_code" in doc_payload:
         old_code = doc_payload["OLD_process_code"]
         result["process_code"] = map_old_process_code(old_code)
+        transcribed = str(doc_payload.get("when_transcribed") or "").strip()
+        result["save_status"] = (_EXTERNALLY_INDEXED
+                                 if result["process_code"] == "save" and transcribed else None)
         anomaly = OLD_PROCESS_CODE_ANOMALIES.get(str(old_code or "").strip().upper())
         if anomaly:
             result["anomaly"] = True
@@ -2096,7 +2102,12 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 # quote for document titles that contain protected characters such as "?"
                 quoted_record = form_document_record(doc_link)
 
-                doc_payload: dict[str, Any] = {"page_description": output_page["description"]}
+                # OLD_page_description keeps the spreadsheet description: page_description
+                # is overwritten from the wiki by the updater's page lookups.
+                doc_payload: dict[str, Any] = {
+                    "page_description": output_page["description"],
+                    "OLD_page_description": output_page["description"],
+                }
 
                 for joint_field in doc_and_page_fields:
                     if joint_field in output_page:

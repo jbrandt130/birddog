@@ -9,9 +9,9 @@ November 2026 Documents schema migration, in one rerunnable script:
      OLD_doc_type, OLD_content_code and OLD_process_code (column title and
      physical column, plus their Schema and Schema Values rows), then
   2. add the new fields described by the specs in utility/specs/ (doc_type,
-     doc_structure, doc_scope, process_code, extract_status, anomaly,
-     anomaly_comment), each with its Schema and Schema Values rows, and bring
-     their descriptions in line with the specs.
+     doc_structure, doc_scope, process_code, save_status, anomaly,
+     anomaly_comment, OLD_page_description), each with its Schema and Schema
+     Values rows, and bring their descriptions in line with the specs.
 
 The rename has to come first: the new doc_type and process_code reuse the
 legacy names. Every step is skipped once done, so the script can be rerun
@@ -48,9 +48,10 @@ SPECS = [
     "documents_doc_structure.json",
     "documents_doc_scope.json",
     "documents_process_code.json",
-    "documents_extract_status.json",
+    "documents_save_status.json",
     "documents_anomaly.json",
     "documents_anomaly_comment.json",
+    "documents_old_page_description.json",
 ]
 
 def parse_args(argv=None):
