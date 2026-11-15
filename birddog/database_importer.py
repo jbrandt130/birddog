@@ -322,17 +322,20 @@ def get_page_title_from_link(cell, wiki_spreadsheet, archive_unit_name, latin_ar
                 except ValueError:
                     return None, None
 
-        try:
-            int_contents = str(int(float(cell.value)))
-        except ValueError:
-            int_contents = ""
+        str_contents = ""
+        cell_contents = cell.value
+        if cell_contents:
+            if isinstance(cell_contents, (int, float)):
+                str_contents = str(int(float(cell_contents)))
+            else:
+                str_contents = str(cell_contents)
 
         if 'wiki' in url:
             title = url_to_title(url)
         else:
             #for URLs like https://forum.j-roots.info/viewtopic.php?p=106843/5/1
-            title = f"{archive_unit_name}/{int_contents}"
-        latin_title = f"{latin_archive_unit_name}/{int_contents}"
+            title = f"{archive_unit_name}/{str_contents}"
+        latin_title = f"{latin_archive_unit_name}/{str_contents}"
 
         return title, latin_title
     else:
@@ -657,7 +660,8 @@ def add_page(page: dict, page_table: list, update_existing_page: bool) -> None:
             doc_links = page["doc_links"]
             if doc_links:
                 existing_doc_links = existing_page.get("doc_links", [])
-                doc_links = doc_links + existing_doc_links
+                if existing_doc_links:
+                    doc_links = doc_links + existing_doc_links
                 # get rid of duplicates
                 doc_links = list(set(doc_links))
                 existing_page["doc_links"] = doc_links
@@ -1026,6 +1030,8 @@ def archive_name_to_cyrillic(latin_name: str) -> str:
     match latin_name:
         case "CDIAK":
             return "ЦДІАК"
+        case "DACHVO":
+            return "ДАЧВО"
         case "DADO":
             return "ДАДО"
         case "DAHEO-D":
@@ -1990,15 +1996,31 @@ def import_spreadsheet(sw_filepath, actually_write=True):
             title1 = existing_payload.get("title")
             title2 = page_payload.get("title")
             if title1 != title2:
-                new_title = url_to_title(url)
-                page_payload["title"] = new_title
+                cyr_name_in_tile1 = archive_cyrillic_name in title1 
+                cyr_name_in_tile2 = archive_cyrillic_name in title2
+                title1_has_digit = any(char.isdigit() for char in title1)
+                title2_has_digit = any(char.isdigit() for char in title2)
+                if cyr_name_in_tile1 and not cyr_name_in_tile2:
+                    new_title = title1
+                elif not cyr_name_in_tile1 and cyr_name_in_tile2:
+                    new_title = title2
+                elif cyr_name_in_tile1 and cyr_name_in_tile2:
+                    if title1_has_digit and not title2_has_digit:
+                        new_title = title1
+                    elif not title1_has_digit and title2_has_digit:
+                        new_title = title2
+                    else:
+                        new_title = url_to_title(url)
+                else:
+                    new_title = url_to_title(url)
                 _logger.warning(f"Instead of titles {title1} and {title2}, using {new_title}")
+                page_payload["title"] = new_title
             label1 = existing_payload.get("label")
             label2 = page_payload.get("label")
             if label1 != label2:
                 new_label = page_label(page_payload["title"])
-                page_payload["label"] = new_label
                 _logger.warning(f"Instead of labels {label1} and {label2}, using {new_label}")
+                page_payload["label"] = new_label
 
 
         output_pages_dict[url] = page_payload
@@ -2175,7 +2197,7 @@ def process_dir(dir_path, actually_write=True):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAOO-D-wiki-20261103.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAHO-archive-20261110.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(_dir_path)
