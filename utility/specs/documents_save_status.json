@@ -2,11 +2,11 @@
   "table": "Documents",
   "field": "save_status",
   "type": "single_select",
-  "description": null,
+  "description": "Disposition of a document marked for save",
   "values": [
-    ["pending", null],
-    ["internally_indexed", null],
-    ["externally_indexed", null],
-    ["not_indexed", null]
+    ["pending", "Marked for save but not saved yet"],
+    ["internally_indexed", "Saved and extracted internally"],
+    ["externally_indexed", "Saved and extracted externally"],
+    ["not_indexed", "Saved but no extraction done"]
   ]
 }
