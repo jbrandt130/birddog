@@ -478,10 +478,11 @@ def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spr
     return link, import_message
 
 
-def get_cell_value(cell, capitalized=False):
+def get_cell_value(cell, capitalized=False) -> str:
     value = cell.value
     if value is None:
-        return value
+        return ""
+
     if isinstance(value, float):
         value = int(value)
     if not isinstance(value, str):
@@ -508,16 +509,17 @@ def parse_http_list(s: str):
     return [canonical_wiki_url(s)]
 
 
-def get_cell_link_or_str(ws, cell_addr: str, import_message: str, check_contents: bool = True):
+def get_cell_link_or_str(ws, cell_addr: str, import_message: str,
+                         check_contents: bool = True) -> tuple[str, list[str]]:
     cell = ws[cell_addr]
-    result = get_cell_link(cell)
+    result = [get_cell_link(cell) or ""]
     mess = ""
     used_contents = False
-    if result == "" and check_contents:
-        result = get_cell_value(cell)
+    if result == ["", ] and check_contents:
+        result = [get_cell_value(cell) or ""]
         used_contents = True
-    if result:
-        result = parse_http_list(result)
+    if first_item := result[0]:
+        result = parse_http_list(first_item)
         if len(result) > 1:
             _logger.warning(f"{len(result)} links in cell {cell_addr}")
         elif result[0] and used_contents and result[0].upper().startswith('HTTP') and '4' not in cell_addr:
@@ -546,8 +548,8 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     ar2 = 'Архів:'
     # we compare the strings up to replacement of ar1 with ar2
     archive_unit_link_replaced = canonical_wiki_url(archive_unit_link.rstrip(" /").replace(ar1, ar2))
-    if isinstance(cell_links, str) and cell_links.replace(ar1, ar2) == archive_unit_link_replaced:
-        return modified_import_message, cell_links
+#    if isinstance(cell_links, str) and cell_links.replace(ar1, ar2) == archive_unit_link_replaced:
+#        return modified_import_message, cell_links
 
     real_doc = True
     if isinstance(cell_links, list) and len(cell_links) == 1:
@@ -573,15 +575,15 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
 
 def get_cell_int_value(cell):
     value = get_cell_value(cell)
-    if value is None:
+    if not value:
         return 0
+
     return int(value)
 
 
 def combine_cell_value(cell1, cell2):
-    result = ",".join(filter(
-        lambda x: x is not None,
-        (get_cell_value(cell1), get_cell_value(cell2))))
+    result = ",".join(filter(None, (get_cell_value(cell1), get_cell_value(cell2))))
+
     return result if result else None
 
 
@@ -598,7 +600,7 @@ def is_url_redlinked(url):
 
 
 def check_redlink(page: dict) -> dict:
-    availability = page.get("availability", "linked")
+    availability = normalize_availability_value(page.get("availability", "linked"))
     url = page["url"]
     is_redlinked, naked_url = is_url_redlinked(url)
     if is_redlinked:
@@ -606,6 +608,11 @@ def check_redlink(page: dict) -> dict:
         url = naked_url
         availability = "redlinked"
         page["url"] = url
+
+    if availability != "unlinked" and not page.get("process_code") and page.get("comment") == "unlinked":
+        _logger.info(f"Availability changed from {availability} to 'unlinked' for {page.get("title", "")}")
+        availability = "unlinked"
+
     page["availability"] = availability
 
     return page
@@ -630,7 +637,7 @@ def delete_part_between_hyphen_and_slash(s: str) -> str:
     return result
 
 
-def add_page(page: dict, page_table: list, update_existing_page: bool) -> None:
+def add_page(page: dict, page_table: list[dict], update_existing_page: bool) -> None:
     """Merge a page entry into the page_table by title.
     If update_existing_page is True and a page with the necessary URL already exists,
     we update it instead of adding a new one.
@@ -679,9 +686,6 @@ def add_page(page: dict, page_table: list, update_existing_page: bool) -> None:
 
 
 def normalize_to_int_str(s: str) -> str:
-    if not isinstance(s, str):
-        return s
-
     # Check if integer
     if re.fullmatch(r'-?\d+', s):
         return str(int(s))
@@ -884,9 +888,9 @@ def find_header_in_row(ws, row, start_col, end_col, header):
     for i in range(start_ord, end_ord + 1):
         cell_addr = f"{chr(i)}{row}"
         contents = get_cell_value(ws[cell_addr], True)
-        if contents is None:
+        if not contents:
             continue
-        if contents and header in contents:
+        if header in contents:
             return i
     return None
 
@@ -899,7 +903,7 @@ def find_header_in_col(ws, start_row, end_row, col, headers):
         for i in range(start_row, end_row + 1):
             cell_addr = f"{col}{i}"
             contents = get_cell_value(ws[cell_addr], True)
-            if contents is None:
+            if not contents:
                 continue
             if contents == header:
                 return i, header
@@ -917,7 +921,7 @@ def get_source_type(ws):
     for i in range(start_ord, end_ord + 1):
         cell_addr = f"{chr(i)}1"
         source_type = get_cell_value(ws[cell_addr])
-        if source_type is None:
+        if not source_type:
             continue
 
         #it is sometimes "archive" instead of "archives"
@@ -1154,6 +1158,10 @@ def get_language(ws, cell_address, import_message):
             _logger.info(f"Found language {language}")
     return language, import_message
 
+def normalize_availability_value(val: str) -> str:
+    if "no link" == val:
+        val = "unlinked"
+    return val
 
 def count_fund_opus_attributes(sheet, end_col):
     """Fund name and opus name appear in the first row,
@@ -1282,7 +1290,7 @@ def add_opus_page(page_table, ws, r, title, url, label, change_date, timestamp, 
 def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url, title, latin_title, url,
                                source_type, r, page_table, change_date, timestamp):
     """ We only add linked pages."""
-    availability = get_cell_value(ws[f"D{r}"])
+    availability = normalize_availability_value(get_cell_value(ws[f"D{r}"]))
 
     if availability != 'linked' and not url:
         # we do not add such pages
@@ -1453,6 +1461,10 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
                 # no link found - cannot proceed
                 _logger.warning(f"No link in sheet='{ws.title}', opus {get_cell_value(opus_num_cell)} - skipping")
                 continue
+            if raw_url == fund_url:
+                _logger.warning(f"Opus {get_cell_value(opus_num_cell)} has the same link as the fund {parent_name} - skipping")
+                continue
+
             cell_to_use = opus_num_cell
             if not in_first_cell:
                 cell_to_use = opus_descr_cell
@@ -1501,7 +1513,20 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
     description = get_cell_value(ws["A2"])
     import_message, doc_links = get_cell_link_or_str(ws, "B4", import_message)
 
-    add_page(
+    # DAHEO-R-archive may not have a separate URL for the opus.
+    skip_opus_page = False
+    if opus_url == fund_url:
+        if len(doc_links) == 1 and doc_links[0]:
+            # using the opus document link instead
+            mess = (f"Opus {fund_and_opus_name} has link {opus_url} identical to the parent fund, "
+                    f"using the opus document link {doc_links[0]} instead")
+            import_message = add_to_message(import_message, mess)
+        else:
+            _logger.warning(f"Opus {fund_and_opus_name} has link {opus_url} identical to the parent fund - skipping")
+            skip_opus_page = True
+
+    if not skip_opus_page:
+        add_page(
         {
             "title": opus_title,
             "url": opus_url,
@@ -1519,10 +1544,10 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
             "source_type": source_type,
             "import_message": import_message,
             "comments": comments,
-        },
-        page_table,
-        True
-    )
+            },
+            page_table,
+            True
+        )
 
     usual_case_number_found = False
     for r in range(hdr_row + 1, ws.max_row + 1):
@@ -1601,7 +1626,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
 
             if level == "volume":
                 if possible_hyphen_in_case_num:
-                    availability = get_cell_value(ws[f"D{r}"])
+                    availability = normalize_availability_value(get_cell_value(ws[f"D{r}"]))
                 else:
                     availability = "linked"
                 if "" == curr_import_message:
@@ -1802,7 +1827,8 @@ def new_codes_from_old(doc_payload: dict) -> dict:
     return result
 
 
-def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyrillic_name, page_table=None):
+def process_worksheets(worksheets, wiki_spreadsheet: bool, archive_name: str,
+                       archive_cyrillic_name: str, page_table=None):
     if not page_table:
         page_table = []
     hdr_row = 1
@@ -1814,6 +1840,11 @@ def process_worksheets(worksheets, wiki_spreadsheet, archive_name, archive_cyril
 
     for sheet in worksheets:
         try:
+            if archive_name == "DAHMO-R" and 'individuals' in sheet.title:
+                # Juliana's instruction
+                _logger.info(f"skipping worksheet {sheet.title}")
+                continue
+
             _logger.info(f"processing worksheet: {sheet.title}")
             change_date_col = find_header_in_row(sheet, hdr_row, "I", "Z", CHANGE_DATE_HDR)
             if change_date_col is None:
@@ -1999,8 +2030,8 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                                  f"{existing_payload.get("title")}")
                     page_payload["doc_links"] = doc_links
             # fix the title and the label
-            title1 = existing_payload.get("title")
-            title2 = page_payload.get("title")
+            title1 = existing_payload.get("title", "")
+            title2 = page_payload.get("title", "")
             if title1 != title2:
                 cyr_name_in_tile1 = archive_cyrillic_name in title1 
                 cyr_name_in_tile2 = archive_cyrillic_name in title2
@@ -2115,7 +2146,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 doc_payload.update(quoted_record)
 
                 page_url = output_page.get("url")
-                page = page_data_dict.get(page_url)
+                page = page_data_dict.get(page_url, {})
                 for k in doc_only_fields:
                     if k in page:
                         doc_payload[k] = page[k]
@@ -2208,7 +2239,7 @@ def process_dir(dir_path, actually_write=True):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAHO-archive-20261110.xlsx"
-    import_spreadsheet(filepath, True)
-#    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
-#    process_dir(_dir_path)
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/DAKO-R-wiki-20261015.xlsx"
+#    import_spreadsheet(filepath, True)
+    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
+    process_dir(_dir_path)
