@@ -803,7 +803,7 @@ def make_session(url_or_key: str) -> requests.Session:
 MAX_RETRIES = 5
 BASE_BACKOFF = 1.0  # seconds
 MAX_BACKOFF = 30.0  # max wait time in seconds
-REQUEST_TIMEOUT = 10 # seconds
+REQUEST_TIMEOUT = 30  # seconds — increased for NocoDB Cloud which can be slow
 
 _url_headers = {
         'User-Agent': 'BirddogBot/1.0 (non-commercial research, contact: birddogpound@gmail.com)'
@@ -1109,7 +1109,7 @@ def fetch_url(
             last_exception = e
             THROTTLE.report_exception(url)
 
-        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError, TimeoutError) as e:
             last_exception = e
             THROTTLE.report_exception(url)
 

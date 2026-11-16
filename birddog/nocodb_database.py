@@ -642,8 +642,10 @@ class NocoDBDatabase(Database):
                 _logger.info(f"_fetch response (404): {msg}")
             raise FailedIO(err) from err
 
-        except requests.exceptions.RequestException as err:
+        except (requests.exceptions.RequestException, TimeoutError) as err:
             # Covers timeouts, connection errors, etc., that fetch_url may surface directly in some paths.
+            # Includes raw TimeoutError from the SSL layer (urllib3/http.client), which is not a
+            # requests exception and would otherwise bypass the fetch_url retry logic.
             raise FailedIO(err) from err
 
         except Exception as err:
