@@ -32,7 +32,9 @@ from birddog.database_updater import (
     _source_from_url,
     _verify_page_link_existence,
     _form_simple_page_record,
+    bibliographical_lookup_fields,
     form_document_record,
+    is_bibliographical_placement,
     get_child_titles,
     normalize_url,
     scan_child_titles_by_id,
@@ -430,6 +432,107 @@ class TestAllowedDocLink(unittest.TestCase):
 
     def test_normal_link_allowed(self):
         self.assertTrue(_allowed_doc_link("https://example.org/thing.pdf"))
+
+    def test_openstreetmap_link_rejected(self):
+        self.assertFalse(_allowed_doc_link("https://www.openstreetmap.org/?mlat=46.4825&mlon=30.7233"))
+
+
+class TestBibliographicalPlacement(unittest.TestCase):
+    INVENTORY = "https://commons.wikimedia.org/wiki/File:ДАОО_фонд_18_опис_2.pdf"
+
+    @staticmethod
+    def page(level, root_label="DAOO"):
+        return {"level": level, "root_label": root_label}
+
+    def test_file_on_opus_or_fond_pages_only(self):
+        for levels in (["opus"], ["fond"], ["fond", "opus"]):
+            pages = [self.page(lv) for lv in levels]
+            self.assertTrue(is_bibliographical_placement(self.INVENTORY, pages), levels)
+
+    def test_any_case_owner_disqualifies(self):
+        self.assertFalse(is_bibliographical_placement(
+            self.INVENTORY, [self.page("opus"), self.page("case")]))
+        self.assertFalse(is_bibliographical_placement(self.INVENTORY, [self.page("case")]))
+
+    def test_archive_page_or_no_owner_disqualifies(self):
+        self.assertFalse(is_bibliographical_placement(self.INVENTORY, [self.page("archive")]))
+        self.assertFalse(is_bibliographical_placement(self.INVENTORY, []))
+
+    def test_aggregator_owner_disqualifies(self):
+        # TOWNS pages sit at fond depth but link real case files
+        self.assertFalse(is_bibliographical_placement(
+            self.INVENTORY, [self.page("fond", root_label="TOWNS")]))
+
+    def test_external_document_file_counts(self):
+        url = "https://archive.od.gov.ua/wp-content/old-files/EL_ARH/F/0037_11_DAOO.djvu"
+        self.assertTrue(is_bibliographical_placement(url, [self.page("opus")]))
+
+    def test_web_pages_and_self_links_do_not_count(self):
+        for url in ("https://archive.od.gov.ua/",
+                    "https://archive.od.gov.ua/main/arhiv/metryka-fond-37/",
+                    "https://commons.wikimedia.org/w/index.php?title=X",
+                    "https://uk.wikisource.org/wiki/Архів:ДАОО/37"):
+            self.assertFalse(is_bibliographical_placement(url, [self.page("opus")]), url)
+
+
+class TestBibliographicalLookupFields(unittest.TestCase):
+    INVENTORY = "https://commons.wikimedia.org/wiki/File:ДАОО_фонд_18_опис_2.pdf"
+    OPUS = [{"level": "opus", "root_label": "DAOO"}]
+
+    def test_new_or_blank_doc_is_marked(self):
+        for code in (None, "", "new"):
+            fields = bibliographical_lookup_fields(
+                {"url": self.INVENTORY, "process_code": code}, self.OPUS)
+            self.assertEqual(fields, {"doc_type": ["Bibliographical"], "process_code": "reject"}, code)
+
+    def test_pending_location_is_cleared(self):
+        fields = bibliographical_lookup_fields(
+            {"url": self.INVENTORY, "process_code": "new", "location_status": "pending"}, self.OPUS)
+        self.assertIn("location_status", fields)
+        self.assertIsNone(fields["location_status"])
+
+    def test_finished_location_is_kept(self):
+        fields = bibliographical_lookup_fields(
+            {"url": self.INVENTORY, "location_status": "found"}, self.OPUS)
+        self.assertNotIn("location_status", fields)
+
+    def test_curated_codes_are_left_alone(self):
+        for doc in ({"process_code": "check"}, {"process_code": "reject"},
+                    {"doc_type": ["Vitals"]}, {"OLD_process_code": "P1"}, {"OLD_doc_type": "V"}):
+            self.assertEqual(bibliographical_lookup_fields({"url": self.INVENTORY, **doc}, self.OPUS),
+                             {}, doc)
+
+    def test_case_owner_leaves_doc_alone(self):
+        pages = self.OPUS + [{"level": "case", "root_label": "DAOO"}]
+        self.assertEqual(bibliographical_lookup_fields({"url": self.INVENTORY}, pages), {})
+
+
+class TestRefreshDocLookupsBibliographical(unittest.TestCase):
+    INVENTORY = "https://commons.wikimedia.org/wiki/File:ДАОО_фонд_18_опис_2.pdf"
+    CASE_FILE = "https://commons.wikimedia.org/wiki/File:ДАОО_39-3-1.pdf"
+
+    def test_finding_aid_marked_and_case_file_not(self):
+        db = FakeDB()
+        db.scan_pages_by_view[("Documents", "BD:Need Page Lookups")] = [([
+            {"Id": "d1", "url": self.INVENTORY, "owning_pages": ["p1"],
+             "process_code": "new", "location_status": "pending"},
+            {"Id": "d2", "url": self.CASE_FILE, "owning_pages": ["p2"],
+             "process_code": "new", "location_status": "pending"},
+        ], False)]
+        db.records["Pages"] = {
+            "p1": {"Id": "p1", "level": "opus", "label": "DAOO/18/2", "root_label": "DAOO"},
+            "p2": {"Id": "p2", "level": "case", "label": "DAOO/39/3/1", "root_label": "DAOO"},
+        }
+        make_updater(db).refresh_doc_lookups()
+
+        _, updates = db.update_calls[-1]
+        by_url = {u["url"]: u for u in updates}
+        self.assertEqual(by_url[self.INVENTORY]["process_code"], "reject")
+        self.assertEqual(by_url[self.INVENTORY]["doc_type"], ["Bibliographical"])
+        self.assertIsNone(by_url[self.INVENTORY]["location_status"])
+        self.assertEqual(by_url[self.INVENTORY]["lookup_status"], "valid")
+        self.assertNotIn("process_code", by_url[self.CASE_FILE])
+        self.assertNotIn("location_status", by_url[self.CASE_FILE])
 
 
 class TestIsCategoryLink(unittest.TestCase):

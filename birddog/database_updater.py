@@ -265,10 +265,56 @@ _FILE_NS_RE = re.compile(r'^(?:File|Файл):', re.IGNORECASE)
 _DOC_LINK_BLOCKLIST = [
     "FSMosaicTreeLogo",
     "familysearch.org",
+    "openstreetmap.org",
 ]
 
 def _allowed_doc_link(link):
     return all([item not in link for item in _DOC_LINK_BLOCKLIST])
+
+# A file linked only from fond/opus pages is an opus inventory (description
+# file), an archival catalog or a similar finding aid, not a record.
+# refresh_doc_lookups gives it these codes in place of the "new" workflow code.
+BIBLIOGRAPHICAL_DOC_TYPE = "Bibliographical"
+BIBLIOGRAPHICAL_PROCESS_CODE = "reject"
+_BIBLIOGRAPHICAL_PAGE_LEVELS = ("fond", "opus")
+
+def _is_document_file_url(url):
+    """True for a wiki file (commons / wikisource) or a url ending in a
+    document suffix (pdf, djvu, ...); False for web pages."""
+    if _source_from_url(url):
+        path = urlparse(url).path
+        return (path.startswith("/wiki/")
+                and bool(_FILE_NS_RE.match(unquote(path[len("/wiki/"):]))))
+    return _sniff_suffix(url) == "document"
+
+def is_bibliographical_placement(url, owner_pages):
+    """Placement rule for finding aids: a document file whose owning pages are
+    all fond or opus pages of a (non-aggregator) archive. owner_pages are Pages
+    records with "level" and "root_label"; an aggregator archive's page (e.g.
+    TOWNS, which sits at fond depth but links real case files) disqualifies."""
+    pages = list(owner_pages)
+    return (bool(pages)
+            and all(p.get("level") in _BIBLIOGRAPHICAL_PAGE_LEVELS
+                    and not archive_label_priority(p.get("root_label"))[0]
+                    for p in pages)
+            and _is_document_file_url(url))
+
+def bibliographical_lookup_fields(doc_rec, owner_pages):
+    """Fields that mark doc_rec as a finding aid during the page lookups, or {}
+    when it isn't one or already has codes. Only a document birddog itself
+    coded (process_code blank or "new", no doc_type, no legacy OLD_* codes)
+    is changed; a rejected finding aid also leaves the location queue."""
+    if doc_rec.get("process_code") not in (None, "", _NEW_PROCESS_CODE):
+        return {}
+    if doc_rec.get("doc_type") or doc_rec.get("OLD_process_code") or doc_rec.get("OLD_doc_type"):
+        return {}
+    if not is_bibliographical_placement(doc_rec.get("url") or "", owner_pages):
+        return {}
+    update = {"doc_type": [BIBLIOGRAPHICAL_DOC_TYPE],
+              "process_code": BIBLIOGRAPHICAL_PROCESS_CODE}
+    if doc_rec.get("location_status") == "pending":
+        update["location_status"] = None
+    return update
 
 # Fields written onto a Document record by the spreadsheet import pipeline
 # (database_importer.py: doc_only_fields | doc_and_page_fields). A document
@@ -1760,7 +1806,8 @@ class DatabaseUpdater:
         doc_recs, _ = self._db.scan(
             "Documents",
             view_name="BD:Need Page Lookups",
-            fields=["url", "owning_pages", "filename"],
+            fields=["url", "owning_pages", "filename", "process_code", "doc_type",
+                    "OLD_process_code", "OLD_doc_type", "location_status"],
             limit=limit,
             use_v3=True,
         )
@@ -1811,6 +1858,22 @@ class DatabaseUpdater:
             if not label:
                 continue
             update["filename"] = label.lstrip("/").replace("/", "-")
+
+        # finding aids (opus inventories, catalogs): judged here rather than at
+        # import or creation because the lookups see every owning page, and run
+        # again whenever a document's page links change
+        doc_by_url = {r["url"]: r for r in doc_recs}
+        did_by_url = {r["url"]: did for did, r in doc_map.items()}
+        bibliographical = 0
+        for update in updates:
+            owner_ids = owner_map.get(did_by_url.get(update["url"])) or []
+            owner_pages = [page_map[p] for p in owner_ids if p in page_map]
+            fields = bibliographical_lookup_fields(doc_by_url[update["url"]], owner_pages)
+            if fields:
+                update.update(fields)
+                bibliographical += 1
+        if bibliographical:
+            _logger.info(f"refresh_doc_lookups: {bibliographical} finding aid(s) marked Bibliographical/reject")
 
         _logger.info(f"refresh_doc_lookups: writing {len(updates)} updates")
         return any(self._db.update("Documents", updates))
