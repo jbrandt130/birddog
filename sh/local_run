@@ -1,7 +1,4 @@
 #!/bin/bash
-# (c) 2025 Jonathan Brandt
-# Licensed under the MIT License. See LICENSE file in the project root.
-
 export BIRDDOG_USE_LOCAL_CACHE=True
 export BIRDDOG_NOCODB_ENV=LOCAL
 PORT=2003

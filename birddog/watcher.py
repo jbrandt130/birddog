@@ -1,6 +1,3 @@
-# (c) 2025 Jonathan Brandt
-# Licensed under the MIT License. See LICENSE file in the project root.
-
 # per-item watcher state (resolved/unresolved) storage and business logic
 
 import json

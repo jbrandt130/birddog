@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-# (c) 2026 Jonathan Brandt
-# Licensed under the MIT License. See LICENSE file in the project root.
-
 """
 Delete all records from one table of a NocoDB base, leaving the table and its
 fields in place.
