@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-# (c) 2026 Jonathan Brandt
-# Licensed under the MIT License. See LICENSE file in the project root.
-
 """
 Add a field to a NocoDB table from a JSON spec, together with its Schema row
 and, for select fields, one Schema Values row per allowed value.

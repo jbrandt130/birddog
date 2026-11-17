@@ -1,6 +1,3 @@
-# (c) 2025 Jonathan Brandt
-# Licensed under the MIT License. See LICENSE file in the project root.
-
 """
 Issue #138: background classification of watchlist alerts as significant or
 cosmetic (whitespace, dash-variant, category-link-only, relabeled link text).
