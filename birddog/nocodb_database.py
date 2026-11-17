@@ -76,6 +76,9 @@ _NOCODB_EDIT_LINK_BATCH_SIZE  = _NOCODB_CONFIG["edit_link_batch_size"]
 # max target ids per filtered get_links() request -- keeps the "Id in (...)" filter
 # comfortably inside URL length limits and within one 100-row page of results
 _GET_LINKS_TARGET_CHUNK_SIZE = 100
+# per-request timeout for NocoDB calls; longer than fetch.REQUEST_TIMEOUT because
+# NocoDB Cloud can be slow on large batch writes (e.g. big spreadsheet imports)
+_NOCODB_TIMEOUT = 30  # seconds
 _logger.info(f"Using {_NOCODB_ENV_NAME} nocodb api: {_NOCODB_HOST}")
 
 _WRITE_CHUNK_SIZE               = 500       # max records per reservation window
@@ -622,6 +625,7 @@ class NocoDBDatabase(Database):
                 method=method,
                 session=self._session,
                 headers=getattr(self._session, "headers", None),
+                timeout=_NOCODB_TIMEOUT,
                 retry_read_timeout=retry_read_timeout,
             )
 
