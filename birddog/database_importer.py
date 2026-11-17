@@ -1165,7 +1165,7 @@ def get_language(ws, cell_address, import_message):
 def normalize_availability_value(val: str) -> str:
     if "no link" == val:
         val = "unlinked"
-    return val
+    return val or None  # a blank cell is no value, not "" (an invalid select value)
 
 def count_fund_opus_attributes(sheet, end_col):
     """Fund name and opus name appear in the first row,
@@ -2157,7 +2157,8 @@ def import_spreadsheet(sw_filepath, actually_write=True):
 
                 for doc_field in doc_only_fields_all_caps:
                     if doc_field in doc_payload and doc_payload[doc_field] is not None:
-                        doc_payload[doc_field] = doc_payload[doc_field].strip().upper()
+                        # a blank cell is no code, not "" (an invalid select value)
+                        doc_payload[doc_field] = doc_payload[doc_field].strip().upper() or None
 
                 # carry the legacy codes over to the new doc_type / process_code
                 doc_payload.update(new_codes_from_old(doc_payload))
