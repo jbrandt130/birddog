@@ -512,13 +512,20 @@ def parse_http_list(s: str):
 def get_cell_link_or_str(ws, cell_addr: str, import_message: str,
                          check_contents: bool = True) -> tuple[str, list[str]]:
     cell = ws[cell_addr]
-    result = [get_cell_link(cell) or ""]
+    contents = get_cell_link(cell)
+    if contents:
+        result = [contents]
+    else:
+        result =[]
     mess = ""
     used_contents = False
-    if result == ["", ] and check_contents:
-        result = [get_cell_value(cell) or ""]
-        used_contents = True
-    if first_item := result[0]:
+    if not result and check_contents:
+        contents = get_cell_value(cell)
+        if contents:
+            result = [contents]
+            used_contents = True
+    if result:
+        first_item = result[0]
         result = parse_http_list(first_item)
         if len(result) > 1:
             _logger.warning(f"{len(result)} links in cell {cell_addr}")
@@ -562,13 +569,8 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     if not real_doc:
         mess = (f" Link {cell_links} in cell '{cell_addr}', sheet '{ws.title}' "
                 f"differs from the page url {archive_unit_link}")
-        cell_links = ""
-
-    if len(mess) > 0:
         modified_import_message = add_to_message(modified_import_message, mess)
         _logger.warning(mess)
-    if isinstance(cell_links, str):
-        cell_links = [cell_links]
 
     return modified_import_message, cell_links
 
@@ -1149,13 +1151,15 @@ def get_language(ws, cell_address, import_message):
     language = get_cell_value(ws[cell_address], False)
     if language:
         if language.lower() == "various":
-            language = ''
+            language = None
             import_message = f"{import_message}; languages marked as {language}"
         else:
             parts = re.split(r"[/;,& ]+", language)
             # replace 'Russ' with 'Russian' in the resulting list
             language = ['Russian' if s == 'Russ' else s for s in parts]
             _logger.info(f"Found language {language}")
+    else:
+        language = None
     return language, import_message
 
 def normalize_availability_value(val: str) -> str:
@@ -1737,9 +1741,9 @@ def add_case_page(additional_column: bool, possible_hyphen_in_case_num: bool,
 
 
 def normalize_process_code(process_code: str | None, import_message: str) -> tuple[str | None, str]:
-    # Remove trailing tab ('\\t') from the given string if present.
-    if process_code is not None:
-        process_code = process_code.removesuffix('\t')
+    if process_code:
+        # Remove trailing tab ('\\t') and spaces from the given string if present.
+        process_code = process_code.removesuffix('\t').rstrip(" ")
 
         valid_options = ["C1", "C2", "C3", "DP", "FX", "NO", "P1", "P2"]
         error_code = "E"
