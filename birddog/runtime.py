@@ -37,6 +37,12 @@ from birddog import significance
 
 #_ENABLE_DB_SYNC = os.environ.get("BIRDDOG_ENABLE_DB_SYNC", False)
 _ENABLE_DB_SYNC = True
+# automatic (wiki-change driven) database updates: the page tracker pushing
+# edited titles and the doc trackers pushing edited files. False leaves manual
+# updates (the /database_update endpoint) working while _ENABLE_DB_SYNC is on.
+# Page edits seen while this is off are not replayed into the database later;
+# the doc trackers just hold their watermark and catch up once re-enabled.
+_ENABLE_DB_AUTO_UPDATE = True
 _ENABLE_DB_HOUSEKEEPING = True
 _ENABLE_DOC_TRACKER = True
 _ENABLE_FTP_MANAGER = True
@@ -157,7 +163,7 @@ class PageUpdateManager(HeartbeatManager):
         pending_updates = self._kv_store.get_all(self._PENDING_TITLE_UPDATES)
 
         # update database if updater is active
-        if self._runtime.database_update_enabled and pending_updates:
+        if self._runtime.database_auto_update_enabled and pending_updates:
             update_titles = [item[0] for item in pending_updates]
             self._runtime.update_to_database(update_titles, deep=False)
 
@@ -523,6 +529,10 @@ class Runtime:
     @property
     def database_update_enabled(self):
         return _ENABLE_DB_SYNC
+
+    @property
+    def database_auto_update_enabled(self):
+        return _ENABLE_DB_SYNC and _ENABLE_DB_AUTO_UPDATE
 
     def update_to_database(self, titles, deep=False, update_locations=False):
         if self.database_update_enabled:

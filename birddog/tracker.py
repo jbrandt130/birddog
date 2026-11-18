@@ -482,6 +482,11 @@ class WikiDocTracker(HeartbeatManager):
         if not self._db or not self._runtime.database_update_enabled:
             _logger.warning(f"WikiDocTracker ({self._base_url}): database unavailable - skipping heartbeat processing")
             return
+        if not self._runtime.database_auto_update_enabled:
+            # watermark is left where it is, so changes made meanwhile are
+            # picked up once automatic updates are switched back on
+            _logger.info(f"WikiDocTracker ({self._base_url}): automatic database updates disabled - skipping heartbeat")
+            return
 
         # doc_map is shared with the other site's tracker; only proceed with
         # wiki-change processing once it reports itself current (see
