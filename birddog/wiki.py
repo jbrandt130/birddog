@@ -507,7 +507,7 @@ _ARCHIVE_LABEL_ORDER = [
     "Revizki_kazky_Podilskoyi_huberniyi",
     "Revizki_kazky_Volynskoyi_huberniyi",
     "Spysok_dokumentiv_Tarashchanskoho_mahistratu", "TSDAVO",
-    "TSDAZU", "TSDIAL", "TsDAZU",
+    "TSDAZU", "TSDIAL",
 ]
 
 # cross-cutting index / finding-aid archives: these collect references to
