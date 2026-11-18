@@ -182,9 +182,26 @@ class TestPageTracker(unittest.TestCase):
         # register_archive_root() lives in birddog.wiki's own module-level KV
         # store, unrelated to what these tests exercise -- stub it out so
         # tracker tests don't depend on that real, unmocked storage.
-        p2 = mock.patch.object(self.tracker, "register_archive_root", lambda title: None)
+        self.registered, self.removed = [], []
+        p2 = mock.patch.object(self.tracker, "register_archive_root", self.registered.append)
         p2.start()
         self.addCleanup(p2.stop)
+        p3 = mock.patch.object(self.tracker, "remove_archive_root", self.removed.append)
+        p3.start()
+        self.addCleanup(p3.stop)
+
+    def test_discover_archive_roots_drops_deleted_and_moved_titles(self):
+        pt = self.tracker.PageTracker()
+        self.registered.clear()
+        self.removed.clear()
+        pt._discover_archive_roots({
+            "Архів:ДАКО": {"timestamp": "2026-11-01T00:00:00Z"},
+            "Архів:Р”РђРћР%": {"timestamp": "2026-11-08T18:55:39Z", "action": "delete"},
+            "Архів:Old": {"timestamp": "2026-11-09T00:00:00Z", "action": "move"},
+            "Архів:Unknown": {},
+        })
+        self.assertEqual(self.registered, ["Архів:ДАКО", "Архів:Unknown"])
+        self.assertEqual(self.removed, ["Архів:Р”РђРћР%", "Архів:Old"])
 
     def test_refresh_writes_only_newer_updates(self):
         tracker = self.tracker
