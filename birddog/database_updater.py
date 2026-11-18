@@ -15,6 +15,7 @@ from birddog.wiki import (
     API_URL,
     archive_label_priority,
     canonicalize_title,
+    db_excluded,
     page_label,
     get_root_label,
     literal_parent_title,
@@ -1050,6 +1051,15 @@ class DatabaseUpdater:
         if not all(isinstance(title, str) for title in page_titles):
             raise ValueError("Updater.update_page_records: page_titles must be str or sequence of str")
 
+        # every page write (tracker, manual and deep updates) funnels through
+        # here, so this is where excluded page trees are kept out of the db
+        excluded = [title for title in page_titles if db_excluded(title)]
+        if excluded:
+            _logger.info(f"Updater.update_page_records: skipping {len(excluded)} db-excluded title(s)")
+            page_titles = [title for title in page_titles if not db_excluded(title)]
+            if not page_titles:
+                return False
+
         tid = threading.get_ident()
         _logger.info(f"Updater {tid}: starting update_page_records: {len(page_titles)} titles")
         page_info, missing_titles = self._get_page_info(page_titles)
@@ -1548,7 +1558,7 @@ class DatabaseUpdater:
         if not candidates:
             return None
         # precedence: the page's archive (lower archive_label_priority wins,
-        # e.g. a "primary" archive beats an aggregator like TOWNS) -> the
+        # e.g. a "primary" archive beats an aggregator like Inventarium) -> the
         # deepest (most specific/leaf-most) label within that archive -> a
         # numerically-aware ("631/2" before "631/10") ordering among ties, so
         # the choice among several owning pages is deterministic rather than
@@ -2020,6 +2030,8 @@ class DatabaseUpdateManager(TaskManager):
             )
 
         page_titles = [_normalize_title(title) for title in page_titles]
+        # don't queue tasks for page trees that update_page_records() would skip
+        page_titles = [title for title in page_titles if not db_excluded(title)]
         total = len(page_titles)
         if total <= 0:
             return None
