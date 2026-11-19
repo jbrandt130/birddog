@@ -1,0 +1,1191 @@
+<meta charset="utf-8">
+<title>Birddog Documents Tab</title>
+<style>
+/* Layout: mirrors the live birddog app (Bootstrap 5.3 look, light only, by design) --
+   sticky nav, query card, then grid (left, frozen label/code block) + editor panel (right). */
+:root {
+  --bg: #ffffff;
+  --fg: #212529;
+  --muted: #6c757d;
+  --nav-bg: #f8f9fa;
+  --border: #dee2e6;
+  --stripe: #f4f5f6;
+  --hover: #eceef0;
+  --primary: #0d6efd;
+  --primary-soft: #e7f1ff;
+  --primary-ink: #052c65;
+  --danger: #dc3545;
+  --danger-soft: #f8d7da;
+  --warn: #ffc107;
+  --warn-soft: #fff3cd;
+  --warn-ink: #664d03;
+  --orange: #fd7e14;
+  --success: #198754;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --nav-h: 72px;
+  --editor-w: 400px;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+a { color: var(--primary); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+.icon { width: 1em; height: 1em; vertical-align: -0.125em; fill: currentColor; flex: none; }
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+
+/* ---------- nav ---------- */
+.navbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 50; background: var(--nav-bg);
+  display: flex; align-items: center; gap: 16px; padding: 8px 16px; flex-wrap: wrap; min-height: var(--nav-h); }
+.brand img { width: 48px; height: 48px; display: block; }
+.nav-links { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.nav-link { color: rgba(0,0,0,.65); text-decoration: none; padding: 8px 8px; font-size: 1.05rem; border-bottom: 3px solid transparent; }
+.nav-link:hover { color: rgba(0,0,0,.85); }
+.nav-link.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+.nav-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.nav-toggler { display: none; margin-left: auto; background: none; border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+@media (max-width: 991.98px) {
+  .nav-toggler { display: block; }
+  .nav-collapse { display: none; width: 100%; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .nav-collapse.open { display: flex; }
+  .nav-links { flex-direction: column; }
+  .nav-right { margin-left: 0; }
+}
+@media (min-width: 992px) { .nav-collapse { display: flex; flex: 1; align-items: center; gap: 16px; min-width: 0; } }
+
+/* ---------- page ---------- */
+.page { max-width: 1680px; margin: 0 auto; padding-inline: 24px; padding-block: 20px 40px; display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 600px) { .page { padding-inline: 16px; } }
+.mock-note { background: #e2e3e5; color: #41464b; border-radius: 6px; padding: 4px 10px; font-size: .8rem; }
+
+.card { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+.query-card { padding: 14px 16px 12px; display: flex; flex-direction: column; gap: 10px; }
+.query-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.input-group { display: flex; flex: 1 1 340px; max-width: 520px; min-width: 0; }
+.input-group > * { border: 1px solid #ced4da; }
+.input-group > :first-child { border-radius: 6px 0 0 6px; }
+.input-group > :last-child { border-radius: 0 6px 6px 0; }
+.input-group > * + * { border-left: 0; }
+.ig-text { background: #e9ecef; padding: 6px 12px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.ig-input { flex: 1; min-width: 0; padding: 6px 12px; font-family: var(--font-mono); background: var(--bg); }
+.result-summary { margin-left: auto; font-size: .85rem; color: var(--muted); text-align: right; }
+.filter-label { font-size: .85rem; font-weight: 600; white-space: nowrap; }
+
+/* ---------- buttons / controls ---------- */
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 6px; padding: 6px 12px; cursor: pointer; background: none; line-height: 1.5; white-space: nowrap; text-decoration: none; }
+.btn-sm { padding: 3px 8px; font-size: .85rem; border-radius: 5px; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: #0b5ed7; }
+.btn-outline-primary { border-color: var(--primary); color: var(--primary); }
+.btn-outline-primary:hover { background: var(--primary); color: #fff; }
+.btn-outline-secondary { border-color: #6c757d; color: #6c757d; background: var(--bg); }
+.btn-outline-secondary:hover { background: #6c757d; color: #fff; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-warning { background: var(--warn); color: #000; }
+.btn-link { color: var(--primary); padding: 0; border: 0; }
+.btn:disabled { opacity: .5; cursor: default; pointer-events: none; }
+.select-sm { padding: 2px 22px 2px 6px; font-size: .85rem; border: 1px solid #ced4da; border-radius: 5px; background: var(--bg); }
+.radios { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.radio { display: inline-flex; align-items: center; gap: 5px; font-size: .85rem; cursor: pointer; white-space: nowrap; }
+.radio input { accent-color: var(--primary); margin: 0; cursor: pointer; }
+.radio .cnt { font-size: .72rem; color: #6c757d; }
+.anomaly-filter { display: inline-flex; align-items: center; gap: 5px; margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--border, #dee2e6); font-weight: 400; cursor: pointer; }
+.anomaly-filter .cnt { font-size: .72rem; color: #6c757d; }
+.check { width: 1em; height: 1em; accent-color: var(--primary); cursor: pointer; }
+.switch { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--muted); cursor: pointer; }
+
+/* pills: toggle buttons used for filters and multi-selects */
+.pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.pill { border: 1px solid #adb5bd; color: #495057; background: var(--bg); border-radius: 999px; padding: 1px 10px; font-size: .82rem; cursor: pointer; line-height: 1.6; }
+.pill:hover { border-color: #6c757d; }
+.pill.on { background: #495057; border-color: #495057; color: #fff; }
+.pill.mixed { border-style: dashed; border-color: #495057; color: #212529; background: repeating-linear-gradient(135deg, #f1f3f5 0 6px, #e9ecef 6px 12px); }
+.pill .cnt { font-size: .72rem; opacity: .75; margin-left: 4px; }
+.pill.add-mark::before { content: "+ "; font-weight: 700; }
+.pill.rm-mark { text-decoration: line-through; background: var(--danger-soft); border-color: var(--danger); color: #842029; }
+
+/* process code colours, by workflow stage */
+.pc { display: inline-block; border-radius: 5px; padding: 0 7px; font-size: .78rem; font-weight: 700; line-height: 1.6; }
+.pc-entry { background: #cfe2ff; color: #084298; }
+.pc-mid { background: #fff3cd; color: #664d03; }
+.pc-end { background: #d1e7dd; color: #0f5132; }
+.pc-reject { background: #e2e3e5; color: #41464b; }
+.pc-blank { background: var(--bg); color: var(--muted); border: 1px dashed #adb5bd; }
+
+/* ---------- action bars ---------- */
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; border-radius: 6px; padding: 8px 14px; border: 1px solid; }
+.bar[hidden] { display: none; }
+.bar-warn { background: var(--warn-soft); border-color: #ffe69c; color: var(--warn-ink); }
+.bar .end { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* ---------- workspace: grid + editor ---------- */
+.workspace { display: grid; grid-template-columns: minmax(0, 1fr) var(--editor-w); gap: 12px; align-items: start; }
+@media (max-width: 1199.98px) { .workspace { grid-template-columns: minmax(0, 1fr); } }
+
+.docs-scroll { max-height: 70vh; overflow: auto; }
+/* fixed layout: every column has an explicit width (draggable), table width = sum */
+.grid { border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: .88rem; }
+.grid th, .grid td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--bg); }
+.grid thead th { position: sticky; top: 0; z-index: 2; overflow: visible; text-align: left; cursor: pointer; user-select: none; border-bottom: 2px solid #adb5bd; vertical-align: bottom; }
+.grid thead th.nosort { cursor: default; }
+.grid thead th.num { text-align: right; }
+.grid tbody tr { cursor: pointer; }
+.grid tbody tr:nth-child(odd) td { background: var(--stripe); }
+.grid tbody tr:hover td { background: var(--hover); }
+.grid tbody tr.dirty td { background: var(--warn-soft); }
+.grid tbody tr.sel td { background: var(--primary-soft); }
+.grid tbody tr.focus td { box-shadow: inset 0 2px 0 var(--primary), inset 0 -2px 0 var(--primary); }
+.grid tbody tr.focus td.frz-last { box-shadow: inset 0 2px 0 var(--primary), inset 0 -2px 0 var(--primary), inset -2px 0 0 #adb5bd; }
+.grid td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.grid td.wrap { white-space: normal; overflow-wrap: anywhere; line-height: 1.35; }
+.grid td.tags { white-space: normal; }
+/* column resize handle on the right edge of each header */
+.col-rs { position: absolute; top: 0; right: -4px; width: 9px; height: 100%; cursor: col-resize; z-index: 4; touch-action: none; }
+.col-rs::after { content: ""; position: absolute; top: 20%; bottom: 20%; left: 4px; width: 1px; background: #ced4da; }
+.col-rs:hover::after, .col-rs.active::after { background: var(--primary); width: 2px; left: 3px; top: 0; bottom: 0; }
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none !important; }
+.tag { display: inline-block; background: #e9ecef; border-radius: 4px; padding: 0 5px; margin: 0 3px 3px 0; font-size: .75rem; }
+.sort-ind { font-size: .7rem; opacity: .55; margin-left: 2px; }
+.label-link { font-family: var(--font-mono); font-size: .84rem; display: inline-flex; align-items: center; gap: 4px; }
+/* frozen left block: select | label */
+.frz { position: sticky; z-index: 1; }
+.grid thead th.frz { z-index: 3; }
+.frz-1 { left: 0; width: 34px; }
+.frz-2 { left: var(--frz-2, 34px); }
+.frz-last { box-shadow: inset -2px 0 0 #adb5bd; }
+.label-cell { display: flex; align-items: center; gap: 6px; }
+.anomaly-ico { color: var(--danger); display: inline-flex; }
+.grid-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--border); font-size: .85rem; }
+.pager { display: flex; gap: 6px; align-items: center; }
+.empty { text-align: center; color: var(--muted); padding: 48px 8px !important; white-space: normal !important; cursor: default; }
+
+/* ---------- editor panel ---------- */
+.editor { position: sticky; top: calc(var(--nav-h) + 12px + env(safe-area-inset-top, 0px)); max-height: calc(100vh - var(--nav-h) - 24px); display: flex; flex-direction: column; }
+.ed-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
+.ed-head-row { display: flex; align-items: center; gap: 8px; }
+.ed-thumb { flex: none; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: #f1f3f5; cursor: zoom-in; width: 60px; height: 84px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.ed-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.ed-thumb:hover { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.ed-thumb.failed { display: none; }
+/* page inspector: full-window overlay, one page at a time, never larger than the screen */
+.insp { position: fixed; inset: 0; z-index: 300; background: rgba(20,22,25,.92); display: flex; flex-direction: column; color: #f8f9fa; }
+.insp[hidden] { display: none !important; }
+.insp-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 64px 10px 16px; min-height: 52px; }
+.insp-title { font-family: var(--font-mono); font-size: .9rem; }
+.insp-nav { display: flex; align-items: center; gap: 6px; font-size: .9rem; margin: 0 auto; }
+.insp-nav input { width: 4.5em; text-align: center; padding: 3px 4px; border-radius: 5px; border: 1px solid #6c757d; background: #212529; color: #fff; font: inherit; }
+.insp-btn { background: #343a40; color: #fff; border: 1px solid #495057; border-radius: 5px; padding: 3px 10px; cursor: pointer; display: inline-flex; align-items: center; }
+.insp-btn:hover:not(:disabled) { background: #495057; }
+.insp-btn:disabled { opacity: .4; cursor: default; }
+.insp a { color: #9ec5fe; font-size: .85rem; }
+.insp-close { position: absolute; top: 8px; right: 12px; width: 40px; height: 40px; border: 0; background: none; color: #fff; font-size: 2rem; line-height: 1; cursor: pointer; border-radius: 50%; }
+.insp-close:hover { background: rgba(255,255,255,.12); }
+.insp-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 16px 16px; position: relative; }
+.insp-stage img { max-width: 100%; max-height: 100%; object-fit: contain; background: #fff; box-shadow: 0 6px 30px rgba(0,0,0,.5); }
+.insp-msg { position: absolute; font-size: .9rem; background: rgba(0,0,0,.6); padding: 6px 12px; border-radius: 6px; }
+.ed-title { font-weight: 600; font-size: 1.02rem; min-width: 0; overflow-wrap: anywhere; }
+.ed-close { margin-left: auto; background: none; border: 0; font-size: 1.4rem; line-height: 1; cursor: pointer; color: var(--muted); display: none; }
+.ed-sub { font-size: .82rem; color: var(--muted); overflow-wrap: anywhere; }
+.ed-body { padding: 12px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+.ed-foot { padding: 10px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ed-foot .right { margin-left: auto; display: flex; gap: 8px; }
+.ed-empty { padding: 32px 20px; color: var(--muted); text-align: center; font-size: .9rem; }
+.fld { display: flex; flex-direction: column; gap: 5px; padding-left: 10px; border-left: 3px solid transparent; }
+.fld.changed { border-left-color: var(--orange); }
+.fld-label { font-size: .8rem; font-weight: 600; display: flex; align-items: baseline; gap: 6px; }
+.fld-label code { font-weight: 400; color: var(--muted); font-size: .74rem; }
+.fld-hint { font-size: .75rem; color: var(--muted); }
+.stage { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.stage-name { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); width: 4.6rem; flex: none; }
+.field { width: 100%; padding: 4px 8px; border: 1px solid #ced4da; border-radius: 5px; background: var(--bg); font-size: .88rem; }
+.field:disabled { background: #e9ecef; color: var(--muted); }
+textarea.field { resize: vertical; }
+/* curated information: the classification a checker records for each document */
+.curated { border: 1px solid #b6d4fe; background: #f5f9ff; border-radius: 8px; padding: 10px 12px 12px 4px; display: flex; flex-direction: column; gap: 14px; }
+.curated-title { font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #0a58ca; padding-left: 10px; }
+.curated .field { background: #fff; }
+/* action buttons: each one opens a confirmation dialog */
+.actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.actions .btn { flex: 1 1 auto; justify-content: center; }
+.btn-next { background: var(--primary); color: #fff; }
+.btn-next:hover { background: #0b5ed7; }
+.btn-act { border-color: #6c757d; color: #343a40; background: var(--bg); }
+.btn-act:hover { background: #e9ecef; }
+.btn-act.save { border-color: var(--success); color: var(--success); }
+.btn-act.save:hover { background: #d1e7dd; }
+.btn-act.reject { border-color: var(--danger); color: var(--danger); }
+.btn-act.reject:hover { background: var(--danger-soft); }
+.btn-act.anomaly { border-color: var(--orange); color: #b35900; }
+.btn-act.anomaly:hover, .btn-act.anomaly.on { background: #ffe5d0; }
+.act-summary { font-size: .9rem; }
+.act-changes { font-size: .82rem; color: var(--muted); margin: 0; padding-left: 18px; }
+.ro-block { background: var(--nav-bg); border-radius: 6px; padding: 8px 10px; font-size: .84rem; display: flex; flex-direction: column; gap: 4px; }
+.ro-comments { white-space: pre-wrap; border-top: 1px solid var(--border); padding-top: 6px; margin-top: 2px; }
+.ro-k { display: block; font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.ro-block .native { color: var(--muted); font-size: .8rem; }
+.ro-meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.batch-dist { font-size: .75rem; color: var(--muted); }
+@media (max-width: 1199.98px) {
+  .editor { position: fixed; left: 0; right: 0; bottom: 0; top: auto; max-height: 72vh; z-index: 60; border-radius: 12px 12px 0 0; box-shadow: 0 -6px 24px rgba(0,0,0,.18); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .editor.idle { display: none; }
+  .ed-close { display: block; }
+}
+
+/* ---------- modals ---------- */
+.backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; overflow-y: auto; }
+.modal { background: var(--bg); border-radius: 8px; width: 100%; max-width: 520px; box-shadow: 0 8px 32px rgba(0,0,0,.25); display: none; flex-direction: column; }
+.modal.lg { max-width: 860px; }
+.modal.show { display: flex; }
+.modal-head, .modal-foot { display: flex; align-items: center; gap: 8px; padding: 14px 18px; }
+.modal-head { border-bottom: 1px solid var(--border); }
+.modal-head h3 { margin: 0; font-size: 1.15rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.modal-close { margin-left: auto; background: none; border: 0; font-size: 1.4rem; line-height: 1; cursor: pointer; color: var(--muted); }
+.modal-body { padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.modal-foot { border-top: 1px solid var(--border); justify-content: flex-end; flex-wrap: wrap; }
+.modal-foot .left { margin-right: auto; }
+.col-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 6px; }
+.col-list li { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid var(--border); }
+.col-list li:last-child { border-bottom: 0; }
+.col-list li.off span { color: var(--muted); }
+.col-list .moves { margin-left: auto; display: flex; gap: 4px; }
+.col-list li.off .moves { visibility: hidden; }
+.col-list code { font-size: .78rem; color: var(--muted); }
+.review-scroll { overflow-x: auto; }
+.review { width: 100%; border-collapse: collapse; font-size: .86rem; }
+.review th, .review td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.review .old { color: var(--muted); text-decoration: line-through; }
+.review .fname { font-family: var(--font-mono); font-size: .78rem; color: var(--muted); white-space: nowrap; }
+
+.toast { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--success); color: #fff; border-radius: 6px; padding: 10px 16px; z-index: 200; box-shadow: 0 4px 16px rgba(0,0,0,.2); }
+</style>
+
+<!-- icon sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-ext" viewBox="0 0 16 16"><path d="M8.6 2h5.4v5.4h-1.5V4.6L7.3 9.8 6.2 8.7l5.2-5.2H8.6z"/><path d="M3 4h4v1.5H3.5v7h7V9H12v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/></symbol>
+  <symbol id="i-cols" viewBox="0 0 16 16"><path d="M2 2.5h12v11H2z M6 2.5v11 M10 2.5v11" fill="none" stroke="currentColor" stroke-width="1.3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 16 16"><path d="M1.5 4V13h13V5.5H7.5L6 4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>
+  <symbol id="i-x" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-left" viewBox="0 0 16 16"><path d="M10 3L5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+  <symbol id="i-up" viewBox="0 0 16 16"><path d="M8 13V3M4 7l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 16 16"><path d="M8 3v10M4 9l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 16 16"><path d="M11 2l3 3-8 8H3v-3z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 16 16"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.5"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 16 16"><path d="M8 1.5l7 12.5H1z"/><path d="M8 6v4M8 11.6v.8" stroke="#fff" stroke-width="1.5"/></symbol>
+</svg>
+
+<!-- nav bar (Logs / Usage / DB Status: admin only) -->
+<nav class="navbar">
+  <a class="brand" href="#"><img src="birddog.png" alt="Birddog"></a>
+  <button class="nav-toggler" id="nav-toggler" aria-expanded="false" aria-controls="nav-collapse" aria-label="Toggle navigation"><svg class="icon"><use href="#i-menu"/></svg></button>
+  <div class="nav-collapse" id="nav-collapse">
+    <div class="nav-links">
+      <a class="nav-link" href="#">Alerts</a>
+      <a class="nav-link" href="#">Watchlists</a>
+      <a class="nav-link" href="#">Browse</a>
+      <a class="nav-link" href="#">Archives</a>
+      <a class="nav-link active" href="#">Documents</a>
+      <a class="nav-link" href="#">Profile</a>
+      <a class="nav-link admin-only" href="#">Logs</a>
+      <a class="nav-link admin-only" href="#">Usage</a>
+      <a class="nav-link admin-only" href="#">DB Status</a>
+      <a class="nav-link" href="#">Help</a>
+    </div>
+    <div class="nav-right">
+      <label class="switch" title="Mockup only: see the page as a user with this privilege">
+        mock role
+        <select class="select-sm" id="mock-role">
+          <option value="checker">checker</option>
+          <option value="review">review</option>
+          <option value="escalate">escalate</option>
+          <option value="admin" selected>admin</option>
+        </select>
+      </label>
+      <a href="#" class="btn btn-danger">Logout</a>
+    </div>
+  </div>
+</nav>
+
+<main class="page">
+  <div class="mock-note"><strong>Mockup</strong> &middot; example data, nothing is saved. Click a row to edit it in the panel; tick several rows to edit them as a batch.</div>
+
+  <!-- query card -->
+  <section class="card query-card">
+    <div class="query-row">
+      <div class="input-group">
+        <span class="ig-text"><svg class="icon"><use href="#i-folder"/></svg> Label prefix</span>
+        <input type="text" class="ig-input" id="prefix-input" value="DAHMO/5/1" list="prefix-suggestions" placeholder="DAHMO/5/1" autocomplete="off" aria-label="Label prefix">
+        <button class="btn btn-outline-secondary" id="prefix-clear" title="Clear prefix"><svg class="icon"><use href="#i-x"/></svg></button>
+      </div>
+      <datalist id="prefix-suggestions">
+        <option value="DAHMO"></option>
+        <option value="DAHMO/5"></option>
+        <option value="DAHMO/5/1"></option>
+        <option value="DAHMO/5/2"></option>
+        <option value="DAHMO/12/1"></option>
+      </datalist>
+      <button class="btn btn-outline-primary" id="open-columns"><svg class="icon"><use href="#i-cols"/></svg> Columns</button>
+      <div class="result-summary" id="result-summary"></div>
+    </div>
+    <div class="query-row">
+      <span class="filter-label" id="pc-filter-label">Process code</span>
+      <div class="radios" id="pc-filter" role="radiogroup" aria-label="Process code"></div>
+      <label class="filter-label anomaly-filter" title="Unchecked shows documents whether or not they are flagged">
+        <input type="checkbox" class="check" id="anomaly-filter">
+        <span class="anomaly-ico" id="anomaly-filter-ico"></span> Anomalies only <span class="cnt" id="anomaly-filter-cnt"></span>
+      </label>
+    </div>
+  </section>
+
+  <!-- pending changes bar -->
+  <div id="pending-bar" class="bar bar-warn" hidden>
+    <svg class="icon"><use href="#i-pencil"/></svg>
+    <span><strong id="pending-count">0</strong> document(s) with unsaved changes</span>
+    <div class="end">
+      <button class="btn btn-sm btn-outline-secondary" id="pending-discard">Discard all</button>
+      <button class="btn btn-sm btn-warning" id="pending-review">Review &amp; save</button>
+    </div>
+  </div>
+
+  <div class="workspace">
+    <section class="card" style="min-width:0">
+      <div class="docs-scroll">
+        <table class="grid" id="docs-table">
+          <colgroup id="docs-cols"></colgroup>
+          <thead><tr id="docs-thead-row"></tr></thead>
+          <tbody id="docs-tbody"></tbody>
+        </table>
+      </div>
+      <div class="grid-foot">
+        <span class="muted" id="page-summary"></span>
+        <div class="pager">
+          <label class="muted" for="page-size">Rows</label>
+          <select class="select-sm" id="page-size"><option>25</option><option selected>50</option><option>100</option></select>
+          <button class="btn btn-sm btn-outline-secondary" id="page-prev" aria-label="Previous page"><svg class="icon"><use href="#i-left"/></svg></button>
+          <button class="btn btn-sm btn-outline-secondary" id="page-next" aria-label="Next page"><svg class="icon"><use href="#i-right"/></svg></button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="card editor idle" id="editor" aria-label="Document editor"></aside>
+  </div>
+</main>
+
+<!-- modals -->
+<div class="backdrop" id="backdrop" hidden>
+  <div class="modal" id="columns-modal" role="dialog" aria-modal="true" aria-labelledby="columns-title">
+    <div class="modal-head"><h3 id="columns-title"><svg class="icon"><use href="#i-cols"/></svg> Columns</h3><button class="modal-close" data-close aria-label="Close">&times;</button></div>
+    <div class="modal-body">
+      <p class="small muted" style="margin:0">Label is always shown, frozen on the left. Use the arrows to reorder; drag a column's right edge in the grid to resize it (double-click the edge to reset). Your choice is saved per user.</p>
+      <ul class="col-list" id="columns-list"></ul>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline-secondary left" id="columns-reset">Defaults</button>
+      <button class="btn btn-outline-secondary" data-close>Cancel</button>
+      <button class="btn btn-primary" id="columns-apply">Apply</button>
+    </div>
+  </div>
+
+  <div class="modal" id="action-modal" role="dialog" aria-modal="true" aria-labelledby="action-title">
+    <div class="modal-head"><h3 id="action-title"></h3><button class="modal-close" data-close aria-label="Close">&times;</button></div>
+    <div class="modal-body">
+      <div class="act-summary" id="action-summary"></div>
+      <ul class="act-changes" id="action-changes"></ul>
+      <label class="small" id="action-extract-row" style="display:flex;gap:6px;align-items:center" hidden><input type="checkbox" class="check" id="action-extract" checked> Extract for indexing</label>
+      <div class="fld"><label class="fld-label" for="action-text" id="action-text-label"></label>
+        <textarea class="field" id="action-text" rows="4"></textarea>
+        <div class="fld-hint" id="action-text-hint"></div></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline-secondary" data-close>Cancel</button>
+      <button class="btn btn-primary" id="action-confirm">Confirm</button>
+    </div>
+  </div>
+  <div class="modal lg" id="review-modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
+    <div class="modal-head"><h3 id="review-title">Review changes</h3><button class="modal-close" data-close aria-label="Close">&times;</button></div>
+    <div class="modal-body">
+      <div class="review-scroll">
+        <table class="review"><thead><tr><th>Label</th><th>Field</th><th>Change</th></tr></thead><tbody id="review-body"></tbody></table>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-outline-secondary" data-close>Back</button>
+      <button class="btn btn-warning" id="review-save">Save all</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<div class="insp" id="insp" role="dialog" aria-modal="true" aria-label="Page viewer" hidden>
+  <div class="insp-bar">
+    <span class="insp-title" id="insp-title"></span>
+    <div class="insp-nav">
+      <button class="insp-btn" id="insp-prev" aria-label="Previous page"><svg class="icon"><use href="#i-left"/></svg></button>
+      Page <input type="number" id="insp-page" min="1" aria-label="Page number"> of <span id="insp-count"></span>
+      <button class="insp-btn" id="insp-next" aria-label="Next page"><svg class="icon"><use href="#i-right"/></svg></button>
+    </div>
+    <a id="insp-open" target="_blank" rel="noopener">Open on Commons</a>
+  </div>
+  <button class="insp-close" id="insp-close" aria-label="Close page viewer">&times;</button>
+  <div class="insp-stage"><img id="insp-img" alt=""><div class="insp-msg" id="insp-msg" hidden></div></div>
+</div>
+
+<script>
+// ---------- schema (from utility/specs/documents_*.json) ----------
+// hidden: in the schema but not offered for now
+const ALL_PROCESS_CODES = [
+  {v: "new",       stage: "entry", d: "Entry level: newly imported; awaiting initial review"},
+  {v: "duplicate", stage: "entry", d: "Entry level or end state: already retained elsewhere"},
+  {v: "check",     stage: "mid",   d: "Midstream: basic check of automatic data (type/scope/location/etc.)"},
+  {v: "review",    stage: "mid",   d: "Midstream: requires skilled language/content review"},
+  {v: "escalate",  stage: "mid",   d: "Midstream: requires specialized review"},
+  {v: "postpone",  stage: "mid",   hidden: true, d: "Midstream: check later on (stays in checking process, but not as important)"},
+  {v: "reject",    stage: "end",   d: "End state: no Jewish content"},
+  {v: "defer",     stage: "end",   d: "End state: defer indefinitely; mark for check in distant future"},
+  {v: "save",      stage: "end",   d: "End state: save to server"},
+];
+const PROCESS_CODES = ALL_PROCESS_CODES.filter(p => !p.hidden);
+const PC_BY = Object.fromEntries(ALL_PROCESS_CODES.map(p => [p.v, p]));
+const STAGES = [["entry", "Entry"], ["mid", "Midstream"], ["end", "End state"]];
+// filter shows one process code at a time; duplicate is excluded by the implicit filters
+const PC_FILTER_CODES = [...PROCESS_CODES.map(p => p.v).filter(v => v !== "duplicate"), "(blank)"];
+const DOC_TYPES = ["Vitals", "Residence & Identity", "Persecution", "Military", "Taxes & Voting", "Legal & Land",
+                   "Police", "Education", "Organizations", "Indexes", "Bibliographical", "Other"];
+const DOC_STRUCTURES = ["Template", "Narrative"];
+const DOC_SCOPES = ["Individual", "Group"];
+// the 13 options of the language multiselect, in NocoDB order and spelling ("Ukranian" as stored); no free entry
+const LANGUAGES = ["Czech", "English", "French", "German", "Hebrew", "Hungarian", "Polish", "Romanian", "Russian", "Slovak", "Yiddish", "Latin", "Ukranian"];
+const MULTI = {doc_type: DOC_TYPES, doc_structure: DOC_STRUCTURES, doc_scope: DOC_SCOPES, language: LANGUAGES};
+const EDITABLE = ["process_code", "filename", "language", "doc_type", "doc_structure", "doc_scope", "anomaly", "anomaly_comment", "comments"];
+
+// optional grid columns (label is fixed); w = default width in px
+const COLUMN_DEFS = [
+  {key: "native_description", title: "Native description", cls: "wrap", w: 300},
+  {key: "description",        title: "Description",        cls: "wrap", w: 300},
+  {key: "years",              title: "Years", w: 90},
+  {key: "page_count",         title: "Pages", num: true, w: 70},
+  {key: "byte_size",          title: "Size",  num: true, w: 80},
+  {key: "doc_type",           title: "Doc type",  cls: "tags", w: 180},
+  {key: "doc_structure",      title: "Structure", cls: "tags", w: 120},
+  {key: "doc_scope",          title: "Scope",     cls: "tags", w: 110},
+  {key: "language",           title: "Language",  cls: "tags", w: 130},
+  {key: "filename",           title: "File name", w: 190},
+  {key: "anomaly_comment",    title: "Anomaly comment", cls: "clip", w: 200},
+  {key: "comments",           title: "Comments",  cls: "clip", w: 200},
+  {key: "last_updated",       title: "Last Updated", w: 140},   // max(CreatedAt, UpdatedAt), read-only
+];
+const FIXED_COLS = [{key: "_sel", cls: "frz frz-1", w: 34, fixedW: true}, {key: "label", title: "Label", cls: "frz frz-2 frz-last", w: 190}];
+const MIN_COL_W = 50;
+const DEFAULT_COLUMNS = ["native_description", "description", "years", "page_count", "byte_size", "doc_type", "last_updated"];
+
+// ---------- example data ----------
+function rng(seed) { return () => (seed = (seed * 16807) % 2147483647) / 2147483647; }
+const r = rng(7);
+const pick = a => a[Math.floor(r() * a.length)];
+const weighted = pairs => { let x = r() * pairs.reduce((s, p) => s + p[1], 0); for (const [v, w] of pairs) { if ((x -= w) < 0) return v; } return pairs[0][0]; };
+const KINDS = [
+  {en: "Metric book of the church in the village of Kamianka on births, marriages and deaths", uk: "Метрична книга церкви с. Кам'янка про народження, шлюб і смерть",
+   type: ["Vitals"], st: ["Template"], sc: ["Group"], lang: ["Russian"]},
+  {en: "Metric book of the Balta synagogue on births", uk: "Метрична книга синагоги м. Балта про народження",
+   type: ["Vitals"], st: ["Template"], sc: ["Group"], lang: ["Russian", "Hebrew"]},
+  {en: "Confession lists of the parishes of Balta district", uk: "Сповідні розписи парафій Балтського повіту",
+   type: ["Residence & Identity"], st: ["Template"], sc: ["Group"], lang: ["Russian"]},
+  {en: "Revision list of the townspeople of Ananiv", uk: "Ревізька казка міщан м. Ананьїв",
+   type: ["Residence & Identity"], st: ["Template"], sc: ["Group"], lang: ["Russian"]},
+  {en: "Case on the collection of taxes from the peasants of the village of Liubashivka, with appended petitions and the decision of the district court",
+   uk: "Справа про стягнення податків з селян с. Любашівка, з доданими проханнями та рішенням повітового суду",
+   type: ["Taxes & Voting", "Legal & Land"], st: ["Narrative"], sc: ["Group"], lang: ["Russian"]},
+  {en: "Correspondence with the Podolia Spiritual Consistory", uk: "Листування з Подільською духовною консисторією",
+   type: ["Other"], st: ["Narrative"], sc: ["Group"], lang: ["Russian"]},
+  {en: "Lists of voters for the State Duma", uk: "Списки виборців до Державної Думи",
+   type: ["Taxes & Voting"], st: ["Template"], sc: ["Group"], lang: ["Russian"]},
+  {en: "Personal file of Moisei Shmulevich Gurevich, teacher of the Jewish school", uk: "Особова справа Мойсея Шмулевича Гуревича, вчителя єврейського училища",
+   type: ["Education"], st: ["Narrative"], sc: ["Individual"], lang: ["Russian", "Yiddish"]},
+];
+const ANOMALIES = ["Document content changed", "hash duplicate of https://commons.wikimedia.org/wiki/File:DAHMO_5-1-12.pdf", "Old process code C3: verify before saving"];
+const DOCS = [];
+[["5", "1", 140], ["5", "2", 60], ["12", "1", 45]].forEach(([fond, opys, n]) => {
+  for (let i = 1; i <= n; i++) {
+    const parts = 1 + (r() < 0.12 ? 1 : 0);
+    for (let p = 0; p < parts; p++) {
+      const k = pick(KINDS), y0 = 1820 + Math.floor(r() * 90), withYear = r() < 0.5;
+      const label = `DAHMO/${fond}/${opys}/${i}` + (parts > 1 ? `/${p + 1}` : "");
+      const pc = weighted([["new", 50], ["check", 14], ["review", 8], ["escalate", 3], ["save", 9], ["reject", 5], ["defer", 2], ["", 5]]);
+      const classified = pc !== "new" || r() < 0.4;   // new docs are often still unclassified
+      const anomaly = r() < 0.07;
+      const stamp = (from, days) => new Date(from + Math.floor(r() * days * 864e5)).toISOString().slice(0, 16).replace("T", " ");
+      const created_at = stamp(Date.UTC(2026, 5, 1), 120), updated_at = r() < 0.6 ? stamp(Date.UTC(2026, 9, 1), 49) : null;
+      const file = `ДАХмО_${fond}-${opys}-${i}${parts > 1 ? "_" + (p + 1) : ""}.pdf`;
+      DOCS.push({
+        id: DOCS.length + 1,
+        label,
+        url: "https://commons.wikimedia.org/wiki/File:" + file,
+        native_description: k.uk + (withYear ? ` (${y0} р.)` : ""),
+        description: k.en + (withYear ? ` (${y0})` : ""),
+        years: r() < 0.3 ? `${y0}-${y0 + 1 + Math.floor(r() * 5)}` : `${y0}`,
+        page_count: Math.floor(4 + r() * 600),
+        byte_size: Math.floor(200000 + r() * 180000000),
+        process_code: pc,
+        filename: defaultFilename(label),
+        language: classified || r() < 0.5 ? [...k.lang] : [],
+        doc_type: classified ? [...k.type] : [],
+        doc_structure: classified ? [...k.st] : [],
+        doc_scope: classified ? [...k.sc] : [],
+        anomaly,
+        anomaly_comment: anomaly ? pick(ANOMALIES) : "",
+        comments: r() < 0.15 ? pick(["Pages 40-52 are illegible", "Rescan requested from the archive", "Mostly Polish nobility, few Jewish names"]) : "",
+        created_at, updated_at,
+        last_updated: updated_at && updated_at > created_at ? updated_at : created_at,   // max(CreatedAt, UpdatedAt)
+        seq_label: seqLabel(label),
+      });
+    }
+  }
+});
+
+// one real Commons document, so the thumbnail and page viewer show actual pages.
+// In birddog the thumbnail path comes from the file name: thumb/<md5[0]>/<md5[0:2]>/<name>/page<N>-<W>px-<name>.jpg
+const REAL_FILE = "\u0414\u0410\u0425\u043c\u041e_5-1-4_\u0412\u0438\u0445\u0456\u0434\u043d\u0438\u0439_\u0440\u0435\u0454\u0441\u0442\u0440_\u043c\u0438\u0440\u043e\u0432\u043e\u0433\u043e_\u0441\u0443\u0434\u0434\u0456_1_\u0434\u0456\u043b\u044f\u043d\u043a\u0438_\u041a\u0430\u043c'\u044f\u043d\u0435\u0446\u044c-\u041f\u043e\u0434\u0456\u043b\u044c\u0441\u044c\u043a\u043e\u0433\u043e_\u043e\u043a\u0440\u0443\u0433\u0443_(1903).pdf";
+(() => {
+  const d = DOCS.find(x => x.label === "DAHMO/5/1/4");
+  if (!d) return;
+  Object.assign(d, {
+    url: "https://commons.wikimedia.org/wiki/File:" + encodeURIComponent(REAL_FILE),
+    native_description: "\u0412\u0438\u0445\u0456\u0434\u043d\u0438\u0439 \u0440\u0435\u0454\u0441\u0442\u0440 \u043c\u0438\u0440\u043e\u0432\u043e\u0433\u043e \u0441\u0443\u0434\u0434\u0456 1 \u0434\u0456\u043b\u044f\u043d\u043a\u0438 \u041a\u0430\u043c'\u044f\u043d\u0435\u0446\u044c-\u041f\u043e\u0434\u0456\u043b\u044c\u0441\u044c\u043a\u043e\u0433\u043e \u043e\u043a\u0440\u0443\u0433\u0443 (1903)",
+    description: "Outgoing register of the justice of the peace, 1st district, Kamianets-Podilskyi okrug (1903)",
+    years: "1903", page_count: 478, byte_size: 204112345,
+    commons: {file: REAL_FILE, hash: "e/ea"},
+  });
+})();
+
+// ---------- state ----------
+const state = {
+  prefix: "DAHMO/5/1",
+  pcFilter: "new",
+  anomalyOnly: false,
+  role: "admin",   // checker | review | escalate | admin (each includes the ones before it)   // unchecked = any
+  columns: [...DEFAULT_COLUMNS],
+  colWidths: {},   // key -> px, set by dragging a header edge
+  sort: {key: "label", dir: 1},
+  page: 0,
+  pageSize: 50,
+  selected: new Set(),   // ids ticked for batch edit
+  focus: null,           // id shown in the editor when nothing is ticked
+  pending: new Map(),    // id -> {field: newValue}
+  batch: null,           // batch draft, see newBatchDraft()
+};
+
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const icon = (name, cls = "") => `<svg class="icon ${cls}"><use href="#i-${name}"/></svg>`;
+const docById = id => DOCS.find(d => d.id === id);
+const same = (a, b) => Array.isArray(a) ? [...a].sort().join("|") === [...b].sort().join("|") : a === b;
+function fmtBytes(n) {
+  if (!n) return "";
+  const u = ["B", "KB", "MB", "GB"]; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return n.toFixed(i ? 1 : 0) + " " + u[i];
+}
+// matches the importer for now: DAHMO/5/1/7 -> DAHMO-5-1-7 (dropping the archive segment is planned)
+function defaultFilename(label) { return label.replace(/^\/+/, "").replace(/\//g, "-"); }
+function naturalCmp(a, b) { return String(a).localeCompare(String(b), undefined, {numeric: true}); }
+function eff(d, f) { const p = state.pending.get(d.id); return p && f in p ? p[f] : d[f]; }
+function pcBadge(code) {
+  if (!code) return `<span class="pc pc-blank">blank</span>`;
+  const st = PC_BY[code].stage;
+  return `<span class="pc ${code === "reject" || code === "defer" ? "pc-reject" : "pc-" + st}">${code}</span>`;
+}
+function setField(d, f, v) {
+  const p = {...(state.pending.get(d.id) || {})};
+  if (same(v, d[f])) delete p[f]; else p[f] = Array.isArray(v) ? [...v] : v;
+  Object.keys(p).length ? state.pending.set(d.id, p) : state.pending.delete(d.id);
+}
+let toastTimer;
+function toast(msg) {
+  $("toast").textContent = msg; $("toast").hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").hidden = true, 3000);
+}
+
+// ---------- modals ----------
+function openModal(id) { document.querySelectorAll(".modal").forEach(m => m.classList.toggle("show", m.id === id)); $("backdrop").hidden = false; }
+function closeModal() { $("backdrop").hidden = true; document.querySelectorAll(".modal").forEach(m => m.classList.remove("show")); }
+document.querySelectorAll("[data-close]").forEach(b => b.onclick = closeModal);
+$("backdrop").addEventListener("mousedown", e => { if (e.target === $("backdrop")) closeModal(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("backdrop").hidden) closeModal(); });
+
+// ---------- filtering ----------
+// the prefix is a path: whole "/"-separated fragments, so DAHMO/5/1 is opus 1 only (not 10, 11, 101).
+// Leading/trailing slashes are ignored. Same rule as wiki._title_prefix_match.
+function normPrefix() { return state.prefix.trim().replace(/^\/+|\/+$/g, ""); }
+function inPrefix(d) { const p = normPrefix(); return !p || d.label === p || d.label.startsWith(p + "/"); }
+// mirrors wiki.sequential_page_label: digit runs zero-padded to 8 so labels sort in natural order
+function seqLabel(label) {
+  return (label || "").split("/").map(part => (part.match(/\d+|\D+/g) || [])
+    .map(f => /^\d/.test(f) ? String(parseInt(f, 10)).padStart(8, "0") : f).join("")).join("/");
+}
+function inPc(d) { return (eff(d, "process_code") || "(blank)") === state.pcFilter; }
+// anomalies are admin business: other roles never see flagged documents
+function inAnomaly(d) {
+  if (!seesAnomalies()) return !eff(d, "anomaly");
+  return !state.anomalyOnly || !!eff(d, "anomaly");
+}
+function filtered() {
+  return DOCS.filter(d => inPrefix(d) && inPc(d) && inAnomaly(d))
+    .sort((a, b) => {
+      // the label column sorts on seq_label, as stored on each Documents row
+      const k = state.sort.key === "label" ? "seq_label" : state.sort.key;
+      const val = d => { const v = k === "seq_label" ? d.seq_label : eff(d, k); return Array.isArray(v) ? v.join(", ") : v; };
+      if (k === "seq_label") return state.sort.dir * (val(a) < val(b) ? -1 : val(a) > val(b) ? 1 : 0);
+      const va = val(a), vb = val(b);
+      return state.sort.dir * (typeof va === "number" && typeof vb === "number" ? va - vb : naturalCmp(va, vb));
+    });
+}
+function renderPcFilter() {
+  const counts = {};
+  DOCS.filter(d => inPrefix(d) && (seesAnomalies() || !eff(d, "anomaly"))).forEach(d => { const c = eff(d, "process_code") || "(blank)"; counts[c] = (counts[c] || 0) + 1; });
+  const codes = roleCodes();
+  // a checker only ever works on "new", so there is nothing to choose
+  $("pc-filter").hidden = $("pc-filter-label").hidden = codes.length < 2;
+  $("pc-filter").innerHTML = codes.map(c =>
+    `<label class="radio" title="${esc(PC_BY[c]?.d || "No process code (imported, old code had no mapping)")}"><input type="radio" name="pcf" value="${c}" ${state.pcFilter === c ? "checked" : ""}> ${c}<span class="cnt">${counts[c] || 0}</span></label>`).join("");
+  document.querySelectorAll('input[name="pcf"]').forEach(r => r.onchange = () => {
+    state.pcFilter = r.value; state.page = 0; state.selected.clear(); state.focus = null; render();
+  });
+}
+function renderAnomalyFilter() {
+  const n = DOCS.filter(d => inPrefix(d) && inPc(d) && eff(d, "anomaly")).length;
+  $("anomaly-filter").checked = state.anomalyOnly;
+  $("anomaly-filter").closest("label").hidden = !seesAnomalies();
+  // a checker has neither filter, so drop the whole row
+  $("pc-filter").closest(".query-row").hidden = !seesAnomalies() && $("pc-filter").hidden;
+  $("anomaly-filter-cnt").textContent = n;
+}
+$("anomaly-filter-ico").innerHTML = icon("warn");
+$("anomaly-filter").onchange = e => { state.anomalyOnly = e.target.checked; state.page = 0; render(); };
+
+// ---------- grid ----------
+let _rows = [];
+function pageRows() { return _rows.slice(state.page * state.pageSize, (state.page + 1) * state.pageSize); }
+
+function colW(c) { return state.colWidths[c.key] || c.w; }
+function visibleCols() { return [...FIXED_COLS, ...state.columns.map(k => COLUMN_DEFS.find(c => c.key === k))]; }
+function applyTableWidth() {
+  $("docs-table").style.width = visibleCols().reduce((a, c) => a + colW(c), 0) + "px";
+}
+let _justResized = false;
+function renderHead() {
+  const cols = visibleCols();
+  $("docs-cols").innerHTML = cols.map(c => `<col data-col="${c.key}" style="width:${colW(c)}px">`).join("");
+  applyTableWidth();
+  $("docs-thead-row").innerHTML = cols.map(c => {
+    if (c.key === "_sel") return `<th class="nosort ${c.cls}"><input type="checkbox" class="check" id="select-all" aria-label="Select all on this page"></th>`;
+    const ind = state.sort.key === c.key ? (state.sort.dir > 0 ? "\u25B2" : "\u25BC") : "\u2195";
+    return `<th data-sort="${c.key}" class="${c.num ? "num" : ""} ${c.cls && c.cls.startsWith("frz") ? c.cls : ""}" title="${esc(c.title)}">${esc(c.title)}<span class="sort-ind">${ind}</span><span class="col-rs" data-rs="${c.key}" title="Drag to resize, double-click to reset"></span></th>`;
+  }).join("");
+  document.querySelectorAll("#docs-thead-row .col-rs").forEach(h => {
+    const key = h.dataset.rs, c = cols.find(x => x.key === key), colEl = document.querySelector(`#docs-cols col[data-col="${key}"]`);
+    h.onclick = e => e.stopPropagation();
+    h.ondblclick = e => { e.stopPropagation(); delete state.colWidths[key]; renderGrid(); };
+    h.onpointerdown = e => {
+      e.preventDefault(); e.stopPropagation();
+      const x0 = e.clientX, w0 = colW(c);
+      h.setPointerCapture(e.pointerId); h.classList.add("active"); document.body.classList.add("resizing");
+      h.onpointermove = ev => {
+        state.colWidths[key] = Math.max(MIN_COL_W, Math.round(w0 + ev.clientX - x0));
+        colEl.style.width = state.colWidths[key] + "px"; applyTableWidth();
+      };
+      h.onpointerup = () => {
+        h.onpointermove = h.onpointerup = null; h.classList.remove("active"); document.body.classList.remove("resizing");
+        _justResized = true; setTimeout(() => { _justResized = false; }, 0);
+      };
+    };
+  });
+  document.querySelectorAll("#docs-thead-row th[data-sort]").forEach(th => th.onclick = () => {
+    if (_justResized) return;
+    const k = th.dataset.sort;
+    state.sort = {key: k, dir: state.sort.key === k ? -state.sort.dir : 1};
+    render();
+  });
+  $("select-all").onchange = e => {
+    pageRows().forEach(d => e.target.checked ? state.selected.add(d.id) : state.selected.delete(d.id));
+    selectionChanged();
+  };
+}
+
+function cell(d, key) {
+  const def = COLUMN_DEFS.find(c => c.key === key), v = eff(d, key);
+  if (key === "byte_size") return `<td class="num">${fmtBytes(v)}</td>`;
+  if (def.num) return `<td class="num">${esc(v)}</td>`;
+  if (def.cls === "tags") return `<td class="tags">${v.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</td>`;
+  if (def.cls === "clip") return `<td class="clip small muted" title="${esc(v)}">${esc(v)}</td>`;
+  if (key === "last_updated") return `<td class="small" title="Created ${esc(d.created_at)}${d.updated_at ? ", updated " + esc(d.updated_at) : ""} (UTC)">${esc(v)}</td>`;
+  if (key === "filename") return `<td class="mono small">${esc(v)}</td>`;
+  return `<td class="${def.cls || ""}">${esc(v)}</td>`;
+}
+
+function renderGrid() {
+  _rows = filtered();
+  const maxPage = Math.max(0, Math.ceil(_rows.length / state.pageSize) - 1);
+  if (state.page > maxPage) state.page = maxPage;
+  renderHead();
+  const rows = pageRows();
+  $("docs-tbody").innerHTML = rows.length ? rows.map(d => {
+    const p = state.pending.get(d.id) || {};
+    const cls = [state.pending.has(d.id) && "dirty", state.selected.has(d.id) && "sel", isFocused(d.id) && "focus"].filter(Boolean).join(" ");
+    const anom = eff(d, "anomaly") ? `<span class="anomaly-ico" title="Anomaly: ${esc(eff(d, "anomaly_comment"))}">${icon("warn")}</span>` : "";
+    return `<tr data-id="${d.id}" class="${cls}">
+      <td class="frz frz-1"><input type="checkbox" class="check row-sel" aria-label="Select ${esc(d.label)}" ${state.selected.has(d.id) ? "checked" : ""}></td>
+      <td class="frz frz-2 frz-last"><div class="label-cell"><a class="label-link" href="${esc(d.url)}" target="_blank" rel="noopener" title="Open document in a new tab">${esc(d.label)} ${icon("ext")}</a>${anom}</div></td>
+      ${state.columns.map(k => cell(d, k)).join("")}
+    </tr>`;
+  }).join("") : `<tr><td colspan="99" class="empty">No documents under <code>${esc(normPrefix() || "(all)")}</code> with process code <code>${esc(state.pcFilter)}</code>${state.anomalyOnly ? " and an anomaly flag" : ""}.</td></tr>`;
+
+  document.querySelectorAll("#docs-tbody tr[data-id]").forEach(tr => {
+    const id = +tr.dataset.id, d = docById(id);
+    tr.onclick = e => {
+      if (e.target.closest("a, select, input, button")) return;
+      state.selected.clear(); state.focus = id; selectionChanged();
+    };
+    tr.querySelector(".row-sel").onchange = e => { e.target.checked ? state.selected.add(id) : state.selected.delete(id); selectionChanged(); };
+  });
+  $("select-all").checked = rows.length > 0 && rows.every(d => state.selected.has(d.id));
+
+  $("docs-table").style.setProperty("--frz-2", FIXED_COLS[0].w + "px");
+
+  const total = DOCS.filter(d => inPrefix(d) && (seesAnomalies() || !eff(d, "anomaly"))).length;
+  $("result-summary").innerHTML = `<strong>${_rows.length}</strong> of ${total} documents under <code>${esc(normPrefix() || "(all)")}</code>`;
+  const start = _rows.length ? state.page * state.pageSize + 1 : 0;
+  $("page-summary").textContent = `Showing ${start}-${Math.min(_rows.length, (state.page + 1) * state.pageSize)} of ${_rows.length}`;
+  $("page-prev").disabled = state.page === 0;
+  $("page-next").disabled = state.page >= maxPage;
+}
+function isFocused(id) { return state.selected.size ? false : state.focus === id; }
+
+function renderBars() {
+  $("pending-count").textContent = state.pending.size;
+  $("pending-bar").hidden = !state.pending.size;
+  resetDiscard();
+}
+function render() { renderPcFilter(); renderAnomalyFilter(); renderGrid(); renderBars(); renderEditor(); }
+
+// ---------- editor ----------
+function selectionChanged() {
+  state.batch = state.selected.size > 1 ? newBatchDraft() : null;
+  if (state.selected.size === 1) state.focus = [...state.selected][0];
+  render();
+}
+function pillsHtml(field, values, current, extra = "") {
+  return `<div class="pills" data-field="${field}">${values.map(v => `<button class="pill ${current.includes(v) ? "on" : ""}" data-v="${esc(v)}" ${extra}>${esc(v)}</button>`).join("")}</div>`;
+}
+function fld(field, label, body, hint = "") {
+  return `<div class="fld" data-fld="${field}"><div class="fld-label">${label}</div>${body}${hint ? `<div class="fld-hint">${hint}</div>` : ""}</div>`;
+}
+
+// ---------- process-code actions ----------
+// the forward step depends on the current code; escalate (and the end states) have none
+const NEXT_CODE = {"": "check", new: "check", check: "review", review: "escalate"};
+const END_ACTIONS = ["reject", "defer", "save"];
+// privilege decides which process codes (and anomalies) a user can see; the buttons depend only on the code
+const ROLE_CODES = {
+  checker: ["check"],                         // filter hidden: always process_code = check
+  review: ["check", "review"],
+  escalate: ["check", "review", "escalate"],
+};
+function roleCodes() { return ROLE_CODES[state.role] || PC_FILTER_CODES; }
+function seesAnomalies() { return state.role === "escalate" || state.role === "admin"; }
+const REOPEN_FROM = ["defer", "reject"];   // these can be sent back to check
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+function actionButtons(code, docs) {
+  const nx = code === null ? null : NEXT_CODE[code || ""];
+  const flagged = docs.filter(d => eff(d, "anomaly")).length;
+  return `<div class="actions">
+    ${nx ? `<button class="btn btn-next" data-act="${nx}" title="${esc(PC_BY[nx].d)}">${cap(nx)}</button>` : ""}
+    ${REOPEN_FROM.includes(code) ? `<button class="btn btn-act" data-act="check" title="Send back to check">${icon("left")} Back to check</button>` : ""}
+    ${END_ACTIONS.filter(a => a !== code).map(a => `<button class="btn btn-act ${a}" data-act="${a}" title="${esc(PC_BY[a].d)}">${cap(a)}</button>`).join("")}
+    ${flagged < docs.length ? `<button class="btn btn-act anomaly" data-act="anomaly" title="Flag as an anomaly and say why">${icon("warn")} Flag anomaly</button>` : ""}
+    ${flagged ? `<button class="btn btn-act" data-act="clear_anomaly" title="Clear the anomaly flag and anomaly comment">Clear anomaly${docs.length > 1 ? ` (${flagged})` : ""}</button>` : ""}
+  </div>`;
+}
+// commit a document: its pending curated edits plus the action's fields are saved together
+function commitDoc(d, fields) {
+  Object.entries(fields).forEach(([f, v]) => setField(d, f, v));
+  Object.assign(d, state.pending.get(d.id) || {});
+  state.pending.delete(d.id);
+}
+const fieldTitle = f => ({doc_type: "Doc type", doc_structure: "Structure", doc_scope: "Scope", language: "Language", filename: "File name"})[f] || f;
+let _action = null;
+function openAction(docs, act, curatedFor, beforeCommit = null) {
+  const batch = docs.length > 1;
+  const isAnom = act === "anomaly", isClear = act === "clear_anomaly";
+  if (isClear) docs = docs.filter(d => eff(d, "anomaly"));
+  const n = docs.length, one = n === 1 ? docs[0] : null;
+  const from = [...new Set(docs.map(d => eff(d, "process_code") || ""))];
+  const who = one ? `<span class="mono">${esc(one.label)}</span>` : `${n} documents`;
+  $("action-title").innerHTML = isClear ? "Clear anomaly" : isAnom ? `${icon("warn")} Flag anomaly` : `Set process code to ${pcBadge(act)}`;
+  $("action-summary").innerHTML = isClear
+    ? `Clear the anomaly flag and anomaly comment on ${who}.` + (one ? `<div class="small muted" style="margin-top:6px">Current comment: ${esc(eff(one, "anomaly_comment")) || "(none)"}</div>` : "")
+    : isAnom
+    ? `Flag ${who} as an anomaly. The process code stays ${from.map(pcBadge).join(", ")}.`
+    : `Move ${who} from ${from.map(pcBadge).join(", ")} to ${pcBadge(act)}.`;
+  const curated = curatedFor();
+  $("action-changes").innerHTML = curated.length ? `<li class="none" style="list-style:none;margin-left:-18px">Curated changes saved with it:</li>` + curated.map(c => `<li>${c}</li>`).join("") : "";
+  $("action-changes").hidden = !curated.length;
+  $("action-text-label").textContent = isAnom ? "Anomaly comment" : "Comments";
+  const t = $("action-text");
+  if (isAnom) {
+    t.value = one ? eff(one, "anomaly_comment") : "";
+    $("action-text-hint").textContent = one ? "What is wrong with this document?" : `Replaces the anomaly comment on all ${n}.`;
+  } else {
+    t.value = "";
+    $("action-text-hint").textContent = `Optional. Added on a new line after ${one ? "the document's" : "each document's"} current comments.`;
+  }
+  $("action-text").closest(".fld").hidden = isClear;
+  $("action-extract-row").hidden = act !== "save";
+  $("action-extract").checked = true;   // default on every time the dialog opens
+  $("action-confirm").className = "btn " + (act === "reject" ? "btn-danger" : isAnom ? "btn-warning" : "btn-primary");
+  $("action-confirm").textContent = isClear ? "Clear anomaly" : isAnom ? "Flag anomaly" : `Confirm ${act}`;
+  _action = {docs, act, beforeCommit, batch};
+  openModal("action-modal");
+  setTimeout(() => t.focus(), 0);
+}
+function finishAction(msg) {
+  const {docs, batch} = _action, d0 = docs[0], idx0 = _rows.findIndex(x => x.id === d0.id);
+  _action = null; closeModal();
+  if (!batch) {
+    // stay on the document if it is still listed (anomaly flag/clear), else take the one that moved into its place
+    _rows = filtered();
+    const stay = _rows.findIndex(x => x.id === d0.id);
+    const next = stay >= 0 ? _rows[stay] : _rows[idx0];
+    state.focus = next ? next.id : null;
+  } else { state.selected.clear(); state.batch = null; }
+  toast(msg + " (mockup, not stored)");
+  render();
+}
+$("action-confirm").onclick = () => {
+  const {docs, act, beforeCommit} = _action, text = $("action-text").value, n = docs.length;
+  if (act === "anomaly" && !text.trim()) { $("action-text").focus(); $("action-text-hint").textContent = "Please say what the anomaly is."; return; }
+  if (beforeCommit) beforeCommit();
+  docs.forEach(d => {
+    if (act === "clear_anomaly") commitDoc(d, {anomaly: false, anomaly_comment: ""});
+    else if (act === "anomaly") commitDoc(d, {anomaly: true, anomaly_comment: text});
+    else {
+      const add = text.trim(), cur = eff(d, "comments");
+      const c = add ? (cur ? cur + "\n" + add : add) : cur;
+      const fields = {process_code: act, comments: c};
+      // planned schema: save_pending picked up by a housekeeping upload task; "pending" save_status goes away
+      if (act === "save") Object.assign(fields, {save_pending: true, save_status: $("action-extract").checked ? "externally_indexed" : "not_indexed"});
+      commitDoc(d, fields);
+    }
+  });
+  finishAction(act === "clear_anomaly" ? `Cleared the anomaly on ${n} document(s)` : act === "anomaly" ? `Flagged ${n} document(s) as anomalies` : `Moved ${n} document(s) to ${act}`);
+};
+function pendingCurated(d) {
+  const p = state.pending.get(d.id) || {};
+  return ["doc_type", "doc_structure", "doc_scope", "language", "filename"].filter(f => f in p)
+    .map(f => `${fieldTitle(f)}: ${esc(show(p[f]))}`);
+}
+
+// ---------- page thumbnail + inspector (Commons files only, single selection) ----------
+// standard Wikimedia thumbnail widths; other sizes are rate limited
+const THUMB_WIDTHS = [120, 250, 330, 500, 960, 1280, 1920];
+function pageThumb(d, page, width) {
+  if (!d.commons) return null;   // mockup: only DAHMO/5/1/4 is real; birddog would do this for every commons File: url
+  const n = encodeURIComponent(d.commons.file);
+  return `https://upload.wikimedia.org/wikipedia/commons/thumb/${d.commons.hash}/${n}/page${page}-${width}px-${n}.jpg`;
+}
+// mockup only: where Wikimedia images are blocked (the claude.ai artifact page), fall back to copies bundled alongside
+const BUNDLED_PAGES = 12;
+function bundledPage(page) { return page === 0 ? "pages/thumb.jpg" : page <= BUNDLED_PAGES ? `pages/page${page}.jpg` : null; }
+const insp = {doc: null, page: 1, aspect: 0.7};
+function inspWidth() {
+  const st = document.querySelector(".insp-stage");
+  const w = st.clientWidth - 32, h = st.clientHeight - 16;
+  const need = Math.min(w, h * insp.aspect) * (window.devicePixelRatio || 1);
+  return THUMB_WIDTHS.find(x => x >= need) || THUMB_WIDTHS[THUMB_WIDTHS.length - 1];
+}
+function inspShow() {
+  const d = insp.doc, n = d.page_count || 1, p = insp.page;
+  $("insp-title").textContent = d.label;
+  $("insp-count").textContent = n;
+  $("insp-page").max = n; $("insp-page").value = p;
+  $("insp-prev").disabled = p <= 1; $("insp-next").disabled = p >= n;
+  $("insp-open").href = d.url + (p > 1 ? `?page=${p}` : "");
+  const img = $("insp-img"), w = inspWidth();
+  $("insp-msg").hidden = false; $("insp-msg").textContent = `Loading page ${p}...`;
+  img.style.opacity = .35;
+  img.onload = () => {
+    if (img.naturalWidth) insp.aspect = img.naturalWidth / img.naturalHeight;
+    img.style.opacity = 1; $("insp-msg").hidden = true;
+  };
+  img.onerror = () => {
+    const local = bundledPage(p);
+    if (local && !img.src.endsWith(local)) { img.src = local; return; }
+    img.style.opacity = 0;
+    $("insp-msg").textContent = insp.usedLocal
+      ? `This preview only bundles pages 1-${BUNDLED_PAGES}; the real tab loads every page from Wikimedia.`
+      : "Couldn't load this page from Wikimedia.";
+  };
+  const was = img.onload;
+  img.onload = () => { if (img.src.includes("pages/")) insp.usedLocal = true; was(); };
+  img.alt = `${d.label}, page ${p}`;
+  img.src = pageThumb(d, p, w);
+  if (p < n) new Image().src = pageThumb(d, p + 1, w);   // warm the next page
+}
+function openInspector(d, page = 1) { insp.doc = d; insp.page = page; $("insp").hidden = false; inspShow(); $("insp-close").focus(); }
+function closeInspector() { $("insp").hidden = true; $("insp-img").removeAttribute("src"); insp.doc = null; }
+function inspGo(p) { if (!insp.doc) return; insp.page = Math.min(Math.max(1, p), insp.doc.page_count || 1); inspShow(); }
+$("insp-close").onclick = closeInspector;
+$("insp-prev").onclick = () => inspGo(insp.page - 1);
+$("insp-next").onclick = () => inspGo(insp.page + 1);
+$("insp-page").onchange = e => inspGo(parseInt(e.target.value, 10) || 1);
+document.addEventListener("keydown", e => {
+  if ($("insp").hidden) return;
+  if (e.key === "Escape") { closeInspector(); e.stopImmediatePropagation(); }
+  else if (e.target.id !== "insp-page" && (e.key === "ArrowRight" || e.key === "PageDown")) { inspGo(insp.page + 1); e.preventDefault(); }
+  else if (e.target.id !== "insp-page" && (e.key === "ArrowLeft" || e.key === "PageUp")) { inspGo(insp.page - 1); e.preventDefault(); }
+}, true);
+
+function renderEditor() {
+  const ed = $("editor");
+  const n = state.selected.size;
+  if (n > 1) return renderBatchEditor(ed);
+  const id = n === 1 ? [...state.selected][0] : state.focus;
+  const d = id && docById(id);
+  if (!d) {
+    ed.classList.add("idle");
+    ed.innerHTML = `<div class="ed-empty">Click a row to edit that document.<br>Tick rows to edit several at once.</div>`;
+    return;
+  }
+  ed.classList.remove("idle");
+  const idx = _rows.findIndex(x => x.id === d.id);
+  ed.innerHTML = `
+    <div class="ed-head">
+      <div class="ed-head-row">
+        ${pageThumb(d, 1, 120) ? `<button class="ed-thumb" id="ed-thumb" title="View pages" aria-label="View pages of ${esc(d.label)}"><img src="${pageThumb(d, 1, 120)}" alt=""></button>` : ""}
+        <a class="label-link ed-title" href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.label)} ${icon("ext")}</a>
+        <button class="ed-close" id="ed-close" aria-label="Close editor">&times;</button>
+      </div>
+      <div class="ed-sub">${idx >= 0 ? `${idx + 1} of ${_rows.length} in this list` : "Not in the current filter"}</div>
+    </div>
+    <div class="ed-body">
+      <div class="ro-block">
+        <div>${esc(d.description)}</div>
+        <div class="native">${esc(d.native_description)}</div>
+        <div class="ro-meta"><span>${esc(d.years)}</span><span>${d.page_count} pages</span><span>${fmtBytes(d.byte_size)}</span></div>
+        ${eff(d, "comments") ? `<div class="ro-comments"><span class="ro-k">Comments</span>${esc(eff(d, "comments"))}</div>` : ""}
+      </div>
+      <div class="curated"><div class="curated-title">Curated information</div>
+      ${fld("doc_type", "Doc type", pillsHtml("doc_type", DOC_TYPES, eff(d, "doc_type")))}
+      ${fld("doc_structure", "Structure", pillsHtml("doc_structure", DOC_STRUCTURES, eff(d, "doc_structure")))}
+      ${fld("doc_scope", "Scope", pillsHtml("doc_scope", DOC_SCOPES, eff(d, "doc_scope")))}
+      ${fld("language", "Language", pillsHtml("language", LANGUAGES, eff(d, "language")))}
+      ${fld("filename", "File name", `<input class="field mono" id="ed-filename" value="${esc(eff(d, "filename"))}">`, `Default: ${esc(defaultFilename(d.label))}`)}
+      </div>
+      ${eff(d, "anomaly") ? `<div class="bar bar-warn small">${icon("warn")} <span><strong>Anomaly:</strong> ${esc(eff(d, "anomaly_comment")) || "(no comment)"}</span></div>` : ""}
+      ${actionButtons(eff(d, "process_code"), [d])}
+    </div>
+    <div class="ed-foot">
+      <button class="btn btn-sm btn-outline-secondary" id="ed-revert" ${state.pending.has(d.id) ? "" : "disabled"}>Revert this document</button>
+      <div class="right">
+        <button class="btn btn-sm btn-outline-secondary" id="ed-prev" ${idx > 0 ? "" : "disabled"} aria-label="Previous document">${icon("left")}</button>
+        <button class="btn btn-sm btn-primary" id="ed-next" ${idx >= 0 && idx < _rows.length - 1 ? "" : "disabled"}>Next ${icon("right")}</button>
+      </div>
+    </div>`;
+  markChanged(d);
+
+  // every edit goes straight into the pending changes; Save happens from the bar
+  const after = () => { markChanged(d); renderGrid(); renderBars(); renderPcFilter(); renderAnomalyFilter(); $("ed-revert").disabled = !state.pending.has(d.id); };
+  ed.querySelectorAll("[data-act]").forEach(b => b.onclick = () => openAction([d], b.dataset.act, () => pendingCurated(d)));
+  const th = $("ed-thumb");
+  if (th) {
+    th.onclick = () => openInspector(d);
+    const ti = th.querySelector("img");
+    ti.onerror = () => { if (!ti.src.endsWith(bundledPage(0))) ti.src = bundledPage(0); else th.classList.add("failed"); };
+  }
+  ed.querySelectorAll(".pills[data-field] .pill").forEach(b => b.onclick = () => {
+    const f = b.parentElement.dataset.field, v = b.dataset.v, cur = eff(d, f);
+    setField(d, f, cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v]);
+    b.classList.toggle("on");
+    after();
+  });
+  $("ed-filename").oninput = e => { setField(d, "filename", e.target.value); after(); };
+  $("ed-revert").onclick = () => { state.pending.delete(d.id); render(); };
+  const go = dlt => {
+    const cur = _rows.findIndex(x => x.id === d.id);
+    const ni = cur >= 0 ? cur + dlt : (dlt > 0 ? idx : idx - 1);
+    const next = _rows[ni]; if (!next) return;
+    state.selected.clear(); state.focus = next.id;
+    const page = Math.floor(ni / state.pageSize); if (page !== state.page) state.page = page;
+    render();
+    const tr = document.querySelector(`#docs-tbody tr[data-id="${next.id}"]`); if (tr) tr.scrollIntoView({block: "nearest"});
+  };
+  $("ed-prev").onclick = () => go(-1);
+  $("ed-next").onclick = () => go(1);
+  $("ed-close").onclick = () => { state.focus = null; state.selected.clear(); render(); };
+}
+function markChanged(d) {
+  const p = state.pending.get(d.id) || {};
+  document.querySelectorAll("#editor .fld").forEach(el => el.classList.toggle("changed", el.dataset.fld in p));
+}
+
+// batch draft: null / undefined means "leave unchanged"
+function newBatchDraft() {
+  return {multi: {doc_type: {}, doc_structure: {}, doc_scope: {}, language: {}}};
+}
+function renderBatchEditor(ed) {
+  ed.classList.remove("idle");
+  const docs = [...state.selected].map(docById), n = docs.length, b = state.batch;
+  const dist = {};
+  docs.forEach(d => { const c = eff(d, "process_code") || "blank"; dist[c] = (dist[c] || 0) + 1; });
+  const multiField = (f, values) => {
+    const all = [...new Set([...values, ...docs.flatMap(d => eff(d, f))])];
+    return `<div class="pills" data-bfield="${f}">${all.map(v => {
+      const have = docs.filter(d => eff(d, f).includes(v)).length, act = b.multi[f][v];
+      const cls = act === "add" ? "on add-mark" : act === "remove" ? "rm-mark" : have === n ? "on" : have ? "mixed" : "";
+      return `<button class="pill ${cls}" data-v="${esc(v)}" title="${have} of ${n} have it. Click to add to all, again to remove from all, again to leave as is.">${esc(v)}${have && have < n && !act ? `<span class="cnt">${have}/${n}</span>` : ""}</button>`;
+    }).join("")}</div>`;
+  };
+  const anyChange = Object.values(b.multi).some(m => Object.keys(m).length);
+  const codes = [...new Set(docs.map(d => eff(d, "process_code") || ""))];
+  // apply the drafted curated changes (add/remove per value) to one document
+  const applyMulti = d => Object.entries(b.multi).forEach(([f, m]) => {
+    if (!Object.keys(m).length) return;
+    let cur = [...eff(d, f)];
+    Object.entries(m).forEach(([v, act]) => { cur = act === "add" ? (cur.includes(v) ? cur : [...cur, v]) : cur.filter(x => x !== v); });
+    setField(d, f, cur);
+  });
+  const draftSummary = () => Object.entries(b.multi).flatMap(([f, m]) => Object.entries(m).map(([v, act]) => `${fieldTitle(f)}: ${act} ${esc(v)}`));
+  ed.innerHTML = `
+    <div class="ed-head">
+      <div class="ed-head-row">
+        <span class="ed-title">${n} documents selected</span>
+        <button class="ed-close" id="ed-close" aria-label="Close editor">&times;</button>
+      </div>
+      <div class="ed-sub">Fields you don't touch stay as they are on each document.</div>
+    </div>
+    <div class="ed-body">
+      <div class="curated"><div class="curated-title">Curated information</div>
+      ${fld("doc_type", "Doc type", multiField("doc_type", DOC_TYPES), "Striped = some have it. Click to add to all, again to remove from all.")}
+      ${fld("doc_structure", "Structure", multiField("doc_structure", DOC_STRUCTURES))}
+      ${fld("doc_scope", "Scope", multiField("doc_scope", DOC_SCOPES))}
+      ${fld("language", "Language", multiField("language", LANGUAGES))}
+      </div>
+      ${actionButtons(codes.length === 1 ? codes[0] : null, docs)}
+      ${codes.length > 1 ? `<div class="fld-hint">These documents have different process codes (${Object.entries(dist).map(([k, v]) => `${k} ${v}`).join(", ")}), so there is no single next step.</div>` : ""}
+    </div>
+    <div class="ed-foot">
+      <button class="btn btn-sm btn-outline-secondary" id="b-clear">Clear selection</button>
+      <div class="right"><button class="btn btn-sm btn-primary" id="b-apply" ${anyChange ? "" : "disabled"}>Apply to ${n} documents</button></div>
+    </div>`;
+  Object.keys(b.multi).forEach(f => ed.querySelector(`[data-fld="${f}"]`).classList.toggle("changed", Object.keys(b.multi[f]).length > 0));
+
+  // the action commits the drafted curated changes too
+  ed.querySelectorAll("[data-act]").forEach(x => x.onclick = () => openAction(docs, x.dataset.act, draftSummary, () => docs.forEach(applyMulti)));
+  ed.querySelectorAll("[data-bfield] .pill").forEach(x => x.onclick = () => {
+    const m = b.multi[x.parentElement.dataset.bfield], v = x.dataset.v;
+    m[v] = m[v] === undefined ? "add" : m[v] === "add" ? "remove" : undefined;
+    if (m[v] === undefined) delete m[v];
+    renderEditor();
+  });
+  $("b-clear").onclick = () => { state.selected.clear(); selectionChanged(); };
+  $("ed-close").onclick = () => { state.selected.clear(); state.focus = null; selectionChanged(); };
+  $("b-apply").onclick = () => {
+    docs.forEach(applyMulti);
+    toast(`Changes staged on ${n} documents. Save them from the yellow bar.`);
+    state.batch = newBatchDraft();
+    render();
+  };
+}
+
+// ---------- columns modal ----------
+let draftCols = [];
+function renderColumnsList() {
+  const order = [...draftCols, ...COLUMN_DEFS.map(c => c.key).filter(k => !draftCols.includes(k))];
+  $("columns-list").innerHTML = order.map(k => {
+    const c = COLUMN_DEFS.find(x => x.key === k), on = draftCols.includes(k);
+    return `<li class="${on ? "" : "off"}">
+      <input class="check" type="checkbox" id="col-${k}" data-col="${k}" ${on ? "checked" : ""}>
+      <label for="col-${k}"><span>${esc(c.title)}</span></label>
+      <span class="moves">
+        <button class="btn btn-sm btn-link" data-up="${k}" aria-label="Move ${esc(c.title)} up">${icon("up")}</button>
+        <button class="btn btn-sm btn-link" data-down="${k}" aria-label="Move ${esc(c.title)} down">${icon("down")}</button>
+      </span></li>`;
+  }).join("");
+  document.querySelectorAll("[data-col]").forEach(cb => cb.onchange = () => {
+    const k = cb.dataset.col;
+    draftCols = cb.checked ? [...draftCols, k] : draftCols.filter(x => x !== k);
+    renderColumnsList();
+  });
+  const move = (k, dlt) => {
+    const i = draftCols.indexOf(k), j = i + dlt;
+    if (j < 0 || j >= draftCols.length) return;
+    [draftCols[i], draftCols[j]] = [draftCols[j], draftCols[i]];
+    renderColumnsList();
+  };
+  document.querySelectorAll("[data-up]").forEach(b => b.onclick = () => move(b.dataset.up, -1));
+  document.querySelectorAll("[data-down]").forEach(b => b.onclick = () => move(b.dataset.down, 1));
+}
+$("open-columns").onclick = () => { draftCols = [...state.columns]; renderColumnsList(); openModal("columns-modal"); };
+$("columns-reset").onclick = () => { draftCols = [...DEFAULT_COLUMNS]; renderColumnsList(); };
+$("columns-apply").onclick = () => { state.columns = [...draftCols]; closeModal(); render(); };
+
+// ---------- pending / save ----------
+let discardArmed = false;
+function resetDiscard() { discardArmed = false; $("pending-discard").textContent = "Discard all"; }
+$("pending-discard").onclick = () => {
+  if (!discardArmed) { discardArmed = true; $("pending-discard").textContent = `Discard changes on ${state.pending.size} document(s)?`; return; }
+  state.pending.clear(); render(); toast("Changes discarded");
+};
+const show = v => Array.isArray(v) ? (v.length ? v.join(", ") : "(none)") : typeof v === "boolean" ? (v ? "flagged" : "not flagged") : (v === "" ? "(empty)" : v);
+$("pending-review").onclick = () => {
+  $("review-body").innerHTML = [...state.pending.entries()].map(([id, p]) => {
+    const d = docById(id), fields = EDITABLE.filter(f => f in p);
+    return fields.map((f, i) => `<tr>
+      ${i === 0 ? `<td class="mono small" rowspan="${fields.length}">${esc(d.label)}</td>` : ""}
+      <td class="fname">${f}</td>
+      <td>${f === "process_code" ? `${pcBadge(d[f])} &rarr; ${pcBadge(p[f])}` : `<span class="old">${esc(show(d[f]))}</span> &rarr; ${esc(show(p[f]))}`}</td></tr>`).join("");
+  }).join("");
+  openModal("review-modal");
+};
+$("review-save").onclick = () => {
+  const n = state.pending.size;
+  state.pending.forEach((p, id) => Object.assign(docById(id), p));
+  state.pending.clear();
+  closeModal();
+  toast(`Saved ${n} document(s) (mockup, not stored)`);
+  render();
+};
+
+// ---------- prefix / paging / nav ----------
+let prefixTimer;
+$("prefix-input").oninput = e => {
+  clearTimeout(prefixTimer);
+  prefixTimer = setTimeout(() => { state.prefix = e.target.value; state.page = 0; state.selected.clear(); state.focus = null; selectionChanged(); }, 250);
+};
+$("prefix-clear").onclick = () => { $("prefix-input").value = ""; state.prefix = ""; render(); };
+$("page-size").onchange = e => { state.pageSize = +e.target.value; state.page = 0; render(); };
+$("page-prev").onclick = () => { state.page--; render(); };
+$("page-next").onclick = () => { state.page++; render(); };
+$("mock-role").onchange = e => {
+  state.role = e.target.value;
+  if (!seesAnomalies()) state.anomalyOnly = false;
+  document.querySelectorAll(".admin-only").forEach(a => a.hidden = state.role !== "admin");
+  if (!roleCodes().includes(state.pcFilter)) { state.pcFilter = roleCodes()[0]; state.page = 0; }
+  state.selected.clear(); state.focus = null; state.batch = null;
+  render();
+};
+$("nav-toggler").onclick = () => {
+  const open = $("nav-collapse").classList.toggle("open");
+  $("nav-toggler").setAttribute("aria-expanded", open);
+};
+
+// open on a realistic working state: first document in the list
+_rows = filtered();
+state.focus = _rows.length ? _rows[0].id : null;
+render();
+</script>
