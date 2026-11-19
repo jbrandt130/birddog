@@ -1,6 +1,11 @@
 import unittest
 
 from birddog.database_importer import (
+    add_page,
+    canonical_wiki_url,
+    doc_link_availability,
+    get_doc_links,
+    is_url_redlinked,
     map_old_doc_type,
     map_old_process_code,
     new_codes_from_old,
@@ -101,6 +106,105 @@ class TestNewCodesFromOld(unittest.TestCase):
 
     def test_missing_old_fields(self):
         self.assertEqual(new_codes_from_old({"url": "https://x"}), {})
+
+
+_RED = "action=edit&redlink=1"
+_WS = "https://uk.wikisource.org"
+_FILE = "https://commons.wikimedia.org/wiki/File:DACHKO_R-5899-12-45_test_(1935).pdf"
+_CASE = f"{_WS}/wiki/Архів:ДАЧкО/Р-5899/12/45"
+
+
+class _Hyperlink:
+    def __init__(self, target):
+        self.target = target
+
+
+class _Cell:
+    def __init__(self, link=None, value=None):
+        self.hyperlink = _Hyperlink(link) if link else None
+        self.value = value
+
+
+class _Sheet:
+    title = "DACHKO R-5899-12"
+
+    def __init__(self, cells):
+        self._cells = cells
+
+    def __getitem__(self, addr):
+        return self._cells.get(addr, _Cell())
+
+
+class TestCanonicalWikiUrlRedlink(unittest.TestCase):
+    def test_index_php_redlink_keeps_marker(self):
+        url = canonical_wiki_url(f"{_WS}/w/index.php?title=Архів:ДАЧкО/1/1/40&{_RED}")
+        self.assertEqual(url, f"{_WS}/wiki/Архів:ДАЧкО/1/1/40?{_RED}")
+        self.assertEqual(is_url_redlinked(url), (True, f"{_WS}/wiki/Архів:ДАЧкО/1/1/40"))
+
+    def test_index_php_without_redlink_has_no_query(self):
+        url = canonical_wiki_url(f"{_WS}/w/index.php?title=Архів:ДАЧкО/1/1/40")
+        self.assertEqual(url, f"{_WS}/wiki/Архів:ДАЧкО/1/1/40")
+
+    def test_wiki_url_is_unchanged(self):
+        url = f"{_FILE}?{_RED}"
+        self.assertEqual(canonical_wiki_url(url), url)
+
+
+class TestDocLinkAvailability(unittest.TestCase):
+    def test_redlinked_file_is_redlinked_on_a_linked_page(self):
+        self.assertEqual(doc_link_availability(f"{_FILE}?{_RED}", _CASE, "linked"), (_FILE, "redlinked"))
+
+    def test_linked_file_inherits_page_availability(self):
+        self.assertEqual(doc_link_availability(_FILE, _CASE, "linked"), (_FILE, "linked"))
+        self.assertEqual(doc_link_availability(_FILE, _CASE, "unlinked"), (_FILE, "unlinked"))
+
+    def test_linked_file_on_redlinked_page_is_linked(self):
+        self.assertEqual(doc_link_availability(_FILE, _CASE, "redlinked"), (_FILE, "linked"))
+
+    def test_self_link_of_redlinked_page_stays_redlinked(self):
+        self.assertEqual(doc_link_availability(_CASE, _CASE, "redlinked"), (_CASE, "redlinked"))
+        self.assertEqual(doc_link_availability(f"{_CASE}?{_RED}", _CASE, "redlinked"), (_CASE, "redlinked"))
+
+
+class TestGetDocLinksRedlink(unittest.TestCase):
+    def test_redlinked_file_is_not_flagged(self):
+        ws = _Sheet({"B51": _Cell(f"{_FILE}?{_RED}", "desc")})
+        with self.assertNoLogs("birddog.log", level="WARNING"):
+            message, links = get_doc_links(ws, "B51", "", _CASE)
+        self.assertEqual(message, "")
+        self.assertEqual(links, [f"{_FILE}?{_RED}"])
+
+    def test_non_document_link_is_still_flagged(self):
+        ws = _Sheet({"B9": _Cell("http://k/", "desc")})
+        with self.assertLogs("birddog.log", level="WARNING"):
+            message, links = get_doc_links(ws, "B9", "", _CASE)
+        self.assertIn("differs from the page url", message)
+
+    def test_redlinked_self_link_is_not_flagged(self):
+        ws = _Sheet({"B7": _Cell(f"{_CASE}?{_RED}", "desc")})
+        with self.assertNoLogs("birddog.log", level="WARNING"):
+            message, links = get_doc_links(ws, "B7", "", f"{_CASE}?{_RED}")
+        self.assertEqual(message, "")
+
+
+class TestAddPageRedlink(unittest.TestCase):
+    def _page(self, url, parent_url):
+        return {"title": "t", "url": url, "label": "DACHKO/1/1/40", "parent_url": parent_url}
+
+    def test_index_php_redlinked_page_is_redlinked_with_bare_parent(self):
+        table = []
+        add_page(self._page(
+            canonical_wiki_url(f"{_WS}/w/index.php?title=Архів:ДАЧкО/1/1/40&{_RED}"),
+            canonical_wiki_url(f"{_WS}/w/index.php?title=Архів:ДАЧкО/1/1&{_RED}")), table, False)
+        self.assertEqual(table[0]["availability"], "redlinked")
+        self.assertEqual(table[0]["url"], f"{_WS}/wiki/Архів:ДАЧкО/1/1/40")
+        self.assertEqual(table[0]["parent_url"], f"{_WS}/wiki/Архів:ДАЧкО/1/1")
+
+    def test_linked_page_stays_linked(self):
+        table = []
+        add_page(self._page(f"{_WS}/wiki/Архів:ДАЧкО/1/1/40", f"{_WS}/wiki/Архів:ДАЧкО/1/1"), table, False)
+        self.assertEqual(table[0]["availability"], "linked")
+        self.assertEqual(table[0]["parent_url"], f"{_WS}/wiki/Архів:ДАЧкО/1/1")
 
 
 if __name__ == "__main__":
