@@ -1326,7 +1326,9 @@ def add_fund_page_if_necessary(ws, wiki_spreadsheet, archive_title, archive_url,
 
 def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyrillic_name,
                           change_date_col, ref_date_col, page_table=None):
+    very_first_sheet = False
     if not page_table:
+        very_first_sheet = True
         page_table = []
     archive_name, _, archive_url, import_message, comments = get_url_and_parent_title(ws, wiki_spreadsheet,
                                                                             archive_latin_name, archive_cyrillic_name)
@@ -1338,7 +1340,7 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
     label = general_page_label(archive_latin_name, archive_name, wiki_spreadsheet)
     import_message, doc_links = get_cell_link_or_str(ws, "B4", import_message)
     level = "archive"
-    if opus_like_sheet(ws):
+    if not very_first_sheet and opus_like_sheet(ws):
         level = "opus"
         import_message = add_to_message(import_message, f"sheet '{ws.title}' describes an opus not an archive")
 
@@ -2243,7 +2245,7 @@ def process_dir(dir_path, actually_write=True):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/DAHEO-R-archive-20261115.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DADO-archives-20261113.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
 #    process_dir(_dir_path)
