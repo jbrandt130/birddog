@@ -434,8 +434,8 @@ def string_contains_part(link, necessary_part, strict_equality):
 def consistent_link(cell, cell_address, archive_unit_name, sheet_title, wiki_spreadsheet, import_message):
     """Checks whether the cell contents and the link coincide,
     and that the address contains the fund and opus name when relevant"""
-    slash_post = archive_unit_name.find('/')
-    necessary_part = archive_unit_name[slash_post + 1:] if slash_post != -1 else ''
+    slash_posit = archive_unit_name.find('/')
+    necessary_part = archive_unit_name[slash_posit + 1:] if slash_posit != -1 else ''
 
     contents = unquote(str(cell.value).strip())
     mess = ""  # default
@@ -565,7 +565,6 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
             return modified_import_message, cell_links
         real_doc = string_ends_with_file_ext(cell_link_replaced)
 
-    mess = ''
     if not real_doc:
         mess = (f" Link {cell_links} in cell '{cell_addr}', sheet '{ws.title}' "
                 f"differs from the page url {archive_unit_link}")
@@ -2244,7 +2243,7 @@ def process_dir(dir_path, actually_write=True):
 #testing
 if __name__ == "__main__":
 #    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/DAKO-R-wiki-20261015.xlsx"
-#    import_spreadsheet(filepath, True)
-    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
-    process_dir(_dir_path)
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/DAHEO-R-archive-20261115.xlsx"
+    import_spreadsheet(filepath, True)
+#    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
+#    process_dir(_dir_path)
