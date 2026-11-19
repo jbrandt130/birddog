@@ -1069,6 +1069,7 @@ class DatabaseUpdater:
         child_link_updates = {}
         parent_link_updates = {}
         title_set = set()
+        red_child_titles = set()
         doc_urls = set()
         doc_link_updates = {}
 
@@ -1105,11 +1106,18 @@ class DatabaseUpdater:
 
             child_links = page_links.get("children") or []
             for child in child_links:
+                child_title = _normalize_title(child["title"])
                 if child.get("exists"):
-                    child_title = _normalize_title(child["title"])
                     title_set.add(child_title)
                     linked_page_updates.append(_form_simple_page_record(child_title))
-                    _add_child_link(title, child_title)
+                else:
+                    # a red link: the child page does not exist on the wiki yet.
+                    # Keep it in the parent's children so the replace below does
+                    # not detach a record the importer made for it (with its
+                    # spreadsheet description, years, comments); no placeholder
+                    # record is created, so it is linked only if one exists.
+                    red_child_titles.add(child_title)
+                _add_child_link(title, child_title)
 
             for link in page_links.get("internal_links", []):
                 if link.get("doc_type"):
@@ -1134,8 +1142,9 @@ class DatabaseUpdater:
         requested_page_urls = {record["url"] for record in page_records}
         linked_page_urls = {page_url_from_title(rec["title"]) for rec in linked_page_updates}
         missing_page_urls = {normalize_url(page_url_from_title(t)) for t in missing_titles}
-        all_page_titles = title_set | {record["title"] for record in page_records}
-        all_page_urls = requested_page_urls | linked_page_urls | missing_page_urls
+        red_child_urls = {page_url_from_title(t) for t in red_child_titles}
+        all_page_titles = title_set | red_child_titles | {record["title"] for record in page_records}
+        all_page_urls = requested_page_urls | linked_page_urls | missing_page_urls | red_child_urls
 
         _logger.info(f"Updater {tid}: looking up page ids {len(all_page_urls)}")
         page_id_by_url = self._db.lookup("Pages", all_page_urls)

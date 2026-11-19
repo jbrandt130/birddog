@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from birddog.abstract_database import InvalidRecordId
 from birddog.task import TaskManager
-from birddog.wiki import db_excluded
+from birddog.wiki import db_excluded, page_url_from_title
 from birddog.database_updater import (
     DatabaseUpdater,
     DatabaseUpdateManager,
@@ -29,6 +29,7 @@ from birddog.database_updater import (
     _sniff_suffix,
     _source_from_url,
     _verify_page_link_existence,
+    _form_simple_page_record,
     form_document_record,
     get_child_titles,
     normalize_url,
@@ -1599,6 +1600,52 @@ class TestUpdatePageRecordsDbExcluded(unittest.TestCase):
         self.updater.update_page_records(
             ["Архів:Єврейське_містечко/Київська_губернія", "Архів:ДАКО/1/325"])
         self.assertEqual(self.requested, ["Архів:ДАКО/1/325"])
+
+
+class TestUpdatePageRecordsRedlinkedChildren(unittest.TestCase):
+    """A parent page's red-linked children (no wiki page yet) stay linked to it
+    when a record exists for them, e.g. one the spreadsheet importer made."""
+
+    PARENT = "Архів:ДАЧкО/Р"
+    LIVE = "Архів:ДАЧкО/Р-53"
+    RED = "Архів:ДАЧкО/Р-106"
+    RED_NO_RECORD = "Архів:ДАЧкО/Р-999"
+    GONE = "Архів:ДАЧкО/Р-7"
+
+    def setUp(self):
+        self.db = FakeDB()
+        ids = {self.PARENT: "p", self.LIVE: "c_live", self.RED: "c_red", self.GONE: "c_gone"}
+        self.db.lookup_map["Pages"] = {page_url_from_title(_normalize_title(t)): i for t, i in ids.items()}
+        self.db.records["Pages"] = {
+            i: {"Id": i, **_form_simple_page_record(t)} for t, i in ids.items()}
+        self.db.links[("Pages", "children", "p")] = {"c_live", "c_red", "c_gone"}
+        self.updater = make_updater(self.db)
+        info = {
+            "title": _normalize_title(self.PARENT),
+            "record": _form_simple_page_record(self.PARENT),
+            "links": {
+                "parent": None,
+                "children": [
+                    {"title": self.LIVE, "exists": True},
+                    {"title": self.RED, "exists": False},
+                    {"title": self.RED_NO_RECORD, "exists": False},
+                ],
+                "internal_links": [], "commons_links": [], "interwiki_links": [],
+                "external_links": [],
+            },
+        }
+        self.updater._get_page_info = lambda titles: ([info], [])
+
+    def test_redlinked_child_with_record_stays_linked(self):
+        self.updater.update_page_records([self.PARENT], update_doc_metadata=False)
+        self.assertEqual(self.db.links[("Pages", "children", "p")], {"c_live", "c_red"})
+
+    def test_redlinked_child_without_record_is_not_created(self):
+        self.updater.update_page_records([self.PARENT], update_doc_metadata=False)
+        written = [rec.get("title") for _, recs in self.db.write_calls for rec in
+                   (recs if isinstance(recs, list) else [recs])]
+        self.assertNotIn(_normalize_title(self.RED_NO_RECORD), written)
+        self.assertNotIn(_normalize_title(self.RED), written)
 
 
 class TestDbExcluded(unittest.TestCase):
