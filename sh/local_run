@@ -1,9 +1,32 @@
 #!/bin/bash
+# Usage: sh/local_run [--no-debug]
+#   --no-debug  run Flask without debug mode / auto-reloader, so local code
+#               changes don't trigger a restart
 export BIRDDOG_USE_LOCAL_CACHE=True
 export BIRDDOG_NOCODB_ENV=LOCAL
 PORT=2003
 
-echo "!!! STARTING BIRDDOG IN DEBUG MODE !!!"
+DEBUG_ARGS=(--debug)
+for arg in "$@"; do
+    case "$arg" in
+        --no-debug) DEBUG_ARGS=() ;;
+        -h|--help)
+            echo "Usage: $0 [--no-debug]"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg" >&2
+            echo "Usage: $0 [--no-debug]" >&2
+            exit 1
+            ;;
+    esac
+done
+
+if [ ${#DEBUG_ARGS[@]} -gt 0 ]; then
+    echo "!!! STARTING BIRDDOG IN DEBUG MODE !!!"
+else
+    echo "Starting birddog without debug mode (no auto-reload)"
+fi
 echo "Starting Flask service on port $PORT..."
 (sleep 5; open "http://127.0.0.1:$PORT") &
-python3 -m birddog.service --port "$PORT" --debug
+python3 -m birddog.service --port "$PORT" "${DEBUG_ARGS[@]}"
