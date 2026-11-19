@@ -168,6 +168,26 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .editor { position: sticky; top: calc(var(--nav-h) + 12px + env(safe-area-inset-top, 0px)); max-height: calc(100vh - var(--nav-h) - 24px); display: flex; flex-direction: column; }
 .ed-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 4px; }
 .ed-head-row { display: flex; align-items: center; gap: 8px; }
+.ed-thumb { flex: none; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: #f1f3f5; cursor: zoom-in; width: 60px; height: 84px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.ed-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.ed-thumb:hover { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.ed-thumb.failed { display: none; }
+/* page inspector: full-window overlay, one page at a time, never larger than the screen */
+.insp { position: fixed; inset: 0; z-index: 300; background: rgba(20,22,25,.92); display: flex; flex-direction: column; color: #f8f9fa; }
+.insp[hidden] { display: none !important; }
+.insp-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 64px 10px 16px; min-height: 52px; }
+.insp-title { font-family: var(--font-mono); font-size: .9rem; }
+.insp-nav { display: flex; align-items: center; gap: 6px; font-size: .9rem; margin: 0 auto; }
+.insp-nav input { width: 4.5em; text-align: center; padding: 3px 4px; border-radius: 5px; border: 1px solid #6c757d; background: #212529; color: #fff; font: inherit; }
+.insp-btn { background: #343a40; color: #fff; border: 1px solid #495057; border-radius: 5px; padding: 3px 10px; cursor: pointer; display: inline-flex; align-items: center; }
+.insp-btn:hover:not(:disabled) { background: #495057; }
+.insp-btn:disabled { opacity: .4; cursor: default; }
+.insp a { color: #9ec5fe; font-size: .85rem; }
+.insp-close { position: absolute; top: 8px; right: 12px; width: 40px; height: 40px; border: 0; background: none; color: #fff; font-size: 2rem; line-height: 1; cursor: pointer; border-radius: 50%; }
+.insp-close:hover { background: rgba(255,255,255,.12); }
+.insp-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 16px 16px; position: relative; }
+.insp-stage img { max-width: 100%; max-height: 100%; object-fit: contain; background: #fff; box-shadow: 0 6px 30px rgba(0,0,0,.5); }
+.insp-msg { position: absolute; font-size: .9rem; background: rgba(0,0,0,.6); padding: 6px 12px; border-radius: 6px; }
 .ed-title { font-weight: 600; font-size: 1.02rem; min-width: 0; overflow-wrap: anywhere; }
 .ed-close { margin-left: auto; background: none; border: 0; font-size: 1.4rem; line-height: 1; cursor: pointer; color: var(--muted); display: none; }
 .ed-sub { font-size: .82rem; color: var(--muted); overflow-wrap: anywhere; }
@@ -299,15 +319,15 @@ textarea.field { resize: vertical; }
     <div class="query-row">
       <div class="input-group">
         <span class="ig-text"><svg class="icon"><use href="#i-folder"/></svg> Label prefix</span>
-        <input type="text" class="ig-input" id="prefix-input" value="DAHMO/5/1/" list="prefix-suggestions" placeholder="DAHMO/5/1/" autocomplete="off" aria-label="Label prefix">
+        <input type="text" class="ig-input" id="prefix-input" value="DAHMO/5/1" list="prefix-suggestions" placeholder="DAHMO/5/1" autocomplete="off" aria-label="Label prefix">
         <button class="btn btn-outline-secondary" id="prefix-clear" title="Clear prefix"><svg class="icon"><use href="#i-x"/></svg></button>
       </div>
       <datalist id="prefix-suggestions">
-        <option value="DAHMO/"></option>
-        <option value="DAHMO/5/"></option>
-        <option value="DAHMO/5/1/"></option>
-        <option value="DAHMO/5/2/"></option>
-        <option value="DAHMO/12/1/"></option>
+        <option value="DAHMO"></option>
+        <option value="DAHMO/5"></option>
+        <option value="DAHMO/5/1"></option>
+        <option value="DAHMO/5/2"></option>
+        <option value="DAHMO/12/1"></option>
       </datalist>
       <button class="btn btn-outline-primary" id="open-columns"><svg class="icon"><use href="#i-cols"/></svg> Columns</button>
       <div class="result-summary" id="result-summary"></div>
@@ -401,6 +421,19 @@ textarea.field { resize: vertical; }
 </div>
 
 <div class="toast" id="toast" role="status" hidden></div>
+<div class="insp" id="insp" role="dialog" aria-modal="true" aria-label="Page viewer" hidden>
+  <div class="insp-bar">
+    <span class="insp-title" id="insp-title"></span>
+    <div class="insp-nav">
+      <button class="insp-btn" id="insp-prev" aria-label="Previous page"><svg class="icon"><use href="#i-left"/></svg></button>
+      Page <input type="number" id="insp-page" min="1" aria-label="Page number"> of <span id="insp-count"></span>
+      <button class="insp-btn" id="insp-next" aria-label="Next page"><svg class="icon"><use href="#i-right"/></svg></button>
+    </div>
+    <a id="insp-open" target="_blank" rel="noopener">Open on Commons</a>
+  </div>
+  <button class="insp-close" id="insp-close" aria-label="Close page viewer">&times;</button>
+  <div class="insp-stage"><img id="insp-img" alt=""><div class="insp-msg" id="insp-msg" hidden></div></div>
+</div>
 
 <script>
 // ---------- schema (from utility/specs/documents_*.json) ----------
@@ -508,14 +541,30 @@ const DOCS = [];
         comments: r() < 0.15 ? pick(["Pages 40-52 are illegible", "Rescan requested from the archive", "Mostly Polish nobility, few Jewish names"]) : "",
         created_at, updated_at,
         last_updated: updated_at && updated_at > created_at ? updated_at : created_at,   // max(CreatedAt, UpdatedAt)
+        seq_label: seqLabel(label),
       });
     }
   }
 });
 
+// one real Commons document, so the thumbnail and page viewer show actual pages.
+// In birddog the thumbnail path comes from the file name: thumb/<md5[0]>/<md5[0:2]>/<name>/page<N>-<W>px-<name>.jpg
+const REAL_FILE = "\u0414\u0410\u0425\u043c\u041e_5-1-4_\u0412\u0438\u0445\u0456\u0434\u043d\u0438\u0439_\u0440\u0435\u0454\u0441\u0442\u0440_\u043c\u0438\u0440\u043e\u0432\u043e\u0433\u043e_\u0441\u0443\u0434\u0434\u0456_1_\u0434\u0456\u043b\u044f\u043d\u043a\u0438_\u041a\u0430\u043c'\u044f\u043d\u0435\u0446\u044c-\u041f\u043e\u0434\u0456\u043b\u044c\u0441\u044c\u043a\u043e\u0433\u043e_\u043e\u043a\u0440\u0443\u0433\u0443_(1903).pdf";
+(() => {
+  const d = DOCS.find(x => x.label === "DAHMO/5/1/4");
+  if (!d) return;
+  Object.assign(d, {
+    url: "https://commons.wikimedia.org/wiki/File:" + encodeURIComponent(REAL_FILE),
+    native_description: "\u0412\u0438\u0445\u0456\u0434\u043d\u0438\u0439 \u0440\u0435\u0454\u0441\u0442\u0440 \u043c\u0438\u0440\u043e\u0432\u043e\u0433\u043e \u0441\u0443\u0434\u0434\u0456 1 \u0434\u0456\u043b\u044f\u043d\u043a\u0438 \u041a\u0430\u043c'\u044f\u043d\u0435\u0446\u044c-\u041f\u043e\u0434\u0456\u043b\u044c\u0441\u044c\u043a\u043e\u0433\u043e \u043e\u043a\u0440\u0443\u0433\u0443 (1903)",
+    description: "Outgoing register of the justice of the peace, 1st district, Kamianets-Podilskyi okrug (1903)",
+    years: "1903", page_count: 478, byte_size: 204112345,
+    commons: {file: REAL_FILE, hash: "e/ea"},
+  });
+})();
+
 // ---------- state ----------
 const state = {
-  prefix: "DAHMO/5/1/",
+  prefix: "DAHMO/5/1",
   pcFilter: "new",
   anomalyOnly: false,
   role: "admin",   // checker | review | escalate | admin (each includes the ones before it)   // unchecked = any
@@ -570,9 +619,15 @@ $("backdrop").addEventListener("mousedown", e => { if (e.target === $("backdrop"
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("backdrop").hidden) closeModal(); });
 
 // ---------- filtering ----------
-// a leading slash typed by habit is ignored
-function normPrefix() { return state.prefix.trim().replace(/^\/+/, ""); }
-function inPrefix(d) { return d.label.startsWith(normPrefix()); }
+// the prefix is a path: whole "/"-separated fragments, so DAHMO/5/1 is opus 1 only (not 10, 11, 101).
+// Leading/trailing slashes are ignored. Same rule as wiki._title_prefix_match.
+function normPrefix() { return state.prefix.trim().replace(/^\/+|\/+$/g, ""); }
+function inPrefix(d) { const p = normPrefix(); return !p || d.label === p || d.label.startsWith(p + "/"); }
+// mirrors wiki.sequential_page_label: digit runs zero-padded to 8 so labels sort in natural order
+function seqLabel(label) {
+  return (label || "").split("/").map(part => (part.match(/\d+|\D+/g) || [])
+    .map(f => /^\d/.test(f) ? String(parseInt(f, 10)).padStart(8, "0") : f).join("")).join("/");
+}
 function inPc(d) { return (eff(d, "process_code") || "(blank)") === state.pcFilter; }
 // anomalies are admin business: other roles never see flagged documents
 function inAnomaly(d) {
@@ -582,8 +637,10 @@ function inAnomaly(d) {
 function filtered() {
   return DOCS.filter(d => inPrefix(d) && inPc(d) && inAnomaly(d))
     .sort((a, b) => {
-      const k = state.sort.key;
-      const val = d => { const v = eff(d, k); return Array.isArray(v) ? v.join(", ") : v; };
+      // the label column sorts on seq_label, as stored on each Documents row
+      const k = state.sort.key === "label" ? "seq_label" : state.sort.key;
+      const val = d => { const v = k === "seq_label" ? d.seq_label : eff(d, k); return Array.isArray(v) ? v.join(", ") : v; };
+      if (k === "seq_label") return state.sort.dir * (val(a) < val(b) ? -1 : val(a) > val(b) ? 1 : 0);
       const va = val(a), vb = val(b);
       return state.sort.dir * (typeof va === "number" && typeof vb === "number" ? va - vb : naturalCmp(va, vb));
     });
@@ -742,15 +799,16 @@ const ROLE_CODES = {
 function roleCodes() { return ROLE_CODES[state.role] || PC_FILTER_CODES; }
 function seesAnomalies() { return state.role === "escalate" || state.role === "admin"; }
 const REOPEN_FROM = ["defer", "reject"];   // these can be sent back to check
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
 function actionButtons(code, docs) {
   const nx = code === null ? null : NEXT_CODE[code || ""];
   const flagged = docs.filter(d => eff(d, "anomaly")).length;
   return `<div class="actions">
-    ${nx ? `<button class="btn btn-next" data-act="${nx}" title="${esc(PC_BY[nx].d)}">${nx} ${icon("right")}</button>` : ""}
-    ${REOPEN_FROM.includes(code) ? `<button class="btn btn-act" data-act="check" title="Send back to check">${icon("left")} back to check</button>` : ""}
-    ${END_ACTIONS.filter(a => a !== code).map(a => `<button class="btn btn-act ${a}" data-act="${a}" title="${esc(PC_BY[a].d)}">${a}</button>`).join("")}
-    ${flagged < docs.length ? `<button class="btn btn-act anomaly" data-act="anomaly" title="Flag as an anomaly and say why">${icon("warn")} anomaly</button>` : ""}
-    ${flagged ? `<button class="btn btn-act" data-act="clear_anomaly" title="Clear the anomaly flag and anomaly comment">clear anomaly${docs.length > 1 ? ` (${flagged})` : ""}</button>` : ""}
+    ${nx ? `<button class="btn btn-next" data-act="${nx}" title="${esc(PC_BY[nx].d)}">${cap(nx)}</button>` : ""}
+    ${REOPEN_FROM.includes(code) ? `<button class="btn btn-act" data-act="check" title="Send back to check">${icon("left")} Back to check</button>` : ""}
+    ${END_ACTIONS.filter(a => a !== code).map(a => `<button class="btn btn-act ${a}" data-act="${a}" title="${esc(PC_BY[a].d)}">${cap(a)}</button>`).join("")}
+    ${flagged < docs.length ? `<button class="btn btn-act anomaly" data-act="anomaly" title="Flag as an anomaly and say why">${icon("warn")} Flag anomaly</button>` : ""}
+    ${flagged ? `<button class="btn btn-act" data-act="clear_anomaly" title="Clear the anomaly flag and anomaly comment">Clear anomaly${docs.length > 1 ? ` (${flagged})` : ""}</button>` : ""}
   </div>`;
 }
 // commit a document: its pending curated edits plus the action's fields are saved together
@@ -832,6 +890,66 @@ function pendingCurated(d) {
     .map(f => `${fieldTitle(f)}: ${esc(show(p[f]))}`);
 }
 
+// ---------- page thumbnail + inspector (Commons files only, single selection) ----------
+// standard Wikimedia thumbnail widths; other sizes are rate limited
+const THUMB_WIDTHS = [120, 250, 330, 500, 960, 1280, 1920];
+function pageThumb(d, page, width) {
+  if (!d.commons) return null;   // mockup: only DAHMO/5/1/4 is real; birddog would do this for every commons File: url
+  const n = encodeURIComponent(d.commons.file);
+  return `https://upload.wikimedia.org/wikipedia/commons/thumb/${d.commons.hash}/${n}/page${page}-${width}px-${n}.jpg`;
+}
+// mockup only: where Wikimedia images are blocked (the claude.ai artifact page), fall back to copies bundled alongside
+const BUNDLED_PAGES = 12;
+function bundledPage(page) { return page === 0 ? "pages/thumb.jpg" : page <= BUNDLED_PAGES ? `pages/page${page}.jpg` : null; }
+const insp = {doc: null, page: 1, aspect: 0.7};
+function inspWidth() {
+  const st = document.querySelector(".insp-stage");
+  const w = st.clientWidth - 32, h = st.clientHeight - 16;
+  const need = Math.min(w, h * insp.aspect) * (window.devicePixelRatio || 1);
+  return THUMB_WIDTHS.find(x => x >= need) || THUMB_WIDTHS[THUMB_WIDTHS.length - 1];
+}
+function inspShow() {
+  const d = insp.doc, n = d.page_count || 1, p = insp.page;
+  $("insp-title").textContent = d.label;
+  $("insp-count").textContent = n;
+  $("insp-page").max = n; $("insp-page").value = p;
+  $("insp-prev").disabled = p <= 1; $("insp-next").disabled = p >= n;
+  $("insp-open").href = d.url + (p > 1 ? `?page=${p}` : "");
+  const img = $("insp-img"), w = inspWidth();
+  $("insp-msg").hidden = false; $("insp-msg").textContent = `Loading page ${p}...`;
+  img.style.opacity = .35;
+  img.onload = () => {
+    if (img.naturalWidth) insp.aspect = img.naturalWidth / img.naturalHeight;
+    img.style.opacity = 1; $("insp-msg").hidden = true;
+  };
+  img.onerror = () => {
+    const local = bundledPage(p);
+    if (local && !img.src.endsWith(local)) { img.src = local; return; }
+    img.style.opacity = 0;
+    $("insp-msg").textContent = insp.usedLocal
+      ? `This preview only bundles pages 1-${BUNDLED_PAGES}; the real tab loads every page from Wikimedia.`
+      : "Couldn't load this page from Wikimedia.";
+  };
+  const was = img.onload;
+  img.onload = () => { if (img.src.includes("pages/")) insp.usedLocal = true; was(); };
+  img.alt = `${d.label}, page ${p}`;
+  img.src = pageThumb(d, p, w);
+  if (p < n) new Image().src = pageThumb(d, p + 1, w);   // warm the next page
+}
+function openInspector(d, page = 1) { insp.doc = d; insp.page = page; $("insp").hidden = false; inspShow(); $("insp-close").focus(); }
+function closeInspector() { $("insp").hidden = true; $("insp-img").removeAttribute("src"); insp.doc = null; }
+function inspGo(p) { if (!insp.doc) return; insp.page = Math.min(Math.max(1, p), insp.doc.page_count || 1); inspShow(); }
+$("insp-close").onclick = closeInspector;
+$("insp-prev").onclick = () => inspGo(insp.page - 1);
+$("insp-next").onclick = () => inspGo(insp.page + 1);
+$("insp-page").onchange = e => inspGo(parseInt(e.target.value, 10) || 1);
+document.addEventListener("keydown", e => {
+  if ($("insp").hidden) return;
+  if (e.key === "Escape") { closeInspector(); e.stopImmediatePropagation(); }
+  else if (e.target.id !== "insp-page" && (e.key === "ArrowRight" || e.key === "PageDown")) { inspGo(insp.page + 1); e.preventDefault(); }
+  else if (e.target.id !== "insp-page" && (e.key === "ArrowLeft" || e.key === "PageUp")) { inspGo(insp.page - 1); e.preventDefault(); }
+}, true);
+
 function renderEditor() {
   const ed = $("editor");
   const n = state.selected.size;
@@ -848,6 +966,7 @@ function renderEditor() {
   ed.innerHTML = `
     <div class="ed-head">
       <div class="ed-head-row">
+        ${pageThumb(d, 1, 120) ? `<button class="ed-thumb" id="ed-thumb" title="View pages" aria-label="View pages of ${esc(d.label)}"><img src="${pageThumb(d, 1, 120)}" alt=""></button>` : ""}
         <a class="label-link ed-title" href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.label)} ${icon("ext")}</a>
         <button class="ed-close" id="ed-close" aria-label="Close editor">&times;</button>
       </div>
@@ -882,6 +1001,12 @@ function renderEditor() {
   // every edit goes straight into the pending changes; Save happens from the bar
   const after = () => { markChanged(d); renderGrid(); renderBars(); renderPcFilter(); renderAnomalyFilter(); $("ed-revert").disabled = !state.pending.has(d.id); };
   ed.querySelectorAll("[data-act]").forEach(b => b.onclick = () => openAction([d], b.dataset.act, () => pendingCurated(d)));
+  const th = $("ed-thumb");
+  if (th) {
+    th.onclick = () => openInspector(d);
+    const ti = th.querySelector("img");
+    ti.onerror = () => { if (!ti.src.endsWith(bundledPage(0))) ti.src = bundledPage(0); else th.classList.add("failed"); };
+  }
   ed.querySelectorAll(".pills[data-field] .pill").forEach(b => b.onclick = () => {
     const f = b.parentElement.dataset.field, v = b.dataset.v, cur = eff(d, f);
     setField(d, f, cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v]);
