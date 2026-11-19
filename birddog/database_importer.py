@@ -637,7 +637,12 @@ def check_redlink(page: dict) -> dict:
         availability = "redlinked"
         page["url"] = url
 
-    if availability != "unlinked" and not page.get("process_code") and page.get("comment") == "unlinked":
+    # a row the team marked "unlinked" in the comments column (and gave no
+    # process code) is deliberately left without a page. The page dicts carry
+    # these as "comments" and "OLD_process_code"; this used to read "comment"
+    # and "process_code", which are never set, so the rule never applied.
+    comments = (page.get("comments") or "").strip().lower()
+    if availability != "unlinked" and not page.get("OLD_process_code") and comments == "unlinked":
         _logger.info(f"Availability changed from {availability} to 'unlinked' for {page.get("title", "")}")
         availability = "unlinked"
 

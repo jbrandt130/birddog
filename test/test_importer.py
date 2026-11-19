@@ -3,6 +3,7 @@ import unittest
 from birddog.database_importer import (
     add_page,
     canonical_wiki_url,
+    check_redlink,
     doc_link_availability,
     get_doc_links,
     is_url_redlinked,
@@ -205,6 +206,29 @@ class TestAddPageRedlink(unittest.TestCase):
         add_page(self._page(f"{_WS}/wiki/Архів:ДАЧкО/1/1/40", f"{_WS}/wiki/Архів:ДАЧкО/1/1"), table, False)
         self.assertEqual(table[0]["availability"], "linked")
         self.assertEqual(table[0]["parent_url"], f"{_WS}/wiki/Архів:ДАЧкО/1/1")
+
+
+class TestCheckRedlinkUnlinkedComment(unittest.TestCase):
+    """A row commented "unlinked" with no process code is deliberately pageless."""
+
+    def _page(self, comments, process_code=None, url=f"{_CASE}?{_RED}"):
+        return {"title": "t", "url": url, "comments": comments, "OLD_process_code": process_code}
+
+    def test_unlinked_comment_overrides_redlink(self):
+        page = check_redlink(self._page("unlinked"))
+        self.assertEqual(page["availability"], "unlinked")
+        self.assertEqual(page["url"], _CASE)
+
+    def test_unlinked_comment_is_case_and_space_insensitive(self):
+        self.assertEqual(check_redlink(self._page(" Unlinked "))["availability"], "unlinked")
+
+    def test_process_code_keeps_redlinked(self):
+        self.assertEqual(check_redlink(self._page("unlinked", "S"))["availability"], "redlinked")
+
+    def test_other_comments_keep_redlinked(self):
+        page = check_redlink(self._page("unlinked - unnecessary description file"))
+        self.assertEqual(page["availability"], "redlinked")
+        self.assertEqual(check_redlink(self._page(None))["availability"], "redlinked")
 
 
 if __name__ == "__main__":
