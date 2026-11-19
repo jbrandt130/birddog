@@ -40,6 +40,7 @@ class _FakePageLRU:
 class _FakeRuntimeForHeartbeat:
     def __init__(self):
         self.database_update_enabled = False  # skip the DB-sync block entirely
+        self.database_auto_update_enabled = False
         self.page_lru = _FakePageLRU()
 
     def trim_logs(self):

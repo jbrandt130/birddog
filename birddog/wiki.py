@@ -506,8 +506,8 @@ _ARCHIVE_LABEL_ORDER = [
     "Revizki_kazky_Kyyivskoyi_huberniyi",
     "Revizki_kazky_Podilskoyi_huberniyi",
     "Revizki_kazky_Volynskoyi_huberniyi",
-    "Spysok_dokumentiv_Tarashchanskoho_mahistratu", "TOWNS", "TSDAVO",
-    "TSDAZU", "TSDIAL", "TsDAZU",
+    "Spysok_dokumentiv_Tarashchanskoho_mahistratu", "TSDAVO",
+    "TSDAZU", "TSDIAL",
 ]
 
 # cross-cutting index / finding-aid archives: these collect references to
@@ -515,7 +515,6 @@ _ARCHIVE_LABEL_ORDER = [
 # archive, so they should always lose a Document-label tiebreak to that other
 # archive rather than being picked just because of link order.
 _AGGREGATOR_ARCHIVE_LABELS = {
-    "TOWNS",
     "Heo",
     "Inventarium",
     "Inventarium-2",
@@ -570,6 +569,21 @@ def _title_prefix_match(title, prefix):
     if prefix.endswith(":"):
         return title.startswith(prefix)
     return title == prefix or title.startswith(prefix + "/")
+
+# Root titles whose page trees are never written to the database (Pages /
+# Documents). They can still be browsed and watched like any other page.
+# The Jewish town project root (formerly labeled TOWNS) is a cross-archive
+# index (by province/town) whose Commons files are nearly all also linked
+# from their real archive's case pages, so importing it only duplicated those
+# Documents under a made-up archive label.
+_DB_EXCLUDED_ROOTS = frozenset({
+    "Архів:Єврейське_містечко",
+})
+
+def db_excluded(title):
+    """True if title is, or sits under, a root excluded from the database."""
+    title = canonicalize_title(title)
+    return any(_title_prefix_match(title, root) for root in _DB_EXCLUDED_ROOTS)
 
 def title_in_scope(title, include, exclude=None):
     title = canonicalize_title(title)

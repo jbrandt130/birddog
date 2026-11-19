@@ -14,6 +14,7 @@ from birddog.wiki import (
     canonicalize_title,
     lookup_namespace_id,
     register_archive_root,
+    remove_archive_root,
     )
 from birddog.database_updater import normalize_url
 from birddog.store import KeyValueStore
@@ -81,19 +82,28 @@ class PageTracker:
             k: json.loads(v)
             for k, v in self._kv.get_all(_TRACKER_KV_NS_TRACKER)
         }
-        self._discover_archive_roots(self._page_dict.keys())
+        self._discover_archive_roots(self._page_dict)
 
-    def _discover_archive_roots(self, titles):
-        # a root archive is any title with no further "/" path segments;
-        # register_archive_root() no-ops on anything else and is a cheap
-        # cache-hit for titles already known, so this is safe to call freely.
-        # This is a best-effort side effect (labeling), never allowed to
-        # break the tracker's actual job of tracking page updates.
-        for title in titles:
+    # a title whose latest tracked change is one of these no longer exists
+    # under that name, so it must not be (or stay) registered as a root
+    _GONE_ACTIONS = frozenset({"delete", "move"})
+
+    def _discover_archive_roots(self, items):
+        # items: {title: tracker item}. A root archive is any title with no
+        # further "/" path segments; register_archive_root() no-ops on
+        # anything else and is a cheap cache-hit for titles already known, so
+        # this is safe to call freely. A deleted or moved-away title drops any
+        # registration it has instead (e.g. a page created by mistake and then
+        # deleted). This is a best-effort side effect (labeling), never allowed
+        # to break the tracker's actual job of tracking page updates.
+        for title, item in items.items():
             try:
-                register_archive_root(title)
+                if (item or {}).get("action") in self._GONE_ACTIONS:
+                    remove_archive_root(title)
+                else:
+                    register_archive_root(title)
             except Exception:
-                _logger.exception(f"PageTracker: failed to register archive root for {title!r}")
+                _logger.exception(f"PageTracker: failed to update archive root registration for {title!r}")
 
     def reset(self, all_titles=None):
         if not all_titles:
@@ -124,7 +134,7 @@ class PageTracker:
             for title, item in newer_updates.items():
                 self._kv.insert(_TRACKER_KV_NS_TRACKER, title, json.dumps(item))
                 self._page_dict[title] = item
-            self._discover_archive_roots(newer_updates.keys())
+            self._discover_archive_roots(newer_updates)
         return newer_updates
 
     def initialize_batch_of_unknowns(self, batch_size=50, api_delay=.1):
@@ -481,6 +491,11 @@ class WikiDocTracker(HeartbeatManager):
     def heartbeat(self):
         if not self._db or not self._runtime.database_update_enabled:
             _logger.warning(f"WikiDocTracker ({self._base_url}): database unavailable - skipping heartbeat processing")
+            return
+        if not self._runtime.database_auto_update_enabled:
+            # watermark is left where it is, so changes made meanwhile are
+            # picked up once automatic updates are switched back on
+            _logger.info(f"WikiDocTracker ({self._base_url}): automatic database updates disabled - skipping heartbeat")
             return
 
         # doc_map is shared with the other site's tracker; only proceed with

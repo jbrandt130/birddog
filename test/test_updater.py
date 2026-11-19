@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from birddog.abstract_database import InvalidRecordId
 from birddog.task import TaskManager
+from birddog.wiki import db_excluded
 from birddog.database_updater import (
     DatabaseUpdater,
     DatabaseUpdateManager,
@@ -930,7 +931,7 @@ class TestSelectOwningPage(unittest.TestCase):
     describes the same page instead of being reduced independently per field.
 
     Precedence: archive priority (a "primary" archive beats a cross-cutting
-    aggregator like TOWNS) -> deepest/most specific label within that archive
+    aggregator like Inventarium) -> deepest/most specific label within that archive
     -> numerically-aware ("631/2" before "631/10") ordering among remaining ties.
     """
 
@@ -950,16 +951,16 @@ class TestSelectOwningPage(unittest.TestCase):
 
     def test_prefers_primary_archive_over_aggregator(self):
         page_map = {
-            "p_towns": {
-                "label": "TOWNS/Kyyivska_huberniya", "root_label": "TOWNS",
-                "seq_label": "TOWNS/Kyyivska_huberniya",
+            "p_inventarium": {
+                "label": "Inventarium/Kyyivska_huberniya", "root_label": "Inventarium",
+                "seq_label": "Inventarium/Kyyivska_huberniya",
             },
             "p_dako": {
                 "label": "DAKO/1/325", "root_label": "DAKO",
                 "seq_label": "DAKO/00000001/00000325",
             },
         }
-        result = self.updater._select_owning_page(["p_towns", "p_dako"], page_map)
+        result = self.updater._select_owning_page(["p_inventarium", "p_dako"], page_map)
         self.assertEqual(result, page_map["p_dako"])
 
     def test_prefers_deeper_label_within_same_archive(self):
@@ -1565,6 +1566,50 @@ class TestBatchSplitting(unittest.TestCase):
         (name, kind, desc, total, batches, *_), kw = self.recorded[0]
         self.assertEqual(batches[0]["titles"], [_normalize_title("архів:дажо/д ")])
         self.assertTrue(batches[0]["deep"])
+
+    def test_start_update_drops_db_excluded_titles(self):
+        self.manager.start_update(
+            ["Архів:Єврейське_містечко/Подільська_губернія", "Архів:ДАХмО/227"], deep=True)
+        (name, kind, desc, total, batches, *_), kw = self.recorded[0]
+        self.assertEqual(total, 1)
+        self.assertEqual(batches[0]["titles"], [_normalize_title("Архів:ДАХмО/227")])
+
+    def test_start_update_all_db_excluded_queues_nothing(self):
+        self.assertIsNone(self.manager.start_update(["Архів:Єврейське_містечко"], deep=True))
+        self.assertEqual(self.recorded, [])
+
+
+class TestUpdatePageRecordsDbExcluded(unittest.TestCase):
+    def setUp(self):
+        self.updater = make_updater()
+        self.requested = []
+
+        def fake_get_page_info(titles):
+            self.requested.extend(titles)
+            return [], []
+        self.updater._get_page_info = fake_get_page_info
+
+    def test_all_excluded_returns_false_without_fetching(self):
+        result = self.updater.update_page_records(
+            ["Архів:Єврейське_містечко", "Архів:Єврейське_містечко/Київська_губернія"])
+        self.assertFalse(result)
+        self.assertEqual(self.requested, [])
+
+    def test_excluded_titles_filtered_from_mixed_batch(self):
+        self.updater.update_page_records(
+            ["Архів:Єврейське_містечко/Київська_губернія", "Архів:ДАКО/1/325"])
+        self.assertEqual(self.requested, ["Архів:ДАКО/1/325"])
+
+
+class TestDbExcluded(unittest.TestCase):
+    def test_root_and_subpages_excluded(self):
+        self.assertTrue(db_excluded("Архів:Єврейське_містечко"))
+        self.assertTrue(db_excluded("Архів:Єврейське містечко/Подільська губернія"))
+
+    def test_other_titles_not_excluded(self):
+        self.assertFalse(db_excluded("Архів:ДАХмО/227/2д/370"))
+        # prefix match needs a "/" boundary
+        self.assertFalse(db_excluded("Архів:Єврейське_містечко_2"))
 
 
 class TestExecuteSubtaskDispatch(unittest.TestCase):
