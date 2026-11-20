@@ -258,7 +258,12 @@ def get_case_id(cell_contents) -> str:
 
 
 def canonical_wiki_url(url: str) -> str:
-    """Convert a MediaWiki index.php?title= URL to /wiki/Title style."""
+    """Convert a MediaWiki index.php?title= URL to /wiki/Title style.
+
+    A red link (index.php?title=X&action=edit&redlink=1) keeps its red link
+    marker as /wiki/X?action=edit&redlink=1, so check_redlink and the document
+    records can still tell the target page or file does not exist yet.
+    """
     parsed = urlparse(url)
     if parsed.path != "/w/index.php" and not parsed.path.endswith("/w/index.php"):
         return url  # leave non‑index.php URLs unchanged
@@ -282,6 +287,8 @@ def canonical_wiki_url(url: str) -> str:
         parsed.fragment,
     ))
     url = normalize_url(url)
+    if qs.get("redlink") == ["1"]:
+        url = f"{url}?{RED_SUBSTRING}"
     return url
 
 
@@ -558,9 +565,13 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
 #    if isinstance(cell_links, str) and cell_links.replace(ar1, ar2) == archive_unit_link_replaced:
 #        return modified_import_message, cell_links
 
+    # a red link (page or file not created yet) is judged by its bare url; the
+    # marker stays on the returned links so the document records can use it
+    archive_unit_link_replaced = is_url_redlinked(archive_unit_link_replaced)[1]
+
     real_doc = True
     if isinstance(cell_links, list) and len(cell_links) == 1:
-        cell_link_replaced = cell_links[0].rstrip(" /").replace(ar1, ar2)
+        cell_link_replaced = is_url_redlinked(cell_links[0])[1].rstrip(" /").replace(ar1, ar2)
         if cell_link_replaced in archive_unit_link_replaced or archive_unit_link_replaced in cell_link_replaced:
             return modified_import_message, cell_links
         real_doc = string_ends_with_file_ext(cell_link_replaced)
@@ -600,6 +611,22 @@ def is_url_redlinked(url):
     return is_redlinked, naked_url
 
 
+def doc_link_availability(doc_link: str, page_url: str, page_availability: str | None) -> tuple[str, str | None]:
+    """Return (bare doc link, availability) for a document linked from a page.
+
+    A document's availability follows its own link: a red link means the file
+    (or page) has not been created yet. A red-linked page does not make the
+    files it links red; only a doc that is the page itself (a self-link) keeps
+    the page's red status. Otherwise the page's availability carries over.
+    """
+    is_redlinked, naked_link = is_url_redlinked(doc_link)
+    if is_redlinked:
+        return naked_link, "redlinked"
+    if page_availability == "redlinked" and naked_link.rstrip("/") != (page_url or "").rstrip("/"):
+        return naked_link, "linked"
+    return naked_link, page_availability
+
+
 def check_redlink(page: dict) -> dict:
     availability = normalize_availability_value(page.get("availability", "linked"))
     url = page["url"]
@@ -610,7 +637,12 @@ def check_redlink(page: dict) -> dict:
         availability = "redlinked"
         page["url"] = url
 
-    if availability != "unlinked" and not page.get("process_code") and page.get("comment") == "unlinked":
+    # a row the team marked "unlinked" in the comments column (and gave no
+    # process code) is deliberately left without a page. The page dicts carry
+    # these as "comments" and "OLD_process_code"; this used to read "comment"
+    # and "process_code", which are never set, so the rule never applied.
+    comments = (page.get("comments") or "").strip().lower()
+    if availability != "unlinked" and not page.get("OLD_process_code") and comments == "unlinked":
         _logger.info(f"Availability changed from {availability} to 'unlinked' for {page.get("title", "")}")
         availability = "unlinked"
 
@@ -648,6 +680,10 @@ def add_page(page: dict, page_table: list[dict], update_existing_page: bool) -> 
     url = page["url"]
     url = canonical_wiki_url(url)
     page["url"] = url
+    # a red-linked parent's url is stored without the marker; match that here
+    parent_url = page.get("parent_url")
+    if isinstance(parent_url, str) and parent_url:
+        page["parent_url"] = canonical_wiki_url(is_url_redlinked(parent_url)[1])
     page["domain"] = domain_from_url(url)
     page["last_imported"] = str(utc_now_dt().replace(microsecond=0))
     page["label"] = delete_part_between_hyphen_and_slash(page["label"])
@@ -2135,6 +2171,8 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 raise TypeError("doc_links must be str, list or tuple")
 
             for doc_link in doc_links:
+                doc_link, doc_availability = doc_link_availability(
+                    doc_link, output_page.get("url"), output_page.get("availability"))
                 # quote for document titles that contain protected characters such as "?"
                 quoted_record = form_document_record(doc_link)
 
@@ -2148,6 +2186,8 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 for joint_field in doc_and_page_fields:
                     if joint_field in output_page:
                         doc_payload[joint_field] = output_page[joint_field]
+                if doc_availability is not None:
+                    doc_payload["availability"] = doc_availability
                 doc_payload.update(quoted_record)
 
                 page_url = output_page.get("url")
