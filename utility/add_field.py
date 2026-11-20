@@ -10,13 +10,16 @@ Spec file (see utility/specs/):
       "type": "multi_select",              # a Schema field_type, see UIDT below
       "description": "...",                # Schema row description
       "column_type": "LongText",           # optional, see COLUMN_TYPES below
-      "values": [["Vitals", "Examples include ..."], ...]   # selects only
+      "values": [["Vitals", "Examples include ..."], ...],  # selects only
+      "retired_values": ["postpone"]       # optional, single selects only
     }
 
 Each step is skipped if it is already done, so an interrupted run can simply be
 run again. Values missing from an existing select column's options are added,
-and Schema / Schema Values descriptions that differ from the spec are updated;
-values are never removed. Stop the app first: a running app holds the old schema.
+and Schema / Schema Values descriptions that differ from the spec are updated.
+A value is only removed when the spec lists it in retired_values: its column
+option and Schema Values row are deleted, and the run stops instead if any
+record still holds it. Stop the app first: a running app holds the old schema.
 
 Usage (from anywhere; exactly one target is required):
     venv/bin/python utility/add_field.py --local utility/specs/documents_doc_type.json
@@ -88,7 +91,15 @@ def load_spec(path):
                 errors.append(f"{path}: invalid value {name!r} (no leading/trailing space, ',' or '/')")
     elif spec.get("values"):
         errors.append(f"{path}: only select fields take values")
+    retired = spec.get("retired_values", [])
+    if retired:
+        if spec.get("type") != "single_select":
+            errors.append(f"{path}: only single_select fields take retired_values")
+        overlap = set(retired) & {v[0] for v in spec.get("values", [])}
+        if overlap:
+            errors.append(f"{path}: values both allowed and retired: {sorted(overlap)}")
     spec.setdefault("values", [])
+    spec.setdefault("retired_values", [])
     return spec, errors
 
 def connect(env_name):
@@ -121,6 +132,14 @@ def plan(db, spec):
         missing = [v for v in values if v not in column_options(column)]
         if missing:
             steps.append(("add options", missing))
+        retired = [v for v in spec["retired_values"] if v in column_options(column)]
+        for value in retired:
+            in_use = count_records_with(db, table, field, value)
+            if in_use:
+                raise ValueError(f"{table}.{field} value {value!r} is still used by "
+                                 f"{in_use} record(s); change them before retiring it")
+        if retired:
+            steps.append(("remove options", retired))
     schema = [r for r in db.scan_all("Schema")
               if r.get("table_name") == table and r.get("field_name") == field]
     if not schema:
@@ -141,7 +160,19 @@ def plan(db, spec):
                    if v in existing and existing[v].get("description") != desc]
         if changed:
             steps.append(("Schema Values descriptions", changed))
+        retired_rows = [(existing[v]["Id"], v) for v in spec["retired_values"] if v in existing]
+        if retired_rows:
+            steps.append(("remove Schema Values rows", retired_rows))
     return steps
+
+def count_records_with(db, table, field, value):
+    count, cursor = 0, None
+    while True:
+        records, cursor = db.scan(table, limit=1000, cursor=cursor,
+                                  where=(field, "eq", value), fields=["Id"])
+        count += len(records)
+        if not cursor:
+            return count
 
 def describe(spec, step):
     kind, data = step
@@ -157,6 +188,10 @@ def describe(spec, step):
         return f"update Schema description for {where}"
     if kind == "Schema Values descriptions":
         return f"update {len(data)} Schema Values descriptions for {where}: {[v for _, v, _ in data]}"
+    if kind == "remove options":
+        return f"remove options from {where}: {data}"
+    if kind == "remove Schema Values rows":
+        return f"remove {len(data)} Schema Values rows for {where}: {[v for _, v in data]}"
     return f"add {len(data)} Schema Values rows for {where}"
 
 def apply(db, spec, step):
@@ -191,6 +226,16 @@ def apply(db, spec, step):
         db._fetch(db._records_url(db._table_id("Schema Values")), method="PATCH", json=[
             {"Id": rid, "description": desc} for rid, _, desc in data
         ])
+    elif kind == "remove options":
+        column = get_column(db, table, field)
+        url = f"{db._host}/api/v2/meta/columns/{column['id']}"
+        full = db._fetch(url)
+        full["colOptions"]["options"] = [o for o in full["colOptions"]["options"]
+                                         if o["title"] not in data]
+        db._fetch(url, json=full, method="PATCH")
+    elif kind == "remove Schema Values rows":
+        db._fetch(db._records_url(db._table_id("Schema Values")), method="DELETE",
+                  json=[{"Id": rid} for rid, _ in data])
     else:
         db._fetch(db._records_url(db._table_id("Schema Values")), method="POST", json=[
             {"table_name": table, "field_name": field, "field_value": v, "description": desc}
@@ -202,9 +247,11 @@ def verify(db, spec):
     want = [v[0] for v in spec["values"]]
     have = column_options(column) if column else []
     missing = [v for v in want if v not in have]
-    if column is None or column.get("column_name") != spec["field"] or missing:
+    retired = [v for v in spec.get("retired_values", []) if v in have]
+    if column is None or column.get("column_name") != spec["field"] or missing or retired:
         raise RuntimeError(f"column check failed for {spec['field']}: "
-                           f"column={column and column.get('column_name')!r} missing options={missing}")
+                           f"column={column and column.get('column_name')!r} missing options={missing} "
+                           f"retired options still present={retired}")
 
 def main(argv=None):
     args = parse_args(argv)

@@ -6,7 +6,7 @@ November 2026 Documents schema migration, in one rerunnable script:
      OLD_doc_type, OLD_content_code and OLD_process_code (column title and
      physical column, plus their Schema and Schema Values rows), then
   2. add the new fields described by the specs in utility/specs/ (doc_type,
-     doc_structure, doc_scope, process_code, save_status, anomaly,
+     doc_structure, doc_scope, process_code, save_status, save_pending, anomaly,
      anomaly_comment, OLD_page_description), each with its Schema and Schema
      Values rows, and bring their descriptions in line with the specs.
 
@@ -46,6 +46,7 @@ SPECS = [
     "documents_doc_scope.json",
     "documents_process_code.json",
     "documents_save_status.json",
+    "documents_save_pending.json",
     "documents_anomaly.json",
     "documents_anomaly_comment.json",
     "documents_old_page_description.json",
