@@ -226,6 +226,11 @@ textarea.field { resize: vertical; }
 .act-changes { font-size: .82rem; color: var(--muted); margin: 0; padding-left: 18px; }
 .ro-block { background: var(--nav-bg); border-radius: 6px; padding: 8px 10px; font-size: .84rem; display: flex; flex-direction: column; gap: 4px; }
 .ro-comments { white-space: pre-wrap; border-top: 1px solid var(--border); padding-top: 6px; margin-top: 2px; }
+.ro-locs { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; border-top: 1px solid var(--border); padding-top: 6px; margin-top: 2px; }
+.ro-locs .ro-k { flex-basis: 100%; }
+.loc { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; font-size: .8rem; }
+.loc-ctx { color: var(--muted); font-size: .74rem; }
+.loc-none { color: var(--muted); font-style: italic; font-size: .8rem; }
 .ro-k { display: block; font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 .ro-block .native { color: var(--muted); font-size: .8rem; }
 .ro-meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -559,6 +564,39 @@ const REAL_FILE = "\u0414\u0410\u0425\u043c\u041e_5-1-4_\u0412\u0438\u0445\u0456
     years: "1903", page_count: 478, byte_size: 204112345,
     commons: {file: REAL_FILE, hash: "e/ea"},
   });
+})();
+
+// Documents.locations links (read-only here) and location_status from the inference sweep.
+// Region and country are shown so same-named places can be told apart.
+// A separate RNG keeps the rest of the sample data unchanged.
+const LOCATION_POOL = [
+  {name: "Kamianets-Podilskyi", region: "Khmelnytskyi oblast", country: "Ukraine"},
+  {name: "Proskuriv (Khmelnytskyi)", region: "Khmelnytskyi oblast", country: "Ukraine"},
+  {name: "Medzhybizh", region: "Khmelnytskyi oblast", country: "Ukraine"},
+  {name: "Starokostiantyniv", region: "Khmelnytskyi oblast", country: "Ukraine"},
+  {name: "Dunaivtsi", region: "Khmelnytskyi oblast", country: "Ukraine"},
+  {name: "Letychiv", region: "Khmelnytskyi oblast", country: "Ukraine"},
+  {name: "Polonne", region: "Khmelnytskyi oblast", country: "Ukraine"},
+  {name: "Liubashivka", region: "Odesa oblast", country: "Ukraine"},
+  {name: "Vinnytsia", region: "Vinnytsia oblast", country: "Ukraine"},
+  {name: "Bar", region: "Vinnytsia oblast", country: "Ukraine"},
+  {name: "Khotyn", region: "Chernivtsi oblast", country: "Ukraine"},
+];
+const LOCATION_STATUS_TEXT = {pending: "Not yet inferred", none: "None found", failed: "Inference failed"};
+(() => {
+  const lr = rng(11), lpick = a => a[Math.floor(lr() * a.length)];
+  DOCS.forEach(d => {
+    const x = lr();
+    d.location_status = d.process_code === "new" && x < 0.2 ? "pending" : x < 0.08 ? "none" : x < 0.11 ? "failed" : "found";
+    const n = d.location_status === "found" ? 1 + (lr() < 0.3 ? 1 : 0) + (lr() < 0.1 ? 1 : 0) : 0;
+    d.locations = [];
+    while (d.locations.length < n) {
+      const loc = lpick(LOCATION_POOL);
+      if (!d.locations.includes(loc)) d.locations.push(loc);
+    }
+  });
+  const d = DOCS.find(x => x.label === "DAHMO/5/1/4");
+  if (d) Object.assign(d, {location_status: "found", locations: [LOCATION_POOL[0]]});
 })();
 
 // ---------- state ----------
@@ -976,6 +1014,9 @@ function renderEditor() {
         <div>${esc(d.description)}</div>
         <div class="native">${esc(d.native_description)}</div>
         <div class="ro-meta"><span>${esc(d.years)}</span><span>${d.page_count} pages</span><span>${fmtBytes(d.byte_size)}</span></div>
+        <div class="ro-locs"><span class="ro-k">Locations</span>${d.locations.length
+          ? d.locations.map(l => `<span class="loc" title="${esc(l.name)}, ${esc(l.region)}, ${esc(l.country)}">${esc(l.name)} <span class="loc-ctx">${esc(l.region)}, ${esc(l.country)}</span></span>`).join("")
+          : `<span class="loc-none">${esc(LOCATION_STATUS_TEXT[d.location_status] || "None")}</span>`}</div>
         ${eff(d, "comments") ? `<div class="ro-comments"><span class="ro-k">Comments</span>${esc(eff(d, "comments"))}</div>` : ""}
       </div>
       <div class="curated"><div class="curated-title">Curated information</div>
