@@ -950,6 +950,20 @@ class TestWhereEncoding(unittest.TestCase):
         self.assertEqual(self.enc(Or(And(("label", "eq", "x")), ("code", "blank", None))),
                          "(cL,eq,x)~or(cC,blank)")
 
+    def test_adjacent_groups_get_a_spacer(self):
+        # NocoDB rejects (a~or b)~and(c~or d); a neutral condition between works
+        from birddog.abstract_database import And, Or
+        g1 = Or(("code", "eq", "x"), ("code", "eq", "y"))
+        g2 = Or(("label", "eq", "P"), ("label", "startswith", "P/"))
+        self.assertEqual(self.enc(And(g1, g2)),
+                         "((cC,eq,x)~or(cC,eq,y))~and(cI,notblank)~and((cL,eq,P)~or(cL,like,P/%))")
+        self.assertEqual(self.enc(Or(And(("code", "eq", "x"), ("label", "eq", "P")),
+                                     And(("code", "eq", "y"), ("label", "eq", "Q")))),
+                         "((cC,eq,x)~and(cL,eq,P))~or(cI,blank)~or((cC,eq,y)~and(cL,eq,Q))")
+        # a plain condition between groups already separates them
+        self.assertEqual(self.enc(And(g1, ("anomaly", "eq", False), g2)),
+                         "((cC,eq,x)~or(cC,eq,y))~and(cA,notchecked)~and((cL,eq,P)~or(cL,like,P/%))")
+
     def test_groups_compare_by_value(self):
         from birddog.abstract_database import And, Or
         self.assertEqual(And(("a", "eq", 1)), And(("a", "eq", 1)))

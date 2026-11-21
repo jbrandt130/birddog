@@ -776,10 +776,20 @@ class NocoDBDatabase(Database):
     def _encode_where(self, table_name, where_spec):
         """Return (encoded string, True if it joins several conditions)."""
         if isinstance(where_spec, (And, Or)):
+            # NocoDB (2026.10) answers "Invalid filter format" when two
+            # parenthesized groups are adjacent, e.g. (a~or b)~and(c~or d),
+            # but accepts them with a plain condition in between. So put a
+            # neutral condition there: always true for ~and, never for ~or.
+            id_field = self._field_id(table_name, "Id")
+            spacer = f"({id_field},{'notblank' if where_spec.op == 'and' else 'blank'})"
             parts = []
+            previous_group = False
             for condition in where_spec.conditions:
                 text, compound = self._encode_where(table_name, condition)
+                if compound and previous_group:
+                    parts.append(spacer)
                 parts.append(f"({text})" if compound else text)
+                previous_group = compound
             return f"~{where_spec.op}".join(parts), len(parts) > 1
         return self._encode_where_condition(table_name, where_spec), False
 
