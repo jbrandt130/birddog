@@ -173,7 +173,7 @@ let loadSeq = 0;
 async function loadPage(page, {withTotal = false, focus = "keep"} = {}) {
   const seq = ++loadSeq;
   state.loading = true;
-  renderSummary();
+  renderGrid();
   const q = filterParams();
   const cursor = state.cursors[page];
   if (cursor !== null && cursor !== undefined) q.set("cursor", cursor);
@@ -321,10 +321,13 @@ function renderGrid() {
   }).join("") : "";
   // no rows: a centered message across the card, and no paging row (unless
   // a later page came up empty, where Previous is still needed)
-  const empty = !rows.length;
-  $("dt-empty").innerHTML = empty ? (state.loading ? `<span class="spinner-border spinner-border-sm me-1"></span> Loading...` : emptyText()) : "";
-  $("dt-empty").classList.toggle("d-none", !empty);
-  $("dt-footer").classList.toggle("d-none", empty && state.page === 0);
+  // while loading, the spinner takes the table's place
+  const empty = !rows.length, loading = state.loading;
+  $("dt-empty").innerHTML = loading ? `<span class="spinner-border spinner-border-sm me-1"></span> Loading...` : empty ? emptyText() : "";
+  $("dt-empty").classList.toggle("d-none", !loading && !empty);
+  $("dt-scroll").classList.toggle("d-none", loading);
+  $("dt-editor").classList.toggle("d-none", loading);
+  $("dt-footer").classList.toggle("d-none", loading || (empty && state.page === 0));
 
   document.querySelectorAll("#dt-body tr[data-id]").forEach(tr => {
     const id = +tr.dataset.id;
