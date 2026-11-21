@@ -337,9 +337,9 @@ _DOC_PROCESSING_STATE_FIELDS = (
     "pages_processed", "import_message",
 )
 
-# Workflow state for a Document birddog discovers on its own. Imported docs are
-# already in the old spreadsheet system, so they never get it: a doc with a
-# process code (old or new) or a last_imported date is left alone, even when
+# Workflow state for a Document that has not been processed yet: one birddog
+# discovers on its own, and an imported one whose spreadsheet row had no process
+# code at all. A doc with a process code (old or new) is left alone, even when
 # its old code had no new equivalent and left process_code blank on purpose.
 _NEW_PROCESS_CODE = "new"
 # set by link_hash_duplicates on a birddog-created doc that gets a duplicate_of
@@ -417,9 +417,16 @@ def _mark_hash_duplicate(rec, prevailing):
         return {}
     return {"anomaly": True, "anomaly_comment": f"{comment}; {note}" if comment else note}
 
-def _needs_new_process_code(doc_rec):
-    return not any(doc_rec.get(field)
-                   for field in ("process_code", "OLD_process_code", "last_imported"))
+_NOT_A_FILE_AVAILABILITY = ("unlinked", "redlinked", "error")
+
+def _needs_new_process_code(doc_rec, record=None):
+    """True for a doc with no process code, old or new, whose file exists (per
+    the freshly fetched record when given, else the stored one). An imported doc
+    qualifies too: its spreadsheet row simply had no process code."""
+    if any(doc_rec.get(field) for field in ("process_code", "OLD_process_code")):
+        return False
+    availability = (record or {}).get("availability", doc_rec.get("availability"))
+    return availability not in _NOT_A_FILE_AVAILABILITY
 
 # Curated values a spreadsheet import may have put on a document the wiki page
 # does not link (kept on the page by the orphan guard): a self-link record (url
@@ -1660,10 +1667,15 @@ class DatabaseUpdater:
                     k not in current_rec or current_rec[k] != v
                     for k, v in record.items()
                 )
-                # a doc birddog created before process_code existed enters the
+                # an unprocessed doc (birddog-created before process_code existed,
+                # or imported from a row without a process code) enters the
                 # workflow on its next refresh; this alone is enough to write it
-                if _needs_new_process_code(current_rec):
+                if _needs_new_process_code(current_rec, record):
                     record["process_code"] = _NEW_PROCESS_CODE
+                    if current_rec.get("last_imported"):
+                        # its page lookups ran already; re-run them so a finding
+                        # aid becomes Bibliographical/reject instead of "new"
+                        record["lookup_status"] = "invalid"
                     changed = True
                 # the sha1 change already makes this record "changed"
                 record.update(_content_change_fields(current_rec, record))

@@ -1235,8 +1235,22 @@ class TestUpdateDocRecordsFromRecords(unittest.TestCase):
         # imported with a code that had no new equivalent: blank on purpose
         self.assertEqual(self._write_existing(OLD_process_code="C3"), [])
 
-    def test_imported_doc_with_blank_codes_is_not_marked_new(self):
-        self.assertEqual(self._write_existing(last_imported="2026-11-13"), [])
+    def test_imported_doc_with_blank_codes_is_marked_new_and_relooked_up(self):
+        # the spreadsheet row had no process code at all: unprocessed, like a new doc;
+        # its page lookups re-run so a finding aid still ends up Bibliographical/reject
+        calls = self._write_existing(last_imported="2026-11-13", availability="linked")
+        _, written = calls[0]
+        self.assertEqual(written[0]["process_code"], "new")
+        self.assertEqual(written[0]["lookup_status"], "invalid")
+
+    def test_unimported_new_doc_keeps_its_lookup_status(self):
+        _, written = self._write_existing(process_code=None)[0]
+        self.assertNotIn("lookup_status", written[0])
+
+    def test_doc_without_a_file_is_not_marked_new(self):
+        for availability in ("unlinked", "redlinked", "error"):
+            self.db.write_calls.clear()
+            self.assertEqual(self._write_existing(last_imported="2026-11-13", availability=availability), [])
 
     def test_changed_doc_with_process_code_does_not_get_new(self):
         self.db.lookup_map["Documents"] = {"https://x/1": "d1"}
