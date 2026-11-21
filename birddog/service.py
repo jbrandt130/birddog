@@ -39,7 +39,7 @@ from birddog.wiki import (
     title_lineage_labels,
     page_label,
     )
-from birddog.user import User
+from birddog.user import User, SITE_ADMIN
 from birddog.utility import get_text, system_resource_report
 from birddog.log import (
     get_logger,
@@ -170,12 +170,14 @@ def login_required(f):
         return f(user, *args, **kwargs)
     return wrapper
 
-def admin_required(f):
-    # login_required plus role check; use instead of (not with) login_required
+def site_admin_required(f):
+    # login_required plus the site_admin privilege; use instead of (not with)
+    # login_required. site_admin lives in the account record, so this never
+    # needs the database.
     @wraps(f)
     @login_required
     def wrapper(user, *args, **kwargs):
-        if user.role != 'admin':
+        if not user.has_privilege(SITE_ADMIN):
             return jsonify({'error': 'Forbidden'}), 403
         return f(user, *args, **kwargs)
     return wrapper
@@ -203,9 +205,14 @@ def home():
                 # Alerts yet -- land them on Watchlists instead so the empty
                 # state isn't the first thing they hit
                 landing_tab = 'alerts' if user.get_watchlist() else 'watchlists'
-                # read live rather than trusting a role that may have been
+                # a session cookie can outlive app restarts, so a returning
+                # user may never pass through login() again
+                user.start_session()
+                # read live rather than trusting privileges that may have been
                 # cached in the session cookie since login
-                user_session = {**user_session, 'role': user.role}
+                user_session = {**user_session,
+                                'site_admin': user.site_admin,
+                                'privileges': sorted(user.privileges)}
     return render_template(
         'index.html',
         user=user_session,
@@ -237,6 +244,7 @@ def signup():
         return jsonify({'success': False, 'message': 'Email already exists'}), 400
 
     _logger.info(f"Creating new user: {name} {_hide(email)}")
+    user.start_session()
     # Log them in immediately
     session['user'] = {'name': user.name, 'email': user.email}
 
@@ -255,6 +263,7 @@ def login():
 
     user = users.login(email, password)
     if user:
+        user.start_session()
         session['user'] = {'name': user.name, 'email': user.email}
         _logger.info(f"Login successful: {_hide(email)}")
         return jsonify({'success': True}), 200
@@ -393,11 +402,8 @@ def archive_list(user):
 
 # Update label/description for existing archives
 @app.route("/archives", methods=['POST'])
-@login_required
+@site_admin_required
 def update_archives(user):
-    if user.role != 'admin':
-        return jsonify({'error': 'Forbidden'}), 403
-
     data = request.json
     items = data if isinstance(data, list) else [data]
 
@@ -817,7 +823,7 @@ def _active_updates():
     return runtime.active_database_updates
 
 @app.route('/database_update', methods=['GET'])
-@admin_required
+@site_admin_required
 def database_update(user):
     page_title = request.args.get('title')
     deep = _flag_arg('deep')
@@ -838,7 +844,7 @@ def database_update(user):
         'tasks': _active_updates()}), 200
 
 @app.route('/database_cancel_task', methods=['POST'])
-@login_required
+@site_admin_required
 def database_cancel_task(user):
     task_name = request.args.get('task')
     if not task_name:
@@ -850,27 +856,27 @@ def database_cancel_task(user):
         return jsonify({'error': f'Task not found: {task_name}'}), 404
 
 @app.route('/database_status', methods=['GET'])
-@admin_required
+@site_admin_required
 def database_status(user):
     return render_template('database_status.html')
 
 # ---- LOG ACCESS ---------------------------------------------------------------
 
 @app.route('/log', methods=['GET'])
-@admin_required
+@site_admin_required
 def get_log(user):
     limit = request.args.get('limit', type=int)
     return jsonify(get_log_buffer().get_logs(limit)), 200
 
 @app.route("/logs", methods=['GET'])
-@admin_required
+@site_admin_required
 def logs_view(user):
     return render_template("logs.html")
 
 # ---- SERVICE LOG ACCESS ---------------------------------------------------------------
 
 @app.route("/service_usage", methods=['GET'])
-@admin_required
+@site_admin_required
 def service_usage_dashboard(user):
     range_opt = request.args.get("range", "1h")
     by_resource_opt = request.args.get("by_resource", None)
@@ -933,7 +939,7 @@ def log_request(response):
     return response
 
 @app.route("/metrics", methods=['GET'])
-@login_required
+@site_admin_required
 def metrics_dashboard(user):
     range_opt = request.args.get("range", "24h")
     now = datetime.now(UTC)

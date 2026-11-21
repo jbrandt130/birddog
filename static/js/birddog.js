@@ -1115,7 +1115,7 @@ function render_archives_table() {
     const table_body = document.getElementById('archives-table-body');
     table_body.innerHTML = '';
 
-    const can_edit = current_user && current_user.role === 'admin';
+    const can_edit = current_user && current_user.site_admin === true;
     const sorted_archives = [...archives].sort((a, b) => a.label.localeCompare(b.label));
 
     sorted_archives.forEach(archive => {

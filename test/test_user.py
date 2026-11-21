@@ -251,6 +251,154 @@ class FakeWatcher:
         self.removed.append((email, archive_title))
 
 
+class FakeUsersDB:
+    """The bit of the database API the Birddog Users code uses."""
+
+    def __init__(self, rows=None, fail=None):
+        self.rows = {r["email"]: dict(r, Id=i + 1) for i, r in enumerate(rows or [])}
+        self.fail = fail          # exception to raise from every call
+        self.calls = []
+
+    def _check(self, op):
+        self.calls.append(op)
+        if self.fail:
+            raise self.fail
+
+    def lookup(self, table, key):
+        self._check("lookup")
+        assert table == "Birddog Users"
+        row = self.rows.get(key)
+        return row["Id"] if row else None
+
+    def read(self, table, record_id, fields=None):
+        self._check("read")
+        row = next(r for r in self.rows.values() if r["Id"] == record_id)
+        return {k: v for k, v in row.items() if fields is None or k in fields or k == "Id"}
+
+    def write(self, table, records):
+        self._check("write")
+        for rec in records:
+            self.rows[rec["email"]] = dict(rec, Id=len(self.rows) + 1)
+        return [self.rows[r["email"]]["Id"] for r in records]
+
+    def update(self, table, record):
+        self._check("update")
+        row = self.rows.get(record["email"])
+        if row is None:
+            return None
+        row.update(record)
+        return row["Id"]
+
+
+class FakeRuntime:
+    def __init__(self, database):
+        self.database = database
+
+
+class PrivilegesTest(unittest.TestCase):
+    def setUp(self):
+        self.cache = FakeCache()
+        self._patches = [
+            mock.patch.object(user_mod, "_kv_store", FakeKVStore()),
+            mock.patch.object(user_mod, "save_cached_object", side_effect=self.cache.save),
+        ]
+        for p in self._patches:
+            p.start()
+        user_mod._global_user_locks.clear()
+        user_mod._doc_privilege_cache.clear()
+
+    def tearDown(self):
+        for p in reversed(self._patches):
+            p.stop()
+        user_mod._doc_privilege_cache.clear()
+
+    def _user(self, db, email="cur@example.com", doc_privileges=None, site_admin=False):
+        return User(name="Cur", email=email, password="pw", runtime=FakeRuntime(db),
+                    site_admin=site_admin, doc_privileges=doc_privileges)
+
+    def test_start_session_creates_row_with_no_privileges(self):
+        db = FakeUsersDB()
+        u = self._user(db)
+        u.start_session()
+        self.assertEqual(db.rows["cur@example.com"]["privileges"], [])
+        self.assertEqual(db.rows["cur@example.com"]["name"], "Cur")
+        self.assertEqual(u.privileges, frozenset())
+
+    def test_start_session_keeps_existing_row(self):
+        db = FakeUsersDB([{"email": "cur@example.com", "name": "Edited", "privileges": ["doc_review"]}])
+        u = self._user(db)
+        u.start_session()
+        self.assertNotIn("write", db.calls)
+        self.assertEqual(db.rows["cur@example.com"]["name"], "Edited")
+        self.assertTrue(u.has_privilege("doc_review"))
+        self.assertFalse(u.has_privilege("doc_admin"))
+
+    def test_privileges_are_cached_then_reread(self):
+        db = FakeUsersDB([{"email": "cur@example.com", "privileges": ["doc_check"]}])
+        u = self._user(db)
+        self.assertEqual(u.doc_privileges, frozenset({"doc_check"}))
+        db.rows["cur@example.com"]["privileges"] = ["doc_admin"]
+        reads = db.calls.count("read")
+        self.assertEqual(self._user(db).doc_privileges, frozenset({"doc_check"}))   # still cached
+        self.assertEqual(db.calls.count("read"), reads)
+        u.start_session()                                                          # fresh cache: no db call
+        self.assertEqual(db.calls.count("read"), reads)
+        user_mod._doc_privilege_cache.clear()                                      # as if the TTL passed
+        self.assertEqual(self._user(db).doc_privileges, frozenset({"doc_admin"}))
+
+    def test_unknown_values_are_ignored(self):
+        db = FakeUsersDB([{"email": "cur@example.com", "privileges": ["doc_check", "site_admin", "bogus"]}])
+        self.assertEqual(self._user(db).privileges, frozenset({"doc_check"}))
+
+    def test_table_privileges_are_copied_to_the_account_record(self):
+        db = FakeUsersDB([{"email": "cur@example.com", "privileges": ["doc_escalate", "doc_check"]}])
+        self._user(db).start_session()
+        saved = self.cache._objects["users/cur@example.com.json"]
+        self.assertEqual(saved["doc_privileges"], ["doc_check", "doc_escalate"])
+
+    def test_copy_not_resaved_when_unchanged(self):
+        db = FakeUsersDB([{"email": "cur@example.com", "privileges": ["doc_check"]}])
+        self._user(db, doc_privileges=["doc_check"]).start_session()
+        self.assertNotIn("users/cur@example.com.json", self.cache._objects)
+
+    def test_falls_back_to_copy_without_a_database(self):
+        u = self._user(None, doc_privileges=["doc_admin"])
+        u.start_session()
+        self.assertEqual(u.privileges, frozenset({"doc_admin"}))
+
+    def test_falls_back_to_copy_when_unreachable_or_table_missing(self):
+        for err in (user_mod.FailedIO("down"), user_mod.InvalidTableName("Birddog Users")):
+            with self.subTest(err=type(err).__name__):
+                user_mod._doc_privilege_cache.clear()
+                u = self._user(FakeUsersDB(fail=err), doc_privileges=["doc_review"])
+                u.start_session()   # must not raise
+                self.assertEqual(u.privileges, frozenset({"doc_review"}))
+                self.assertEqual(u.get_doc_preferences(), {})
+                self.assertFalse(u.set_doc_preferences({"columns": []}))
+
+    def test_emptied_privileges_deactivate(self):
+        db = FakeUsersDB([{"email": "cur@example.com", "privileges": []}])
+        u = self._user(db, doc_privileges=["doc_admin"])
+        self.assertEqual(u.privileges, frozenset())
+        self.assertEqual(self.cache._objects["users/cur@example.com.json"]["doc_privileges"], [])
+
+    def test_site_admin_never_touches_the_database(self):
+        db = FakeUsersDB(fail=user_mod.FailedIO("down"))
+        self.assertTrue(self._user(db, site_admin=True).has_privilege("site_admin"))
+        self.assertEqual(db.calls, [])
+
+    def test_doc_preferences_round_trip(self):
+        db = FakeUsersDB()
+        u = self._user(db)
+        self.assertEqual(u.get_doc_preferences(), {})
+        prefs = {"columns": ["label", "last_updated"], "widths": {"label": 190}}
+        self.assertTrue(u.set_doc_preferences(prefs))
+        self.assertEqual(u.get_doc_preferences(), prefs)
+        self.assertEqual(db.rows["cur@example.com"]["privileges"], [])   # row was created
+        with self.assertRaises(ValueError):
+            u.set_doc_preferences(["not", "a", "dict"])
+
+
 class UserTest(unittest.TestCase):
     def setUp(self):
         self.kv = FakeKVStore()
@@ -476,7 +624,9 @@ class UserTest(unittest.TestCase):
         d = u.to_dict()
         self.assertEqual(d["name"], "Test")
         self.assertIn("password", d)
-        self.assertEqual(d["role"], "user")
+        self.assertIs(d["site_admin"], False)
+        self.assertEqual(d["doc_privileges"], [])
+        self.assertNotIn("role", d)
 
         u.save()
         self.assertIn(f"users/{u.email}.json", self.cache._objects)
@@ -484,22 +634,27 @@ class UserTest(unittest.TestCase):
         u2 = User.from_dict("s2@example.com", {"name": "Test2", "password": u._password_hash}, runtime=None)
         self.assertEqual(u2.name, "Test2")
         self.assertEqual(u2.email, "s2@example.com")
-        self.assertEqual(u2.role, "user")
+        self.assertFalse(u2.site_admin)
 
-    def test_user_role_defaults_and_set_role_round_trips(self):
-        u = User(name="Test", email="role@example.com", password="pw")
-        self.assertEqual(u.role, "user")
+    def test_site_admin_round_trips(self):
+        u = User(name="Test", email="admin@example.com", password="pw")
+        self.assertFalse(u.has_privilege("site_admin"))
+        u.set_site_admin(True)
+        reloaded = User.from_dict("admin@example.com", u.to_dict(), runtime=None)
+        self.assertTrue(reloaded.site_admin)
+        self.assertTrue(reloaded.has_privilege("site_admin"))
+        self.assertEqual(reloaded.privileges, frozenset({"site_admin"}))
 
-        u.set_role("admin")
-        self.assertEqual(u.role, "admin")
-
-        reloaded = User.from_dict("role@example.com", u.to_dict(), runtime=None)
-        self.assertEqual(reloaded.role, "admin")
-
-    def test_user_from_dict_defaults_missing_role_to_user(self):
-        # pre-role accounts have no "role" key in their persisted dict
-        u = User.from_dict("legacy@example.com", {"name": "Legacy", "password": "hash"}, runtime=None)
-        self.assertEqual(u.role, "user")
+    def test_legacy_role_maps_to_site_admin(self):
+        # accounts saved before privileges carry a role instead
+        admin = User.from_dict("old1@example.com", {"name": "A", "password": "h", "role": "admin"}, runtime=None)
+        plain = User.from_dict("old2@example.com", {"name": "B", "password": "h", "role": "user"}, runtime=None)
+        legacy = User.from_dict("old3@example.com", {"name": "C", "password": "h"}, runtime=None)
+        self.assertTrue(admin.site_admin)
+        self.assertFalse(plain.site_admin)
+        self.assertFalse(legacy.site_admin)
+        self.assertNotIn("role", admin.to_dict())
+        self.assertTrue(admin.to_dict()["site_admin"])
 
     def test_check_watchlist_item_raises_if_not_in_watchlist(self):
         u = User(name="Test", email="nowatch@example.com", password="pw")

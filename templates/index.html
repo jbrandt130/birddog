@@ -91,7 +91,7 @@
           <a class="nav-link" id="nav-browse-tab" data-bs-toggle="tab" href="#nav-browse" role="tab">Browse</a>
           <a class="nav-link" id="nav-archives-tab" data-bs-toggle="tab" href="#nav-archives" role="tab">Archives</a>
           <a class="nav-link" id="nav-profile-tab" data-bs-toggle="tab" href="#nav-profile" role="tab">Profile</a>
-          {% if user.role == 'admin' %}
+          {% if user.site_admin %}
             <a class="nav-link" id="nav-logs-link" href="/logs" target="birddog_logs">Logs</a>
             <a class="nav-link" id="nav-usage-link" href="/service_usage" target="birddog_usage">Usage</a>
             <a class="nav-link" id="nav-db-status-link" href="/database_status" target="birddog_db_status">DB Status</a>
@@ -480,7 +480,7 @@
                 <button id="next-unresolved-btn" class="btn btn-primary" onclick="next_unresolved()" title="Next Unresolved">
                   <i class="bi bi-arrow-right-square"></i>
                 </button>
-                {% if database_available and user and user.role == 'admin' %}
+                {% if database_available and user and user.site_admin %}
                 <button id="database-sync" class="btn btn-primary" onclick="update_database()" title="Database Upload">
                   <i class="bi bi-database-fill-up"></i>
                 </button>

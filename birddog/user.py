@@ -1,6 +1,7 @@
 # user management
 
 import json
+import time
 from threading import RLock, Lock
 
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -10,6 +11,7 @@ from birddog.wiki import archive_root, canonicalize_title
 from birddog.cache import save_cached_object
 from birddog.store import KeyValueStore
 from birddog.utility import utc_now_dt, to_utc_format
+from birddog.abstract_database import FailedIO, InvalidTableName, SchemaError
 
 from birddog.log import get_logger
 _logger = get_logger()
@@ -169,18 +171,61 @@ def _load_preferences(email, preferences):
         _set_preference(email, key, value)
 
 # ---------------------------------------------------------------------
+# PRIVILEGES
+#
+# site_admin is stored in the account record (S3), so site operations keep
+# working without the database. The doc_* curation privileges and the
+# Documents tab settings live in the NocoDB "Birddog Users" table, one row per
+# account keyed by email, managed by hand in the NocoDB grid. An empty
+# privileges list means no curation access.
+#
+# The last privileges read from the table are copied into the account record,
+# so they still apply while the database is absent or unreachable. S3 is
+# already split by environment (STAGE keeps its objects under "stage/").
+
+SITE_ADMIN = "site_admin"
+DOC_PRIVILEGES = ("doc_check", "doc_review", "doc_escalate", "doc_admin")
+PRIVILEGES = (SITE_ADMIN,) + DOC_PRIVILEGES
+
+_USERS_TABLE = "Birddog Users"
+_USERS_FIELDS = ["email", "name", "privileges", "doc_preferences"]
+_PRIVILEGE_TTL_S = 60
+
+# email -> (expires_at, frozenset of doc privileges); User objects are
+# rebuilt on every request, so the cache lives at module level
+_doc_privilege_cache = {}
+_doc_privilege_cache_lock = Lock()
+
+def _cached_doc_privileges(email):
+    with _doc_privilege_cache_lock:
+        entry = _doc_privilege_cache.get(email)
+    if entry and entry[0] > time.monotonic():
+        return entry[1]
+    return None
+
+def _cache_doc_privileges(email, privileges):
+    with _doc_privilege_cache_lock:
+        _doc_privilege_cache[email] = (time.monotonic() + _PRIVILEGE_TTL_S, privileges)
+
+def _clean_doc_privileges(values):
+    return frozenset(v for v in (values or []) if v in DOC_PRIVILEGES)
+
+# ---------------------------------------------------------------------
 # USER MANAGEMENT
 
 _global_lock = Lock()
 _global_user_locks = {}
 
 class User:
-    def __init__(self, name, email, password, runtime=None, watchlist=None, preferences=None, is_hashed=False, role="user"):
+    def __init__(self, name, email, password, runtime=None, watchlist=None, preferences=None,
+                 is_hashed=False, site_admin=False, doc_privileges=None):
         self._name = name
         self._email = email
         self._password_hash = password if is_hashed else generate_password_hash(password)
         self._runtime = runtime
-        self._role = role
+        self._site_admin = bool(site_admin)
+        # last doc privileges read from the Birddog Users table
+        self._doc_privileges_copy = _clean_doc_privileges(doc_privileges)
 
         with _global_lock:
             self._lock = _global_user_locks.get(email, RLock())
@@ -206,13 +251,97 @@ class User:
         return self._email
 
     @property
-    def role(self):
-        return self._role
+    def site_admin(self):
+        return self._site_admin
 
-    def set_role(self, role):
+    def set_site_admin(self, value):
         with self._lock:
-            self._role = role
+            self._site_admin = bool(value)
             self.save()
+
+    # ---- privileges -----------------------------------------------------
+
+    def _database(self):
+        return getattr(self._runtime, "database", None) if self._runtime else None
+
+    def _read_users_row(self, db):
+        """The user's Birddog Users row, or None. Raises InvalidTableName or
+        SchemaError when the table isn't set up, FailedIO when unreachable."""
+        record_id = db.lookup(_USERS_TABLE, self._email)
+        if record_id is None:
+            return None
+        return db.read(_USERS_TABLE, record_id, fields=_USERS_FIELDS)
+
+    def _with_users_row(self, action, create=False):
+        """Run action(db, row) against the user's row and return its result,
+        or return None when the table is absent or unreachable. With create,
+        a missing row is first created with no privileges."""
+        db = self._database()
+        if db is None:
+            return None
+        try:
+            row = self._read_users_row(db)
+            if row is None and create:
+                db.write(_USERS_TABLE, [{"email": self._email, "name": self._name, "privileges": []}])
+                _logger.info(f"Birddog Users: created a row for {self._email}")
+                row = self._read_users_row(db)
+            return action(db, row)
+        except (InvalidTableName, SchemaError):
+            return None   # table not set up on this base yet
+        except FailedIO as err:
+            _logger.warning(f"Birddog Users: unreachable for {self._email}: {err}")
+            return None
+
+    def _refresh_doc_privileges(self, create=False):
+        privileges = self._with_users_row(
+            lambda db, row: _clean_doc_privileges(row.get("privileges")) if row else frozenset(),
+            create=create)
+        if privileges is None:
+            return self._doc_privileges_copy
+        _cache_doc_privileges(self._email, privileges)
+        if privileges != self._doc_privileges_copy:
+            with self._lock:
+                self._doc_privileges_copy = privileges
+                self.save()
+        return privileges
+
+    def start_session(self):
+        """Call when a session begins (login or page load): makes sure the
+        user has a Birddog Users row and refreshes the cached privileges.
+        Never raises for database problems, so sign-in can't fail on them.
+        Skipped while the cached privileges are fresh: they are only cached
+        after the row was read or created."""
+        if _cached_doc_privileges(self._email) is None:
+            self._refresh_doc_privileges(create=True)
+
+    @property
+    def doc_privileges(self):
+        cached = _cached_doc_privileges(self._email)
+        return cached if cached is not None else self._refresh_doc_privileges()
+
+    @property
+    def privileges(self):
+        return self.doc_privileges | ({SITE_ADMIN} if self._site_admin else frozenset())
+
+    def has_privilege(self, privilege):
+        if privilege == SITE_ADMIN:
+            return self._site_admin   # never needs the database
+        return privilege in self.doc_privileges
+
+    def get_doc_preferences(self):
+        """Documents tab settings (a dict), or {} when there are none or the
+        table is unavailable."""
+        prefs = self._with_users_row(lambda db, row: row.get("doc_preferences") if row else None)
+        return prefs if isinstance(prefs, dict) else {}
+
+    def set_doc_preferences(self, prefs):
+        """Saves the Documents tab settings. Returns False when the table is
+        unavailable."""
+        if not isinstance(prefs, dict):
+            raise ValueError("doc preferences must be a dict")
+        def _write(db, row):
+            return db.update(_USERS_TABLE, {"email": self._email, "doc_preferences": prefs}) is not None
+        return bool(self._with_users_row(_write, create=True))
 
     def check_password(self, password):
         return check_password_hash(self._password_hash, password)
@@ -391,7 +520,8 @@ class User:
         return {
             'name': self.name,
             'password': self._password_hash,
-            'role': self._role,
+            'site_admin': self._site_admin,
+            'doc_privileges': sorted(self._doc_privileges_copy),
             #'watchlist': self._watchlist,   # deprecated
             #'preferences': self._preferences # deprecated
         }
@@ -406,5 +536,7 @@ class User:
             preferences=d.get('preferences'),       # legacy
             is_hashed=True,
             runtime=runtime,
-            role=d.get('role', 'user'),             # pre-role accounts default to non-admin
+            # accounts saved before privileges carry role "admin" instead
+            site_admin=d.get('site_admin', d.get('role') == 'admin'),
+            doc_privileges=d.get('doc_privileges'),
         )

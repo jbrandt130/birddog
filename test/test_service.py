@@ -15,6 +15,19 @@ TEST_NAME = "Birddog Test User"
 TEST_PASSWORD = "correct horse battery staple"
 
 
+def _set_site_admin(user, is_admin):
+    """Give a MagicMock user real privilege answers (a bare MagicMock would
+    answer every has_privilege() call with a truthy mock)."""
+    user.site_admin = is_admin
+    user.privileges = frozenset({"site_admin"}) if is_admin else frozenset()
+    user.has_privilege = lambda p: p in user.privileges
+    return user
+
+
+def _mock_user(is_admin, **kwargs):
+    return _set_site_admin(MagicMock(**kwargs), is_admin)
+
+
 class _RuntimeStub:
     def __init__(self, state="running"):
         self.state = state
@@ -44,6 +57,10 @@ class _UserStub:
 
     # used by Users.create
     def save(self):
+        return None
+
+    # used by /, /login and /signup
+    def start_session(self):
         return None
 
     # used by / (home) and /preference/<key>
@@ -618,7 +635,7 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
 
     def test_archives_post_updates_matching_title(self):
         user = self._mock_user()
-        user.role = 'admin'
+        _set_site_admin(user, True)
         with patch("birddog.service.archive_root_label", return_value="DALO") as mock_label, \
              patch("birddog.service.update_archive_root") as mock_update, \
              patch("birddog.service.all_archive_roots", return_value=[]):
@@ -629,7 +646,7 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
 
     def test_archives_post_accepts_array_payload(self):
         user = self._mock_user()
-        user.role = 'admin'
+        _set_site_admin(user, True)
         with patch("birddog.service.archive_root_label", return_value="DALO"), \
              patch("birddog.service.update_archive_root") as mock_update, \
              patch("birddog.service.all_archive_roots", return_value=[]):
@@ -642,7 +659,7 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
 
     def test_archives_post_rejects_unknown_title(self):
         user = self._mock_user()
-        user.role = 'admin'
+        _set_site_admin(user, True)
         with patch("birddog.service.archive_root_label", return_value=None), \
              patch("birddog.service.update_archive_root") as mock_update:
             resp = self.client.post("/archives", json={"title": "Архів:НеІснує", "label": "X", "description": "Y"})
@@ -652,7 +669,7 @@ class TestWatchlistAndResolveRoutes(unittest.TestCase):
 
     def test_archives_post_forbidden_for_non_admin(self):
         user = self._mock_user()
-        user.role = 'user'
+        _set_site_admin(user, False)
         with patch("birddog.service.update_archive_root") as mock_update:
             resp = self.client.post("/archives", json={"title": "Архів:ДАЛО", "label": "X", "description": "Y"})
         self.assertEqual(resp.status_code, 403)
@@ -670,7 +687,7 @@ class TestDatabaseUpdateRoute(unittest.TestCase):
         service.runtime.database_update_enabled = True
         service.runtime.active_database_updates = {}
         service.users = MagicMock()
-        service.users.lookup.return_value = MagicMock(email=TEST_EMAIL, role="admin")
+        service.users.lookup.return_value = _mock_user(True, email=TEST_EMAIL)
 
         self.client = app.test_client()
         with self.client.session_transaction() as sess:
@@ -693,7 +710,7 @@ class TestDatabaseUpdateRoute(unittest.TestCase):
         self.assertEqual(resp.status_code, 400)
 
     def test_non_admin_is_forbidden(self):
-        service.users.lookup.return_value = MagicMock(email=TEST_EMAIL, role="user")
+        service.users.lookup.return_value = _mock_user(False, email=TEST_EMAIL)
         resp = self.client.get("/database_update?title=T")
         self.assertEqual(resp.status_code, 403)
         service.runtime.update_to_database.assert_not_called()
@@ -717,8 +734,7 @@ class TestAdminNavLinks(unittest.TestCase):
             sess["user"] = {"email": TEST_EMAIL, "name": TEST_NAME}
 
     def _home_html(self, role):
-        user = MagicMock()
-        user.role = role
+        user = _mock_user(role == "admin")
         user.get_preference.return_value = None
         user.get_watchlist.return_value = []
         service.users.lookup.return_value = user
@@ -760,8 +776,7 @@ class TestAdminRoutes(unittest.TestCase):
         self.client = app.test_client()
 
     def _login(self, role):
-        user = MagicMock()
-        user.role = role
+        user = _mock_user(role == "admin")
         service.users.lookup.return_value = user
         with self.client.session_transaction() as sess:
             sess["user"] = {"email": TEST_EMAIL, "name": TEST_NAME}
@@ -776,6 +791,27 @@ class TestAdminRoutes(unittest.TestCase):
         for route in self.ADMIN_ROUTES:
             with self.subTest(route=route):
                 self.assertNotEqual(self.client.get(route).status_code, 200)
+
+    def test_newly_site_admin_only_routes(self):
+        # these only needed a sign-in before privileges
+        self._login("user")
+        self.assertEqual(self.client.post("/database_cancel_task?task=T").status_code, 403)
+        self.assertEqual(self.client.get("/metrics").status_code, 403)
+        service.runtime.cancel_update.assert_not_called()
+        self._login("admin")
+        self.assertEqual(self.client.post("/database_cancel_task?task=T").status_code, 200)
+        service.runtime.cancel_update.assert_called_once_with("T")
+
+    def test_session_start_on_page_load(self):
+        user = self._login("user") or service.users.lookup.return_value
+        user.get_preference.return_value = None
+        user.get_watchlist.return_value = []
+        with patch("birddog.service.render_template", return_value="ok") as render:
+            self.assertEqual(self.client.get("/").status_code, 200)
+        user.start_session.assert_called_once_with()
+        session_user = render.call_args.kwargs["user"]
+        self.assertIs(session_user["site_admin"], False)
+        self.assertEqual(session_user["privileges"], [])
 
     def test_admin_is_allowed(self):
         self._login("admin")
@@ -806,7 +842,7 @@ class TestPageDataNoEarlierVersion(unittest.TestCase):
         with self.client.session_transaction() as sess:
             sess["user"] = {"email": TEST_EMAIL, "name": TEST_NAME}
         user = MagicMock()
-        user.role = "user"
+        _set_site_admin(user, False)
         service.users.lookup.return_value = user
 
     def _fake_page(self, page_dict):
