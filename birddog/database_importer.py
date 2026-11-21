@@ -554,10 +554,31 @@ def string_ends_with_file_ext(s: str):
     return s.endswith((".PDF", ".DJVU", ".ZIP"))
 
 
-def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: str):
+_COMMONS_UPLOAD_RE = re.compile(
+    r"^https?://upload\.wikimedia\.org/wikipedia/commons/(?:thumb/)?[0-9a-f]/[0-9a-f]{2}/([^/?#]+)")
+
+
+def commons_file_url_from_upload(url: str) -> str:
+    """A raw Commons file url (upload.wikimedia.org/wikipedia/commons/a/ab/Name.pdf,
+    or a thumbnail of it) as its file page url, the form birddog stores the
+    document under; any other url is returned unchanged."""
+    match = _COMMONS_UPLOAD_RE.match(url or "")
+    if not match:
+        return url
+    name = unquote(match.group(1)).replace(" ", "_")
+    return f"https://commons.wikimedia.org/wiki/File:{name}"
+
+
+def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: str,
+                  note_self_link: bool = False):
+    """Document links in cell_addr for the page archive_unit_link. With
+    note_self_link (case rows), a link to the page itself rather than a file is
+    noted in the import message: the row's curated values then sit on a
+    self-link record until the updater finds the page's file."""
     modified_import_message, cell_links = get_cell_link_or_str(ws, cell_addr, import_message, False)
     if not cell_links:
         return modified_import_message, []
+    cell_links = [commons_file_url_from_upload(link) for link in cell_links]
     ar1 = 'Архіви/'
     ar2 = 'Архів:'
     # we compare the strings up to replacement of ar1 with ar2
@@ -573,6 +594,11 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     if isinstance(cell_links, list) and len(cell_links) == 1:
         cell_link_replaced = is_url_redlinked(cell_links[0])[1].rstrip(" /").replace(ar1, ar2)
         if cell_link_replaced in archive_unit_link_replaced or archive_unit_link_replaced in cell_link_replaced:
+            if note_self_link:
+                mess = (f"file link in cell '{cell_addr}', sheet '{ws.title}' is the page itself, "
+                        "not a file")
+                modified_import_message = add_to_message(modified_import_message, mess)
+                _logger.warning(mess)
             return modified_import_message, cell_links
         real_doc = string_ends_with_file_ext(cell_link_replaced)
 
@@ -639,10 +665,12 @@ def check_redlink(page: dict) -> dict:
 
     # a row the team marked "unlinked" in the comments column (and gave no
     # process code) is deliberately left without a page. The page dicts carry
-    # these as "comments" and "OLD_process_code"; this used to read "comment"
-    # and "process_code", which are never set, so the rule never applied.
-    comments = (page.get("comments") or "").strip().lower()
-    if availability != "unlinked" and not page.get("OLD_process_code") and comments == "unlinked":
+    # these as "comments" and "OLD_process_code". The word may come with a
+    # reason ("unlinked - unnecessary description file", "unnecessary
+    # description file - unlinked"), so any comment containing it counts.
+    comments = (page.get("comments") or "").lower()
+    if availability != "unlinked" and not page.get("OLD_process_code") \
+            and re.search(r"\bunlinked\b", comments):
         _logger.info(f"Availability changed from {availability} to 'unlinked' for {page.get("title", "")}")
         availability = "unlinked"
 
@@ -1105,6 +1133,39 @@ def archive_name_to_cyrillic(latin_name: str) -> str:
             raise ValueError(message)
 
 
+def is_totals_row(num_cell, label_cell) -> bool:
+    """The row that ends a fund/opus/case list: its count is a formula such as
+    =ROWS(A8), which a workbook opened with data_only=True reads as the cached
+    number, so the "#... listed" label beside it is the reliable marker."""
+    if str(num_cell.value).startswith("="):
+        return True
+    label = label_cell.value if label_cell is not None else None
+    return isinstance(label, str) and label.strip().startswith("#")
+
+
+_TRAILING_LETTERS_RE = re.compile(r"^(.*\d)([^\d/]+)$")
+
+
+def title_from_transliterated_link(title: str, page_url: str) -> tuple[str, str]:
+    """(page title, import note) for a row whose page link and case number cell
+    may spell the same page differently. Spreadsheets often type the case
+    number's letter suffix in Latin while the link, and the wiki page, use
+    Cyrillic: transliterated (177a for 177а, 13zh for 13ж), or by position in
+    the alphabet (1c for 1в). The link's spelling wins when it transliterates
+    to the same string (no note), or when only the letters after the last
+    digit differ (noted, since that could also be a row linking a sibling
+    case). Otherwise title is kept."""
+    link_title = url_to_title(page_url) if page_url else ""
+    if not link_title or link_title == title:
+        return title, ""
+    if cyrillic_to_latin(link_title) == cyrillic_to_latin(title):
+        return link_title, ""
+    cell_match, link_match = _TRAILING_LETTERS_RE.match(title), _TRAILING_LETTERS_RE.match(link_title)
+    if cell_match and link_match and cell_match.group(1) == link_match.group(1):
+        return link_title, f"case number {title.rsplit('/', 1)[-1]} taken as {link_title.rsplit('/', 1)[-1]} from its link"
+    return title, ""
+
+
 def cyrillic_to_latin(s: str) -> str:
     """
     Converts Ukrainian/Russian Cyrillic letters to Latin equivalents.
@@ -1405,7 +1466,7 @@ def process_archive_sheet(ws, wiki_spreadsheet, archive_latin_name, archive_cyri
         fund_num_cell_addr = f"A{r}"
         fund_num_cell = ws[fund_num_cell_addr]
         fund_descr_cell = ws[f"B{r}"]
-        if str(fund_num_cell.value).startswith("="):
+        if is_totals_row(fund_num_cell, fund_descr_cell):
             break
         fund_ids, url, in_first_cell = parse_cell_integers(fund_num_cell, fund_descr_cell, archive_latin_name)
         lower_level = log_strange_parsing_result(ws, r, fund_num_cell, fund_ids, url, wiki_spreadsheet, level)
@@ -1492,7 +1553,7 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
         opus_num_cell_addr = f"A{r}"
         opus_num_cell = ws[opus_num_cell_addr]
         opus_descr_cell = ws[f"B{r}"]
-        if str(opus_num_cell.value).startswith("="):
+        if is_totals_row(opus_num_cell, opus_descr_cell):
             break
         if opus_num_cell.value:
             curr_import_message = ""
@@ -1596,7 +1657,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
         case_num_cell = ws[case_num_cell_addr]
         case_descr_cell = ws[f"{chr(ord(case_num_col) + 1)}{r}"]
         case_amount_cell = ws[f"{case_amount_column}{r}"]
-        if str(case_amount_cell.value).startswith("="):
+        if is_totals_row(case_amount_cell, ws[f"B{r}"]):
             break
         curr_import_message = ""
         ignore_parts = usual_case_number_found and not possible_hyphen_in_case_num
@@ -1650,6 +1711,11 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
             if title is None:
                 # If it is a comment, like "Index files linked at top of page" - skip this line
                 continue
+            if in_first_cell:
+                # the cell may type the case letter in Latin (177a) for the page's Cyrillic 177а
+                title, note = title_from_transliterated_link(title, raw_url)
+                if note:
+                    curr_import_message = add_to_message(curr_import_message, note)
 
             curr_source_type, label = get_label_source_type(latin_title, source_type, title, wiki_spreadsheet)
 
@@ -1745,7 +1811,8 @@ def add_case_page(additional_column: bool, possible_hyphen_in_case_num: bool,
     doc_type = get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True)  # D
     doc_type = normalize_doc_type(doc_type)
     curr_import_message, doc_links = get_doc_links(
-        ws, f"{chr(ord(case_num_col) + description_col_offs)}{r}", curr_import_message, raw_url)
+        ws, f"{chr(ord(case_num_col) + description_col_offs)}{r}", curr_import_message, raw_url,
+        note_self_link=True)
 
     add_page({
         "title": title,
