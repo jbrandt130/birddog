@@ -155,6 +155,7 @@ _field_validator = {
     "number": lambda value, spec: isinstance(value, (int, float)),
     "single_select": _validate_single_select,
     "multi_select": _validate_multi_select,
+    "json": lambda value, spec: isinstance(value, (dict, list)),
 }
 
 def _coerce_bool(value):
@@ -199,10 +200,23 @@ def _normalize_date(key, value):
     except ValueError:
         raise InvalidFieldValue(key, value)
 
+def _normalize_json(key, value):
+    # NocoDB returns JSON columns as objects, but SQLite-backed bases can hand
+    # back the stored text instead
+    if isinstance(value, str):
+        if not value.strip():
+            return None
+        try:
+            return json.loads(value)
+        except ValueError:
+            raise InvalidFieldValue(key, value)
+    return value
+
 _field_normalizer = {
     "multi_select": _normalize_multiselect,
     "bool": _normalize_bool,
     "date": _normalize_date,
+    "json": _normalize_json,
 }
 
 def _normalize_record(table_schema, record):
@@ -225,9 +239,13 @@ def _encode_multiselect(value):
     encoded_value = ",".join(value) if value else None
     return encoded_value
 
+def _encode_json(value):
+    return None if value is None else json.dumps(value)
+
 _field_encoder = {
     "date": _encode_date,
     "multi_select": _encode_multiselect,
+    "json": _encode_json,
 }
 
 def _encode_record(table_schema, record):

@@ -876,3 +876,27 @@ class TestDatabase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestJsonFieldType(unittest.TestCase):
+    """Pure encode/normalize checks for the "json" Schema field type."""
+
+    _SCHEMA = {"fields": {"doc_preferences": {"type": "json"}, "name": {"type": "text"}}}
+
+    def test_encode_dumps_objects_and_keeps_none(self):
+        from birddog.nocodb_database import _encode_record
+        encoded = _encode_record(self._SCHEMA, {"doc_preferences": {"columns": ["label"]}, "name": "x"})
+        self.assertEqual(encoded, {"doc_preferences": '{"columns": ["label"]}', "name": "x"})
+        self.assertIsNone(_encode_record(self._SCHEMA, {"doc_preferences": None})["doc_preferences"])
+
+    def test_encode_rejects_non_objects(self):
+        from birddog.nocodb_database import _encode_record
+        with self.assertRaises(InvalidFieldValue):
+            _encode_record(self._SCHEMA, {"doc_preferences": "not an object"})
+
+    def test_normalize_accepts_objects_text_and_blank(self):
+        from birddog.nocodb_database import _normalize_record
+        for stored, expected in (({"a": 1}, {"a": 1}), ('{"a": 1}', {"a": 1}), ("", None), (None, None)):
+            record = {"doc_preferences": stored}
+            _normalize_record(self._SCHEMA, record)
+            self.assertEqual(record["doc_preferences"], expected)

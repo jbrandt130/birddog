@@ -1,0 +1,7 @@
+{
+  "table": "Birddog Users",
+  "field": "email",
+  "type": "text",
+  "key_field": true,
+  "description": "Sign-in email of the birddog account; joins this row to the account's login record"
+}

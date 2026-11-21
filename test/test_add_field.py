@@ -18,6 +18,8 @@ class _FakeDB:
         self.in_use = in_use or {}
         self.calls = []
         self._host = "http://nocodb"
+        self.schema_type = "single_select"
+        self.schema_types = ["bool", "text", "single_select", "multi_select", "date"]
 
     def _table_id(self, name):
         return f"t_{name}"
@@ -30,6 +32,15 @@ class _FakeDB:
 
     def _fetch(self, url, json=None, method="GET"):
         self.calls.append((method, url, json))
+        if url == "info/t_Schema":
+            return {"columns": [{"id": "ft", "title": "field_type", "column_name": "field_type",
+                                 "uidt": "SingleSelect",
+                                 "colOptions": {"options": [{"title": t} for t in self.schema_types]}}]}
+        if url.endswith("/columns/ft") and method == "GET":
+            return {"colOptions": {"options": [{"title": t} for t in self.schema_types]}}
+        if url.endswith("/columns/ft") and method == "PATCH":
+            self.schema_types = [o["title"] for o in json["colOptions"]["options"]]
+            return None
         if url.startswith("info/"):
             return {"columns": [{"id": "col1", "title": "process_code", "column_name": "process_code",
                                  "uidt": "SingleSelect",
@@ -43,7 +54,7 @@ class _FakeDB:
     def scan_all(self, table):
         if table == "Schema":
             return [{"Id": 1, "table_name": "Documents", "field_name": "process_code",
-                     "field_type": "single_select", "description": "d"}]
+                     "field_type": self.schema_type, "description": "d"}]
         return self.schema_values
 
     def scan(self, table, limit=100, cursor=None, where=None, fields=None):
@@ -65,6 +76,62 @@ def _spec(values, retired):
 def _schema_values(values):
     return [{"Id": i + 10, "table_name": "Documents", "field_name": "process_code",
              "field_value": v, "description": v} for i, v in enumerate(values)]
+
+
+def _write_spec(data):
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        json.dump(data, f)
+    try:
+        return add_field.load_spec(f.name)
+    finally:
+        os.unlink(f.name)
+
+
+class TestNewTypes(unittest.TestCase):
+    def test_missing_schema_type_is_added_once(self):
+        spec, errors = _write_spec({"table": "Documents", "field": "prefs", "type": "json",
+                                    "description": "d"})
+        self.assertEqual(errors, [])
+        db = _FakeDB([], [])
+        steps = add_field.plan(db, spec)
+        self.assertEqual(steps[0], ("Schema type option", "json"))
+        add_field.apply(db, spec, steps[0])
+        add_field.apply(db, spec, steps[0])
+        self.assertEqual(db.schema_types.count("json"), 1)
+
+    def test_known_schema_type_needs_no_option(self):
+        spec, _ = _write_spec({"table": "Documents", "field": "seen", "type": "date",
+                               "description": "d"})
+        steps = add_field.plan(_FakeDB([], []), spec)
+        self.assertNotIn("Schema type option", [k for k, _ in steps])
+
+    def test_default_and_key_field(self):
+        spec, errors = _write_spec({"table": "T", "field": "active", "type": "bool",
+                                    "description": "d", "default": True, "key_field": False})
+        self.assertEqual(errors, [])
+        db = _FakeDB([], [])
+        add_field.apply(db, spec, ("create column", []))
+        add_field.apply(db, spec, ("Schema row", None))
+        self.assertEqual(db.calls[0][2]["cdf"], "true")
+        self.assertIs(db.calls[1][2][0]["key_field"], False)
+
+    def test_retype_from_changes_schema_row(self):
+        spec, errors = _write_spec({"table": "Documents", "field": "process_code", "type": "single_select",
+                                    "description": "d", "values": [["check", "check"]]})
+        db = _FakeDB(["check"], _schema_values(["check"]))
+        db.schema_type = "user"
+        with self.assertRaises(ValueError):
+            add_field.plan(db, spec)
+        spec["retype_from"] = ["user"]
+        steps = add_field.plan(db, spec)
+        self.assertIn(("Schema type", [1]), steps)
+        add_field.apply(db, spec, ("Schema type", [1]))
+        self.assertIn(("PATCH", "records/t_Schema", [{"Id": 1, "field_type": "single_select"}]), db.calls)
+
+    def test_default_rejected_for_json(self):
+        _, errors = _write_spec({"table": "T", "field": "p", "type": "json",
+                                 "description": "d", "default": "{}"})
+        self.assertTrue(any("default" in e for e in errors))
 
 
 class TestRetiredValues(unittest.TestCase):

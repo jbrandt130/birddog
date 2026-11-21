@@ -1,0 +1,6 @@
+{
+  "table": "Birddog Users",
+  "field": "doc_preferences",
+  "type": "json",
+  "description": "Documents tab settings saved by birddog, such as columns shown, their order and widths"
+}

@@ -1,0 +1,10 @@
+{
+  "table": "Birddog Users",
+  "key": "birddog_users_email.json",
+  "fields": [
+    "birddog_users_name.json",
+    "birddog_users_privileges.json",
+    "birddog_users_active.json",
+    "birddog_users_doc_preferences.json"
+  ]
+}

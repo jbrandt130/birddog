@@ -1,0 +1,6 @@
+{
+  "table": "Birddog Users",
+  "field": "name",
+  "type": "text",
+  "description": "Display name, copied from the birddog account when the row is created"
+}

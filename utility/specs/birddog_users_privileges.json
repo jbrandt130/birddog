@@ -1,0 +1,12 @@
+{
+  "table": "Birddog Users",
+  "field": "privileges",
+  "type": "multi_select",
+  "description": "Document curation privileges; site administration is granted separately",
+  "values": [
+    ["doc_check", "Documents tab; work on documents in check"],
+    ["doc_review", "Work on documents in review"],
+    ["doc_escalate", "Work on documents in escalate; see anomalies"],
+    ["doc_admin", "All process codes and anomalies; Alerts, Watchlists and Archives tabs"]
+  ]
+}

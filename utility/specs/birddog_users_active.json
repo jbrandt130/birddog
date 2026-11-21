@@ -1,0 +1,7 @@
+{
+  "table": "Birddog Users",
+  "field": "active",
+  "type": "bool",
+  "default": true,
+  "description": "Untick to withdraw all privileges without deleting the row"
+}

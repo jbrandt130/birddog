@@ -1,0 +1,7 @@
+{
+  "table": "Documents",
+  "field": "processor",
+  "type": "text",
+  "retype_from": ["user"],
+  "description": "User assigned to processing this document."
+}

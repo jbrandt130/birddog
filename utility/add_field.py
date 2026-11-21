@@ -11,7 +11,9 @@ Spec file (see utility/specs/):
       "description": "...",                # Schema row description
       "column_type": "LongText",           # optional, see COLUMN_TYPES below
       "values": [["Vitals", "Examples include ..."], ...],  # selects only
-      "retired_values": ["postpone"]       # optional, single selects only
+      "retired_values": ["postpone"],      # optional, single selects only
+      "default": true,                     # optional column default (new columns only)
+      "retype_from": ["user"]              # optional: Schema row types to change to "type"
     }
 
 Each step is skipped if it is already done, so an interrupted run can simply be
@@ -39,6 +41,8 @@ UIDT = {
     "multi_select": "MultiSelect",
     "bool": "Checkbox",
     "text": "SingleLineText",
+    "date": "DateTime",
+    "json": "JSON",
 }
 SELECT_TYPES = {"single_select", "multi_select"}
 # Optional "column_type" overrides allowed per Schema field_type; the Schema row
@@ -51,6 +55,11 @@ FORBIDDEN_CHARS = ",/"
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Add a field and its Schema rows.")
     parser.add_argument("specs", nargs="+", help="path(s) to JSON field specs")
+    add_target_args(parser)
+    parser.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
+    return parser.parse_args(argv)
+
+def add_target_args(parser):
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--local", dest="env", action="store_const", const="LOCAL",
                         help="local dev base")
@@ -58,8 +67,6 @@ def parse_args(argv=None):
                         help="NocoDB Cloud staging base")
     target.add_argument("--prod", dest="env", action="store_const", const="CLOUD_PROD",
                         help="NocoDB Cloud production base")
-    parser.add_argument("--yes", action="store_true", help="skip the confirmation prompt")
-    return parser.parse_args(argv)
 
 def is_select(spec):
     return spec["type"] in SELECT_TYPES
@@ -98,6 +105,12 @@ def load_spec(path):
         overlap = set(retired) & {v[0] for v in spec.get("values", [])}
         if overlap:
             errors.append(f"{path}: values both allowed and retired: {sorted(overlap)}")
+    if not isinstance(spec.get("retype_from", []), list):
+        errors.append(f"{path}: retype_from must be a list of Schema field types")
+    if "key_field" in spec and not isinstance(spec["key_field"], bool):
+        errors.append(f"{path}: key_field must be true or false")
+    if "default" in spec and spec.get("type") not in ("bool", "text", "number"):
+        errors.append(f"{path}: default is only supported for bool, text and number fields")
     spec.setdefault("values", [])
     spec.setdefault("retired_values", [])
     return spec, errors
@@ -140,12 +153,18 @@ def plan(db, spec):
                                  f"{in_use} record(s); change them before retiring it")
         if retired:
             steps.append(("remove options", retired))
+    if spec["type"] not in column_options(get_column(db, "Schema", "field_type") or {}):
+        steps.insert(0, ("Schema type option", spec["type"]))
     schema = [r for r in db.scan_all("Schema")
               if r.get("table_name") == table and r.get("field_name") == field]
     if not schema:
         steps.append(("Schema row", None))
     else:
-        if any(r.get("field_type") != spec["type"] for r in schema):
+        retype = [r["Id"] for r in schema if r.get("field_type") != spec["type"]
+                  and r.get("field_type") in spec.get("retype_from", [])]
+        if retype:
+            steps.append(("Schema type", retype))
+        if any(r.get("field_type") != spec["type"] and r["Id"] not in retype for r in schema):
             raise ValueError(f"Schema row for {table}.{field} has type "
                              f"{schema[0].get('field_type')!r}, not {spec['type']!r}")
         if any(r.get("description") != spec["description"] for r in schema):
@@ -183,7 +202,12 @@ def describe(spec, step):
     if kind == "add options":
         return f"add options to {where}: {data}"
     if kind == "Schema row":
-        return f"add Schema row for {where} ({spec['type']})"
+        key = ", key field" if spec.get("key_field") else ""
+        return f"add Schema row for {where} ({spec['type']}{key})"
+    if kind == "Schema type":
+        return f"change the Schema type of {where} to {spec['type']!r}"
+    if kind == "Schema type option":
+        return f"add {data!r} to the Schema.field_type options"
     if kind == "Schema description":
         return f"update Schema description for {where}"
     if kind == "Schema Values descriptions":
@@ -200,6 +224,9 @@ def apply(db, spec, step):
     table_id = db._table_id(table)
     if kind == "create column":
         payload = {"title": field, "column_name": field, "uidt": column_uidt(spec)}
+        if "default" in spec:
+            default = spec["default"]
+            payload["cdf"] = str(default).lower() if isinstance(default, bool) else str(default)
         if is_select(spec):
             payload["colOptions"] = {
                 "options": [{"title": v, "order": i + 1} for i, v in enumerate(data)]
@@ -216,8 +243,21 @@ def apply(db, spec, step):
     elif kind == "Schema row":
         db._fetch(db._records_url(db._table_id("Schema")), method="POST", json=[{
             "table_name": table, "field_name": field, "field_type": spec["type"],
-            "key_field": False, "description": spec["description"],
+            "key_field": spec.get("key_field", False), "description": spec["description"],
         }])
+    elif kind == "Schema type option":
+        column = get_column(db, "Schema", "field_type")
+        url = f"{db._host}/api/v2/meta/columns/{column['id']}"
+        full = db._fetch(url)
+        options = full["colOptions"]["options"]
+        if data not in [o["title"] for o in options]:   # two specs in one run may need the same type
+            start = max((o.get("order") or 0 for o in options), default=0)
+            options.append({"title": data, "order": start + 1})
+            db._fetch(url, json=full, method="PATCH")
+    elif kind == "Schema type":
+        db._fetch(db._records_url(db._table_id("Schema")), method="PATCH", json=[
+            {"Id": rid, "field_type": spec["type"]} for rid in data
+        ])
     elif kind == "Schema description":
         db._fetch(db._records_url(db._table_id("Schema")), method="PATCH", json=[
             {"Id": rid, "description": spec["description"]} for rid in data

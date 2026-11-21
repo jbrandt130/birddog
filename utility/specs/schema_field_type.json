@@ -1,0 +1,17 @@
+{
+  "table": "Schema",
+  "field": "field_type",
+  "type": "single_select",
+  "description": "Data type of the table field",
+  "values": [
+    ["bool", "true/false"],
+    ["number", "Number value"],
+    ["text", "Text value"],
+    ["single_select", "Single option select"],
+    ["url", "Web link"],
+    ["multi_select", "Multiple option select"],
+    ["date", "Date and time (universal)"],
+    ["json", "JSON object or list"]
+  ],
+  "retired_values": ["link", "links", "user"]
+}
