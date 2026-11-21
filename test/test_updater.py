@@ -26,6 +26,7 @@ from birddog.database_updater import (
     _owning_page_ids,
     _page_urls_from_titles,
     _replace_links,
+    _kept_doc_kind,
     _self_link_copy,
     _sniff_suffix,
     _source_from_url,
@@ -1675,7 +1676,7 @@ class TestSelfLinkCuration(unittest.TestCase):
 
     def test_copies_onto_the_one_candidate(self):
         db = self._db()
-        changed = make_updater(db)._propagate_self_link_curation(
+        changed = make_updater(db)._propagate_kept_doc_curation(
             {"p": (_normalize_title(self.PAGE), {"r"}, {"s"})})
         self.assertTrue(changed)
         upd = self._updates(db)
@@ -1691,32 +1692,75 @@ class TestSelfLinkCuration(unittest.TestCase):
     def test_two_candidates_copy_nothing_and_note_once(self):
         db = self._db({"r2": {"Id": "r2", "url": self.FILE2, "process_code": "new"}})
         updater = make_updater(db)
-        updater._propagate_self_link_curation({"p": (_normalize_title(self.PAGE), {"r", "r2"}, {"s"})})
+        updater._propagate_kept_doc_curation({"p": (_normalize_title(self.PAGE), {"r", "r2"}, {"s"})})
         upd = self._updates(db)
         self.assertEqual(set(upd), {self.PAGE_URL})
         self.assertIn("2 candidate documents", upd[self.PAGE_URL]["import_message"])
         db.records["Documents"]["s"]["import_message"] = upd[self.PAGE_URL]["import_message"]
         db.update_calls.clear()
-        self.assertFalse(updater._propagate_self_link_curation(
+        self.assertFalse(updater._propagate_kept_doc_curation(
             {"p": (_normalize_title(self.PAGE), {"r", "r2"}, {"s"})}))
 
     def test_self_link_with_page_fields_only_is_ignored(self):
         db = self._db()
         for f in ("process_code", "OLD_process_code", "doc_type"):
             db.records["Documents"]["s"][f] = None
-        self.assertFalse(make_updater(db)._propagate_self_link_curation(
+        self.assertFalse(make_updater(db)._propagate_kept_doc_curation(
             {"p": (_normalize_title(self.PAGE), {"r"}, {"s"})}))
 
     def test_second_run_is_a_no_op(self):
         db = self._db()
         updater = make_updater(db)
         pages = {"p": (_normalize_title(self.PAGE), {"r"}, {"s"})}
-        updater._propagate_self_link_curation(pages)
+        updater._propagate_kept_doc_curation(pages)
         for url, u in self._updates(db).items():
             rid = "r" if url == self.FILE else "s"
             db.records["Documents"][rid].update(u)
         db.update_calls.clear()
-        self.assertFalse(updater._propagate_self_link_curation(pages))
+        self.assertFalse(updater._propagate_kept_doc_curation(pages))
+
+    def _kept(self, url, extra=None):
+        db = self._db(extra)
+        db.records["Documents"]["s"]["url"] = url
+        return db
+
+    def test_broken_link_record_is_copied(self):
+        db = self._kept("http://k/")
+        make_updater(db)._propagate_kept_doc_curation({"p": (_normalize_title(self.PAGE), {"r"}, {"s"})})
+        upd = self._updates(db)
+        self.assertEqual(upd[self.FILE]["process_code"], "save")
+        self.assertIn("copied from broken link record http://k/", upd[self.FILE]["import_message"])
+
+    def test_upload_link_to_same_file_is_copied(self):
+        db = self._kept("https://upload.wikimedia.org/wikipedia/commons/d/d2/DACHKO_8-1-33_test.pdf")
+        make_updater(db)._propagate_kept_doc_curation({"p": (_normalize_title(self.PAGE), {"r"}, {"s"})})
+        self.assertEqual(self._updates(db)[self.FILE]["process_code"], "save")
+
+    def test_other_file_is_flagged_not_copied(self):
+        old = "https://commons.wikimedia.org/wiki/File:DACHKO_8-1-33_older.pdf"
+        db = self._kept(old)
+        updater = make_updater(db)
+        pages = {"p": (_normalize_title(self.PAGE), {"r"}, {"s"})}
+        self.assertTrue(updater._propagate_kept_doc_curation(pages))
+        upd = self._updates(db)
+        self.assertNotIn("process_code", upd[self.FILE])
+        self.assertTrue(upd[self.FILE]["anomaly"])
+        self.assertIn(old, upd[self.FILE]["anomaly_comment"])
+        self.assertIn("flagged for review", upd[old]["import_message"])
+        for url, u in upd.items():
+            db.records["Documents"]["r" if url == self.FILE else "s"].update(u)
+        db.update_calls.clear()
+        self.assertFalse(updater._propagate_kept_doc_curation(pages))
+
+    def test_kept_doc_kind(self):
+        page = normalize_url(self.PAGE_URL)
+        self.assertEqual(_kept_doc_kind(self.PAGE_URL, page, self.FILE), "self-link")
+        self.assertEqual(_kept_doc_kind("http://k/", page, self.FILE), "broken link")
+        self.assertEqual(_kept_doc_kind(
+            "https://upload.wikimedia.org/wikipedia/commons/d/d2/DACHKO_8-1-33_test.pdf", page, self.FILE), "same file")
+        self.assertEqual(_kept_doc_kind(
+            "https://upload.wikimedia.org/wikipedia/commons/d/d2/other.pdf", page, self.FILE), "other file")
+        self.assertEqual(_kept_doc_kind("https://www.familysearch.org/film/1", page, self.FILE), "other file")
 
     def test_copy_rules(self):
         copy, kept = _self_link_copy(

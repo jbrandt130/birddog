@@ -365,10 +365,11 @@ def _needs_new_process_code(doc_rec):
     return not any(doc_rec.get(field)
                    for field in ("process_code", "OLD_process_code", "last_imported"))
 
-# Curated values a spreadsheet import may have put on a self-link record (a
-# Document whose url is its owning page's own url: a row that linked the page
-# instead of the file). They are copied onto the page's one real document, see
-# DatabaseUpdater._propagate_self_link_curation.
+# Curated values a spreadsheet import may have put on a document the wiki page
+# does not link (kept on the page by the orphan guard): a self-link record (url
+# is the page's own url), a broken url, or a raw upload.wikimedia.org link to
+# the file. They are copied onto the page's one real document, see
+# DatabaseUpdater._propagate_kept_doc_curation.
 _SELF_LINK_COPY_FIELDS = (
     "last_imported", "reference_date", "OLD_doc_type", "OLD_content_code", "OLD_process_code",
     "process_code", "doc_type", "doc_structure", "doc_scope", "language", "comments",
@@ -383,7 +384,28 @@ _SELF_LINK_CURATED_FIELDS = (
     "doc_structure", "doc_scope", "language", "processor", "pages_processed",
     "when_transcribed", "save_status",
 )
-_SELF_LINK_AMBIGUOUS_NOTE = "self-link record"
+_AMBIGUOUS_NOTE = "candidate documents on the page; curated values not copied"
+_OTHER_FILE_NOTE = "flagged for review, curated values not copied"
+
+def _kept_doc_kind(kept_url, page_url, candidate_url):
+    """How a guard-kept imported document relates to the page's one real
+    document: "self-link" (its url is the page's), "broken link" (no real host,
+    e.g. http://k/), "same file" (a raw upload.wikimedia.org link to the
+    candidate's file) or "other file" (anything else: a different, possibly
+    valid file or site, which a person has to choose between)."""
+    url = normalize_url(kept_url or "")
+    if url == page_url:
+        return "self-link"
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    if "." not in host:
+        return "broken link"
+    if host == "upload.wikimedia.org":
+        name = unquote(parsed.path.rsplit("/", 1)[-1]).replace(" ", "_")
+        candidate = unquote((candidate_url or "").split("File:", 1)[-1]).replace(" ", "_")
+        if name and name == candidate:
+            return "same file"
+    return "other file"
 
 def _default_doc_filename(label):
     return (label or "").lstrip("/").replace("/", "-")
@@ -1091,18 +1113,27 @@ class DatabaseUpdater:
 
         return None
 
-    def _propagate_self_link_curation(self, pages):
-        """Copy curated values off self-link records onto a real document.
+    def _propagate_kept_doc_curation(self, pages):
+        """Move curated values off imported documents the wiki page does not link.
 
-        A self-link record is a Document whose url is its owning page's own url:
-        the spreadsheet row linked the page instead of the file, so the import put
-        the team's work (process code, doc type, comments...) on an invalid record
-        (its availability is "error"). The orphan guard keeps it linked. When the
-        page links exactly one other, valid document, the curated values are
-        copied onto it (see _self_link_copy) and both records get an
-        import_message note; the self-link record itself is left as it is. With
-        two or more candidates nothing is copied and the self-link record gets a
-        note once.
+        The orphan guard keeps an imported document on its page when the wiki no
+        longer links it, so the team's work (process code, doc type, comments...)
+        is not lost. That happens when the spreadsheet row linked something other
+        than the file the wiki page links: the case page itself (a self-link
+        record, availability "error"), a broken url, a raw upload.wikimedia.org
+        link, or a different file. Meanwhile birddog creates the real file as a
+        "new" document without any of that work.
+
+        When the page links exactly one other document (see _kept_doc_kind):
+          - self-link, broken link, same file: the curated values are copied onto
+            it (see _self_link_copy) and both records get an import_message
+            note; the kept record itself is left as it is.
+          - other file: nothing is copied; the page's document is flagged
+            (anomaly, anomaly_comment) for a person to choose, and the kept record
+            gets a note.
+        With two or more candidates nothing is copied and the kept record gets a
+        note. Each note is written once. Only kept records with real curated
+        state count (see _SELF_LINK_CURATED_FIELDS).
 
         pages: {page_id: (page_title, wiki-linked doc ids, guard-kept doc ids)}
         Returns True if any Document was written.
@@ -1110,42 +1141,60 @@ class DatabaseUpdater:
         all_ids = set()
         for _, linked, kept in pages.values():
             all_ids |= linked | kept
-        fields = ["url", "label", "import_message"] + list(_SELF_LINK_COPY_FIELDS)
+        fields = ["url", "label", "import_message", "anomaly", "anomaly_comment"] + list(_SELF_LINK_COPY_FIELDS)
         recs = {rec["Id"]: rec for rec in self._db.read("Documents", list(all_ids), fields=fields) if rec}
 
         updates = []
+        def note(rec, text, once=None):
+            if once and once in (rec.get("import_message") or ""):
+                return
+            rec["import_message"] = _append_message(rec.get("import_message"), text)
+            updates.append({"url": rec["url"], "import_message": rec["import_message"]})
+
         for page_title, linked, kept in pages.values():
             page_url = normalize_url(page_url_from_title(page_title))
-            self_recs = [recs[i] for i in kept
-                         if i in recs and normalize_url(recs[i].get("url") or "") == page_url
-                         and any(recs[i].get(f) not in (None, "", [], 0) for f in _SELF_LINK_CURATED_FIELDS)]
-            if not self_recs:
+            sources = [recs[i] for i in kept
+                       if i in recs and any(recs[i].get(f) not in (None, "", [], 0)
+                                            for f in _SELF_LINK_CURATED_FIELDS)]
+            if not sources:
                 continue
             candidates = [recs[i] for i in linked
                           if i in recs and normalize_url(recs[i].get("url") or "") != page_url]
-            for self_rec in self_recs:
-                if len(candidates) == 1:
-                    target = candidates[0]
-                    copy, kept_fields = _self_link_copy(self_rec, target)
-                    if not copy:
-                        continue
-                    note = f"curated values copied from self-link record {self_rec['url']}: {', '.join(copy)}"
-                    if kept_fields:
-                        note += f" (kept existing {', '.join(kept_fields)})"
-                    target_message = _append_message(target.get("import_message"), note)
-                    updates.append({"url": target["url"], **copy, "import_message": target_message})
-                    target.update(copy, import_message=target_message)
-                    updates.append({"url": self_rec["url"], "import_message": _append_message(
-                        self_rec.get("import_message"), f"curated values copied to {target['url']}")})
-                    _logger.info(f"Updater: copied {sorted(copy)} from self-link {self_rec['url']} to {target['url']}")
-                elif len(candidates) > 1 and _SELF_LINK_AMBIGUOUS_NOTE not in (self_rec.get("import_message") or ""):
-                    updates.append({"url": self_rec["url"], "import_message": _append_message(
-                        self_rec.get("import_message"),
-                        f"{_SELF_LINK_AMBIGUOUS_NOTE}: {len(candidates)} candidate documents on the page; "
-                        "curated values not copied")})
+            for source in sources:
+                if len(candidates) > 1:
+                    note(source, f"{len(candidates)} {_AMBIGUOUS_NOTE}", once=_AMBIGUOUS_NOTE)
+                    continue
+                if not candidates:
+                    continue
+                target = candidates[0]
+                kind = _kept_doc_kind(source.get("url"), page_url, target.get("url"))
+                if kind == "other file":
+                    flag = f"imported document {source['url']} on this page holds curated values; check which file is right"
+                    if flag not in (target.get("anomaly_comment") or ""):
+                        target["anomaly_comment"] = _append_message(target.get("anomaly_comment"), flag)
+                        target["anomaly"] = True
+                        updates.append({"url": target["url"], "anomaly": True,
+                                        "anomaly_comment": target["anomaly_comment"]})
+                    note(source, f"other file on the page: {target['url']}; {_OTHER_FILE_NOTE}",
+                         once=_OTHER_FILE_NOTE)
+                    continue
+                copy, kept_fields = _self_link_copy(source, target)
+                if not copy:
+                    continue
+                text = f"curated values copied from {kind} record {source['url']}: {', '.join(copy)}"
+                if kept_fields:
+                    text += f" (kept existing {', '.join(kept_fields)})"
+                target.update(copy)
+                updates.append({"url": target["url"], **copy})
+                note(target, text)
+                note(source, f"curated values copied to {target['url']}")
+                _logger.info(f"Updater: copied {sorted(copy)} from {kind} {source['url']} to {target['url']}")
         if not updates:
             return False
-        self._db.update("Documents", updates)
+        merged = {}
+        for update in updates:
+            merged.setdefault(update["url"], {}).update(update)
+        self._db.update("Documents", list(merged.values()))
         return True
 
     def update_page_records(self, page_titles, update_doc_metadata=True):
@@ -1434,13 +1483,13 @@ class DatabaseUpdater:
 
             doc_link_results = _run_concurrent(tasks, max_workers=4)
 
-            # a doc the guard kept may be a self-link (see _propagate_self_link_curation)
+            # a doc the guard kept may hold curated values for the page's real file (see _propagate_kept_doc_curation)
             pages_with_kept = {
                 page_id: (page_doc_targets[page_id][0], page_doc_targets[page_id][1], kept)
                 for page_id, kept in kept_by_page.items() if kept
             }
             if pages_with_kept:
-                doc_records_changed |= self._propagate_self_link_curation(pages_with_kept)
+                doc_records_changed |= self._propagate_kept_doc_curation(pages_with_kept)
 
             # any document records that are linked/unlinked as a result of the process should have lookup_status
             # invalidated so that the document record fields that depend on page data are updated
