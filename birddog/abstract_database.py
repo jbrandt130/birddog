@@ -67,6 +67,84 @@ class ConfigError(DatabaseError):
     """
 
 # ---------------------------------------------------------------------------
+# Filter conditions (the `where` argument of scan() and count())
+# ---------------------------------------------------------------------------
+#
+# A filter is either a single condition or a group:
+#
+#     condition: (field_name, op, value)    a 3-tuple
+#     group:     And(f1, f2, ...) or Or(f1, f2, ...), where each f is a filter
+#
+# Groups nest. Ops (WHERE_OPS):
+#
+#     eq, neq          equal / not equal. On a bool field, ("f", "eq", False)
+#                      also matches records where f was never set.
+#     lt, le, gt, ge   ordered comparisons
+#     in               value is a list or tuple; matches any of its items
+#     is, isnot        value is None, True or False
+#     startswith       text prefix, case as stored
+#     blank, notblank  null or empty text; value must be None
+#
+# System fields Id, CreatedAt and UpdatedAt can be used in filters and sorts.
+# A backend raises ValueError for a filter it cannot express (see the
+# backend's docs for the values it rejects).
+
+WHERE_OPS = ("eq", "neq", "lt", "le", "gt", "ge", "in", "is", "isnot",
+             "startswith", "blank", "notblank")
+
+class _WhereGroup:
+    op = None
+
+    def __init__(self, *conditions):
+        if not conditions:
+            raise ValueError(f"{type(self).__name__}() needs at least one condition")
+        for c in conditions:
+            validate_where(c)
+        self.conditions = conditions
+
+    def __eq__(self, other):
+        return type(self) is type(other) and self.conditions == other.conditions
+
+    def __hash__(self):
+        return hash((type(self).__name__, self.conditions))
+
+    def __repr__(self):
+        return f"{type(self).__name__}{self.conditions!r}"
+
+class And(_WhereGroup):
+    """All of the conditions match."""
+    op = "and"
+
+class Or(_WhereGroup):
+    """At least one of the conditions matches."""
+    op = "or"
+
+def validate_where(where):
+    """
+    Check the shape of a filter: groups, 3-tuples and known ops. Raises
+    ValueError naming the offending part. Field names and values are left
+    to the backend.
+    """
+    if isinstance(where, _WhereGroup):
+        return   # its conditions were checked when it was built
+    if not isinstance(where, tuple) or len(where) != 3:
+        raise ValueError(f"filter must be And, Or or a (field, op, value) tuple: {where!r}")
+    field_name, op, value = where
+    if not isinstance(field_name, str) or not field_name:
+        raise ValueError(f"filter field name must be a non-empty string: {where!r}")
+    if not isinstance(op, str) or op.lower() not in WHERE_OPS:
+        raise ValueError(f"unrecognized filter op {op!r} in {where!r}")
+    op = op.lower()
+    if op == "in" and not isinstance(value, (list, tuple)):
+        raise ValueError(f"operand for 'in' must be a list or tuple: {where!r}")
+    if op in ("blank", "notblank") and value is not None:
+        raise ValueError(f"operand for {op!r} must be None: {where!r}")
+    if op in ("is", "isnot") and value not in (None, True, False):
+        raise ValueError(f"operand for {op!r} must be None, True or False: {where!r}")
+    if op == "startswith" and not isinstance(value, str):
+        raise ValueError(f"operand for 'startswith' must be a string: {where!r}")
+
+# ---------------------------------------------------------------------------
 # Abstract Database class
 # ---------------------------------------------------------------------------
 
@@ -142,9 +220,8 @@ class Database:
                 stringified integer offset.
 
             where:
-                Optional condition filter for returned records.
-                Filter is a triple: (field_name, condition, value), where condition
-                is one of ("eq", "neq", "is", "isnot", "lt", "le", "gt", "ge")
+                Optional filter for returned records: a (field_name, op, value)
+                tuple, or an And/Or group of filters. See WHERE_OPS above.
 
             view_name:
                 Optional name of view to scan. If specified, returned records 
@@ -155,8 +232,10 @@ class Database:
                 By default, all fields are included.
 
             sort:
-                Optional sort specification of the form (fieldname, ascending).
-                If ascending is True then sort on the named field ascending, else descending.
+                Optional sort specification. One sort key is a field name
+                (ascending) or a (field_name, ascending) tuple. A list of keys
+                sorts by each in turn. Ordering is only fully stable across
+                pages when the last key is unique (e.g. Id).
 
         Returns:
             (records, next_cursor)
@@ -180,12 +259,13 @@ class Database:
         """
         raise NotImplementedError
 
-    def count(self, table_name):
+    def count(self, table_name, where=None, view_name=None):
         """
-        Return the number of records in a table.
+        Return the number of records in a table, optionally only those that
+        match a filter (same form as scan()'s where) or are in a view.
 
-        Meant to be cheap: implementations should get the count from the
-        backend in a single request rather than by scanning the table.
+        Implementations should get the count from the backend in a single
+        request where they can; a backend without a native count may scan.
 
         Errors:
             - InvalidTableName

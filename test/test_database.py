@@ -900,3 +900,92 @@ class TestJsonFieldType(unittest.TestCase):
             record = {"doc_preferences": stored}
             _normalize_record(self._SCHEMA, record)
             self.assertEqual(record["doc_preferences"], expected)
+
+
+class TestWhereEncoding(unittest.TestCase):
+    """Pure checks of filter/sort encoding for NocoDB (no network)."""
+
+    def setUp(self):
+        from birddog.nocodb_database import NocoDBDatabase
+        db = NocoDBDatabase.__new__(NocoDBDatabase)
+        db._table_id_map = {"T": "t1"}
+        db._field_id_map = {"T": {"label": "cL", "anomaly": "cA", "code": "cC",
+                                  "Id": "cI", "UpdatedAt": "cU"}}
+        db._schema = {"T": {"fields": {"label": {"type": "text"},
+                                       "anomaly": {"type": "bool"},
+                                       "code": {"type": "single_select"}}}}
+        self.db = db
+
+    def enc(self, where):
+        return self.db._encode_where_spec("T", where)
+
+    def test_single_condition_unchanged(self):
+        self.assertEqual(self.enc(("label", "eq", "A/1")), "(cL,eq,A/1)")
+        self.assertEqual(self.enc(("code", "in", ["x", "y"])), "(cC,in,x,y)")
+        self.assertEqual(self.enc(("code", "is", None)), "(cC,is,null)")
+        self.assertEqual(self.enc(("Id", "gt", 5)), "(cI,gt,5)")
+
+    def test_values_keep_commas_and_parens(self):
+        self.assertEqual(self.enc(("label", "eq", "a,b_(1923)")), "(cL,eq,a,b_(1923))")
+
+    def test_new_ops(self):
+        self.assertEqual(self.enc(("label", "startswith", "A/1/")), "(cL,like,A/1/%)")
+        self.assertEqual(self.enc(("code", "blank", None)), "(cC,blank)")
+        self.assertEqual(self.enc(("code", "notblank", None)), "(cC,notblank)")
+
+    def test_bool_eq_maps_to_checked(self):
+        self.assertEqual(self.enc(("anomaly", "eq", False)), "(cA,notchecked)")
+        self.assertEqual(self.enc(("anomaly", "eq", True)), "(cA,checked)")
+        self.assertEqual(self.enc(("anomaly", "neq", True)), "(cA,notchecked)")
+        # non-bool field: plain eq
+        self.assertEqual(self.enc(("code", "eq", False)), "(cC,eq,false)")
+
+    def test_groups_nest(self):
+        from birddog.abstract_database import And, Or
+        where = And(Or(("label", "eq", "A/1"), ("label", "startswith", "A/1/")),
+                    ("anomaly", "eq", False))
+        self.assertEqual(self.enc(where),
+                         "((cL,eq,A/1)~or(cL,like,A/1/%))~and(cA,notchecked)")
+        self.assertEqual(self.enc(And(("label", "eq", "x"))), "(cL,eq,x)")
+        self.assertEqual(self.enc(Or(And(("label", "eq", "x")), ("code", "blank", None))),
+                         "(cL,eq,x)~or(cC,blank)")
+
+    def test_groups_compare_by_value(self):
+        from birddog.abstract_database import And, Or
+        self.assertEqual(And(("a", "eq", 1)), And(("a", "eq", 1)))
+        self.assertNotEqual(And(("a", "eq", 1)), Or(("a", "eq", 1)))
+
+    def test_rejected_filters(self):
+        from birddog.abstract_database import And
+        bad = [
+            ("label", "like", "x"),                 # unknown op
+            ("label", "eq"),                        # not a 3-tuple
+            ["label", "eq", "x"],                   # list, not tuple
+            ("label", "blank", "x"),                # blank takes None
+            ("label", "in", "x"),                   # in needs a list
+            ("label", "is", "x"),                   # is takes None/True/False
+            ("label", "startswith", "A_1"),         # LIKE wildcard
+            ("label", "startswith", "A%"),
+            ("label", "eq", "a~orb"),               # NocoDB group syntax
+            ("code", "in", ["a,b"]),                # comma inside an in item
+            ("label", "eq", None),                  # use blank / is
+        ]
+        for where in bad:
+            with self.subTest(where=where), self.assertRaises(ValueError):
+                self.enc(where)
+        with self.assertRaises(ValueError):
+            And()
+        with self.assertRaises(ValueError):
+            And(("label", "eq", "x"), "label")
+        with self.assertRaises(InvalidFieldName):
+            self.enc(("nope", "eq", "x"))
+
+    def test_sort_keys(self):
+        enc = lambda s: self.db._encode_sort_spec("T", s)
+        self.assertEqual(enc("label"), "cL")
+        self.assertEqual(enc(("label", False)), "-cL")
+        self.assertEqual(enc(["label", True]), "cL")       # legacy single-key list
+        self.assertEqual(enc([("UpdatedAt", False), ("Id", True)]), "-cU,cI")
+        self.assertEqual(enc(["label", "Id"]), "cL,cI")
+        with self.assertRaises(ValueError):
+            enc([])

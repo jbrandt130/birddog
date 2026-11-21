@@ -23,6 +23,9 @@ from birddog.abstract_database import (
     InvalidTableName,
     InvalidViewName,
     MissingKey,
+    And,
+    Or,
+    validate_where,
     )
 from birddog.fetch import fetch_url, make_session
 from birddog.utility import json_size
@@ -755,37 +758,90 @@ class NocoDBDatabase(Database):
             field_spec["values"] = values
         return schema
 
+    def _schema_field_type(self, table_name, field_name):
+        fields = ((self._schema or {}).get(table_name) or {}).get("fields") or {}
+        return (fields.get(field_name) or {}).get("type")
+
     def _encode_where_spec(self, table_name, where_spec):
-        field_name, operator, value = where_spec
+        """
+        Encode a filter (see abstract_database WHERE_OPS) as a NocoDB v2
+        where string. Values may contain commas and balanced parentheses;
+        ValueError is raised for values NocoDB cannot express: "~" anywhere,
+        commas inside "in" items, and "%" or "_" in a startswith prefix
+        (LIKE wildcards; NocoDB has no portable escape for them).
+        """
+        validate_where(where_spec)
+        return self._encode_where(table_name, where_spec)[0]
+
+    def _encode_where(self, table_name, where_spec):
+        """Return (encoded string, True if it joins several conditions)."""
+        if isinstance(where_spec, (And, Or)):
+            parts = []
+            for condition in where_spec.conditions:
+                text, compound = self._encode_where(table_name, condition)
+                parts.append(f"({text})" if compound else text)
+            return f"~{where_spec.op}".join(parts), len(parts) > 1
+        return self._encode_where_condition(table_name, where_spec), False
+
+    def _encode_where_condition(self, table_name, condition):
+        field_name, op, value = condition
+        op = op.lower()
         field_id = self._field_id(table_name, field_name)
-        operator = operator.lower()
-        _VALID_OPS = ("eq", "neq", "is", "isnot", "lt", "le", "gt", "ge", "in")
-        if operator not in _VALID_OPS:
-            raise ValueError(f"unrecognized where operator: {operator}")
-        if operator in ("is", "isnot"):
-            if value is None:
-                value = "null"
-            elif value:
-                value = "true"
-            else:
-                value = "false"
-        elif operator == "in":
-            if not isinstance(value, (list,tuple)):
-                raise ValueError(f"operand for 'in' must be tuple or list")
-            value = ",".join(value)
-        return f"({field_id},{operator},{value})"
+        if op in ("blank", "notblank"):
+            return f"({field_id},{op})"
+        if (op in ("eq", "neq") and isinstance(value, bool)
+                and self._schema_field_type(table_name, field_name) == "bool"):
+            # NocoDB's eq false skips records where the checkbox was never set
+            checked = value if op == "eq" else not value
+            return f"({field_id},{'checked' if checked else 'notchecked'})"
+        if op in ("is", "isnot"):
+            value = "null" if value is None else ("true" if value else "false")
+        elif op == "in":
+            items = [self._encode_where_value(condition, v) for v in value]
+            for item in items:
+                if "," in item:
+                    raise ValueError(f"'in' items cannot contain commas: {condition!r}")
+            value = ",".join(items)
+        elif op == "startswith":
+            value = self._encode_where_value(condition, value)
+            if "%" in value or "_" in value:
+                raise ValueError(f"startswith prefix cannot contain '%' or '_': {condition!r}")
+            op = "like"
+            value = f"{value}%"
+        else:
+            value = self._encode_where_value(condition, value)
+        return f"({field_id},{op},{value})"
+
+    def _encode_where_value(self, condition, value):
+        if value is None:
+            raise ValueError(f"filter value is None (use blank or is): {condition!r}")
+        if isinstance(value, bool):
+            value = "true" if value else "false"
+        value = str(value)
+        if "~" in value:
+            raise ValueError(f"filter values cannot contain '~': {condition!r}")
+        return value
 
     def _encode_sort_spec(self, table_name, sort_spec):
-        if isinstance(sort_spec, str):
-            field_name = sort_spec
-            ascending = True
-        elif isinstance(sort_spec, (list, tuple)):
-            field_name = sort_spec[0]
-            ascending = bool(sort_spec[1])
+        if isinstance(sort_spec, str) or (
+                isinstance(sort_spec, (list, tuple)) and len(sort_spec) == 2
+                and isinstance(sort_spec[1], bool)):
+            keys = [sort_spec]
+        elif isinstance(sort_spec, (list, tuple)) and sort_spec:
+            keys = list(sort_spec)
         else:
             raise ValueError(f"unrecognized sort spec: {sort_spec}")
-        field_id = self._field_id(table_name, field_name)
-        return field_id if ascending else f"-{field_id}"
+        encoded = []
+        for key in keys:
+            if isinstance(key, str):
+                field_name, ascending = key, True
+            elif isinstance(key, (list, tuple)) and len(key) == 2:
+                field_name, ascending = key[0], bool(key[1])
+            else:
+                raise ValueError(f"unrecognized sort key: {key!r}")
+            field_id = self._field_id(table_name, field_name)
+            encoded.append(field_id if ascending else f"-{field_id}")
+        return ",".join(encoded)
 
     def _encode_field_spec(self, table_name, fields):
         if isinstance(fields, str):
@@ -861,10 +917,14 @@ class NocoDBDatabase(Database):
         table_schema = self._schema[table_name]
         return [_encode_record(table_schema, record) for record in records]
 
-    def count(self, table_name):
+    def count(self, table_name, where=None, view_name=None):
         """Read the row count from pageInfo.totalRows of a one-record page."""
-        data = self._fetch(self._records_url(self._table_id(table_name)),
-                           params={"limit": 1, "fields": "Id"})
+        params = {"limit": 1, "fields": "Id"}
+        if where:
+            params["where"] = self._encode_where_spec(table_name, where)
+        if view_name:
+            params["viewId"] = self._view_id(table_name, view_name)
+        data = self._fetch(self._records_url(self._table_id(table_name)), params=params)
         return (data.get("pageInfo") or {})["totalRows"]
 
     def get_all_ids(self, table_name):
