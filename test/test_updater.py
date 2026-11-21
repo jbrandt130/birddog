@@ -436,6 +436,17 @@ class TestAllowedDocLink(unittest.TestCase):
     def test_openstreetmap_link_rejected(self):
         self.assertFalse(_allowed_doc_link("https://www.openstreetmap.org/?mlat=46.4825&mlon=30.7233"))
 
+    def test_state_archive_site_pages_rejected(self):
+        self.assertFalse(_allowed_doc_link("https://ck.archives.gov.ua/"))
+        self.assertFalse(_allowed_doc_link("https://ck.archives.gov.ua/?type=static&p=ocyfrovani_opysy_fondiv"))
+        self.assertFalse(_allowed_doc_link("https://archives.gov.ua/fondy"))
+
+    def test_state_archive_site_files_allowed(self):
+        self.assertTrue(_allowed_doc_link("https://ck.archives.gov.ua/files/2019-11-28-3085.pdf"))
+        self.assertTrue(_allowed_doc_link("https://dn.archives.gov.ua/fondy/reestr_do_1917.pdf"))
+        # a lookalike host is not the archives' domain
+        self.assertTrue(_allowed_doc_link("https://notarchives.gov.ua/page"))
+
 
 class TestBibliographicalPlacement(unittest.TestCase):
     INVENTORY = "https://commons.wikimedia.org/wiki/File:ДАОО_фонд_18_опис_2.pdf"
@@ -459,9 +470,9 @@ class TestBibliographicalPlacement(unittest.TestCase):
         self.assertFalse(is_bibliographical_placement(self.INVENTORY, []))
 
     def test_aggregator_owner_disqualifies(self):
-        # TOWNS pages sit at fond depth but link real case files
+        # aggregator pages (e.g. Heo) sit at fond depth but link real case files
         self.assertFalse(is_bibliographical_placement(
-            self.INVENTORY, [self.page("fond", root_label="TOWNS")]))
+            self.INVENTORY, [self.page("fond", root_label="Heo")]))
 
     def test_external_document_file_counts(self):
         url = "https://archive.od.gov.ua/wp-content/old-files/EL_ARH/F/0037_11_DAOO.djvu"

@@ -268,8 +268,18 @@ _DOC_LINK_BLOCKLIST = [
     "openstreetmap.org",
 ]
 
+# Hosts whose links are only documents when they point at a document file
+# (pdf, djvu, ...): the Ukrainian state archives' own websites, which archive
+# pages link for their homepage, fund lists and inventory index pages.
+_DOC_LINK_FILES_ONLY_HOST_SUFFIXES = ("archives.gov.ua",)
+
 def _allowed_doc_link(link):
-    return all([item not in link for item in _DOC_LINK_BLOCKLIST])
+    if any(item in link for item in _DOC_LINK_BLOCKLIST):
+        return False
+    host = (urlparse(link).hostname or "").lower()
+    if any(host == suffix or host.endswith("." + suffix) for suffix in _DOC_LINK_FILES_ONLY_HOST_SUFFIXES):
+        return _sniff_suffix(link) == "document"
+    return True
 
 # A file linked only from fond/opus pages is an opus inventory (description
 # file), an archival catalog or a similar finding aid, not a record.
@@ -291,7 +301,7 @@ def is_bibliographical_placement(url, owner_pages):
     """Placement rule for finding aids: a document file whose owning pages are
     all fond or opus pages of a (non-aggregator) archive. owner_pages are Pages
     records with "level" and "root_label"; an aggregator archive's page (e.g.
-    TOWNS, which sits at fond depth but links real case files) disqualifies."""
+    Heo, whose pages sit at fond depth but link real case files) disqualifies."""
     pages = list(owner_pages)
     return (bool(pages)
             and all(p.get("level") in _BIBLIOGRAPHICAL_PAGE_LEVELS
