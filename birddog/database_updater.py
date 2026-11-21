@@ -365,6 +365,52 @@ def _needs_new_process_code(doc_rec):
     return not any(doc_rec.get(field)
                    for field in ("process_code", "OLD_process_code", "last_imported"))
 
+# Curated values a spreadsheet import may have put on a self-link record (a
+# Document whose url is its owning page's own url: a row that linked the page
+# instead of the file). They are copied onto the page's one real document, see
+# DatabaseUpdater._propagate_self_link_curation.
+_SELF_LINK_COPY_FIELDS = (
+    "last_imported", "reference_date", "OLD_doc_type", "OLD_content_code", "OLD_process_code",
+    "process_code", "doc_type", "doc_structure", "doc_scope", "language", "comments",
+    "processor", "pages_processed", "when_transcribed", "save_status", "filename",
+    "OLD_page_description",
+)
+# Only a self-link record holding one of these is worth propagating: fond/opus
+# self-links carry nothing but copies of their page's own fields (comments,
+# dates), which must not make a birddog-found document look imported.
+_SELF_LINK_CURATED_FIELDS = (
+    "OLD_doc_type", "OLD_content_code", "OLD_process_code", "process_code", "doc_type",
+    "doc_structure", "doc_scope", "language", "processor", "pages_processed",
+    "when_transcribed", "save_status",
+)
+_SELF_LINK_AMBIGUOUS_NOTE = "self-link record"
+
+def _default_doc_filename(label):
+    return (label or "").lstrip("/").replace("/", "-")
+
+def _self_link_copy(self_rec, target_rec):
+    """Return ({field: value} to copy from self_rec onto target_rec, [fields kept
+    because target_rec already holds a different value]). A field is copied when
+    target_rec has no value for it, when it is process_code and target_rec only
+    has "new", or when it is filename and target_rec only has the default."""
+    copy, kept = {}, []
+    for field in _SELF_LINK_COPY_FIELDS:
+        value = self_rec.get(field)
+        if value in (None, "", [], 0):
+            continue
+        current = target_rec.get(field)
+        if current in (None, "", [], 0) \
+                or (field == "process_code" and current == _NEW_PROCESS_CODE) \
+                or (field == "filename" and current == _default_doc_filename(target_rec.get("label"))):
+            if current != value:
+                copy[field] = value
+        elif current != value:
+            kept.append(field)
+    return copy, kept
+
+def _append_message(message, addition):
+    return f"{message}; {addition}" if message else addition
+
 def _has_processing_state(doc_rec):
     return any(doc_rec.get(field) for field in _DOC_PROCESSING_STATE_FIELDS)
 
@@ -1045,6 +1091,63 @@ class DatabaseUpdater:
 
         return None
 
+    def _propagate_self_link_curation(self, pages):
+        """Copy curated values off self-link records onto a real document.
+
+        A self-link record is a Document whose url is its owning page's own url:
+        the spreadsheet row linked the page instead of the file, so the import put
+        the team's work (process code, doc type, comments...) on an invalid record
+        (its availability is "error"). The orphan guard keeps it linked. When the
+        page links exactly one other, valid document, the curated values are
+        copied onto it (see _self_link_copy) and both records get an
+        import_message note; the self-link record itself is left as it is. With
+        two or more candidates nothing is copied and the self-link record gets a
+        note once.
+
+        pages: {page_id: (page_title, wiki-linked doc ids, guard-kept doc ids)}
+        Returns True if any Document was written.
+        """
+        all_ids = set()
+        for _, linked, kept in pages.values():
+            all_ids |= linked | kept
+        fields = ["url", "label", "import_message"] + list(_SELF_LINK_COPY_FIELDS)
+        recs = {rec["Id"]: rec for rec in self._db.read("Documents", list(all_ids), fields=fields) if rec}
+
+        updates = []
+        for page_title, linked, kept in pages.values():
+            page_url = normalize_url(page_url_from_title(page_title))
+            self_recs = [recs[i] for i in kept
+                         if i in recs and normalize_url(recs[i].get("url") or "") == page_url
+                         and any(recs[i].get(f) not in (None, "", [], 0) for f in _SELF_LINK_CURATED_FIELDS)]
+            if not self_recs:
+                continue
+            candidates = [recs[i] for i in linked
+                          if i in recs and normalize_url(recs[i].get("url") or "") != page_url]
+            for self_rec in self_recs:
+                if len(candidates) == 1:
+                    target = candidates[0]
+                    copy, kept_fields = _self_link_copy(self_rec, target)
+                    if not copy:
+                        continue
+                    note = f"curated values copied from self-link record {self_rec['url']}: {', '.join(copy)}"
+                    if kept_fields:
+                        note += f" (kept existing {', '.join(kept_fields)})"
+                    target_message = _append_message(target.get("import_message"), note)
+                    updates.append({"url": target["url"], **copy, "import_message": target_message})
+                    target.update(copy, import_message=target_message)
+                    updates.append({"url": self_rec["url"], "import_message": _append_message(
+                        self_rec.get("import_message"), f"curated values copied to {target['url']}")})
+                    _logger.info(f"Updater: copied {sorted(copy)} from self-link {self_rec['url']} to {target['url']}")
+                elif len(candidates) > 1 and _SELF_LINK_AMBIGUOUS_NOTE not in (self_rec.get("import_message") or ""):
+                    updates.append({"url": self_rec["url"], "import_message": _append_message(
+                        self_rec.get("import_message"),
+                        f"{_SELF_LINK_AMBIGUOUS_NOTE}: {len(candidates)} candidate documents on the page; "
+                        "curated values not copied")})
+        if not updates:
+            return False
+        self._db.update("Documents", updates)
+        return True
+
     def update_page_records(self, page_titles, update_doc_metadata=True):
         if isinstance(page_titles, str):
             page_titles = [page_titles]
@@ -1330,6 +1433,14 @@ class DatabaseUpdater:
                     _apply_doc_link_diff(self._db, "Pages", "doc_links", pid, add, remove))
 
             doc_link_results = _run_concurrent(tasks, max_workers=4)
+
+            # a doc the guard kept may be a self-link (see _propagate_self_link_curation)
+            pages_with_kept = {
+                page_id: (page_doc_targets[page_id][0], page_doc_targets[page_id][1], kept)
+                for page_id, kept in kept_by_page.items() if kept
+            }
+            if pages_with_kept:
+                doc_records_changed |= self._propagate_self_link_curation(pages_with_kept)
 
             # any document records that are linked/unlinked as a result of the process should have lookup_status
             # invalidated so that the document record fields that depend on page data are updated

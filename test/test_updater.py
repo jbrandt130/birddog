@@ -26,6 +26,7 @@ from birddog.database_updater import (
     _owning_page_ids,
     _page_urls_from_titles,
     _replace_links,
+    _self_link_copy,
     _sniff_suffix,
     _source_from_url,
     _verify_page_link_existence,
@@ -1646,6 +1647,85 @@ class TestUpdatePageRecordsRedlinkedChildren(unittest.TestCase):
                    (recs if isinstance(recs, list) else [recs])]
         self.assertNotIn(_normalize_title(self.RED_NO_RECORD), written)
         self.assertNotIn(_normalize_title(self.RED), written)
+
+
+class TestSelfLinkCuration(unittest.TestCase):
+    """Curated values on a self-link record (doc url == its page url) move to the
+    page's one real document; the self-link record itself is left in place."""
+
+    PAGE = "Архів:ДАЧкО/8/1/33"
+    PAGE_URL = "https://uk.wikisource.org/wiki/Архів:ДАЧкО/8/1/33"
+    FILE = "https://commons.wikimedia.org/wiki/File:DACHKO_8-1-33_test.pdf"
+    FILE2 = "https://commons.wikimedia.org/wiki/File:DACHKO_8-1-33_test_2.pdf"
+
+    def _db(self, extra=None):
+        db = FakeDB()
+        db.records["Documents"] = {
+            "s": {"Id": "s", "url": self.PAGE_URL, "label": "DACHKO/8/1/33", "process_code": "save",
+                  "OLD_process_code": "P2", "doc_type": ["Legal & Land"], "comments": "team note",
+                  "last_imported": "2026-11-19", "filename": "DACHKO-8-1-33", "import_message": None},
+            "r": {"Id": "r", "url": self.FILE, "label": "DACHKO/8/1/33", "process_code": "new",
+                  "filename": "DACHKO-8-1-33", "import_message": None},
+            **(extra or {}),
+        }
+        return db
+
+    def _updates(self, db):
+        return {u["url"]: u for _, recs in db.update_calls for u in recs}
+
+    def test_copies_onto_the_one_candidate(self):
+        db = self._db()
+        changed = make_updater(db)._propagate_self_link_curation(
+            {"p": (_normalize_title(self.PAGE), {"r"}, {"s"})})
+        self.assertTrue(changed)
+        upd = self._updates(db)
+        self.assertEqual(upd[self.FILE]["process_code"], "save")
+        self.assertEqual(upd[self.FILE]["OLD_process_code"], "P2")
+        self.assertEqual(upd[self.FILE]["doc_type"], ["Legal & Land"])
+        self.assertEqual(upd[self.FILE]["comments"], "team note")
+        self.assertNotIn("filename", upd[self.FILE])   # same value already
+        self.assertIn("copied from self-link record", upd[self.FILE]["import_message"])
+        self.assertIn("copied to " + self.FILE, upd[self.PAGE_URL]["import_message"])
+        self.assertEqual(set(upd[self.PAGE_URL]), {"url", "import_message"})
+
+    def test_two_candidates_copy_nothing_and_note_once(self):
+        db = self._db({"r2": {"Id": "r2", "url": self.FILE2, "process_code": "new"}})
+        updater = make_updater(db)
+        updater._propagate_self_link_curation({"p": (_normalize_title(self.PAGE), {"r", "r2"}, {"s"})})
+        upd = self._updates(db)
+        self.assertEqual(set(upd), {self.PAGE_URL})
+        self.assertIn("2 candidate documents", upd[self.PAGE_URL]["import_message"])
+        db.records["Documents"]["s"]["import_message"] = upd[self.PAGE_URL]["import_message"]
+        db.update_calls.clear()
+        self.assertFalse(updater._propagate_self_link_curation(
+            {"p": (_normalize_title(self.PAGE), {"r", "r2"}, {"s"})}))
+
+    def test_self_link_with_page_fields_only_is_ignored(self):
+        db = self._db()
+        for f in ("process_code", "OLD_process_code", "doc_type"):
+            db.records["Documents"]["s"][f] = None
+        self.assertFalse(make_updater(db)._propagate_self_link_curation(
+            {"p": (_normalize_title(self.PAGE), {"r"}, {"s"})}))
+
+    def test_second_run_is_a_no_op(self):
+        db = self._db()
+        updater = make_updater(db)
+        pages = {"p": (_normalize_title(self.PAGE), {"r"}, {"s"})}
+        updater._propagate_self_link_curation(pages)
+        for url, u in self._updates(db).items():
+            rid = "r" if url == self.FILE else "s"
+            db.records["Documents"][rid].update(u)
+        db.update_calls.clear()
+        self.assertFalse(updater._propagate_self_link_curation(pages))
+
+    def test_copy_rules(self):
+        copy, kept = _self_link_copy(
+            {"process_code": "save", "comments": "a", "filename": "X-1", "processor": "jb"},
+            {"process_code": "check", "comments": "", "filename": "X-1-default", "label": "X/1", "processor": "jb"})
+        self.assertEqual(copy, {"comments": "a"})
+        self.assertEqual(kept, ["process_code", "filename"])
+        copy, _ = _self_link_copy({"filename": "custom"}, {"filename": "X-1", "label": "X/1"})
+        self.assertEqual(copy, {"filename": "custom"})
 
 
 class TestDbExcluded(unittest.TestCase):
