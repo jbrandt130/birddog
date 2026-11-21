@@ -1,12 +1,14 @@
 """
 Documents curation workflow rules for the Documents tab.
 
-Plain functions with no Flask and no database access, so the service layer
-(service.py) stays thin and the rules can be tested on their own:
+Plain functions with no Flask, so the service layer (service.py) stays thin
+and the rules can be tested on their own:
 
     - which documents a user can see, as a filter for Database.scan()/count()
     - which process-code actions apply to a document
     - which fields a request may change, and the field values to write
+    - list/detail/update operations for the /documents routes; these take the
+      Database as an argument (abstract_database interface only)
 
 Privileges (birddog/user.py DOC_PRIVILEGES) only decide what a user can SEE:
 the process codes on offer and whether anomaly-flagged documents show. The
@@ -78,6 +80,9 @@ class DocumentError(ValueError):
 
 class DocumentAccessError(DocumentError):
     """The user may not see or change this document (maps to HTTP 403)."""
+
+class DocumentNotFound(DocumentError):
+    """No document with that Id (maps to HTTP 404)."""
 
 def _doc_privileges(privileges):
     return [p for p in VISIBLE_CODES if p in set(privileges or ())]
@@ -265,3 +270,114 @@ def plan_update(doc, privileges, action=None, curated=None, comment=None,
     if comment and comment.strip():
         fields["comments"] = append_comment(doc.get("comments"), comment)
     return fields
+
+# ---------------------------------------------------------------------------
+# Operations for the /documents routes (Database passed in)
+# ---------------------------------------------------------------------------
+
+DOCUMENTS = "Documents"
+MAX_PAGE = 100       # NocoDB caps a page at about 100 rows anyway
+MAX_BATCH = 500      # documents changed by one POST
+
+# fields the grid and info panel need for each listed document
+LIST_FIELDS = (
+    "label", "url", "wikisource_url", "title", "process_code", "anomaly",
+    "anomaly_comment", "comments", "native_description", "description",
+    "years", "page_count", "byte_size", "doc_type", "doc_structure",
+    "doc_scope", "language", "filename", "availability", "save_status",
+    "save_pending", "level", "location_status", "num_locations",
+    "CreatedAt", "UpdatedAt",
+)
+LOCATION_FIELDS = ("location_id", "modern_location_name", "region", "c2000_country",
+                   "latitude", "longitude")
+PAGE_FIELDS = ("title", "label", "url")
+
+def _present(doc):
+    """A record as the client sees it: list fields, actions, last_updated."""
+    out = {f: doc.get(f) for f in LIST_FIELDS if f not in ("CreatedAt", "UpdatedAt")}
+    out["id"] = doc.get("Id")
+    out["last_updated"] = doc.get("UpdatedAt") or doc.get("CreatedAt")
+    out["actions"] = allowed_actions(doc)
+    return out
+
+def list_documents(db, privileges, process_code=None, label_prefix=None,
+                   anomalies_only=False, sort="label", ascending=True,
+                   cursor=None, limit=MAX_PAGE, with_total=None):
+    """
+    One page of the documents the user can see.
+
+    Returns {"documents", "next_cursor", "total"}. total is counted only on
+    the first page (cursor None) unless with_total says otherwise, since it
+    costs a second request and does not change while paging.
+    """
+    where = list_filter(privileges, process_code, label_prefix, anomalies_only)
+    limit = max(1, min(int(limit or MAX_PAGE), MAX_PAGE))
+    records, next_cursor = db.scan(DOCUMENTS, limit=limit, cursor=cursor, where=where,
+                                   sort=sort_spec(sort, ascending), fields=list(LIST_FIELDS))
+    if with_total is None:
+        with_total = cursor is None
+    return {
+        "documents": [_present(r) for r in records],
+        "next_cursor": next_cursor,
+        "total": db.count(DOCUMENTS, where=where) if with_total else None,
+    }
+
+def _read_visible(db, privileges, ids):
+    """Read documents by Id; every one must exist and be visible."""
+    if not can_curate(privileges):
+        raise DocumentAccessError("no document privileges")
+    docs = db.read(DOCUMENTS, list(ids), fields=list(LIST_FIELDS))
+    for record_id, doc in zip(ids, docs):
+        if not doc:
+            raise DocumentNotFound(f"no document {record_id}")
+        if not can_see(doc, privileges):
+            raise DocumentAccessError(f"document {record_id} not available")
+    return docs
+
+def get_document(db, privileges, record_id):
+    """One document plus its locations and owning pages (read-only)."""
+    doc = _read_visible(db, privileges, [record_id])[0]
+    location_ids = db.get_links(DOCUMENTS, "locations", record_id)
+    page_ids = db.get_links(DOCUMENTS, "owning_pages", record_id)
+    locations = db.read("Locations", location_ids, fields=list(LOCATION_FIELDS)) if location_ids else []
+    pages = db.read("Pages", page_ids, fields=list(PAGE_FIELDS)) if page_ids else []
+    result = _present(doc)
+    result["locations"] = [
+        {"id": loc.get("Id"), "location_id": loc.get("location_id"),
+         "name": loc.get("modern_location_name"), "region": loc.get("region"),
+         "country": loc.get("c2000_country"),
+         "latitude": loc.get("latitude"), "longitude": loc.get("longitude")}
+        for loc in locations if loc]
+    result["owning_pages"] = [{f: p.get(f) for f in PAGE_FIELDS} for p in pages if p]
+    return result
+
+def update_documents(db, privileges, ids, action=None, curated=None, comment=None,
+                     anomaly_comment=None, extract=True):
+    """
+    Apply one request (curated edits, an action and/or a comment) to each of
+    the documents. All-or-none for rule checks: if any document refuses, no
+    document is written. Last change wins between users (no version check).
+
+    Returns the changed documents as list_documents() presents them.
+    """
+    ids = _check_ids(ids)
+    docs = _read_visible(db, privileges, ids)
+    changes = []
+    for doc in docs:
+        fields = plan_update(doc, privileges, action=action, curated=curated, comment=comment,
+                             anomaly_comment=anomaly_comment, extract=extract)
+        if fields:
+            changes.append({"url": doc["url"], **fields})
+    if not changes:
+        return [_present(d) for d in docs]
+    db.update(DOCUMENTS, changes)
+    return [_present(d) for d in db.read(DOCUMENTS, ids, fields=list(LIST_FIELDS)) if d]
+
+def _check_ids(ids):
+    if not isinstance(ids, list) or not ids:
+        raise DocumentError("ids must be a non-empty list")
+    if len(ids) > MAX_BATCH:
+        raise DocumentError(f"at most {MAX_BATCH} documents per request")
+    if not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
+        raise DocumentError("ids must be integers")
+    return list(dict.fromkeys(ids))   # drop repeats, keep order

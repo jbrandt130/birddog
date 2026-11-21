@@ -171,5 +171,105 @@ class PlanUpdateTest(unittest.TestCase):
             with self.subTest(doc=d, privs=privs, kw=kw), self.assertRaises(err):
                 plan_update(d, privs, **kw)
 
+class FakeDocsDB:
+    """Just enough of the Database interface for the /documents operations."""
+
+    def __init__(self, docs):
+        self.docs = {d["Id"]: dict(d) for d in docs}
+        self.calls = []
+        self.locations = {}
+        self.pages = {}
+
+    def scan(self, table, limit=100, cursor=None, where=None, sort=None, fields=None):
+        self.calls.append(("scan", where, sort, cursor, limit))
+        return [self.docs[i] for i in sorted(self.docs)][:limit], None
+
+    def count(self, table, where=None):
+        self.calls.append(("count", where))
+        return len(self.docs)
+
+    def read(self, table, ids, fields=None):
+        store = {"Documents": self.docs, "Locations": self.locations, "Pages": self.pages}[table]
+        return [dict(store.get(i, {})) for i in ids]
+
+    def update(self, table, records):
+        self.calls.append(("update", records))
+        by_url = {d["url"]: d for d in self.docs.values()}
+        for r in records:
+            by_url[r["url"]].update(r)
+        return [by_url[r["url"]]["Id"] for r in records]
+
+    def get_links(self, table, field, record_id):
+        return {"locations": [7] if self.locations else [],
+                "owning_pages": [9] if self.pages else []}[field]
+
+def rec(record_id, code, anomaly=False, comments=None):
+    return {"Id": record_id, "url": f"u{record_id}", "label": f"A/{record_id}",
+            "process_code": code, "anomaly": anomaly, "comments": comments,
+            "UpdatedAt": None, "CreatedAt": "2026-11-01"}
+
+class OperationsTest(unittest.TestCase):
+
+    def test_list_first_page_counts_later_pages_do_not(self):
+        from birddog.documents import list_documents
+        db = FakeDocsDB([rec(1, "check"), rec(2, "check")])
+        page = list_documents(db, CHECK, sort="last_updated", ascending=False)
+        self.assertEqual(page["total"], 2)
+        self.assertEqual([d["id"] for d in page["documents"]], [1, 2])
+        self.assertEqual(page["documents"][0]["last_updated"], "2026-11-01")
+        self.assertEqual(page["documents"][0]["actions"][0], "review")
+        self.assertEqual(db.calls[0][2], [("UpdatedAt", False), ("Id", True)])
+        db.calls.clear()
+        page = list_documents(db, CHECK, cursor="100", limit=1000)
+        self.assertIsNone(page["total"])
+        self.assertEqual(db.calls, [("scan", list_filter(CHECK), [("seq_label", True), ("Id", True)], "100", 100)])
+
+    def test_update_is_all_or_none(self):
+        from birddog.documents import update_documents
+        db = FakeDocsDB([rec(1, "check"), rec(2, "review")])
+        with self.assertRaises(DocumentAccessError):
+            update_documents(db, CHECK, [1, 2], action="review")
+        db = FakeDocsDB([rec(1, "check"), rec(2, "save")])
+        with self.assertRaises(DocumentError):
+            update_documents(db, ADMIN, [1, 2], action="save")
+        self.assertFalse([c for c in db.calls if c[0] == "update"])
+
+    def test_update_writes_and_returns_fresh_rows(self):
+        from birddog.documents import update_documents
+        db = FakeDocsDB([rec(1, "check", comments="old"), rec(2, "check")])
+        out = update_documents(db, CHECK, [1, 2, 1], action="review", comment="[stamp] ok")
+        self.assertEqual(db.calls[-1], ("update", [
+            {"url": "u1", "process_code": "review", "comments": "old\n[stamp] ok"},
+            {"url": "u2", "process_code": "review", "comments": "[stamp] ok"}]))
+        self.assertEqual([(d["id"], d["process_code"]) for d in out], [(1, "review"), (2, "review")])
+        self.assertEqual(out[0]["actions"][0], "escalate")
+
+    def test_update_without_changes_writes_nothing(self):
+        from birddog.documents import update_documents
+        db = FakeDocsDB([rec(1, "check")])
+        update_documents(db, CHECK, [1], comment="  ")
+        self.assertFalse([c for c in db.calls if c[0] == "update"])
+
+    def test_bad_ids_and_missing(self):
+        from birddog.documents import update_documents, get_document, DocumentNotFound
+        db = FakeDocsDB([rec(1, "check")])
+        for ids in (None, [], ["1"], [True], 1):
+            with self.subTest(ids=ids), self.assertRaises(DocumentError):
+                update_documents(db, CHECK, ids, comment="x")
+        with self.assertRaises(DocumentNotFound):
+            get_document(db, CHECK, 5)
+
+    def test_detail_has_locations_and_owning_pages(self):
+        from birddog.documents import get_document
+        db = FakeDocsDB([rec(1, "check")])
+        db.locations = {7: {"Id": 7, "location_id": "L7", "modern_location_name": "Balta",
+                            "region": "Odesa", "c2000_country": "Ukraine"}}
+        db.pages = {9: {"Id": 9, "title": "T", "label": "A", "url": "p"}}
+        doc = get_document(db, CHECK, 1)
+        self.assertEqual(doc["locations"][0]["name"], "Balta")
+        self.assertEqual(doc["owning_pages"], [{"title": "T", "label": "A", "url": "p"}])
+        with self.assertRaises(DocumentAccessError):
+            get_document(FakeDocsDB([rec(1, "save")]), CHECK, 1)
+
 if __name__ == "__main__":
     unittest.main()

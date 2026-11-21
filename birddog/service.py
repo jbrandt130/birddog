@@ -40,6 +40,8 @@ from birddog.wiki import (
     page_label,
     )
 from birddog.user import User, SITE_ADMIN
+from birddog import documents
+from birddog.abstract_database import FailedIO, InvalidFieldName, InvalidFieldValue
 from birddog.utility import get_text, system_resource_report
 from birddog.log import (
     get_logger,
@@ -805,6 +807,81 @@ def translate(user):
         'enabled': runtime.translation_enabled,
         'available': runtime.translation_available,
         'translations': _active_translations()}), 200
+
+# ---- DOCUMENTS CURATION ---------------------------------------------
+# Rules live in birddog/documents.py; these routes parse requests and map
+# its errors to HTTP statuses.
+
+def _documents_call(user, operation):
+    """Run operation(db, privileges) and turn the outcome into a response."""
+    db = getattr(runtime, "database", None)
+    if db is None:
+        return jsonify({'error': 'Database unavailable'}), 503
+    try:
+        return jsonify(operation(db, user.privileges)), 200
+    except documents.DocumentNotFound as err:
+        return jsonify({'error': str(err)}), 404
+    except documents.DocumentAccessError as err:
+        return jsonify({'error': str(err)}), 403
+    except (ValueError, InvalidFieldName, InvalidFieldValue) as err:
+        # DocumentError, and filter values the database cannot express
+        return jsonify({'error': str(err)}), 400
+    except FailedIO:
+        _logger.exception("documents: database unreachable")
+        return jsonify({'error': 'Database unavailable'}), 503
+
+@app.route('/documents', methods=['GET'])
+@login_required
+def list_documents(user):
+    args = request.args
+    process_code = args.get('process_code') or None   # absent: every visible code
+    if process_code == '(blank)':
+        process_code = documents.BLANK
+    try:
+        limit = int(args.get('limit', documents.MAX_PAGE))
+    except ValueError:
+        return jsonify({'error': 'limit must be an integer'}), 400
+    total = args.get('total')
+    return _documents_call(user, lambda db, privileges: {
+        **documents.list_documents(
+            db, privileges,
+            process_code=process_code,
+            label_prefix=args.get('prefix'),
+            anomalies_only=_flag_arg('anomalies'),
+            sort=args.get('sort', 'label'),
+            ascending=args.get('dir', 'asc') != 'desc',
+            cursor=args.get('cursor') or None,
+            limit=limit,
+            with_total=None if total is None else _flag_arg('total')),
+        'process_codes': documents.visible_codes(privileges),
+        'sees_anomalies': documents.sees_anomalies(privileges),
+    })
+
+@app.route('/documents/<int:record_id>', methods=['GET'])
+@login_required
+def get_document(user, record_id):
+    return _documents_call(user, lambda db, privileges:
+                           documents.get_document(db, privileges, record_id))
+
+@app.route('/documents', methods=['POST'])
+@login_required
+def update_documents(user):
+    # body: {ids, action?, curated?, comment?, anomaly_comment?, extract?}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Expected a JSON object'}), 400
+    def operation(db, privileges):
+        changed = documents.update_documents(
+            db, privileges, data.get('ids'),
+            action=data.get('action'),
+            curated=data.get('curated'),
+            comment=data.get('comment'),
+            anomaly_comment=data.get('anomaly_comment'),
+            extract=bool(data.get('extract', True)))
+        _logger.info(f"documents: {_hide(user.email)} {data.get('action') or 'edit'} "
+                     f"{len(changed)} document(s)")
+        return {'documents': changed}
+    return _documents_call(user, operation)
 
 # ---- DATABASE SYNC  -------------------------------------------------
 

@@ -890,3 +890,65 @@ class TestPageDataNoEarlierVersion(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDocumentsRoutes(unittest.TestCase):
+    """/documents routes: request parsing and error -> status mapping."""
+
+    def setUp(self):
+        app.config["TESTING"] = True
+        app.secret_key = "test_secret"
+        service.runtime = _RuntimeStub(state="running")
+        service.users = MagicMock()
+        user = MagicMock()
+        user.email = TEST_EMAIL
+        user.privileges = frozenset({"doc_check"})
+        service.users.lookup.return_value = user
+        self.client = app.test_client()
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"email": TEST_EMAIL, "name": TEST_NAME}
+
+    def test_no_database_is_503(self):
+        resp = self.client.get("/documents")
+        self.assertEqual(resp.status_code, 503)
+
+    def test_list_passes_parsed_args(self):
+        service.runtime.database = MagicMock()
+        with patch("birddog.service.documents.list_documents",
+                   return_value={"documents": [], "next_cursor": None, "total": 0}) as op:
+            resp = self.client.get("/documents?process_code=check&prefix=A/1&sort=last_updated&dir=desc&cursor=100")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["process_codes"], ["check"])
+        kw = op.call_args.kwargs
+        self.assertEqual((kw["process_code"], kw["label_prefix"], kw["sort"], kw["ascending"], kw["cursor"]),
+                         ("check", "A/1", "last_updated", False, "100"))
+        self.assertIsNone(kw["with_total"])
+
+    def test_list_blank_code(self):
+        service.runtime.database = MagicMock()
+        with patch("birddog.service.documents.list_documents", return_value={}) as op:
+            self.client.get("/documents?process_code=(blank)")
+        self.assertEqual(op.call_args.kwargs["process_code"], "")
+
+    def test_errors_map_to_statuses(self):
+        from birddog import documents
+        from birddog.abstract_database import FailedIO, InvalidFieldValue
+        service.runtime.database = MagicMock()
+        for err, status in ((documents.DocumentAccessError("x"), 403),
+                            (documents.DocumentNotFound("x"), 404),
+                            (documents.DocumentError("x"), 400),
+                            (InvalidFieldValue("doc_type", "Nope"), 400),
+                            (FailedIO("down"), 503)):
+            with self.subTest(err=err), patch("birddog.service.documents.update_documents", side_effect=err):
+                resp = self.client.post("/documents", json={"ids": [1], "action": "review"})
+                self.assertEqual(resp.status_code, status)
+
+    def test_post_requires_object(self):
+        service.runtime.database = MagicMock()
+        self.assertEqual(self.client.post("/documents", json=[1]).status_code, 400)
+
+    def test_real_rules_deny_unprivileged(self):
+        service.runtime.database = MagicMock()
+        service.users.lookup.return_value.privileges = frozenset()
+        self.assertEqual(self.client.get("/documents").status_code, 403)
+        self.assertEqual(self.client.get("/documents/5").status_code, 403)
