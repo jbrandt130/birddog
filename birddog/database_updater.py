@@ -1304,6 +1304,9 @@ class DatabaseUpdater:
             page_links = info.get("links", {})
             title = info["title"]
             title_set.add(title)
+            # every page that loaded gets its doc links reconciled, even when it
+            # now links no document at all: otherwise its stale links were kept
+            doc_link_updates.setdefault(title, set())
 
             parent = page_links.get("parent") or {}
             if parent.get("exists"):
@@ -1447,21 +1450,23 @@ class DatabaseUpdater:
 
         doc_records_changed = False
         doc_links_changed = False
-        if doc_urls:
+        if doc_link_updates:
             #_logger.info(f"doc_urls: {doc_urls}")
             doc_records = { url: form_document_record(url) for url in doc_urls }
             # this is the one legitimate path allowed to create new Document records --
             # docs discovered by scraping an owning page's outgoing links.
-            doc_records_changed = self._update_doc_records_from_records(
-                doc_records,
-                update_doc_metadata,
-                allow_create=True)
+            if doc_records:
+                doc_records_changed = self._update_doc_records_from_records(
+                    doc_records,
+                    update_doc_metadata,
+                    allow_create=True)
 
             # One lookup for all document IDs, then reuse locally.
             # Documents are keyed by canonical link, so canonicalize before lookup
             # and build a raw-url -> record_id map for use in the loop below.
             canonical_url_map = {url: record["url"] for url, record in doc_records.items()}
-            canonical_id_map = self._db.lookup("Documents", set(canonical_url_map.values()))
+            canonical_id_map = (self._db.lookup("Documents", set(canonical_url_map.values()))
+                                if canonical_url_map else {})
             doc_id_map = {url: canonical_id_map.get(canonical) for url, canonical in canonical_url_map.items()}
 
             _logger.info(f"Updater {tid}: updating document links")

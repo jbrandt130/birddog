@@ -1764,6 +1764,35 @@ class TestUpdatePageRecordsRedlinkedChildren(unittest.TestCase):
         self.assertNotIn(_normalize_title(self.RED), written)
 
 
+class TestUpdatePageRecordsDropsAllDocLinks(unittest.TestCase):
+    """A page whose wiki text no longer links any document loses its doc links
+    (unless the orphan guard keeps a curated one)."""
+
+    PAGE = "Архів:ДАЧкО"
+
+    def _run(self, doc_fields):
+        db = FakeDB()
+        page_url = page_url_from_title(_normalize_title(self.PAGE))
+        db.lookup_map["Pages"] = {page_url: "p"}
+        db.records["Pages"] = {"p": {"Id": "p", **_form_simple_page_record(self.PAGE)}}
+        db.records["Documents"] = {"d": {"Id": "d", "url": "https://ck.archives.gov.ua/",
+                                         "owning_pages": [{"Id": "p"}], **doc_fields}}
+        db.links[("Pages", "doc_links", "p")] = {"d"}
+        updater = make_updater(db)
+        info = {"title": _normalize_title(self.PAGE), "record": _form_simple_page_record(self.PAGE),
+                "links": {"parent": None, "children": [], "internal_links": [], "commons_links": [],
+                          "interwiki_links": [], "external_links": ["https://ck.archives.gov.ua/"]}}
+        updater._get_page_info = lambda titles: ([info], [])
+        updater.update_page_records([self.PAGE], update_doc_metadata=False)
+        return db.links[("Pages", "doc_links", "p")]
+
+    def test_uncurated_link_is_removed(self):
+        self.assertEqual(self._run({}), set())
+
+    def test_curated_link_is_kept_by_the_guard(self):
+        self.assertEqual(self._run({"last_imported": "2026-11-18"}), {"d"})
+
+
 class TestSelfLinkCuration(unittest.TestCase):
     """Curated values on a self-link record (doc url == its page url) move to the
     page's one real document; the self-link record itself is left in place."""
