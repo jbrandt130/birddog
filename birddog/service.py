@@ -193,6 +193,7 @@ def home():
     start_title = None
     hide_insignificant = False
     landing_tab = 'alerts'
+    documents_tab = False
     if runtime.state == "running":
         user_session = session.get('user')
         start_title = None
@@ -215,12 +216,17 @@ def home():
                 user_session = {**user_session,
                                 'site_admin': user.site_admin,
                                 'privileges': sorted(user.privileges)}
+                # the Documents tab needs a doc privilege and a configured
+                # database; an unreachable database is reported in the tab
+                documents_tab = (getattr(runtime, "database", None) is not None
+                                 and documents.can_curate(user.privileges))
     return render_template(
         'index.html',
         user=user_session,
         start_title=start_title,
         hide_insignificant=hide_insignificant,
         landing_tab=landing_tab,
+        documents_tab=documents_tab,
         runtime_state=runtime.state,
         database_available=runtime.database_update_enabled,
         debug=app.debug,
@@ -856,6 +862,25 @@ def list_documents(user):
         'process_codes': documents.visible_codes(privileges),
         'sees_anomalies': documents.sees_anomalies(privileges),
     })
+
+# Documents tab settings (columns, widths, sort, last filter): one JSON object
+# per user in Birddog Users.doc_preferences
+@app.route('/documents/preferences', methods=['GET'])
+@login_required
+def get_documents_preferences(user):
+    return jsonify(user.get_doc_preferences()), 200
+
+@app.route('/documents/preferences', methods=['POST'])
+@login_required
+def set_documents_preferences(user):
+    prefs = request.get_json(silent=True)
+    if not isinstance(prefs, dict):
+        return jsonify({'error': 'Expected a JSON object'}), 400
+    if not documents.can_curate(user.privileges):
+        return jsonify({'error': 'no document privileges'}), 403
+    if not user.set_doc_preferences(prefs):
+        return jsonify({'error': 'Database unavailable'}), 503
+    return jsonify({'success': True}), 200
 
 @app.route('/documents/<int:record_id>', methods=['GET'])
 @login_required

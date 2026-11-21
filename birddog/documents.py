@@ -21,6 +21,9 @@ document's current comments, never replacing them. The client prefills a
 stamp (see comment_stamp()) that the user may edit before submitting.
 """
 
+import hashlib
+from urllib.parse import unquote
+
 from birddog.abstract_database import And, Or
 
 # ---------------------------------------------------------------------------
@@ -45,6 +48,17 @@ VISIBLE_CODES = {
     "doc_escalate": ("check", "review", "escalate"),
     "doc_admin": ("new", "check", "review", "escalate", "reject", "defer", "save", BLANK),
 }
+# documents ready for curation; applied to every list, on top of the
+# privilege filter. is_duplicate is a rollup (0/1). Opening or changing a
+# document does not re-check these: background updates may flip them (e.g.
+# lookup_status) while someone is working on it.
+IMPLICIT_FILTERS = (
+    ("availability", "eq", "linked"),
+    ("is_duplicate", "eq", 0),
+    ("lookup_status", "eq", "valid"),
+    ("dupes_checked", "eq", True),
+)
+
 # privileges that see anomaly-flagged documents
 ANOMALY_PRIVILEGES = ("doc_escalate", "doc_admin")
 
@@ -136,7 +150,7 @@ def list_filter(privileges, process_code=None, label_prefix=None, anomalies_only
         if process_code not in codes:
             raise DocumentAccessError(f"process code not available: {process_code!r}")
         codes = [process_code]
-    conditions = [Or(*[_code_condition(c) for c in codes])]
+    conditions = [Or(*[_code_condition(c) for c in codes]), *IMPLICIT_FILTERS]
     if anomalies_only:
         if not sees_anomalies(privileges):
             raise DocumentAccessError("anomalies are not available")
@@ -292,12 +306,34 @@ LOCATION_FIELDS = ("location_id", "modern_location_name", "region", "c2000_count
                    "latitude", "longitude")
 PAGE_FIELDS = ("title", "label", "url")
 
+_COMMONS_FILE_PREFIX = "https://commons.wikimedia.org/wiki/File:"
+
+def commons_file(url):
+    """
+    (file name, hash path) for a Commons File: url, else (None, None). Page
+    images are at upload.wikimedia.org/wikipedia/commons/thumb/<hash path>/
+    <name>/page<N>-<W>px-<name>.jpg, where the hash path is md5[0]/md5[0:2]
+    of the underscored file name.
+    """
+    if not url or not url.startswith(_COMMONS_FILE_PREFIX):
+        return None, None
+    name = unquote(url[len(_COMMONS_FILE_PREFIX):]).split("?")[0].replace(" ", "_")
+    if not name:
+        return None, None
+    digest = hashlib.md5(name.encode("utf-8")).hexdigest()
+    return name, f"{digest[0]}/{digest[:2]}"
+
 def _present(doc):
     """A record as the client sees it: list fields, actions, last_updated."""
     out = {f: doc.get(f) for f in LIST_FIELDS if f not in ("CreatedAt", "UpdatedAt")}
     out["id"] = doc.get("Id")
+    out["created_at"] = doc.get("CreatedAt")
+    out["updated_at"] = doc.get("UpdatedAt")
     out["last_updated"] = doc.get("UpdatedAt") or doc.get("CreatedAt")
     out["actions"] = allowed_actions(doc)
+    out["commons_file"], out["commons_hash"] = commons_file(doc.get("url"))
+    for f in MULTI_FIELDS:
+        out[f] = out.get(f) or []
     return out
 
 def list_documents(db, privileges, process_code=None, label_prefix=None,

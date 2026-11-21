@@ -4,6 +4,7 @@ from datetime import date
 from birddog.abstract_database import And, Or
 from birddog.documents import (
     BLANK,
+    IMPLICIT_FILTERS,
     DocumentAccessError,
     DocumentError,
     allowed_actions,
@@ -62,20 +63,20 @@ class ListFilterTest(unittest.TestCase):
 
     def test_checker(self):
         self.assertEqual(list_filter(CHECK),
-                         And(Or(("process_code", "eq", "check")), ("anomaly", "eq", False)))
+                         And(Or(("process_code", "eq", "check")), *IMPLICIT_FILTERS, ("anomaly", "eq", False)))
 
     def test_admin_all_codes_no_anomaly_condition(self):
         f = list_filter(ADMIN)
-        self.assertEqual(len(f.conditions), 1)
+        self.assertEqual(f.conditions[1:], IMPLICIT_FILTERS)
         self.assertIn(("process_code", "blank", None), f.conditions[0].conditions)
 
     def test_chosen_code_prefix_and_anomalies(self):
         self.assertEqual(
             list_filter(ESCALATE, process_code="review", label_prefix="DAHMO/5/1/", anomalies_only=True),
-            And(Or(("process_code", "eq", "review")), ("anomaly", "eq", True),
+            And(Or(("process_code", "eq", "review")), *IMPLICIT_FILTERS, ("anomaly", "eq", True),
                 Or(("label", "eq", "DAHMO/5/1"), ("label", "startswith", "DAHMO/5/1/"))))
         self.assertEqual(list_filter(ADMIN, process_code=BLANK),
-                         And(Or(("process_code", "blank", None))))
+                         And(Or(("process_code", "blank", None)), *IMPLICIT_FILTERS))
 
     def test_refusals(self):
         with self.assertRaises(DocumentAccessError):

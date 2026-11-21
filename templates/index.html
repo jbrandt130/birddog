@@ -9,6 +9,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <link href="https://cdn.jsdelivr.net/npm/@yaireo/tagify/dist/tagify.css" rel="stylesheet">
+  {% if documents_tab %}<link href="static/css/documents.css" rel="stylesheet">{% endif %}
 
   <!-- make active tab obvious -->
   <style>
@@ -90,6 +91,9 @@
           <a class="nav-link {{ 'active' if landing_tab == 'watchlists' else '' }}" id="nav-watchlists-tab" data-bs-toggle="tab" href="#nav-watchlists" role="tab">Watchlists</a>
           <a class="nav-link" id="nav-browse-tab" data-bs-toggle="tab" href="#nav-browse" role="tab">Browse</a>
           <a class="nav-link" id="nav-archives-tab" data-bs-toggle="tab" href="#nav-archives" role="tab">Archives</a>
+          {% if documents_tab %}
+            <a class="nav-link" id="nav-documents-tab" data-bs-toggle="tab" href="#nav-documents" role="tab">Documents</a>
+          {% endif %}
           <a class="nav-link" id="nav-profile-tab" data-bs-toggle="tab" href="#nav-profile" role="tab">Profile</a>
           {% if user.site_admin %}
             <a class="nav-link" id="nav-logs-link" href="/logs" target="birddog_logs">Logs</a>
@@ -504,6 +508,85 @@
   </div>
 </div>
 
+{% if documents_tab %}
+<!-- Documents Panel (static/js/documents.js) -->
+<div class="tab-pane fade dt-wide" id="nav-documents" role="tabpanel">
+  <div id="dt-error" class="alert alert-danger d-none" role="alert"></div>
+
+  <!-- query card -->
+  <div class="card mb-3">
+    <div class="card-body py-2 d-flex flex-column gap-2">
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <div class="input-group input-group-sm dt-prefix-group">
+          <span class="input-group-text"><i class="bi bi-folder2 me-1"></i> Label prefix</span>
+          <input type="text" class="form-control dt-mono" id="dt-prefix" list="dt-prefix-list" placeholder="e.g. DACHKO/R-279" autocomplete="off" aria-label="Label prefix">
+          <button class="btn btn-outline-secondary" id="dt-prefix-clear" title="Clear prefix" aria-label="Clear prefix"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <datalist id="dt-prefix-list"></datalist>
+        <button class="btn btn-sm btn-outline-primary" id="dt-open-columns"><i class="bi bi-layout-three-columns me-1"></i> Columns</button>
+        <button class="btn btn-sm btn-outline-secondary" id="dt-refresh" title="Reload the list"><i class="bi bi-arrow-clockwise"></i></button>
+        <div class="ms-auto small text-body-secondary" id="dt-summary"></div>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-3" id="dt-filter-row">
+        <span class="small fw-semibold" id="dt-pc-label">Process code</span>
+        <div class="d-flex flex-wrap gap-3" id="dt-pc-filter" role="radiogroup" aria-label="Process code"></div>
+        <div class="form-check mb-0 ps-4 border-start" id="dt-anomaly-wrap">
+          <input class="form-check-input ms-0 me-1" type="checkbox" id="dt-anomaly-only">
+          <label class="form-check-label small" for="dt-anomaly-only"><i class="bi bi-exclamation-triangle-fill text-danger"></i> Anomalies only</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- unsaved changes bar -->
+  <div id="dt-pending-bar" class="alert alert-warning d-none d-flex flex-wrap align-items-center gap-2 py-2">
+    <i class="bi bi-pencil"></i>
+    <span><strong id="dt-pending-count">0</strong> document(s) with unsaved changes</span>
+    <div class="ms-auto d-flex gap-2">
+      <button class="btn btn-sm btn-outline-secondary" id="dt-pending-discard">Discard all</button>
+      <button class="btn btn-sm btn-warning" id="dt-pending-review">Review &amp; save</button>
+    </div>
+  </div>
+
+  <div class="dt-workspace">
+    <div class="card" style="min-width:0">
+      <div class="dt-scroll">
+        <table class="table table-striped table-hover dt-grid" id="dt-table">
+          <colgroup id="dt-cols"></colgroup>
+          <thead><tr id="dt-head"></tr></thead>
+          <tbody id="dt-body"></tbody>
+        </table>
+      </div>
+      <div id="dt-empty" class="text-center text-body-secondary py-5 px-3 d-none"></div>
+      <div id="dt-footer" class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2 small">
+        <span class="text-body-secondary" id="dt-page-summary"></span>
+        <div class="d-flex align-items-center gap-2">
+          <label class="text-body-secondary" for="dt-page-size">Rows</label>
+          <select class="form-select form-select-sm w-auto" id="dt-page-size"><option>25</option><option>50</option><option>100</option></select>
+          <button class="btn btn-sm btn-outline-secondary" id="dt-page-prev" aria-label="Previous page"><i class="bi bi-chevron-left"></i></button>
+          <button class="btn btn-sm btn-outline-secondary" id="dt-page-next" aria-label="Next page"><i class="bi bi-chevron-right"></i></button>
+        </div>
+      </div>
+    </div>
+    <aside class="card dt-editor" id="dt-editor" aria-label="Document editor"></aside>
+  </div>
+
+  <div class="dt-insp" id="dt-insp" role="dialog" aria-modal="true" aria-label="Page viewer" hidden>
+    <div class="dt-insp-bar">
+      <span class="dt-mono small" id="dt-insp-title"></span>
+      <div class="dt-insp-nav small">
+        <button class="btn btn-sm btn-dark" id="dt-insp-prev" aria-label="Previous page"><i class="bi bi-chevron-left"></i></button>
+        Page <input type="number" class="form-control form-control-sm" id="dt-insp-page" min="1" aria-label="Page number"> of <span id="dt-insp-count"></span>
+        <button class="btn btn-sm btn-dark" id="dt-insp-next" aria-label="Next page"><i class="bi bi-chevron-right"></i></button>
+      </div>
+      <a id="dt-insp-open" target="_blank" rel="noopener">Open on Commons</a>
+    </div>
+    <button class="btn-close btn-close-white dt-insp-close" id="dt-insp-close" aria-label="Close page viewer"></button>
+    <div class="dt-insp-stage"><img id="dt-insp-img" alt=""><div class="dt-insp-msg" id="dt-insp-msg" hidden></div></div>
+  </div>
+</div>
+{% endif %}
+
 <!-- Archives Panel -->
 <div class="tab-pane fade" id="nav-archives" role="tabpanel">
   <div class="container mt-4">
@@ -708,6 +791,72 @@
 
 
 <!-- Bootstrap JS -->
+{% if documents_tab %}
+<!-- Documents tab dialogs -->
+<div class="modal fade" id="dt-columns-modal" tabindex="-1" aria-labelledby="dt-columns-title" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title" id="dt-columns-title"><i class="bi bi-layout-three-columns me-1"></i> Columns</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body">
+      <p class="small text-body-secondary">Label is always shown, frozen on the left. Use the arrows to reorder; drag a column's right edge in the grid to resize it (double-click the edge to reset). Your choice is saved for you.</p>
+      <ul class="list-group" id="dt-columns-list"></ul>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline-secondary me-auto" id="dt-columns-reset">Defaults</button>
+      <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button class="btn btn-primary" id="dt-columns-apply">Apply</button>
+    </div>
+  </div></div>
+</div>
+
+<div class="modal fade" id="dt-action-modal" tabindex="-1" aria-labelledby="dt-action-title" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title" id="dt-action-title"></h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body d-flex flex-column gap-2">
+      <div id="dt-action-summary"></div>
+      <ul class="small text-body-secondary mb-0" id="dt-action-changes"></ul>
+      <div class="form-check" id="dt-action-extract-row" hidden>
+        <input class="form-check-input" type="checkbox" id="dt-action-extract" checked>
+        <label class="form-check-label small" for="dt-action-extract">Extract for indexing</label>
+      </div>
+      <div id="dt-action-text-row">
+        <label class="form-label small fw-semibold mb-1" for="dt-action-text" id="dt-action-text-label"></label>
+        <textarea class="form-control form-control-sm" id="dt-action-text" rows="4"></textarea>
+        <div class="form-text" id="dt-action-text-hint"></div>
+      </div>
+      <div class="alert alert-danger py-2 mb-0 d-none" id="dt-action-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button class="btn btn-primary" id="dt-action-confirm">Confirm</button>
+    </div>
+  </div></div>
+</div>
+
+<div class="modal fade" id="dt-review-modal" tabindex="-1" aria-labelledby="dt-review-title" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title" id="dt-review-title">Review changes</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body">
+      <table class="table table-sm small"><thead><tr><th>Label</th><th>Field</th><th>Change</th></tr></thead><tbody id="dt-review-body"></tbody></table>
+      <div class="alert alert-danger py-2 mb-0 d-none" id="dt-review-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Back</button>
+      <button class="btn btn-warning" id="dt-review-save">Save all</button>
+    </div>
+  </div></div>
+</div>
+
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+  <div class="toast align-items-center text-bg-success border-0" id="dt-toast" role="status" aria-live="polite" aria-atomic="true">
+    <div class="d-flex"><div class="toast-body" id="dt-toast-body"></div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div>
+  </div>
+</div>
+{% endif %}
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 <!-- Tagify JS -->
 <script src="https://cdn.jsdelivr.net/npm/@yaireo/tagify"></script>
@@ -718,5 +867,6 @@
   const hide_insignificant_pref = {{ hide_insignificant | tojson }};
 </script>
 <script src="static/js/birddog.js"></script>
+{% if documents_tab %}<script src="static/js/documents.js"></script>{% endif %}
 </body>
 </html>
