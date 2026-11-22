@@ -497,8 +497,8 @@ function renderEditor() {
     </div>
     <div class="card-body">
       <div class="bg-body-tertiary rounded p-2 small d-flex flex-column gap-1">
-        <div>${esc(d.description)}</div>
-        <div class="text-body-secondary">${esc(d.native_description)}</div>
+        <div>${esc(d.page_description)}</div>
+        <div class="text-body-secondary">${esc(d.page_native_description)}</div>
         <div class="d-flex gap-3 flex-wrap text-body-secondary">${d.years ? `<span>${esc(d.years)}</span>` : ""}${d.page_count ? `<span>${d.page_count} pages</span>` : ""}<span>${fmtBytes(d.byte_size)}</span></div>
         ${detailHtml(d)}
         ${d.comments ? `<div class="border-top pt-2 dt-ro-comments"><span class="dt-ro-k">Comments</span>${esc(d.comments)}</div>` : ""}
