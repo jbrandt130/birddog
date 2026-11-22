@@ -373,6 +373,15 @@ class User:
                 existing = None
             if existing:
                 item = _merge_watch_items(existing, item)
+            else:
+                # a brand-new watch must start clean: watcher state left
+                # over from an earlier watch on the same title (a removal
+                # that didn't fully clear it) keeps that watch's header and
+                # its older cutoff_date, since check_watcher() only uses the
+                # cutoff passed in when no header exists -- so pages edited
+                # before the new cutoff surfaced as alerts with the old
+                # cutoff as their last_resolved (found 2026-11-22, DACHKO)
+                watcher.remove_watcher(self.email, title)
             _save_watch_item(self.email, title, item)
 
     def remove_from_watchlist(self, title):

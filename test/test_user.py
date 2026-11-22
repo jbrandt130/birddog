@@ -519,11 +519,24 @@ class UserTest(unittest.TestCase):
         self.assertEqual(wl[title]["cutoff_date"], "2020-01-01T00:00:00Z")
         self.assertEqual(wl[title]["include"], [title])
 
+        # a new watch clears any leftover watcher state for its title
+        self.assertEqual(self.watcher.removed, [(u.email, title)])
+
         # remove should succeed even if no watcher state exists yet
         self.assertTrue(u.remove_from_watchlist(title))
         wl2 = u.get_watchlist()
         self.assertNotIn(title, wl2)
-        self.assertEqual(self.watcher.removed, [(u.email, title)])
+        self.assertEqual(self.watcher.removed, [(u.email, title), (u.email, title)])
+
+    def test_user_add_to_watchlist_keeps_state_when_already_watched(self):
+        u = User(name="Test", email="w3@example.com", password="pw")
+        title = _watch_title("DACHKO", "D")
+        u.add_to_watchlist(title, "2026,09,01,00:00")
+        self.watcher.removed.clear()
+
+        # re-adding an existing watch merges; its resolve history must survive
+        u.add_to_watchlist(title, "2026,02,01,00:00")
+        self.assertEqual(self.watcher.removed, [])
 
     def test_user_add_to_watchlist_merges_when_already_watched(self):
         u = User(name="Test", email="w2@example.com", password="pw")
