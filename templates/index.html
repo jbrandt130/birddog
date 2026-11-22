@@ -70,6 +70,12 @@
       display: none !important;
     }
   </style>
+  <!-- tables on every tab use the Documents tab's compact sizing -->
+  <style>
+    .tab-content .table { font-size: .88rem; }
+    .tab-content .table > :not(caption) > * > * { padding: 6px 8px; }
+    .tab-content .table .btn:not(.btn-link) { --bs-btn-padding-y: .2rem; --bs-btn-padding-x: .45rem; --bs-btn-font-size: .8rem; }
+  </style>
 
 </head>
 <body>
