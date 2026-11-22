@@ -201,8 +201,11 @@ async function loadPage(page, {withTotal = false, focus = "keep"} = {}) {
     else if (focus === "last") state.focus = state.rows.length ? state.rows[state.rows.length - 1].id : null;
   } catch (e) {
     if (seq !== loadSeq) return;
-    if (e.status === 400 && /process code not available/.test(e.message)) {
-      prefs.pcFilter = null;                 // a saved filter the user can no longer see
+    // a saved filter the user can no longer see (privileges changed): the
+    // server refuses it with 403; start over and take the first visible code
+    if (/process code not available|anomalies are not available/.test(e.message)) {
+      prefs.pcFilter = null;
+      prefs.anomalyOnly = false;
       state.loading = false;
       return reload();
     }
