@@ -76,6 +76,8 @@ SORT_FIELDS = {
     "process_code": "process_code",
     "native_description": "native_description",
     "description": "description",
+    "page_native_description": "page_native_description",
+    "page_description": "page_description",
     "years": "years",
     "page_count": "page_count",
     "byte_size": "byte_size",
@@ -297,6 +299,7 @@ MAX_BATCH = 500      # documents changed by one POST
 LIST_FIELDS = (
     "label", "url", "wikisource_url", "title", "process_code", "anomaly",
     "anomaly_comment", "comments", "native_description", "description",
+    "page_native_description", "page_description",
     "years", "page_count", "byte_size", "doc_type", "doc_structure",
     "doc_scope", "language", "filename", "availability", "save_status",
     "save_pending", "level", "location_status", "num_locations",

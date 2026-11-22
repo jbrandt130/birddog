@@ -33,6 +33,8 @@ const LOCATION_STATUS_TEXT = {pending: "Not yet inferred", none: "None found", f
 // optional grid columns (label is fixed); w = default width in px
 const COLUMN_DEFS = [
   {key: "process_code",       title: "Process code", w: 110},
+  {key: "page_native_description", title: "Page native description", cls: "dt-wrap", w: 300},
+  {key: "page_description",   title: "Page description",   cls: "dt-wrap", w: 300},
   {key: "native_description", title: "Native description", cls: "dt-wrap", w: 300},
   {key: "description",        title: "Description",        cls: "dt-wrap", w: 300},
   {key: "years",              title: "Years", w: 90},
@@ -48,7 +50,7 @@ const COLUMN_DEFS = [
   {key: "last_updated",       title: "Last Updated", w: 140},
 ];
 const FIXED_COLS = [{key: "_sel", w: 34}, {key: "label", title: "Label", w: 190}];
-const DEFAULT_COLUMNS = ["native_description", "description", "years", "page_count", "byte_size", "doc_type", "last_updated"];
+const DEFAULT_COLUMNS = ["page_native_description", "page_description", "years", "page_count", "byte_size", "doc_type", "last_updated"];
 const MIN_COL_W = 50;
 const THUMB_WIDTHS = [120, 250, 330, 500, 960, 1280, 1920];   // standard Wikimedia widths
 
@@ -581,6 +583,10 @@ function renderBatchEditor(ed) {
   const codes = Object.keys(dist);
   ed.innerHTML = `
     <div class="dt-ed-actions">
+      <div class="d-flex gap-2 align-items-center mb-2">
+        <button class="btn btn-sm btn-outline-secondary" id="dt-b-clear">Clear selection</button>
+        <button class="btn btn-sm btn-outline-primary ms-auto" id="dt-b-apply" ${anyChange ? "" : "disabled"}>Apply to ${n} documents</button>
+      </div>
       ${actionButtons(docs)}
       ${codes.length > 1 ? `<div class="form-text mt-1">These documents have different process codes (${Object.entries(dist).map(([k, v]) => `${esc(k)} ${v}`).join(", ")}), so only the steps they share are offered.</div>` : ""}
     </div>
@@ -595,10 +601,6 @@ function renderBatchEditor(ed) {
         ${fld("doc_scope", "Scope", multiField("doc_scope", DOC_SCOPES))}
         ${fld("language", "Language", multiField("language", LANGUAGES))}
       </div>
-    </div>
-    <div class="card-footer bg-body d-flex gap-2">
-      <button class="btn btn-sm btn-outline-secondary" id="dt-b-clear">Clear selection</button>
-      <button class="btn btn-sm btn-primary ms-auto" id="dt-b-apply" ${anyChange ? "" : "disabled"}>Apply to ${n} documents</button>
     </div>`;
   Object.keys(b.multi).forEach(f => ed.querySelector(`[data-fld="${f}"]`).classList.toggle("dt-changed", Object.keys(b.multi[f]).length > 0));
   // an action also commits the drafted curated changes
