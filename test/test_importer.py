@@ -233,6 +233,14 @@ class TestCheckRedlinkUnlinkedComment(unittest.TestCase):
                         "unlinked, unnecessary description file", "unlinked [JB] assuming Jewish"):
             self.assertEqual(check_redlink(self._page(comment))["availability"], "unlinked", comment)
 
+    def test_comment_merely_mentioning_unlinked_does_not_count(self):
+        for comment in ("linked to page with 2 unlinked opuses", "has unlinked siblings"):
+            self.assertEqual(check_redlink(self._page(comment))["availability"], "redlinked", comment)
+
+    def test_unlinked_at_the_end_counts(self):
+        for comment in ("unnecessary; unlinked", "unnecessary, unlinked.", "unlinked. [JB] assuming non-Jewish"):
+            self.assertEqual(check_redlink(self._page(comment))["availability"], "unlinked", comment)
+
     def test_other_comments_keep_redlinked(self):
         for comment in (None, "", "unnecessary description file", "File link is no good", "relinked later"):
             self.assertEqual(check_redlink(self._page(comment))["availability"], "redlinked", comment)

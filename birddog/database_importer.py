@@ -653,6 +653,9 @@ def doc_link_availability(doc_link: str, page_url: str, page_availability: str |
     return naked_link, page_availability
 
 
+_UNLINKED_COMMENT_RE = re.compile(r"^unlinked\b|\bunlinked\W*$")
+
+
 def check_redlink(page: dict) -> dict:
     availability = normalize_availability_value(page.get("availability", "linked"))
     url = page["url"]
@@ -667,10 +670,12 @@ def check_redlink(page: dict) -> dict:
     # process code) is deliberately left without a page. The page dicts carry
     # these as "comments" and "OLD_process_code". The word may come with a
     # reason ("unlinked - unnecessary description file", "unnecessary
-    # description file - unlinked"), so any comment containing it counts.
-    comments = (page.get("comments") or "").lower()
+    # description file - unlinked"), so a comment starting or ending with it
+    # counts. One merely mentioning it ("linked to page with 2 unlinked
+    # opuses") does not.
+    comments = (page.get("comments") or "").strip().lower()
     if availability != "unlinked" and not page.get("OLD_process_code") \
-            and re.search(r"\bunlinked\b", comments):
+            and _UNLINKED_COMMENT_RE.search(comments):
         _logger.info(f"Availability changed from {availability} to 'unlinked' for {page.get("title", "")}")
         availability = "unlinked"
 
