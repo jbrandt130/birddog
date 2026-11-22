@@ -838,6 +838,21 @@
   </div></div>
 </div>
 
+<div class="modal fade" id="dt-apply-modal" tabindex="-1" aria-labelledby="dt-apply-title" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title" id="dt-apply-title">Apply changes</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+    <div class="modal-body">
+      <table class="table table-sm small mb-0"><thead><tr><th>Document</th><th>Field</th><th>Change</th></tr></thead><tbody id="dt-apply-body"></tbody></table>
+      <div class="alert alert-danger py-2 mt-2 mb-0 d-none" id="dt-apply-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button class="btn btn-primary" id="dt-apply-confirm">Apply</button>
+    </div>
+  </div></div>
+</div>
+
 <div class="modal fade" id="dt-confirm-modal" tabindex="-1" aria-labelledby="dt-confirm-title" aria-hidden="true">
   <div class="modal-dialog"><div class="modal-content">
     <div class="modal-header"><h5 class="modal-title" id="dt-confirm-title">Unsaved changes</h5>

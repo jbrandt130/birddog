@@ -426,20 +426,41 @@ function renderToolbar() {
   $("dt-tb-actions").querySelectorAll("[data-act]").forEach(b => b.onclick = () => openAction(targets(), b.dataset.act));
 }
 
-async function applyChanges() {
+// Apply changes: show what will be saved, then save on confirm
+function applyChanges() {
   const docs = targets();
-  if (state.selected.size > 1 && batchChanged()) applyBatch(docs);
-  const ids = [...state.pending.keys()];
-  const withEdits = ids.map(docById).filter(Boolean);
-  if (!withEdits.length) { state.batch = state.batch && newBatchDraft(); return render(); }
-  $("dt-tb-apply").disabled = true;
+  if (state.selected.size > 1 && batchChanged()) {
+    applyBatch(docs);                     // the draft becomes per-document edits
+    state.batch = newBatchDraft();
+    renderEditor();
+  }
+  const withEdits = [...state.pending.keys()].map(docById).filter(Boolean);
+  if (!withEdits.length) return render();
+  const show = v => Array.isArray(v) ? (v.length ? v.join(", ") : "(none)") : (v === "" || v === null || v === undefined ? "(empty)" : v);
+  $("dt-apply-body").innerHTML = withEdits.map(d => {
+    const p = state.pending.get(d.id), fields = CURATED.filter(f => f in p);
+    return fields.map((f, i) => `<tr>
+      ${i === 0 ? `<td class="dt-mono" rowspan="${fields.length}">${docNameHtml(d)}</td>` : ""}
+      <td>${esc(fieldTitle(f))}</td>
+      <td><span class="text-body-secondary text-decoration-line-through">${esc(show(d[f]))}</span> &rarr; ${esc(show(p[f]))}</td></tr>`).join("");
+  }).join("");
+  $("dt-apply-title").textContent = `Apply changes to ${withEdits.length} document${withEdits.length === 1 ? "" : "s"}?`;
+  $("dt-apply-error").classList.add("d-none");
+  $("dt-apply-confirm").disabled = false;
+  bootstrap.Modal.getOrCreateInstance($("dt-apply-modal")).show();
+}
+async function confirmApply() {
+  const withEdits = [...state.pending.keys()].map(docById).filter(Boolean);
+  $("dt-apply-confirm").disabled = true;
   try {
     await commit(withEdits, null);
-    if (state.batch) state.batch = newBatchDraft();
+    bootstrap.Modal.getInstance($("dt-apply-modal")).hide();
     toast(`Saved changes to ${withEdits.length} document(s)`);
     showError("");
   } catch (e) {
-    showError(e.status === 503 ? "The database is unavailable right now; the changes were not saved." : `Couldn't save the changes: ${e.message}`);
+    $("dt-apply-error").textContent = e.status === 503 ? "The database is unavailable right now; the changes were not saved." : `Couldn't save the changes: ${e.message}`;
+    $("dt-apply-error").classList.remove("d-none");
+    $("dt-apply-confirm").disabled = false;
   }
   render();
 }
@@ -840,6 +861,7 @@ function wire() {
 
   // toolbar row 2
   $("dt-tb-apply").onclick = applyChanges;
+  $("dt-apply-confirm").onclick = confirmApply;
   $("dt-tb-revert").onclick = revertChanges;
   const stepFocused = dlt => { const d = targets()[0]; if (d) guard(() => step(d, dlt)); };
   $("dt-tb-prev").onclick = () => stepFocused(-1);
