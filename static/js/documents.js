@@ -97,8 +97,6 @@ function fmtBytes(n) {
   return n.toFixed(i ? 1 : 0) + " " + u[i];
 }
 const fmtTime = t => t ? String(t).replace("T", " ").slice(0, 16) : "";
-// matches the importer for now: DAHMO/5/1/7 -> DAHMO-5-1-7
-const defaultFilename = label => (label || "").replace(/^\/+/, "").replace(/\//g, "-");
 function eff(d, f) { const p = state.pending.get(d.id); return p && f in p ? p[f] : d[f]; }
 function pcBadge(code) {
   if (!code) return `<span class="badge dt-pc dt-pc-blank">blank</span>`;
@@ -558,7 +556,7 @@ function renderEditor() {
         ${fld("doc_structure", "Structure", pillsHtml("doc_structure", DOC_STRUCTURES, eff(d, "doc_structure")))}
         ${fld("doc_scope", "Scope", pillsHtml("doc_scope", DOC_SCOPES, eff(d, "doc_scope")))}
         ${fld("language", "Language", pillsHtml("language", LANGUAGES, eff(d, "language")))}
-        ${fld("filename", "File name", `<input class="form-control form-control-sm dt-mono" id="dt-ed-filename" value="${esc(eff(d, "filename"))}">`, d.label ? `Default: ${esc(defaultFilename(d.label))}` : "")}
+        ${fld("filename", "File name", `<input class="form-control form-control-sm dt-mono" id="dt-ed-filename" value="${esc(eff(d, "filename"))}">`)}
       </div>
       ${eff(d, "anomaly") ? `<div class="alert alert-warning py-2 mb-0 small"><i class="bi bi-exclamation-triangle-fill"></i> <strong>Anomaly:</strong> ${esc(eff(d, "anomaly_comment")) || "(no comment)"}</div>` : ""}
     </div>`;
