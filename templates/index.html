@@ -433,9 +433,6 @@
                 </nav>
               </div>
               <div id="browse-info" class="col d-flex flex-wrap justify-content-end gap-2 align-items-center">
-                {% if documents_tab %}
-                <button type="button" id="browse-documents-btn" class="btn btn-sm btn-outline-primary d-none"><i class="bi bi-files me-1"></i> Documents</button>
-                {% endif %}
                 <span id="new-page-badge" class="badge bg-success small d-none">NEW PAGE</span>
                 <span id="translating-badge" class="badge bg-info small d-none">
                   <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
@@ -512,6 +509,11 @@
                 <button id="next-unresolved-btn" class="btn btn-primary {{ '' if watch_tabs else 'd-none' }}" onclick="next_unresolved()" title="Next Unresolved">
                   <i class="bi bi-arrow-right-square"></i>
                 </button>
+                {% if documents_tab %}
+                <button type="button" id="browse-documents-btn" class="btn btn-primary d-none" title="Documents" aria-label="Documents">
+                  <i class="bi bi-files"></i>
+                </button>
+                {% endif %}
                 {% if database_available and user and user.site_admin %}
                 <button id="database-sync" class="btn btn-primary" onclick="update_database()" title="Database Upload">
                   <i class="bi bi-database-fill-up"></i>
