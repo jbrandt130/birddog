@@ -494,7 +494,8 @@
             </div>
             <!-- Right Column: Buttons and Progress Bar -->
             <div class="border rounded p-3 shadow-sm">
-              <!-- Button Group -->
+              <!-- Button Group (download / resolve / next unresolved: site_admin and
+                   doc_admin only; hidden rather than removed, since birddog.js updates them) -->
               <div class="d-flex align-items-center gap-2 mb-3">
                 <a id="source-link" href="#" target="_blank" class="btn btn-primary" title="View Source">
                   <i class="bi bi-box-arrow-up-right"></i>
@@ -502,13 +503,13 @@
                 <button id="translate-btn" class="btn btn-primary" onclick="translate_page()" title="Translate">
                   <i class="bi bi-translate"></i>
                 </button>
-                <button id="download-btn" class="btn btn-primary" onclick="open_export_modal()" title="Download Spreadsheet">
+                <button id="download-btn" class="btn btn-primary {{ '' if watch_tabs else 'd-none' }}" onclick="open_export_modal()" title="Download Spreadsheet">
                   <i class="bi bi-download"></i>
                 </button>
-                <button id="resolve-btn" class="btn btn-primary" onclick="resolve_page()" title="Mark Resolved">
+                <button id="resolve-btn" class="btn btn-primary {{ '' if watch_tabs else 'd-none' }}" onclick="resolve_page()" title="Mark Resolved">
                   <i class="bi bi-check-square"></i>
                 </button>
-                <button id="next-unresolved-btn" class="btn btn-primary" onclick="next_unresolved()" title="Next Unresolved">
+                <button id="next-unresolved-btn" class="btn btn-primary {{ '' if watch_tabs else 'd-none' }}" onclick="next_unresolved()" title="Next Unresolved">
                   <i class="bi bi-arrow-right-square"></i>
                 </button>
                 {% if database_available and user and user.site_admin %}
