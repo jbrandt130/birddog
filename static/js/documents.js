@@ -386,7 +386,7 @@ const fieldTitle = f => ({doc_type: "Doc type", doc_structure: "Structure", doc_
 // ---------- toolbar (top of the grid) ----------
 // Row 1: only the actions every target document allows (they depend on the
 // process code, see documents.CODE_ACTIONS), plus the Flag/Clear anomaly toggle.
-// Row 2: Clear selection, Apply changes, Revert changes, previous/next record.
+// Row 2: Apply changes, Revert changes, previous/next record.
 const TOOLBAR_ACTIONS = [
   {act: "check",    label: "Check",    cls: "btn-outline-primary", from: ["", "new"]},
   {act: "review",   label: "Review",   cls: "btn-outline-primary"},
@@ -421,7 +421,6 @@ function renderToolbar() {
   const single = state.selected.size <= 1 && n === 1;
   const idx = single ? state.rows.findIndex(x => x.id === docs[0].id) : -1;
   const changes = dirty();
-  $("dt-tb-clear").disabled = !state.selected.size;
   $("dt-tb-apply").disabled = !changes;
   $("dt-tb-revert").disabled = !changes;
   $("dt-tb-prev").disabled = !(single && (idx > 0 || (idx === 0 && state.page > 0)));
@@ -842,7 +841,6 @@ function wire() {
   $("dt-page-next").onclick = () => guard(() => { if (state.nextCursor) loadPage(state.page + 1, {focus: "first"}); });
 
   // toolbar row 2
-  $("dt-tb-clear").onclick = () => guard(() => { state.selected.clear(); selectionChanged(); });
   $("dt-tb-apply").onclick = applyChanges;
   $("dt-tb-revert").onclick = revertChanges;
   const stepFocused = dlt => { const d = targets()[0]; if (d) guard(() => step(d, dlt)); };
