@@ -92,7 +92,7 @@
 <!-- nav bar -->
 <nav class="navbar navbar-expand-lg bg-body-tertiary fixed-top" id="nav-brand-tab" role="tablist">
   <div class="container-fluid">
-    <a class="navbar-brand" id="nav-home-logo" data-bs-toggle="tab" href="#nav-home" role="tab">
+    <a class="navbar-brand" id="nav-home-logo" data-bs-toggle="tab" href="#{{ {'alerts': 'nav-home', 'watchlists': 'nav-watchlists', 'browse': 'nav-browse', 'documents': 'nav-documents'}[landing_tab] }}" role="tab">
       <img src="static/birddog.png" alt="Birddog" width="48" height="48">
     </a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNavAltMarkup" aria-controls="navbarNavAltMarkup" aria-expanded="false" aria-label="Toggle navigation">
@@ -101,15 +101,21 @@
 
     <div class="collapse navbar-collapse justify-content-between" id="navbarNavAltMarkup">
       <div class="navbar-nav">
-        <a class="nav-link {{ 'active' if landing_tab != 'watchlists' else '' }}" id="nav-home-tab" data-bs-toggle="tab" href="#nav-home" role="tab">Alerts</a>
+        {# tab visibility by privilege: see home() in service.py #}
+        {% if not user or watch_tabs %}
+          <a class="nav-link {{ 'active' if landing_tab == 'alerts' else '' }}" id="nav-home-tab" data-bs-toggle="tab" href="#nav-home" role="tab">Alerts</a>
+        {% endif %}
         {% if user %}
-          <a class="nav-link {{ 'active' if landing_tab == 'watchlists' else '' }}" id="nav-watchlists-tab" data-bs-toggle="tab" href="#nav-watchlists" role="tab">Watchlists</a>
-          <a class="nav-link" id="nav-browse-tab" data-bs-toggle="tab" href="#nav-browse" role="tab">Browse</a>
-          <a class="nav-link" id="nav-archives-tab" data-bs-toggle="tab" href="#nav-archives" role="tab">Archives</a>
-          {% if documents_tab %}
-            <a class="nav-link" id="nav-documents-tab" data-bs-toggle="tab" href="#nav-documents" role="tab">Documents</a>
+          {% if watch_tabs %}
+            <a class="nav-link {{ 'active' if landing_tab == 'watchlists' else '' }}" id="nav-watchlists-tab" data-bs-toggle="tab" href="#nav-watchlists" role="tab">Watchlists</a>
           {% endif %}
-          <a class="nav-link" id="nav-profile-tab" data-bs-toggle="tab" href="#nav-profile" role="tab">Profile</a>
+          <a class="nav-link {{ 'active' if landing_tab == 'browse' else '' }}" id="nav-browse-tab" data-bs-toggle="tab" href="#nav-browse" role="tab">Browse Wiki</a>
+          {% if watch_tabs %}
+            <a class="nav-link" id="nav-archives-tab" data-bs-toggle="tab" href="#nav-archives" role="tab">Archives</a>
+          {% endif %}
+          {% if documents_tab %}
+            <a class="nav-link {{ 'active' if landing_tab == 'documents' else '' }}" id="nav-documents-tab" data-bs-toggle="tab" href="#nav-documents" role="tab">Documents</a>
+          {% endif %}
           {% if user.site_admin %}
             <a class="nav-link" id="nav-logs-link" href="/logs" target="birddog_logs">Logs</a>
             <a class="nav-link" id="nav-usage-link" href="/service_usage" target="birddog_usage">Usage</a>
@@ -131,9 +137,12 @@
       </div>
       {% endif %}
 
-      <div class="d-flex align-items-center">
+      <div class="d-flex align-items-center gap-2">
+        {% if user %}
+          <a class="nav-link px-2" id="nav-profile-tab" data-bs-toggle="tab" href="#nav-profile" role="tab" title="Profile" aria-label="Profile"><i class="bi bi-person-circle fs-4"></i></a>
+        {% endif %}
         <!-- Logout Button -->
-        <a href="{{ url_for('logout') }}" class="btn btn-danger mt-3">Logout</a>
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">Logout</a>
       </div>
     </div>
   </div>
@@ -142,7 +151,7 @@
 <div class="container px-3 tab-content mt-4">
 
 <!-- Alerts Panel -->
-<div class="tab-pane fade {{ 'show active' if landing_tab != 'watchlists' else '' }}" id="nav-home" role="tabpanel">
+<div class="tab-pane fade {{ 'show active' if landing_tab == 'alerts' else '' }}" id="nav-home" role="tabpanel">
 
   {% if user %}
   <!-- Alerts screen if user is logged in -->
@@ -390,7 +399,7 @@
 </div>
 
 <!-- Browse Panel -->
-<div class="tab-pane fade" id="nav-browse" role="tabpanel">
+<div class="tab-pane fade {{ 'show active' if landing_tab == 'browse' else '' }}" id="nav-browse" role="tabpanel">
   <!-- browse page spinner -->
   <div id="browse-spinner" class="d-none text-center mt-4">
     <div class="spinner-border text-primary" role="status">
@@ -528,7 +537,7 @@
 
 {% if documents_tab %}
 <!-- Documents Panel (static/js/documents.js) -->
-<div class="tab-pane fade dt-wide" id="nav-documents" role="tabpanel">
+<div class="tab-pane fade dt-wide {{ 'show active' if landing_tab == 'documents' else '' }}" id="nav-documents" role="tabpanel">
   <div id="dt-error" class="alert alert-danger d-none" role="alert"></div>
 
   <!-- query card -->

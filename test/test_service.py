@@ -813,6 +813,29 @@ class TestAdminRoutes(unittest.TestCase):
         self.assertIs(session_user["site_admin"], False)
         self.assertEqual(session_user["privileges"], [])
 
+    def test_tabs_and_landing_by_privilege(self):
+        # (site_admin, privileges, database configured) ->
+        #   (watch tabs, Documents tab, landing tab)
+        cases = [
+            (False, set(), False, (False, False, "browse")),
+            (False, {"doc_check"}, True, (False, True, "documents")),
+            (False, {"doc_check"}, False, (False, False, "browse")),
+            (False, {"doc_admin"}, True, (True, True, "alerts")),
+            (True, set(), False, (True, False, "alerts")),
+        ]
+        for site_admin, privs, has_db, expected in cases:
+            with self.subTest(site_admin=site_admin, privs=privs, has_db=has_db):
+                self._login("admin" if site_admin else "user")
+                user = service.users.lookup.return_value
+                user.privileges = frozenset(privs | ({"site_admin"} if site_admin else set()))
+                user.get_preference.return_value = None
+                user.get_watchlist.return_value = ["a watch"]
+                service.runtime.database = MagicMock() if has_db else None
+                with patch("birddog.service.render_template", return_value="ok") as render:
+                    self.assertEqual(self.client.get("/").status_code, 200)
+                kw = render.call_args.kwargs
+                self.assertEqual((kw["watch_tabs"], kw["documents_tab"], kw["landing_tab"]), expected)
+
     def test_admin_is_allowed(self):
         self._login("admin")
         with patch("birddog.service.render_template", return_value="ok"), \

@@ -969,5 +969,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const tab = $("nav-documents-tab");
   if (!tab) return;
   tab.addEventListener("shown.bs.tab", () => { if (!state.started && !linking) start(); });
+  // Documents is the landing tab for users without Alerts/Watchlists
+  if ($("nav-documents").classList.contains("active")) start();
 });
 })();

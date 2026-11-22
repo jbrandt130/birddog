@@ -195,6 +195,7 @@ def home():
     hide_insignificant = False
     landing_tab = 'alerts'
     documents_tab = False
+    watch_tabs = False      # Alerts, Watchlists, Archives
     if runtime.state == "running":
         user_session = session.get('user')
         start_title = None
@@ -205,10 +206,6 @@ def home():
             if user:
                 start_title = user.get_preference("last_page")
                 hide_insignificant = bool(user.get_preference("hide_insignificant", False))
-                # a first-time (or fully caught-up) user has nothing to see on
-                # Alerts yet -- land them on Watchlists instead so the empty
-                # state isn't the first thing they hit
-                landing_tab = 'alerts' if user.get_watchlist() else 'watchlists'
                 # a session cookie can outlive app restarts, so a returning
                 # user may never pass through login() again
                 user.start_session()
@@ -221,6 +218,17 @@ def home():
                 # database; an unreachable database is reported in the tab
                 documents_tab = (getattr(runtime, "database", None) is not None
                                  and documents.can_curate(user.privileges))
+                # tab visibility by privilege (user, 2026-11-22): Alerts,
+                # Watchlists and Archives for site_admin and doc_admin only;
+                # Browse, Documents, Profile and Help for everyone
+                watch_tabs = user.has_privilege(SITE_ADMIN) or user.has_privilege("doc_admin")
+                if watch_tabs:
+                    # a first-time (or fully caught-up) user has nothing to see on
+                    # Alerts yet -- land them on Watchlists instead so the empty
+                    # state isn't the first thing they hit
+                    landing_tab = 'alerts' if user.get_watchlist() else 'watchlists'
+                else:
+                    landing_tab = 'documents' if documents_tab else 'browse'
     return render_template(
         'index.html',
         user=user_session,
@@ -228,6 +236,7 @@ def home():
         hide_insignificant=hide_insignificant,
         landing_tab=landing_tab,
         documents_tab=documents_tab,
+        watch_tabs=watch_tabs,
         runtime_state=runtime.state,
         database_available=runtime.database_update_enabled,
         debug=app.debug,
