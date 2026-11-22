@@ -929,14 +929,27 @@ async function start(opts = {}) {
     await loadPrefs();
   }
   if (opts.prefix !== undefined) prefs.prefix = opts.prefix;
-  if (opts.process_code !== undefined) prefs.pcFilter = opts.process_code;
   if (opts.anomalies_only !== undefined) prefs.anomalyOnly = !!opts.anomalies_only;
+  if (opts.process_code === "auto") {
+    // show the linked page's documents: take the process code of the first
+    // one under the prefix (any code this user can see)
+    try {
+      const q = new URLSearchParams({limit: "1", total: "0", sort: "label"});
+      if (normPrefix()) q.set("prefix", normPrefix());
+      const data = await api("GET", "/documents?" + q.toString());
+      const first = (data.documents || [])[0];
+      if (first) prefs.pcFilter = first.process_code || "";
+    } catch (e) { /* keep the current filter */ }
+  } else if (opts.process_code !== undefined) {
+    prefs.pcFilter = opts.process_code;
+  }
   $("dt-prefix").value = prefs.prefix || "";
   await reload();
 }
 
 // Entry point for other tabs, e.g. open_documents({prefix: "DAHMO/5/1"}).
-// Options: prefix, process_code ("" = blank), anomalies_only.
+// Options: prefix, process_code ("" = blank, "auto" = the code of the first
+// document under the prefix), anomalies_only.
 window.open_documents = function (opts = {}) {
   const tab = $("nav-documents-tab");
   if (!tab) return false;

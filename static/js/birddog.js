@@ -745,7 +745,7 @@ function render_page_data(data) {
         const can_open = typeof window.open_documents === 'function' && !!data.label;
         documents_btn.classList.toggle('d-none', !can_open);
         documents_btn.title = can_open ? `Documents under ${data.label}` : '';
-        documents_btn.onclick = () => window.open_documents({prefix: data.label});
+        documents_btn.onclick = () => window.open_documents({prefix: data.label, process_code: 'auto', anomalies_only: false});
     }
 
     const false_comparison = 'refmod' in data && data.refmod >= data.lastmod
@@ -2254,7 +2254,7 @@ async function on_loaded() {
             const documents_link = e.target.closest(".alert-documents-link");
             if (documents_link) {
                 e.preventDefault();
-                window.open_documents({prefix: documents_link.dataset.docPrefix});
+                window.open_documents({prefix: documents_link.dataset.docPrefix, process_code: 'auto', anomalies_only: false});
                 return;
             }
 
