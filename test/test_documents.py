@@ -106,9 +106,10 @@ class ActionsTest(unittest.TestCase):
         self.assertEqual(allowed_actions(doc("check")), ["review", "reject", "defer", "save", "anomaly"])
         self.assertEqual(allowed_actions(doc("review")), ["escalate", "reject", "defer", "save", "anomaly"])
         self.assertEqual(allowed_actions(doc("escalate")), ["reject", "defer", "save", "anomaly"])
-        self.assertEqual(allowed_actions(doc("reject")), ["check", "defer", "save", "anomaly"])
+        self.assertEqual(allowed_actions(doc("reject")), ["check", "save", "anomaly"])
         self.assertEqual(allowed_actions(doc("defer")), ["check", "reject", "save", "anomaly"])
-        self.assertEqual(allowed_actions(doc("save")), ["reject", "defer", "anomaly"])
+        self.assertEqual(allowed_actions(doc("save")), ["anomaly"])
+        self.assertEqual(allowed_actions(doc("duplicate")), ["anomaly"])
         self.assertEqual(allowed_actions(doc("check", anomaly=True))[-1], "clear_anomaly")
 
 class CommentTest(unittest.TestCase):

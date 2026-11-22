@@ -35,10 +35,19 @@ BLANK = ""   # stands for a blank process_code in filters and actions
 PROCESS_CODES = ("new", "duplicate", "check", "review", "escalate", "reject", "defer", "save")
 END_CODES = ("reject", "defer", "save")
 
-# forward step from each code; escalate and the end states have none
-NEXT_CODE = {BLANK: "check", "new": "check", "check": "review", "review": "escalate"}
-# end states that can be sent back to check
-REOPEN_FROM = ("reject", "defer")
+# process-code actions offered from each code (user, 2026-11-22). Flag/clear
+# anomaly is offered for every code on top of these. "check" from reject or
+# defer is shown as "Back to check".
+CODE_ACTIONS = {
+    BLANK:      ("check", "reject", "defer", "save"),
+    "new":      ("check", "reject", "defer", "save"),
+    "check":    ("review", "reject", "defer", "save"),
+    "review":   ("escalate", "reject", "defer", "save"),
+    "escalate": ("reject", "defer", "save"),
+    "reject":   ("check", "save"),
+    "defer":    ("check", "reject", "save"),
+    "save":     (),
+}
 
 # process codes each privilege can see; duplicate is never listed (it is
 # effectively rejected: the prevailing doc goes through the workflow)
@@ -187,13 +196,7 @@ def can_see(doc, privileges):
 
 def allowed_actions(doc):
     """Actions offered for a document; they depend only on its process code."""
-    code = _code_of(doc)
-    actions = []
-    if NEXT_CODE.get(code):
-        actions.append(NEXT_CODE[code])
-    if code in REOPEN_FROM:
-        actions.append("check")
-    actions.extend(a for a in END_CODES if a != code)
+    actions = list(CODE_ACTIONS.get(_code_of(doc), ()))
     actions.append("clear_anomaly" if doc.get("anomaly") else "anomaly")
     return actions
 

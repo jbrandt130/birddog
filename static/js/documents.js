@@ -384,13 +384,14 @@ function fld(field, label, body, hint = "") {
 const fieldTitle = f => ({doc_type: "Doc type", doc_structure: "Structure", doc_scope: "Scope", language: "Language", filename: "File name"})[f] || f;
 
 // ---------- toolbar (top of the grid) ----------
-// Row 1: every action, greyed when it doesn't apply to all target documents.
+// Row 1: only the actions every target document allows (they depend on the
+// process code, see documents.CODE_ACTIONS), plus the Flag/Clear anomaly toggle.
 // Row 2: Clear selection, Apply changes, Revert changes, previous/next record.
 const TOOLBAR_ACTIONS = [
   {act: "check",    label: "Check",    cls: "btn-outline-primary", from: ["", "new"]},
   {act: "review",   label: "Review",   cls: "btn-outline-primary"},
   {act: "escalate", label: "Escalate", cls: "btn-outline-primary"},
-  {act: "check",    label: `<i class="bi bi-chevron-left"></i> Back to check`, cls: "btn-outline-secondary", from: ["reject", "defer"], title: "Send back to check"},
+  {act: "check",    label: `<i class="bi bi-chevron-left"></i>Back to check`, cls: "btn-outline-secondary", from: ["reject", "defer"], title: "Send back to check"},
   {act: "reject",   label: "Reject",   cls: "btn-outline-warning dt-btn-reject"},
   {act: "defer",    label: "Defer",    cls: "btn-outline-secondary"},
   {act: "save",     label: "Save",     cls: "btn-outline-success"},
@@ -408,14 +409,15 @@ function renderToolbar() {
   const docs = targets(), n = docs.length;
   const allow = (act, from) => n > 0 && docs.every(d => (d.actions || []).includes(act)
     && (!from || from.includes(eff(d, "process_code") || "")));
-  const btn = (act, cls, label, title, enabled) =>
-    `<button type="button" class="btn btn-sm ${cls}" data-act="${act}" title="${esc(title)}" ${enabled ? "" : "disabled"}>${label}</button>`;
+  const btn = (act, cls, label, title) =>
+    `<button type="button" class="btn btn-sm ${cls}" data-act="${act}" title="${esc(title)}">${label}</button>`;
   const allFlagged = n > 0 && docs.every(d => eff(d, "anomaly"));
-  $("dt-tb-actions").innerHTML = TOOLBAR_ACTIONS.map(a =>
-      btn(a.act, a.cls, a.label, a.title || (PROCESS_CODES[a.act] || {}).d || "", allow(a.act, a.from))).join("")
-    + (allFlagged
-      ? btn("clear_anomaly", "btn-outline-danger", `<i class="bi bi-exclamation-triangle"></i> Clear anomaly`, "Clear the anomaly flag and anomaly comment", true)
-      : btn("anomaly", "btn-outline-danger", `<i class="bi bi-exclamation-triangle"></i> Flag anomaly`, "Flag as an anomaly and say why", n > 0));
+  $("dt-tb-actions").innerHTML = !n ? `<span class="small text-body-secondary">No document selected</span>`
+    : TOOLBAR_ACTIONS.filter(a => allow(a.act, a.from))
+        .map(a => btn(a.act, a.cls, a.label, a.title || (PROCESS_CODES[a.act] || {}).d || "")).join("")
+      + (allFlagged
+        ? btn("clear_anomaly", "btn-outline-danger", `<i class="bi bi-exclamation-triangle"></i> Clear anomaly`, "Clear the anomaly flag and anomaly comment")
+        : btn("anomaly", "btn-outline-danger", `<i class="bi bi-exclamation-triangle"></i> Flag anomaly`, "Flag as an anomaly and say why"));
   const single = state.selected.size <= 1 && n === 1;
   const idx = single ? state.rows.findIndex(x => x.id === docs[0].id) : -1;
   const changes = dirty();

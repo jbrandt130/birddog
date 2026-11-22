@@ -66,9 +66,9 @@ body.dt-resizing, body.dt-resizing * { cursor: col-resize !important; user-selec
   color: var(--bs-primary-text-emphasis); padding-left: 10px; }
 #nav-documents .dt-ro-k { display: block; font-size: .72rem; font-weight: 700; color: var(--bs-secondary-color); text-transform: uppercase; letter-spacing: .05em; }
 #nav-documents .dt-ro-comments { white-space: pre-wrap; }
-/* toolbar actions: wrap onto up to three rows as the grid narrows */
-#nav-documents .dt-tb-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-#nav-documents .dt-tb-actions .btn { flex: 1 1 7.5rem; white-space: nowrap; }
+/* toolbar actions: at most five, sized to their labels so they fit one row */
+#nav-documents .dt-tb-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-height: 2.6rem; }
+#nav-documents .dt-tb-actions .btn { flex: 0 0 auto; white-space: nowrap; --bs-btn-padding-x: .45rem; --bs-btn-font-size: .8rem; }
 /* the editor's own content, below the toolbar; its card-body scrolls */
 #nav-documents .dt-editor-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 /* yellow outline with readable text (Bootstrap's warning yellow is too pale on white) */
