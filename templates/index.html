@@ -106,15 +106,13 @@
           <a class="nav-link {{ 'active' if landing_tab == 'alerts' else '' }}" id="nav-home-tab" data-bs-toggle="tab" href="#nav-home" role="tab">Alerts</a>
         {% endif %}
         {% if user %}
-          {% if watch_tabs %}
-            <a class="nav-link {{ 'active' if landing_tab == 'watchlists' else '' }}" id="nav-watchlists-tab" data-bs-toggle="tab" href="#nav-watchlists" role="tab">Watchlists</a>
-          {% endif %}
           <a class="nav-link {{ 'active' if landing_tab == 'browse' else '' }}" id="nav-browse-tab" data-bs-toggle="tab" href="#nav-browse" role="tab">Browse Wiki</a>
-          {% if watch_tabs %}
-            <a class="nav-link" id="nav-archives-tab" data-bs-toggle="tab" href="#nav-archives" role="tab">Archives</a>
-          {% endif %}
           {% if documents_tab %}
             <a class="nav-link {{ 'active' if landing_tab == 'documents' else '' }}" id="nav-documents-tab" data-bs-toggle="tab" href="#nav-documents" role="tab">Documents</a>
+          {% endif %}
+          {% if watch_tabs %}
+            <a class="nav-link {{ 'active' if landing_tab == 'watchlists' else '' }}" id="nav-watchlists-tab" data-bs-toggle="tab" href="#nav-watchlists" role="tab">Watchlists</a>
+            <a class="nav-link" id="nav-archives-tab" data-bs-toggle="tab" href="#nav-archives" role="tab">Archives</a>
           {% endif %}
           {% if user.site_admin %}
             <a class="nav-link" id="nav-logs-link" href="/logs" target="birddog_logs">Logs</a>
