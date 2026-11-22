@@ -475,7 +475,16 @@ function renderEditor() {
   const pos = idx >= 0 ? state.page * prefs.pageSize + idx + 1 : null;
   const thumb = pageThumb(d, 1, 120);
   ed.innerHTML = `
-    <div class="dt-ed-actions">${actionButtons([d])}</div>
+    <div class="dt-ed-actions">
+      <div class="d-flex gap-2 align-items-center mb-2">
+        <button class="btn btn-sm btn-outline-secondary" id="dt-ed-revert" ${state.pending.has(d.id) ? "" : "disabled"}>Revert</button>
+        <div class="ms-auto d-flex gap-2">
+          <button class="btn btn-sm btn-outline-secondary" id="dt-ed-prev" ${idx > 0 || (idx === 0 && state.page > 0) ? "" : "disabled"} aria-label="Previous document" title="Previous document"><i class="bi bi-chevron-left"></i></button>
+          <button class="btn btn-sm btn-outline-primary" id="dt-ed-next" ${idx >= 0 && (idx < state.rows.length - 1 || state.nextCursor) ? "" : "disabled"} aria-label="Next document" title="Next document"><i class="bi bi-chevron-right"></i></button>
+        </div>
+      </div>
+      ${actionButtons([d])}
+    </div>
     <div class="card-header bg-body d-flex flex-column gap-1">
       <div class="d-flex align-items-center gap-2">
         ${thumb ? `<button type="button" class="dt-thumb" id="dt-ed-thumb" title="View pages" aria-label="View pages of ${esc(docName(d))}"><img src="${thumb}" alt=""></button>` : ""}
@@ -500,13 +509,6 @@ function renderEditor() {
         ${fld("filename", "File name", `<input class="form-control form-control-sm dt-mono" id="dt-ed-filename" value="${esc(eff(d, "filename"))}">`, d.label ? `Default: ${esc(defaultFilename(d.label))}` : "")}
       </div>
       ${eff(d, "anomaly") ? `<div class="alert alert-warning py-2 mb-0 small"><i class="bi bi-exclamation-triangle-fill"></i> <strong>Anomaly:</strong> ${esc(eff(d, "anomaly_comment")) || "(no comment)"}</div>` : ""}
-    </div>
-    <div class="card-footer bg-body d-flex gap-2 align-items-center">
-      <button class="btn btn-sm btn-outline-secondary" id="dt-ed-revert" ${state.pending.has(d.id) ? "" : "disabled"}>Revert</button>
-      <div class="ms-auto d-flex gap-2">
-        <button class="btn btn-sm btn-outline-secondary" id="dt-ed-prev" ${idx > 0 || (idx === 0 && state.page > 0) ? "" : "disabled"} aria-label="Previous document"><i class="bi bi-chevron-left"></i></button>
-        <button class="btn btn-sm btn-primary" id="dt-ed-next" ${idx >= 0 && (idx < state.rows.length - 1 || state.nextCursor) ? "" : "disabled"}>Next <i class="bi bi-chevron-right"></i></button>
-      </div>
     </div>`;
   markChanged(d);
 
