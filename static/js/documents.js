@@ -921,13 +921,18 @@ function fillPrefixSuggestions() {
   } catch (e) { /* not loaded yet */ }
 }
 
+// one-time setup; every caller waits for the saved preferences, so a link's
+// options are applied after them and never overwritten
+let ready = null;
+function init() {
+  if (!ready) { state.started = true; wire(); ready = loadPrefs(); }
+  return ready;
+}
+let linking = false;   // open_documents() is switching tabs itself
+
 async function start(opts = {}) {
   fillPrefixSuggestions();
-  if (!state.started) {
-    state.started = true;
-    wire();
-    await loadPrefs();
-  }
+  await init();
   if (opts.prefix !== undefined) prefs.prefix = opts.prefix;
   if (opts.anomalies_only !== undefined) prefs.anomalyOnly = !!opts.anomalies_only;
   if (opts.process_code === "auto") {
@@ -953,14 +958,16 @@ async function start(opts = {}) {
 window.open_documents = function (opts = {}) {
   const tab = $("nav-documents-tab");
   if (!tab) return false;
-  bootstrap.Tab.getOrCreateInstance(tab).show();
-  if (state.started) guard(() => start(opts)); else start(opts);
+  const first = !state.started;
+  linking = true;          // the tab's shown event fires inside show()
+  try { bootstrap.Tab.getOrCreateInstance(tab).show(); } finally { linking = false; }
+  if (first) start(opts); else guard(() => start(opts));
   return true;
 };
 
 document.addEventListener("DOMContentLoaded", () => {
   const tab = $("nav-documents-tab");
   if (!tab) return;
-  tab.addEventListener("shown.bs.tab", () => { if (!state.started) start(); });
+  tab.addEventListener("shown.bs.tab", () => { if (!state.started && !linking) start(); });
 });
 })();
