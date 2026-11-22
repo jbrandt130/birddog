@@ -538,18 +538,21 @@
     </div>
   </div>
 
-  <!-- unsaved changes bar -->
-  <div id="dt-pending-bar" class="alert alert-warning d-none d-flex flex-wrap align-items-center gap-2 py-2">
-    <i class="bi bi-pencil"></i>
-    <span><strong id="dt-pending-count">0</strong> document(s) with unsaved changes</span>
-    <div class="ms-auto d-flex gap-2">
-      <button class="btn btn-sm btn-outline-secondary" id="dt-pending-discard">Discard all</button>
-      <button class="btn btn-sm btn-warning" id="dt-pending-review">Review &amp; save</button>
-    </div>
-  </div>
-
   <div class="dt-workspace">
     <div class="card" style="min-width:0">
+      <!-- toolbar: actions on the ticked rows (else the focused one), then editing -->
+      <div class="card-header bg-body" id="dt-toolbar">
+        <div class="dt-tb-actions border rounded p-2" id="dt-tb-actions" role="toolbar" aria-label="Actions"></div>
+        <div class="d-flex flex-wrap gap-2 mt-2" role="toolbar" aria-label="Editing">
+          <button class="btn btn-sm btn-outline-secondary" id="dt-tb-clear">Clear selection</button>
+          <button class="btn btn-sm btn-outline-primary" id="dt-tb-apply">Apply changes</button>
+          <button class="btn btn-sm btn-outline-secondary" id="dt-tb-revert">Revert changes</button>
+          <div class="ms-auto d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" id="dt-tb-prev" aria-label="Previous record" title="Previous record"><i class="bi bi-chevron-left"></i></button>
+            <button class="btn btn-sm btn-outline-secondary" id="dt-tb-next" aria-label="Next record" title="Next record"><i class="bi bi-chevron-right"></i></button>
+          </div>
+        </div>
+      </div>
       <div class="dt-scroll" id="dt-scroll">
         <table class="table table-striped table-hover dt-grid" id="dt-table">
           <colgroup id="dt-cols"></colgroup>
@@ -834,17 +837,14 @@
   </div></div>
 </div>
 
-<div class="modal fade" id="dt-review-modal" tabindex="-1" aria-labelledby="dt-review-title" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
-    <div class="modal-header"><h5 class="modal-title" id="dt-review-title">Review changes</h5>
+<div class="modal fade" id="dt-confirm-modal" tabindex="-1" aria-labelledby="dt-confirm-title" aria-hidden="true">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title" id="dt-confirm-title">Unsaved changes</h5>
       <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
-    <div class="modal-body">
-      <table class="table table-sm small"><thead><tr><th>Label</th><th>Field</th><th>Change</th></tr></thead><tbody id="dt-review-body"></tbody></table>
-      <div class="alert alert-danger py-2 mb-0 d-none" id="dt-review-error"></div>
-    </div>
+    <div class="modal-body"><p class="mb-0" id="dt-confirm-text"></p></div>
     <div class="modal-footer">
-      <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Back</button>
-      <button class="btn btn-warning" id="dt-review-save">Save all</button>
+      <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button class="btn btn-danger" id="dt-confirm-discard">Discard changes</button>
     </div>
   </div></div>
 </div>

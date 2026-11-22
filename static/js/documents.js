@@ -233,7 +233,7 @@ function renderFilters() {
       <label class="form-check-label small" for="dt-pcf-${esc(c || "blank")}">${esc(codeName(c))}</label>
     </div>`).join("");
   document.querySelectorAll('input[name="dt-pcf"]').forEach(r => r.onchange = () => {
-    prefs.pcFilter = r.value; savePrefs(); reload();
+    guard(() => { prefs.pcFilter = r.value; savePrefs(); reload(); }, renderFilters);
   });
   $("dt-anomaly-wrap").hidden = !state.seesAnomalies;
   $("dt-anomaly-only").checked = !!prefs.anomalyOnly;
@@ -288,12 +288,11 @@ function renderHead() {
   document.querySelectorAll("#dt-head th[data-sort]").forEach(th => th.onclick = () => {
     if (justResized) return;
     const k = th.dataset.sort;
-    prefs.sort = {key: k, dir: prefs.sort.key === k ? -prefs.sort.dir : 1};
-    savePrefs(); reload();
+    guard(() => { prefs.sort = {key: k, dir: prefs.sort.key === k ? -prefs.sort.dir : 1}; savePrefs(); reload(); });
   });
   $("dt-select-all").onchange = e => {
-    state.rows.forEach(d => e.target.checked ? state.selected.add(d.id) : state.selected.delete(d.id));
-    selectionChanged();
+    const on = e.target.checked;
+    guard(() => { state.rows.forEach(d => on ? state.selected.add(d.id) : state.selected.delete(d.id)); selectionChanged(); }, render);
   };
 }
 
@@ -329,15 +328,20 @@ function renderGrid() {
   $("dt-empty").classList.toggle("d-none", !loading && !empty);
   $("dt-scroll").classList.toggle("d-none", loading);
   $("dt-editor").classList.toggle("d-none", loading);
+  $("dt-toolbar").classList.toggle("d-none", loading);
   $("dt-footer").classList.toggle("d-none", loading || (empty && state.page === 0));
 
   document.querySelectorAll("#dt-body tr[data-id]").forEach(tr => {
     const id = +tr.dataset.id;
     tr.onclick = e => {
       if (e.target.closest("a, select, input, button")) return;
-      state.selected.clear(); state.focus = id; selectionChanged();
+      if (!state.selected.size && state.focus === id) return;
+      guard(() => { state.selected.clear(); state.focus = id; selectionChanged(); });
     };
-    tr.querySelector(".dt-row-sel").onchange = e => { e.target.checked ? state.selected.add(id) : state.selected.delete(id); selectionChanged(); };
+    tr.querySelector(".dt-row-sel").onchange = e => {
+      const on = e.target.checked;
+      guard(() => { on ? state.selected.add(id) : state.selected.delete(id); selectionChanged(); }, render);
+    };
   });
   $("dt-select-all").checked = rows.length > 0 && rows.every(d => state.selected.has(d.id));
   renderSummary();
@@ -361,12 +365,7 @@ function renderSummary() {
 }
 const isFocused = id => state.selected.size ? false : state.focus === id;
 
-function renderBars() {
-  $("dt-pending-count").textContent = state.pending.size;
-  $("dt-pending-bar").classList.toggle("d-none", !state.pending.size);
-  resetDiscard();
-}
-function render() { renderFilters(); renderGrid(); renderBars(); renderEditor(); }
+function render() { renderFilters(); renderGrid(); renderToolbar(); renderEditor(); }
 
 function selectionChanged() {
   state.batch = state.selected.size > 1 ? newBatchDraft() : null;
@@ -384,22 +383,82 @@ function fld(field, label, body, hint = "") {
 }
 const fieldTitle = f => ({doc_type: "Doc type", doc_structure: "Structure", doc_scope: "Scope", language: "Language", filename: "File name"})[f] || f;
 
-// buttons for a set of documents: the actions every one of them allows
-function actionButtons(docs) {
-  const common = docs.map(d => d.actions || []).reduce((a, b) => a.filter(x => b.includes(x)));
-  const procActs = common.filter(a => !["anomaly", "clear_anomaly"].includes(a));
-  const flagged = docs.filter(d => d.anomaly).length;
-  const next = procActs.find(a => ["check", "review", "escalate"].includes(a));
-  const btn = (act, cls, html, title) => `<button type="button" class="btn btn-sm ${cls}" data-act="${act}" title="${esc(title)}">${html}</button>`;
-  const parts = [];
-  procActs.forEach(a => {
-    if (a === next) parts.push(btn(a, "btn-outline-primary", cap(a), (PROCESS_CODES[a] || {}).d || ""));
-    else if (a === "check") parts.push(btn(a, "btn-outline-secondary", `<i class="bi bi-chevron-left"></i> Back to check`, "Send back to check"));
-    else parts.push(btn(a, a === "save" ? "btn-outline-success" : a === "reject" ? "btn-outline-warning dt-btn-reject" : "btn-outline-secondary", cap(a), (PROCESS_CODES[a] || {}).d || ""));
-  });
-  if (flagged < docs.length) parts.push(btn("anomaly", "btn-outline-danger", `<i class="bi bi-exclamation-triangle"></i> Flag anomaly`, "Flag as an anomaly and say why"));
-  if (flagged) parts.push(btn("clear_anomaly", "btn-outline-secondary", `Clear anomaly${docs.length > 1 ? ` (${flagged})` : ""}`, "Clear the anomaly flag and anomaly comment"));
-  return `<div class="dt-actions">${parts.join("")}</div>`;
+// ---------- toolbar (top of the grid) ----------
+// Row 1: every action, greyed when it doesn't apply to all target documents.
+// Row 2: Clear selection, Apply changes, Revert changes, previous/next record.
+const TOOLBAR_ACTIONS = [
+  {act: "check",    label: "Check",    cls: "btn-outline-primary", from: ["", "new"]},
+  {act: "review",   label: "Review",   cls: "btn-outline-primary"},
+  {act: "escalate", label: "Escalate", cls: "btn-outline-primary"},
+  {act: "check",    label: `<i class="bi bi-chevron-left"></i> Back to check`, cls: "btn-outline-secondary", from: ["reject", "defer"], title: "Send back to check"},
+  {act: "reject",   label: "Reject",   cls: "btn-outline-warning dt-btn-reject"},
+  {act: "defer",    label: "Defer",    cls: "btn-outline-secondary"},
+  {act: "save",     label: "Save",     cls: "btn-outline-success"},
+];
+// documents the buttons act on: the ticked rows, else the focused one
+function targets() {
+  if (state.selected.size) return [...state.selected].map(docById).filter(Boolean);
+  const d = state.focus && docById(state.focus);
+  return d ? [d] : [];
+}
+const batchChanged = () => !!state.batch && Object.values(state.batch.multi).some(m => Object.keys(m).length);
+const dirty = () => state.pending.size > 0 || batchChanged();
+
+function renderToolbar() {
+  const docs = targets(), n = docs.length;
+  const allow = (act, from) => n > 0 && docs.every(d => (d.actions || []).includes(act)
+    && (!from || from.includes(eff(d, "process_code") || "")));
+  const btn = (act, cls, label, title, enabled) =>
+    `<button type="button" class="btn btn-sm ${cls}" data-act="${act}" title="${esc(title)}" ${enabled ? "" : "disabled"}>${label}</button>`;
+  const allFlagged = n > 0 && docs.every(d => eff(d, "anomaly"));
+  $("dt-tb-actions").innerHTML = TOOLBAR_ACTIONS.map(a =>
+      btn(a.act, a.cls, a.label, a.title || (PROCESS_CODES[a.act] || {}).d || "", allow(a.act, a.from))).join("")
+    + (allFlagged
+      ? btn("clear_anomaly", "btn-outline-danger", `<i class="bi bi-exclamation-triangle"></i> Clear anomaly`, "Clear the anomaly flag and anomaly comment", true)
+      : btn("anomaly", "btn-outline-danger", `<i class="bi bi-exclamation-triangle"></i> Flag anomaly`, "Flag as an anomaly and say why", n > 0));
+  const single = state.selected.size <= 1 && n === 1;
+  const idx = single ? state.rows.findIndex(x => x.id === docs[0].id) : -1;
+  const changes = dirty();
+  $("dt-tb-clear").disabled = !state.selected.size;
+  $("dt-tb-apply").disabled = !changes;
+  $("dt-tb-revert").disabled = !changes;
+  $("dt-tb-prev").disabled = !(single && (idx > 0 || (idx === 0 && state.page > 0)));
+  $("dt-tb-next").disabled = !(single && idx >= 0 && (idx < state.rows.length - 1 || state.nextCursor));
+  $("dt-tb-actions").querySelectorAll("[data-act]").forEach(b => b.onclick = () => openAction(targets(), b.dataset.act));
+}
+
+async function applyChanges() {
+  const docs = targets();
+  if (state.selected.size > 1 && batchChanged()) applyBatch(docs);
+  const ids = [...state.pending.keys()];
+  const withEdits = ids.map(docById).filter(Boolean);
+  if (!withEdits.length) { state.batch = state.batch && newBatchDraft(); return render(); }
+  $("dt-tb-apply").disabled = true;
+  try {
+    await commit(withEdits, null);
+    if (state.batch) state.batch = newBatchDraft();
+    toast(`Saved changes to ${withEdits.length} document(s)`);
+    showError("");
+  } catch (e) {
+    showError(e.status === 503 ? "The database is unavailable right now; the changes were not saved." : `Couldn't save the changes: ${e.message}`);
+  }
+  render();
+}
+function revertChanges() {
+  state.pending.clear();
+  if (state.batch) state.batch = newBatchDraft();
+  render();
+}
+
+// Anything that is about to change what the info panel shows asks first
+// when there are unsaved changes: Discard runs the change, Cancel stays.
+let guardPending = null;
+function guard(fn, onCancel) {
+  if (!dirty()) return fn();
+  guardPending = {fn, onCancel, done: false};
+  const n = state.pending.size || state.selected.size;
+  $("dt-confirm-text").textContent = `You have unsaved changes on ${n} document${n === 1 ? "" : "s"}. Discard them?`;
+  bootstrap.Modal.getOrCreateInstance($("dt-confirm-modal")).show();
 }
 
 // ---------- page thumbnail + viewer (Commons files only) ----------
@@ -477,16 +536,6 @@ function renderEditor() {
   const pos = idx >= 0 ? state.page * prefs.pageSize + idx + 1 : null;
   const thumb = pageThumb(d, 1, 120);
   ed.innerHTML = `
-    <div class="dt-ed-actions">
-      <div class="d-flex gap-2 align-items-center mb-2">
-        <button class="btn btn-sm btn-outline-secondary" id="dt-ed-revert" ${state.pending.has(d.id) ? "" : "disabled"}>Revert</button>
-        <div class="ms-auto d-flex gap-2">
-          <button class="btn btn-sm btn-outline-secondary" id="dt-ed-prev" ${idx > 0 || (idx === 0 && state.page > 0) ? "" : "disabled"} aria-label="Previous document" title="Previous document"><i class="bi bi-chevron-left"></i></button>
-          <button class="btn btn-sm btn-outline-primary" id="dt-ed-next" ${idx >= 0 && (idx < state.rows.length - 1 || state.nextCursor) ? "" : "disabled"} aria-label="Next document" title="Next document"><i class="bi bi-chevron-right"></i></button>
-        </div>
-      </div>
-      ${actionButtons([d])}
-    </div>
     <div class="card-header bg-body d-flex flex-column gap-1">
       <div class="d-flex align-items-center gap-2">
         ${thumb ? `<button type="button" class="dt-thumb" id="dt-ed-thumb" title="View pages" aria-label="View pages of ${esc(docName(d))}"><img src="${thumb}" alt=""></button>` : ""}
@@ -514,8 +563,7 @@ function renderEditor() {
     </div>`;
   markChanged(d);
 
-  const after = () => { markChanged(d); renderGrid(); renderBars(); $("dt-ed-revert").disabled = !state.pending.has(d.id); };
-  ed.querySelectorAll("[data-act]").forEach(b => b.onclick = () => openAction([d], b.dataset.act));
+  const after = () => { markChanged(d); renderGrid(); renderToolbar(); };
   const th = $("dt-ed-thumb");
   if (th) {
     th.onclick = () => openInspector(d);
@@ -528,13 +576,10 @@ function renderEditor() {
     after();
   });
   $("dt-ed-filename").oninput = e => { setField(d, "filename", e.target.value); after(); };
-  $("dt-ed-revert").onclick = () => { state.pending.delete(d.id); render(); };
   ed.querySelectorAll(".dt-open-page").forEach(a => a.onclick = e => {
     e.preventDefault();
     if (typeof load_page_by_title === "function") { load_page_by_title(a.dataset.title); show_tab("nav-browse-tab"); }
   });
-  $("dt-ed-prev").onclick = () => step(d, -1);
-  $("dt-ed-next").onclick = () => step(d, 1);
 }
 async function step(d, dlt) {
   const cur = state.rows.findIndex(x => x.id === d.id);
@@ -579,20 +624,12 @@ function renderBatchEditor(ed) {
       return `<button type="button" class="btn btn-sm rounded-pill ${cls}" data-v="${esc(v)}" title="${have} of ${n} have it. Click to add to all, again to remove from all, again to leave as is.">${act === "add" ? "+ " : ""}${esc(v)}${have && have < n && !act ? ` <span class="small opacity-75">${have}/${n}</span>` : ""}</button>`;
     }).join("")}</div>`;
   };
-  const anyChange = Object.values(b.multi).some(m => Object.keys(m).length);
   const codes = Object.keys(dist);
   ed.innerHTML = `
-    <div class="dt-ed-actions">
-      <div class="d-flex gap-2 align-items-center mb-2">
-        <button class="btn btn-sm btn-outline-secondary" id="dt-b-clear">Clear selection</button>
-        <button class="btn btn-sm btn-outline-primary ms-auto" id="dt-b-apply" ${anyChange ? "" : "disabled"}>Apply to ${n} documents</button>
-      </div>
-      ${actionButtons(docs)}
-      ${codes.length > 1 ? `<div class="form-text mt-1">These documents have different process codes (${Object.entries(dist).map(([k, v]) => `${esc(k)} ${v}`).join(", ")}), so only the steps they share are offered.</div>` : ""}
-    </div>
     <div class="card-header bg-body">
       <div class="fw-semibold">${n} documents selected</div>
       <div class="small text-body-secondary">Fields you don't touch stay as they are on each document.</div>
+      ${codes.length > 1 ? `<div class="small text-body-secondary">Process codes: ${Object.entries(dist).map(([k, v]) => `${esc(k)} ${v}`).join(", ")}. Only the steps they all share are active.</div>` : ""}
     </div>
     <div class="card-body">
       <div class="dt-curated"><div class="dt-curated-title">Curated information</div>
@@ -603,21 +640,12 @@ function renderBatchEditor(ed) {
       </div>
     </div>`;
   Object.keys(b.multi).forEach(f => ed.querySelector(`[data-fld="${f}"]`).classList.toggle("dt-changed", Object.keys(b.multi[f]).length > 0));
-  // an action also commits the drafted curated changes
-  ed.querySelectorAll("[data-act]").forEach(x => x.onclick = () => openAction(docs, x.dataset.act));
   ed.querySelectorAll("[data-bfield] .btn").forEach(x => x.onclick = () => {
     const m = b.multi[x.parentElement.dataset.bfield], v = x.dataset.v;
     m[v] = m[v] === undefined ? "add" : m[v] === "add" ? "remove" : undefined;
     if (m[v] === undefined) delete m[v];
-    renderEditor();
+    renderEditor(); renderToolbar();
   });
-  $("dt-b-clear").onclick = () => { state.selected.clear(); selectionChanged(); };
-  $("dt-b-apply").onclick = () => {
-    applyBatch(docs);
-    toast(`Changes staged on ${n} documents. Save them from the yellow bar.`);
-    state.batch = newBatchDraft();
-    render();
-  };
 }
 
 // ---------- saving ----------
@@ -787,24 +815,56 @@ function renderColumnsList() {
   document.querySelectorAll("#dt-columns-list [data-down]").forEach(b => b.onclick = () => move(b.dataset.down, 1));
 }
 
-// ---------- pending / review & save ----------
-let discardArmed = false;
-function resetDiscard() { discardArmed = false; $("dt-pending-discard").textContent = "Discard all"; }
-const show = v => Array.isArray(v) ? (v.length ? v.join(", ") : "(none)") : (v === "" || v === null || v === undefined ? "(empty)" : v);
-
 // ---------- wiring ----------
 function wire() {
-  $("dt-anomaly-only").onchange = e => { prefs.anomalyOnly = e.target.checked; savePrefs(); reload(); };
+  const restorePrefix = () => { $("dt-prefix").value = prefs.prefix || ""; };
+  $("dt-anomaly-only").onchange = e => {
+    const on = e.target.checked;
+    guard(() => { prefs.anomalyOnly = on; savePrefs(); reload(); }, renderFilters);
+  };
   let prefixTimer;
   $("dt-prefix").oninput = e => {
     clearTimeout(prefixTimer);
-    prefixTimer = setTimeout(() => { prefs.prefix = e.target.value; savePrefs(); reload(); }, 400);
+    prefixTimer = setTimeout(() => {
+      const v = e.target.value;
+      guard(() => { prefs.prefix = v; savePrefs(); reload(); }, restorePrefix);
+    }, 400);
   };
-  $("dt-prefix-clear").onclick = () => { $("dt-prefix").value = ""; prefs.prefix = ""; savePrefs(); reload(); };
-  $("dt-refresh").onclick = () => { state.detail.clear(); loadPage(state.page, {withTotal: true}); };
-  $("dt-page-size").onchange = e => { prefs.pageSize = +e.target.value; savePrefs(); reload(); };
-  $("dt-page-prev").onclick = () => { if (state.page > 0) loadPage(state.page - 1, {focus: "first"}); };
-  $("dt-page-next").onclick = () => { if (state.nextCursor) loadPage(state.page + 1, {focus: "first"}); };
+  $("dt-prefix-clear").onclick = () => guard(() => { $("dt-prefix").value = ""; prefs.prefix = ""; savePrefs(); reload(); }, restorePrefix);
+  $("dt-refresh").onclick = () => guard(() => { state.detail.clear(); loadPage(state.page, {withTotal: true}); });
+  $("dt-page-size").onchange = e => {
+    const v = +e.target.value;
+    guard(() => { prefs.pageSize = v; savePrefs(); reload(); }, renderSummary);
+  };
+  $("dt-page-prev").onclick = () => guard(() => { if (state.page > 0) loadPage(state.page - 1, {focus: "first"}); });
+  $("dt-page-next").onclick = () => guard(() => { if (state.nextCursor) loadPage(state.page + 1, {focus: "first"}); });
+
+  // toolbar row 2
+  $("dt-tb-clear").onclick = () => guard(() => { state.selected.clear(); selectionChanged(); });
+  $("dt-tb-apply").onclick = applyChanges;
+  $("dt-tb-revert").onclick = revertChanges;
+  const stepFocused = dlt => { const d = targets()[0]; if (d) guard(() => step(d, dlt)); };
+  $("dt-tb-prev").onclick = () => stepFocused(-1);
+  $("dt-tb-next").onclick = () => stepFocused(1);
+
+  // unsaved-changes dialog
+  $("dt-confirm-discard").onclick = () => {
+    const g = guardPending;
+    if (!g) return;
+    g.done = true;
+    state.pending.clear();
+    if (state.batch) state.batch = newBatchDraft();
+    bootstrap.Modal.getInstance($("dt-confirm-modal")).hide();
+    g.fn();
+  };
+  $("dt-confirm-modal").addEventListener("hidden.bs.modal", () => {
+    const g = guardPending;
+    guardPending = null;
+    if (g && !g.done && g.onCancel) g.onCancel();
+  });
+  window.addEventListener("beforeunload", e => {
+    if (state.started && dirty()) { e.preventDefault(); e.returnValue = ""; }
+  });
 
   $("dt-open-columns").onclick = () => { draftCols = [...prefs.columns]; renderColumnsList(); bootstrap.Modal.getOrCreateInstance($("dt-columns-modal")).show(); };
   $("dt-columns-reset").onclick = () => { draftCols = [...DEFAULT_COLUMNS]; renderColumnsList(); };
@@ -815,38 +875,6 @@ function wire() {
   };
 
   $("dt-action-confirm").onclick = confirmAction;
-
-  $("dt-pending-discard").onclick = () => {
-    if (!discardArmed) { discardArmed = true; $("dt-pending-discard").textContent = `Discard changes on ${state.pending.size} document(s)?`; return; }
-    state.pending.clear(); render(); toast("Changes discarded");
-  };
-  $("dt-pending-review").onclick = () => {
-    $("dt-review-body").innerHTML = [...state.pending.entries()].map(([id, p]) => {
-      const d = docById(id), fields = CURATED.filter(f => f in p);
-      return fields.map((f, i) => `<tr>
-        ${i === 0 ? `<td class="dt-mono" rowspan="${fields.length}">${docNameHtml(d)}</td>` : ""}
-        <td class="dt-mono text-body-secondary">${f}</td>
-        <td><span class="text-body-secondary text-decoration-line-through">${esc(show(d[f]))}</span> &rarr; ${esc(show(p[f]))}</td></tr>`).join("");
-    }).join("");
-    $("dt-review-error").classList.add("d-none");
-    $("dt-review-save").disabled = false;
-    bootstrap.Modal.getOrCreateInstance($("dt-review-modal")).show();
-  };
-  $("dt-review-save").onclick = async () => {
-    const docs = [...state.pending.keys()].map(docById).filter(Boolean);
-    $("dt-review-save").disabled = true;
-    try {
-      await commit(docs, null);
-      bootstrap.Modal.getInstance($("dt-review-modal")).hide();
-      toast(`Saved ${docs.length} document(s)`);
-      render();
-    } catch (e) {
-      $("dt-review-error").textContent = e.status === 503 ? "The database is unavailable right now; nothing more was saved." : e.message;
-      $("dt-review-error").classList.remove("d-none");
-      $("dt-review-save").disabled = false;
-      render();   // groups saved before the failure are already applied
-    }
-  };
 
   $("dt-insp-close").onclick = closeInspector;
   $("dt-insp-prev").onclick = () => inspGo(insp.page - 1);
@@ -861,7 +889,7 @@ function wire() {
 
   // remember where each row sat, so afterSave can pick its neighbour
   $("dt-body").addEventListener("click", () => { lastIdx = Object.fromEntries(state.rows.map((d, i) => [d.id, i])); }, true);
-  $("dt-editor").addEventListener("click", () => { lastIdx = Object.fromEntries(state.rows.map((d, i) => [d.id, i])); }, true);
+  $("dt-toolbar").addEventListener("click", () => { lastIdx = Object.fromEntries(state.rows.map((d, i) => [d.id, i])); }, true);
 }
 
 function fillPrefixSuggestions() {
@@ -893,7 +921,7 @@ window.open_documents = function (opts = {}) {
   const tab = $("nav-documents-tab");
   if (!tab) return false;
   bootstrap.Tab.getOrCreateInstance(tab).show();
-  start(opts);
+  if (state.started) guard(() => start(opts)); else start(opts);
   return true;
 };
 

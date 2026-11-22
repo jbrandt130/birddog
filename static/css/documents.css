@@ -51,9 +51,9 @@ body.dt-resizing, body.dt-resizing * { cursor: col-resize !important; user-selec
 
 /* editor panel */
 #nav-documents .dt-editor { position: sticky; top: 82px; max-height: calc(100vh - 94px); }
-/* actions (top), header and footer stay put; only the body scrolls */
+/* header stays put; only the body scrolls */
 #nav-documents .dt-editor .card-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
-#nav-documents .dt-ed-actions { flex: none; padding: 10px 16px; border-bottom: var(--bs-card-border-width) solid var(--bs-card-border-color); }
+
 @media (max-width: 1199.98px) { #nav-documents .dt-editor { position: static; max-height: none; } }
 #nav-documents .dt-thumb { flex: none; padding: 0; border: 1px solid var(--bs-border-color); border-radius: 4px; background: var(--bs-tertiary-bg);
   width: 60px; height: 84px; overflow: hidden; cursor: zoom-in; }
@@ -66,8 +66,9 @@ body.dt-resizing, body.dt-resizing * { cursor: col-resize !important; user-selec
   color: var(--bs-primary-text-emphasis); padding-left: 10px; }
 #nav-documents .dt-ro-k { display: block; font-size: .72rem; font-weight: 700; color: var(--bs-secondary-color); text-transform: uppercase; letter-spacing: .05em; }
 #nav-documents .dt-ro-comments { white-space: pre-wrap; }
-#nav-documents .dt-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-#nav-documents .dt-actions .btn { flex: 1 1 auto; }
+/* toolbar actions: wrap onto up to three rows as the grid narrows */
+#nav-documents .dt-tb-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+#nav-documents .dt-tb-actions .btn { flex: 1 1 7.5rem; }
 /* yellow outline with readable text (Bootstrap's warning yellow is too pale on white) */
 #nav-documents .dt-btn-reject { --bs-btn-color: var(--bs-warning-text-emphasis); --bs-btn-hover-color: #000; --bs-btn-active-color: #000; }
 
