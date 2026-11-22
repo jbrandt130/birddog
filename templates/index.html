@@ -409,6 +409,9 @@
                 </nav>
               </div>
               <div id="browse-info" class="col d-flex flex-wrap justify-content-end gap-2 align-items-center">
+                {% if documents_tab %}
+                <button type="button" id="browse-documents-btn" class="btn btn-sm btn-outline-primary d-none"><i class="bi bi-files me-1"></i> Documents</button>
+                {% endif %}
                 <span id="new-page-badge" class="badge bg-success small d-none">NEW PAGE</span>
                 <span id="translating-badge" class="badge bg-info small d-none">
                   <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>

@@ -739,6 +739,15 @@ function render_table(table_element, table_data, is_comparison) {
 
 // render a data page
 function render_page_data(data) {
+    // Documents tab link for this page (only for users who have the tab)
+    const documents_btn = document.getElementById('browse-documents-btn');
+    if (documents_btn) {
+        const can_open = typeof window.open_documents === 'function' && !!data.label;
+        documents_btn.classList.toggle('d-none', !can_open);
+        documents_btn.title = can_open ? `Documents under ${data.label}` : '';
+        documents_btn.onclick = () => window.open_documents({prefix: data.label});
+    }
+
     const false_comparison = 'refmod' in data && data.refmod >= data.lastmod
     // a comparison happened whenever compare() was invoked at all (refmod is
     // set) -- NOT only when the reference turns out to differ from lastmod.
@@ -1801,9 +1810,14 @@ function alert_row_html(row) {
         ? `<a href="#" class="alert-browse-link" title="Open ${escape_attr(seg.path)}" data-browse-path="${escape_attr(seg.path)}">${escape_attr(seg.label)}</a>`
         : escape_attr(seg.label)
     ).join('<span class="alert-crumb-sep">/</span>');
+    // Documents tab link: the stored label is the segment labels joined by "/"
+    const doc_prefix = segments.map(seg => seg.label).join('/');
+    const documents_html = (typeof window.open_documents === 'function' && !meta.moved_to)
+        ? ` <a href="#" class="alert-documents-link ms-1" title="Documents under ${escape_attr(doc_prefix)}" data-doc-prefix="${escape_attr(doc_prefix)}"><i class="bi bi-files"></i></a>`
+        : '';
     const label_html = meta.moved_to
         ? `${breadcrumb_html} <span class="text-danger small">(archive moved to "${escape_attr(meta.moved_to)}" -- resolving removes it from your watchlist)</span>`
-        : breadcrumb_html;
+        : breadcrumb_html + documents_html;
 
     // a subtree quick-select button only makes sense when this row has a
     // parent within its own watch to select alongside it (a bare watch-root
@@ -2234,6 +2248,13 @@ async function on_loaded() {
             const subtree_btn = e.target.closest(".alert-subtree-select-btn");
             if (subtree_btn) {
                 select_subtree(subtree_btn.dataset.selectPrefix);
+                return;
+            }
+
+            const documents_link = e.target.closest(".alert-documents-link");
+            if (documents_link) {
+                e.preventDefault();
+                window.open_documents({prefix: documents_link.dataset.docPrefix});
                 return;
             }
 

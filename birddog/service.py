@@ -452,6 +452,8 @@ def page_data(user):
         page_dict['title'] = page.title
         page_dict['lineage'] = title_lineage(page.title)
         page_dict['lineage_labels'] = title_lineage_labels(page.title)
+        # the stored label (Pages/Documents form), e.g. for the Documents link
+        page_dict['label'] = page_label(page.title)
         page_dict['kind'] = page.kind
         page_dict['name'] = page.name
         page_dict['needs_translation'] = page.needs_translation
