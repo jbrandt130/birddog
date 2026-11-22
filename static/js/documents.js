@@ -522,7 +522,7 @@ function detailHtml(d) {
 }
 
 function renderEditor() {
-  const ed = $("dt-editor");
+  const ed = $("dt-editor-body");   // the toolbar above it is drawn separately
   const n = state.selected.size;
   if (n > 1) return renderBatchEditor(ed);
   const id = n === 1 ? [...state.selected][0] : state.focus;

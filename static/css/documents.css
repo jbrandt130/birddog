@@ -68,7 +68,9 @@ body.dt-resizing, body.dt-resizing * { cursor: col-resize !important; user-selec
 #nav-documents .dt-ro-comments { white-space: pre-wrap; }
 /* toolbar actions: wrap onto up to three rows as the grid narrows */
 #nav-documents .dt-tb-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-#nav-documents .dt-tb-actions .btn { flex: 1 1 7.5rem; }
+#nav-documents .dt-tb-actions .btn { flex: 1 1 7.5rem; white-space: nowrap; }
+/* the editor's own content, below the toolbar; its card-body scrolls */
+#nav-documents .dt-editor-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
 /* yellow outline with readable text (Bootstrap's warning yellow is too pale on white) */
 #nav-documents .dt-btn-reject { --bs-btn-color: var(--bs-warning-text-emphasis); --bs-btn-hover-color: #000; --bs-btn-active-color: #000; }
 
