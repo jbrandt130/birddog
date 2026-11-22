@@ -114,12 +114,12 @@
             <a class="nav-link {{ 'active' if landing_tab == 'watchlists' else '' }}" id="nav-watchlists-tab" data-bs-toggle="tab" href="#nav-watchlists" role="tab">Watchlists</a>
             <a class="nav-link" id="nav-archives-tab" data-bs-toggle="tab" href="#nav-archives" role="tab">Archives</a>
           {% endif %}
+          <a class="nav-link" id="nav-help-link" href="https://github.com/jbrandt130/birddog/blob/main/docs/help.md" target="birddog_help">Help</a>
           {% if user.site_admin %}
             <a class="nav-link" id="nav-logs-link" href="/logs" target="birddog_logs">Logs</a>
             <a class="nav-link" id="nav-usage-link" href="/service_usage" target="birddog_usage">Usage</a>
             <a class="nav-link" id="nav-db-status-link" href="/database_status" target="birddog_db_status">DB Status</a>
           {% endif %}
-          <a class="nav-link" id="nav-help-link" href="https://github.com/jbrandt130/birddog/blob/main/docs/help.md" target="birddog_help">Help</a>
         {% endif %}
       </div>
 
