@@ -395,7 +395,7 @@ function actionButtons(docs) {
     else if (a === "check") parts.push(btn(a, "btn-outline-secondary", `<i class="bi bi-chevron-left"></i> Back to check`, "Send back to check"));
     else parts.push(btn(a, a === "save" ? "btn-outline-success" : a === "reject" ? "btn-outline-danger" : "btn-outline-secondary", cap(a), (PROCESS_CODES[a] || {}).d || ""));
   });
-  if (flagged < docs.length) parts.push(btn("anomaly", "btn-outline-warning", `<i class="bi bi-exclamation-triangle"></i> Flag anomaly`, "Flag as an anomaly and say why"));
+  if (flagged < docs.length) parts.push(btn("anomaly", "btn-outline-danger", `<i class="bi bi-exclamation-triangle"></i> Flag anomaly`, "Flag as an anomaly and say why"));
   if (flagged) parts.push(btn("clear_anomaly", "btn-outline-secondary", `Clear anomaly${docs.length > 1 ? ` (${flagged})` : ""}`, "Clear the anomaly flag and anomaly comment"));
   return `<div class="dt-actions">${parts.join("")}</div>`;
 }
@@ -703,7 +703,7 @@ function openAction(docs, act) {
   $("dt-action-extract-row").hidden = act !== "save";
   $("dt-action-extract").checked = true;
   $("dt-action-error").classList.add("d-none");
-  $("dt-action-confirm").className = "btn " + (act === "reject" ? "btn-danger" : isAnom ? "btn-warning" : "btn-primary");
+  $("dt-action-confirm").className = "btn " + (act === "reject" || isAnom ? "btn-danger" : "btn-primary");
   $("dt-action-confirm").textContent = isClear ? "Clear anomaly" : isAnom ? "Flag anomaly" : `Confirm ${act}`;
   $("dt-action-confirm").disabled = false;
   action = {docs, act};
