@@ -742,10 +742,11 @@ function render_page_data(data) {
     // Documents tab link for this page (only for users who have the tab)
     const documents_btn = document.getElementById('browse-documents-btn');
     if (documents_btn) {
-        const can_open = typeof window.open_documents === 'function' && !!data.label;
+        const prefix = data.documents_prefix || data.label;
+        const can_open = typeof window.open_documents === 'function' && !!prefix;
         documents_btn.classList.toggle('d-none', !can_open);
-        documents_btn.title = can_open ? `Documents under ${data.label}` : '';
-        documents_btn.onclick = () => window.open_documents({prefix: data.label, process_code: 'auto', anomalies_only: false});
+        documents_btn.title = can_open ? `Documents under ${prefix}` : '';
+        documents_btn.onclick = () => window.open_documents({prefix, process_code: 'auto', anomalies_only: false});
     }
 
     const false_comparison = 'refmod' in data && data.refmod >= data.lastmod
@@ -1811,7 +1812,7 @@ function alert_row_html(row) {
         : escape_attr(seg.label)
     ).join('<span class="alert-crumb-sep">/</span>');
     // Documents tab link: the stored label is the segment labels joined by "/"
-    const doc_prefix = segments.map(seg => seg.label).join('/');
+    const doc_prefix = meta.doc_prefix || segments.map(seg => seg.label).join('/');
     const documents_html = (typeof window.open_documents === 'function' && !meta.moved_to)
         ? ` <a href="#" class="alert-documents-link ms-1" title="Documents under ${escape_attr(doc_prefix)}" data-doc-prefix="${escape_attr(doc_prefix)}"><i class="bi bi-files"></i></a>`
         : '';

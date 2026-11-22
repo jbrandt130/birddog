@@ -370,6 +370,18 @@ LABELS_BY_PREFIX = _labels_init()
 def archive_root(archive, subarchive):
     return ARCHIVE_BY_ADDRESS[(archive, subarchive)].split("/", 1)[0]
 
+def documents_label_prefix(title):
+    """
+    Label prefix for the Documents tab's list of documents under a page.
+    Archive-level pages may be groupings (e.g. DACHKO/D, the pre-Soviet funds)
+    whose segment never appears in document labels, so they use the archive's
+    root label.
+    """
+    label = page_label(title)
+    if classify_page(title) == "archive":
+        return label.split("/")[0]
+    return label
+
 def classify_page(title):
     title = canonicalize_title(title)
     if title in ARCHIVE_BY_TITLE or is_root_title(title):

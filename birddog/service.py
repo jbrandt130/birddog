@@ -38,6 +38,7 @@ from birddog.wiki import (
     title_lineage,
     title_lineage_labels,
     page_label,
+    documents_label_prefix,
     )
 from birddog.user import User, SITE_ADMIN
 from birddog import documents
@@ -454,6 +455,7 @@ def page_data(user):
         page_dict['lineage_labels'] = title_lineage_labels(page.title)
         # the stored label (Pages/Documents form), e.g. for the Documents link
         page_dict['label'] = page_label(page.title)
+        page_dict['documents_prefix'] = documents_label_prefix(page.title)
         page_dict['kind'] = page.kind
         page_dict['name'] = page.name
         page_dict['needs_translation'] = page.needs_translation

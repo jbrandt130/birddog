@@ -11,6 +11,7 @@ from birddog.wiki import (
     page_title_from_address,
     title_in_scope,
     page_label,
+    documents_label_prefix,
     ARCHIVES_BY_ROOT,
     )
 from birddog.cache import (
@@ -204,7 +205,9 @@ def _flatten_hierarchy(d, prefix=None):
         label = page_label(path).split("/")[-1]
         if not value:
             return (path, { "title": path, "label": label })
-        return (path, { **value, "title": path, "label": label })
+        # real entries also carry the Documents tab prefix for their page
+        return (path, { **value, "title": path, "label": label,
+                        "doc_prefix": documents_label_prefix(path) })
 
     return [_gen_title(item) for item in result]
 
