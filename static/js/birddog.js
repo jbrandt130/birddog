@@ -1219,9 +1219,10 @@ async function load_watchlist(check_all=false, initial_load=false) {
     console.log('watchlist loaded:', data)
     watchlist = data;
 
-    // Check if the watchlist is empty on initial load
+    // Check if the watchlist is empty on initial load -- only for users who
+    // have the Watchlists tab (site_admin / doc_admin); others never see it
     if (initial_load && watchlist.length == 0) {
-        open_add_to_watchlist_dialog();
+        if (document.getElementById('nav-watchlists-tab')) open_add_to_watchlist_dialog();
         return;
     }
 
