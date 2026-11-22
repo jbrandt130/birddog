@@ -58,12 +58,13 @@ VISIBLE_CODES = {
     "doc_admin": ("new", "check", "review", "escalate", "reject", "defer", "save", BLANK),
 }
 # documents ready for curation; applied to every list, on top of the
-# privilege filter. is_duplicate is a rollup (0/1). Opening or changing a
-# document does not re-check these: background updates may flip them (e.g.
-# lookup_status) while someone is working on it.
+# privilege filter. Opening or changing a document does not re-check these:
+# background updates may flip them (e.g. lookup_status) while someone is
+# working on it. Duplicates need no filter of their own (and is_duplicate is
+# a rollup, kept out of queries): birddog-created ones have process code
+# "duplicate", which no privilege lists; imported ones are anomaly-flagged.
 IMPLICIT_FILTERS = (
     ("availability", "eq", "linked"),
-    ("is_duplicate", "eq", 0),
     ("lookup_status", "eq", "valid"),
     ("dupes_checked", "eq", True),
 )
