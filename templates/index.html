@@ -70,11 +70,20 @@
       display: none !important;
     }
   </style>
-  <!-- tables on every tab use the Documents tab's compact sizing -->
+  <!-- every tab uses the Documents tab's compact typography: ~0.88rem text,
+       small buttons and form controls, smaller headings -->
   <style>
+    .tab-content { font-size: .88rem; }
+    .tab-content h3 { font-size: 1.3rem; }
+    .tab-content h4 { font-size: 1.15rem; }
+    .tab-content h5 { font-size: 1.05rem; }
     .tab-content .table { font-size: .88rem; }
     .tab-content .table > :not(caption) > * > * { padding: 6px 8px; }
+    .tab-content .btn:not(.btn-link):not(.btn-lg) { --bs-btn-padding-y: .25rem; --bs-btn-padding-x: .5rem; --bs-btn-font-size: .85rem; --bs-btn-border-radius: var(--bs-border-radius-sm); }
     .tab-content .table .btn:not(.btn-link) { --bs-btn-padding-y: .2rem; --bs-btn-padding-x: .45rem; --bs-btn-font-size: .8rem; }
+    .tab-content .form-control:not(.form-control-lg), .tab-content .form-select:not(.form-select-lg) {
+      font-size: .875rem; padding-top: .25rem; padding-bottom: .25rem; }
+    .tab-content .input-group-text { font-size: .875rem; padding-top: .25rem; padding-bottom: .25rem; }
   </style>
 
 </head>
