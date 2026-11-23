@@ -22,6 +22,7 @@ from birddog.abstract_database import FailedIO, InvalidFieldValue
 from birddog.log import get_logger
 from birddog.utility import UKR_TO_LAT
 
+DOC_WITHOUT_PAGE_MSG = "Document without a page"
 
 def retry_on_transient_error(func, *args, max_retries=3, base_delay=2.0, max_delay=15.0, **kwargs):
     """
@@ -583,8 +584,6 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     ar2 = 'Архів:'
     # we compare the strings up to replacement of ar1 with ar2
     archive_unit_link_replaced = canonical_wiki_url(archive_unit_link.rstrip(" /").replace(ar1, ar2))
-#    if isinstance(cell_links, str) and cell_links.replace(ar1, ar2) == archive_unit_link_replaced:
-#        return modified_import_message, cell_links
 
     # a red link (page or file not created yet) is judged by its bare url; the
     # marker stays on the returned links so the document records can use it
@@ -593,7 +592,8 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     real_doc = True
     if isinstance(cell_links, list) and len(cell_links) == 1:
         cell_link_replaced = is_url_redlinked(cell_links[0])[1].rstrip(" /").replace(ar1, ar2)
-        if cell_link_replaced in archive_unit_link_replaced or archive_unit_link_replaced in cell_link_replaced:
+        if (not DOC_WITHOUT_PAGE_MSG in modified_import_message and
+                (cell_link_replaced in archive_unit_link_replaced or archive_unit_link_replaced in cell_link_replaced)):
             if note_self_link:
                 mess = (f"file link in cell '{cell_addr}', sheet '{ws.title}' is the page itself, "
                         "not a file")
@@ -1263,7 +1263,7 @@ def get_language(ws, cell_address, import_message):
         language = None
     return language, import_message
 
-def normalize_availability_value(val: str) -> str:
+def normalize_availability_value(val: str) -> str | None:
     if "no link" == val:
         val = "unlinked"
     return val or None  # a blank cell is no value, not "" (an invalid select value)
@@ -1578,7 +1578,7 @@ def process_fund_sheet(ws, wiki_spreadsheet, archive_url, archive_name, fund_id,
                 availability = "unlinked"
                 _logger.warning(f"Opus {get_cell_value(opus_num_cell)} in sheet='{ws.title}', "
                                 f"row={r} has no page but has a document")
-                curr_import_message = "Document without a page"
+                curr_import_message = DOC_WITHOUT_PAGE_MSG
             title, latin_title = get_page_title_from_link(cell_to_use, wiki_spreadsheet, fund_cyrillic_name, fund_name)
             if not title:
                 _logger.warning(f"cannot determine page title: sheet='{ws.title}', row={r}  - skipping")
@@ -2356,8 +2356,7 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/Import2NewDB/UKR-RD-purchases-wiki-20260901.xlsx"
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DADO-archives-20261113.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAHO-archive-20261116.xlsx"
     import_spreadsheet(filepath, True)
-#    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Import2NewDB"
+#    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Test"
 #    process_dir(_dir_path)
