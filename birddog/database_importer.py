@@ -589,20 +589,23 @@ def get_doc_links(ws, cell_addr: str, import_message: str, archive_unit_link: st
     # marker stays on the returned links so the document records can use it
     archive_unit_link_replaced = is_url_redlinked(archive_unit_link_replaced)[1]
 
+    doc_without_page = DOC_WITHOUT_PAGE_MSG in modified_import_message
     real_doc = True
+    doc_page_links_coincide = False
     if isinstance(cell_links, list) and len(cell_links) == 1:
         cell_link_replaced = is_url_redlinked(cell_links[0])[1].rstrip(" /").replace(ar1, ar2)
-        if (not DOC_WITHOUT_PAGE_MSG in modified_import_message and
-                (cell_link_replaced in archive_unit_link_replaced or archive_unit_link_replaced in cell_link_replaced)):
-            if note_self_link:
+        doc_page_links_coincide = (cell_link_replaced in archive_unit_link_replaced or
+                                   archive_unit_link_replaced in cell_link_replaced)
+        if not doc_without_page:
+            real_doc = string_ends_with_file_ext(cell_link_replaced)
+            if note_self_link and doc_page_links_coincide and not real_doc:
                 mess = (f"file link in cell '{cell_addr}', sheet '{ws.title}' is the page itself, "
                         "not a file")
                 modified_import_message = add_to_message(modified_import_message, mess)
                 _logger.warning(mess)
-            return modified_import_message, cell_links
-        real_doc = string_ends_with_file_ext(cell_link_replaced)
+                return modified_import_message, cell_links
 
-    if not real_doc:
+    if not real_doc and not doc_page_links_coincide:
         mess = (f" Link {cell_links} in cell '{cell_addr}', sheet '{ws.title}' "
                 f"differs from the page url {archive_unit_link}")
         modified_import_message = add_to_message(modified_import_message, mess)
@@ -694,11 +697,12 @@ def delete_part_between_hyphen_and_slash(s: str) -> str:
         part_after_slash = '/' + s.split("/", 1)[1]
 
     # Get part before first hyphen from the part before the slash
-    if "-" not in part_before_slash:
-        result = s
-    else:
+    result = s #default
+    if "-" in part_before_slash:
         part_before_hyphen = part_before_slash.split("-", 1)[0]
-        result = part_before_hyphen + part_after_slash
+        if len(part_before_hyphen) + 2 == len(part_before_slash):
+            # in other words, between the hyphen and the slash there is ony 1 symbol
+            result = part_before_hyphen + part_after_slash
 
     return result
 
@@ -1064,11 +1068,11 @@ def get_url_and_parent_title(ws, wiki_spreadsheet, archive_unit_name, archive_cy
                                                         f"{link_cell.value}")
 
     if wiki_spreadsheet:
-        title, latin_title = get_page_title_from_link(parent_title_cell, wiki_spreadsheet,
+        title, _ = get_page_title_from_link(parent_title_cell, wiki_spreadsheet,
                                                       archive_cyrillic_unit_name, archive_unit_name)
     else:
         title = archive_cyrillic_unit_name
-        latin_title = archive_unit_name
+    latin_title = archive_unit_name
 
     if import_message != "":
         _logger.warning(import_message)
@@ -1211,11 +1215,29 @@ def title_cell_val_identical(title: str, cell_val: str, num_parts: int, inconsis
     return identical, modified_title
 
 
+def remove_first_hyphen_letter(text: str) -> str:
+    first_hyphen = text.find("-")
+    first_slash = text.find("/")
+
+    # If there is a slash and it appears before the first hyphen, return original
+    if first_slash != -1 and first_slash < first_hyphen:
+        return text
+
+    # Look for a hyphen followed by a letter, then a slash or hyphen
+    match = re.search(r"-[a-zA-Z](?=[/-])", text)
+
+    # Modify only if the match is at the very first hyphen
+    if match and match.start() == first_hyphen:
+        return text[: match.start()] + text[match.end() :]
+
+    return text
+
+
 def general_page_label(latin_title, cyrillic_title, wiki_spreadsheet):
     if wiki_spreadsheet:
         return page_label(cyrillic_title)
     else:
-        return latin_title
+        return remove_first_hyphen_letter(latin_title)
 
 
 def check_url_sanity(additional_column: bool, url: str, import_message: str, wiki_spreadsheet, necessary_parts,
@@ -1660,7 +1682,8 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
     for r in range(hdr_row + 1, ws.max_row + 1):
         case_num_cell_addr = f"{case_num_col}{r}"
         case_num_cell = ws[case_num_cell_addr]
-        case_descr_cell = ws[f"{chr(ord(case_num_col) + 1)}{r}"]
+        case_descr_cell_addr = f"{chr(ord(case_num_col) + 1)}{r}"
+        case_descr_cell = ws[case_descr_cell_addr]
         case_amount_cell = ws[f"{case_amount_column}{r}"]
         if is_totals_row(case_amount_cell, ws[f"B{r}"]):
             break
@@ -1692,6 +1715,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
         if raw_url == "":
             # no link found - cannot proceed
             continue
+        cell_addr_for_msg = case_num_cell_addr
         if not in_first_cell and case_amount_column != case_num_col:
             case_amount_cell = ws[f"{case_amount_column}{r}"]
             if case_amount_cell.hyperlink is not None:
@@ -1701,6 +1725,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
                 raw_url = unquote(hyperlink.target.strip())
                 in_first_cell = True
         if not in_first_cell:
+            cell_addr_for_msg = case_descr_cell_addr
             if additional_column:
                 curr_import_message = "Other case numbering"
             else:
@@ -1749,7 +1774,7 @@ def process_opus_sheet(ws, wiki_spreadsheet, fund_and_opus_name, fund_and_opus_c
             else:
                 language, curr_import_message = get_language(ws, f"{chr(comments_col + 8)}{r}", curr_import_message)
                 add_case_page(additional_column, possible_hyphen_in_case_num,
-                    case_num_cell, case_num_cell_addr, case_num_col, change_date,
+                    case_num_cell, cell_addr_for_msg, case_num_col, change_date,
                     comments_col, curr_import_message, curr_source_type, fund_name, label, level, opus_name,
                     opus_title, opus_url, page_table, r, raw_url, timestamp, title, wiki_spreadsheet, ws, language)
 
@@ -1939,6 +1964,11 @@ def new_codes_from_old(doc_payload: dict) -> dict:
             result["anomaly_comment"] = anomaly
     return result
 
+def slice_at_second_hyphen(text: str) -> str:
+    parts = text.split("-")
+    if len(parts) >= 3:
+        return "-".join(parts[:2])
+    return text
 
 def process_worksheets(worksheets, wiki_spreadsheet: bool, archive_name: str,
                        archive_cyrillic_name: str, page_table=None):
@@ -2055,6 +2085,10 @@ def import_spreadsheet(sw_filepath, actually_write=True):
         else:
             _logger.error(f"Spreadsheet file name {file_name} contains neither 'wiki' nor 'archive'")
             return
+
+        #the file name may contain suffixes like "-general" or "-fund280"
+        archive_name = slice_at_second_hyphen(archive_name)
+
         if wiki_spreadsheet:
             archive_cyrillic_name = archive_name  # default for wiki
         else:
@@ -2356,7 +2390,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAHO-archive-20261116.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAKO-D-general-wiki-20261124.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/AGAD-wiki-20261022.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Test"
 #    process_dir(_dir_path)
