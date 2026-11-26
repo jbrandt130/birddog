@@ -7,11 +7,11 @@
     ["new", "Entry level: newly imported; awaiting initial review"],
     ["duplicate", "Entry level or end state: already retained elsewhere"],
     ["check", "Midstream: basic check of automatic data (type/scope/location/etc.)"],
+    ["postpone", "Midstream: check later on (stays in checking process, but not as important)"],
     ["review", "Midstream: requires skilled language/content review"],
     ["escalate", "Midstream: requires specialized review"],
     ["reject", "End state: no Jewish content"],
     ["defer", "End state: defer indefinitely; deprecated use; mark for check in distant future (Jewish location but no specifically Jewish names seen, or else too difficult to read)"],
     ["save", "End state: save to server"]
-  ],
-  "retired_values": ["postpone"]
+  ]
 }

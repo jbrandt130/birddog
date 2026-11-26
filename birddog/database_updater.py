@@ -436,7 +436,7 @@ def _needs_new_process_code(doc_rec, record=None):
 _SELF_LINK_COPY_FIELDS = (
     "last_imported", "reference_date", "OLD_doc_type", "OLD_content_code", "OLD_process_code",
     "process_code", "doc_type", "doc_structure", "doc_scope", "language", "comments",
-    "processor", "pages_processed", "when_transcribed", "save_status", "filename",
+    "processor", "pages_processed", "when_transcribed", "index_process_type", "filename",
     "OLD_page_description",
 )
 # Only a self-link record holding one of these is worth propagating: fond/opus
@@ -445,7 +445,7 @@ _SELF_LINK_COPY_FIELDS = (
 _SELF_LINK_CURATED_FIELDS = (
     "OLD_doc_type", "OLD_content_code", "OLD_process_code", "process_code", "doc_type",
     "doc_structure", "doc_scope", "language", "processor", "pages_processed",
-    "when_transcribed", "save_status",
+    "when_transcribed", "index_process_type",
 )
 _AMBIGUOUS_NOTE = "candidate documents on the page; curated values not copied"
 _OTHER_FILE_NOTE = "flagged for review, curated values not copied"

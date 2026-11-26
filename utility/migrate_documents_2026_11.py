@@ -2,16 +2,19 @@
 """
 November 2026 Documents schema migration, in one rerunnable script:
 
-  1. rename the legacy fields doc_type, content_code and process_code to
-     OLD_doc_type, OLD_content_code and OLD_process_code (column title and
-     physical column, plus their Schema and Schema Values rows), then
-  2. add the new fields described by the specs in utility/specs/ (doc_type,
-     doc_structure, doc_scope, process_code, save_status, save_pending, anomaly,
-     anomaly_comment, OLD_page_description), each with its Schema and Schema
-     Values rows, and bring their descriptions in line with the specs.
+  1. remove the save_pending checkbox (column, Schema and Schema Values rows),
+  2. rename the legacy fields doc_type, content_code and process_code to
+     OLD_doc_type, OLD_content_code and OLD_process_code, and save_status to
+     index_process_type (column title and physical column, plus their Schema
+     and Schema Values rows), then
+  3. add the new fields described by the specs in utility/specs/ (doc_type,
+     doc_structure, doc_scope, process_code, index_process_type, save_status,
+     anomaly, anomaly_comment, OLD_page_description), each with its Schema and
+     Schema Values rows, and bring their options and descriptions in line with
+     the specs (e.g. process_code gains postpone).
 
-The rename has to come first: the new doc_type and process_code reuse the
-legacy names. Every step is skipped once done, so the script can be rerun
+The renames have to come before the adds: the new doc_type, process_code and
+save_status reuse the renamed fields' names. Every step is skipped once done, so the script can be rerun
 after an interruption or after editing a spec (e.g. to fill in descriptions).
 
 Before running against a cloud base: stop the app (it holds the old schema in
@@ -32,6 +35,7 @@ REPO_ROOT = os.path.dirname(UTILITY_DIR)
 sys.path.insert(0, UTILITY_DIR)
 
 import add_field  # noqa: E402
+import drop_field  # noqa: E402
 import rename_field  # noqa: E402
 
 TABLE = "Documents"
@@ -39,14 +43,16 @@ RENAMES = [
     ("doc_type", "OLD_doc_type"),
     ("content_code", "OLD_content_code"),
     ("process_code", "OLD_process_code"),
+    ("save_status", "index_process_type"),
 ]
+DROPS = ["save_pending"]
 SPECS = [
     "documents_doc_type.json",
     "documents_doc_structure.json",
     "documents_doc_scope.json",
     "documents_process_code.json",
+    "documents_index_process_type.json",
     "documents_save_status.json",
-    "documents_save_pending.json",
     "documents_anomaly.json",
     "documents_anomaly_comment.json",
     "documents_old_page_description.json",
@@ -99,6 +105,14 @@ def main(argv=None):
         db = rename_field.connect(args.env)
         print(f"Target: {args.env}")
 
+        drop_steps = drop_field.plan(db, TABLE, DROPS)
+        if drop_steps:
+            print("Step 1, remove retired fields:")
+            for step in drop_steps:
+                print("  " + drop_field.describe(step))
+        else:
+            print("Step 1, remove retired fields: already done")
+
         rename_steps, errors = rename_field.plan(db, TABLE, RENAMES)
         if errors:
             for err in errors:
@@ -109,21 +123,23 @@ def main(argv=None):
         # Until the renames are done the legacy columns still hold the new
         # names, so the add plan can only be worked out afterwards.
         if rename_steps:
-            print("Step 1, rename legacy fields:")
+            print("Step 2, rename legacy fields:")
             for step in rename_steps:
                 print("  " + rename_field.describe(step))
-            print("Step 2, add new fields (worked out after step 1):")
+            print("Step 3, add new fields (worked out after step 2):")
             for spec in specs:
                 print(f"  {TABLE}.{spec['field']} ({spec['type']})")
             add_steps = None
         else:
-            print("Step 1, rename legacy fields: already done")
+            print("Step 2, rename legacy fields: already done")
             add_steps = plan_adds(db, specs)
             if not add_steps:
-                print("Step 2, add new fields: already done")
-                print("Nothing to do.")
-                return 0
-            print("Step 2, add new fields:")
+                print("Step 3, add new fields: already done")
+                if not drop_steps:
+                    print("Nothing to do.")
+                    return 0
+            else:
+                print("Step 3, add new fields:")
             for spec, step in add_steps:
                 print("  " + add_field.describe(spec, step))
 
@@ -131,6 +147,9 @@ def main(argv=None):
             print("Aborted. Nothing was changed.")
             return 1
 
+        for step in drop_steps:
+            drop_field.apply(db, step)
+            print("  done: " + drop_field.describe(step))
         for step in rename_steps:
             rename_field.apply(db, step)
             print("  done: " + rename_field.describe(step))
@@ -141,6 +160,7 @@ def main(argv=None):
             print("  done: " + add_field.describe(spec, step))
         for spec in specs:
             add_field.verify(db, spec)
+        drop_field.verify(db, TABLE, DROPS)
     except InvalidTableName as err:
         print(f"No such table: {err}", file=sys.stderr)
         return 1

@@ -1,0 +1,12 @@
+{
+  "table": "Documents",
+  "field": "index_process_type",
+  "type": "single_select",
+  "description": "How a saved document was indexed; blank when not known",
+  "values": [
+    ["internally_indexed", "Saved and extracted internally"],
+    ["externally_indexed", "Saved and extracted externally"],
+    ["not_indexed", "Saved but no extraction done"]
+  ],
+  "retired_values": ["pending"]
+}

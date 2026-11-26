@@ -1,6 +1,0 @@
-{
-  "table": "Documents",
-  "field": "save_pending",
-  "type": "bool",
-  "description": "Set when the workflow decides to save the document; cleared once the file has been uploaded to the FTP server"
-}

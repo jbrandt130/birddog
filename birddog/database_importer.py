@@ -1902,7 +1902,7 @@ OLD_DOC_TYPE_MAP = {
 
 OLD_PROCESS_CODE_MAP = {
     "C1": "check",
-    "C2": "check",
+    "C2": "postpone",
     "P1": "save",
     "P2": "save",
     "C3": "save",   # also flagged as an anomaly, see OLD_PROCESS_CODE_ANOMALIES
@@ -1946,8 +1946,8 @@ def new_codes_from_old(doc_payload: dict) -> dict:
     the payload, as None when the old code has no equivalent, so a re-import
     clears a value set since the last import (the spreadsheet is the source).
     An old process code listed in OLD_PROCESS_CODE_ANOMALIES also sets anomaly
-    and anomaly_comment; other codes leave those fields alone. save_status goes
-    with process_code: "externally_indexed" for a "save" document with a
+    and anomaly_comment; other codes leave those fields alone. index_process_type
+    goes with process_code: "externally_indexed" for a "save" document with a
     when_transcribed value, otherwise blank."""
     result = {}
     if "OLD_doc_type" in doc_payload:
@@ -1956,8 +1956,8 @@ def new_codes_from_old(doc_payload: dict) -> dict:
         old_code = doc_payload["OLD_process_code"]
         result["process_code"] = map_old_process_code(old_code)
         transcribed = str(doc_payload.get("when_transcribed") or "").strip()
-        result["save_status"] = (_EXTERNALLY_INDEXED
-                                 if result["process_code"] == "save" and transcribed else None)
+        result["index_process_type"] = (_EXTERNALLY_INDEXED
+                                        if result["process_code"] == "save" and transcribed else None)
         anomaly = OLD_PROCESS_CODE_ANOMALIES.get(str(old_code or "").strip().upper())
         if anomaly:
             result["anomaly"] = True

@@ -2,11 +2,12 @@
   "table": "Documents",
   "field": "save_status",
   "type": "single_select",
-  "description": "Disposition of a saved document; blank when not known",
+  "description": "Progress of saving the document file to the server; blank when not marked for save",
   "values": [
-    ["internally_indexed", "Saved and extracted internally"],
-    ["externally_indexed", "Saved and extracted externally"],
-    ["not_indexed", "Saved but no extraction done"]
-  ],
-  "retired_values": ["pending"]
+    ["pending", "Marked for save, awaiting the signal to save"],
+    ["scheduled", "Signal given to go ahead and save"],
+    ["error", "Something went wrong, not saved"],
+    ["collision", "A file already exists at the target location, not saved"],
+    ["complete", "Saved successfully"]
+  ]
 }

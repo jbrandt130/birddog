@@ -46,7 +46,7 @@ class TestMapOldDocType(unittest.TestCase):
 class TestMapOldProcessCode(unittest.TestCase):
     def test_mappings(self):
         self.assertEqual(map_old_process_code("C1"), "check")
-        self.assertEqual(map_old_process_code("C2"), "check")
+        self.assertEqual(map_old_process_code("C2"), "postpone")
         self.assertEqual(map_old_process_code("P1"), "save")
         self.assertEqual(map_old_process_code("P2"), "save")
         self.assertEqual(map_old_process_code("DP"), "duplicate")
@@ -66,19 +66,19 @@ class TestNewCodesFromOld(unittest.TestCase):
     def test_both_mapped(self):
         payload = {"OLD_doc_type": "V", "OLD_process_code": "DP"}
         self.assertEqual(new_codes_from_old(payload),
-                         {"doc_type": ["Vitals"], "process_code": "duplicate", "save_status": None})
+                         {"doc_type": ["Vitals"], "process_code": "duplicate", "index_process_type": None})
 
     def test_blank_results_clear_new_fields(self):
         payload = {"OLD_doc_type": "C", "OLD_process_code": "E"}
         self.assertEqual(new_codes_from_old(payload),
-                         {"doc_type": None, "process_code": None, "save_status": None})
+                         {"doc_type": None, "process_code": None, "index_process_type": None})
 
     def test_c3_is_save_with_anomaly(self):
         payload = {"OLD_doc_type": "V", "OLD_process_code": " c3\t"}
         self.assertEqual(new_codes_from_old(payload), {
             "doc_type": ["Vitals"],
             "process_code": "save",
-            "save_status": None,
+            "index_process_type": None,
             "anomaly": True,
             "anomaly_comment": "formerly C3 process code",
         })
@@ -90,23 +90,23 @@ class TestNewCodesFromOld(unittest.TestCase):
     def test_empty_old_values_clear_new_fields(self):
         payload = {"OLD_doc_type": None, "OLD_process_code": None}
         self.assertEqual(new_codes_from_old(payload),
-                         {"doc_type": None, "process_code": None, "save_status": None})
+                         {"doc_type": None, "process_code": None, "index_process_type": None})
 
     def test_save_with_when_transcribed_is_externally_indexed(self):
         for code in ("P1", "P2", "C3"):
             payload = {"OLD_process_code": code, "when_transcribed": "2019"}
-            self.assertEqual(new_codes_from_old(payload)["save_status"], "externally_indexed", code)
+            self.assertEqual(new_codes_from_old(payload)["index_process_type"], "externally_indexed", code)
 
-    def test_save_without_when_transcribed_leaves_save_status_blank(self):
+    def test_save_without_when_transcribed_leaves_index_process_type_blank(self):
         for transcribed in (None, "", "  "):
             payload = {"OLD_process_code": "P1", "when_transcribed": transcribed}
-            self.assertIsNone(new_codes_from_old(payload)["save_status"], transcribed)
-        self.assertIsNone(new_codes_from_old({"OLD_process_code": "P1"})["save_status"])
+            self.assertIsNone(new_codes_from_old(payload)["index_process_type"], transcribed)
+        self.assertIsNone(new_codes_from_old({"OLD_process_code": "P1"})["index_process_type"])
 
     def test_when_transcribed_only_counts_for_save(self):
         for code in ("C1", "DP", "NO", "FX", "E", None):
             payload = {"OLD_process_code": code, "when_transcribed": "2019"}
-            self.assertIsNone(new_codes_from_old(payload)["save_status"], code)
+            self.assertIsNone(new_codes_from_old(payload)["index_process_type"], code)
 
     def test_missing_old_fields(self):
         self.assertEqual(new_codes_from_old({"url": "https://x"}), {})
