@@ -9,9 +9,9 @@ November 2026 Documents schema migration, in one rerunnable script:
      and Schema Values rows), then
   3. add the new fields described by the specs in utility/specs/ (doc_type,
      doc_structure, doc_scope, process_code, index_process_type, save_status,
-     anomaly, anomaly_comment, OLD_page_description), each with its Schema and
-     Schema Values rows, and bring their options and descriptions in line with
-     the specs (e.g. process_code gains postpone).
+     anomaly, anomaly_comment, OLD_page_description, and Pages.OLD_description),
+     each with its Schema and Schema Values rows, and bring their options and
+     descriptions in line with the specs (e.g. process_code gains postpone).
 
 The renames have to come before the adds: the new doc_type, process_code and
 save_status reuse the renamed fields' names. Every step is skipped once done, so the script can be rerun
@@ -56,6 +56,7 @@ SPECS = [
     "documents_anomaly.json",
     "documents_anomaly_comment.json",
     "documents_old_page_description.json",
+    "pages_old_description.json",
 ]
 
 def parse_args(argv=None):
@@ -128,7 +129,7 @@ def main(argv=None):
                 print("  " + rename_field.describe(step))
             print("Step 3, add new fields (worked out after step 2):")
             for spec in specs:
-                print(f"  {TABLE}.{spec['field']} ({spec['type']})")
+                print(f"  {spec['table']}.{spec['field']} ({spec['type']})")
             add_steps = None
         else:
             print("Step 2, rename legacy fields: already done")

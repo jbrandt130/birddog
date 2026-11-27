@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from urllib.parse import urlparse, urlunparse, unquote, quote
+from urllib.parse import urlsplit, urlunsplit, unquote, quote
 from pathlib import PurePosixPath
 import json
 import re
@@ -242,7 +242,7 @@ def _sniff_suffix(url_or_title: str) -> str | None:
       - None (unknown / webpage)
     """
     # Remove query / fragment
-    parsed = urlparse(url_or_title)
+    parsed = urlsplit(url_or_title)
     path = parsed.path or url_or_title
 
     suffix = PurePosixPath(path).suffix.lower().lstrip(".")
@@ -276,7 +276,7 @@ _DOC_LINK_FILES_ONLY_HOST_SUFFIXES = ("archives.gov.ua",)
 def _allowed_doc_link(link):
     if any(item in link for item in _DOC_LINK_BLOCKLIST):
         return False
-    host = (urlparse(link).hostname or "").lower()
+    host = (urlsplit(link).hostname or "").lower()
     if any(host == suffix or host.endswith("." + suffix) for suffix in _DOC_LINK_FILES_ONLY_HOST_SUFFIXES):
         return _sniff_suffix(link) == "document"
     return True
@@ -292,7 +292,7 @@ def _is_document_file_url(url):
     """True for a wiki file (commons / wikisource) or a url ending in a
     document suffix (pdf, djvu, ...); False for web pages."""
     if _source_from_url(url):
-        path = urlparse(url).path
+        path = urlsplit(url).path
         return (path.startswith("/wiki/")
                 and bool(_FILE_NS_RE.match(unquote(path[len("/wiki/"):]))))
     return _sniff_suffix(url) == "document"
@@ -459,7 +459,7 @@ def _kept_doc_kind(kept_url, page_url, candidate_url):
     url = normalize_url(kept_url or "")
     if url == page_url:
         return "self-link"
-    parsed = urlparse(url)
+    parsed = urlsplit(url)
     host = parsed.hostname or ""
     if "." not in host:
         return "broken link"
@@ -789,21 +789,21 @@ def _wikisource_file_name(netloc, path):
 def _normalize_url_unmapped(url):
     """normalize_url() without the wikisource -> commons file mapping."""
     url = url.strip()
-    parsed = urlparse(url)
+    parsed = urlsplit(url)
     path = _URL_PATH_UNSAFE.sub(lambda m: quote(m.group(0)), unquote(parsed.path))
     path = _canonicalize_namespace_prefix(path)
-    return urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), path, parsed.params, parsed.query, ''))
+    return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), path, parsed.query, ''))
 
 def _map_wikisource_file_to_commons(url):
     """Map an already-normalized uk.wikisource file url to its commons file url;
     any other url is returned unchanged. The query is carried over untouched
     because a "?" inside a wiki file name is parsed as a query separator (see
     form_document_record)."""
-    parsed = urlparse(url)
+    parsed = urlsplit(url)
     name = _wikisource_file_name(parsed.netloc, parsed.path)
     if name is None:
         return url
-    return urlunparse(("https", _COMMONS_HOST, f"/wiki/File:{name}", parsed.params, parsed.query, ''))
+    return urlunsplit(("https", _COMMONS_HOST, f"/wiki/File:{name}", parsed.query, ''))
 
 def normalize_url(url):
     """Return a canonical form of a URL suitable for use as a unique identifier.
@@ -822,7 +822,7 @@ def normalize_url(url):
 
 def _source_from_url(url):
     """Return "commons", "wikisource", or None based on the URL's domain."""
-    host = urlparse(url).netloc.lower()
+    host = urlsplit(url).netloc.lower()
     if host.endswith(".wikimedia.org") or host == "wikimedia.org":
         return "commons"
     if host.endswith(".wikisource.org") or host == "wikisource.org":
@@ -831,13 +831,13 @@ def _source_from_url(url):
 
 def domain_from_url(url):
     """Return the domain (host, e.g. "uk.wikisource.org") of a URL, or None."""
-    return urlparse(url).hostname
+    return urlsplit(url).hostname
 
 def _wiki_title_and_url(url):
     """For a normalized /wiki/ url, return (title, canonical_wiki_url)."""
-    parsed = urlparse(url)
+    parsed = urlsplit(url)
     # Extract and decode title; normalize spaces to underscores for the canonical link.
-    # A "?" in a wiki filename is not a query separator; urlparse splits on it regardless,
+    # A "?" in a wiki filename is not a query separator; urlsplit splits on it regardless,
     # so re-join with the query string when the query contains no "=" (i.e. it's not a
     # real key=value query string, just a filename fragment like "?).pdf").
     raw_title = parsed.path[len("/wiki/"):]
@@ -878,7 +878,7 @@ def form_document_record(url):
     """
     unmapped_url = _normalize_url_unmapped(url)
     url = _map_wikisource_file_to_commons(unmapped_url)
-    parsed = urlparse(url)
+    parsed = urlsplit(url)
     host = parsed.netloc
     path = parsed.path
 

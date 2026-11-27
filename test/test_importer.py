@@ -1,3 +1,4 @@
+import datetime
 import unittest
 
 from birddog.database_importer import (
@@ -5,6 +6,9 @@ from birddog.database_importer import (
     canonical_wiki_url,
     check_redlink,
     commons_file_url_from_upload,
+    displayed_date,
+    get_cell_display_text,
+    merge_descriptions,
     doc_link_availability,
     get_doc_links,
     is_totals_row,
@@ -330,3 +334,52 @@ class TestCaseSelfLinkNote(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDisplayedDate(unittest.TestCase):
+    def test_formats(self):
+        d = datetime.datetime(2026, 3, 1)
+        self.assertEqual(displayed_date(d, "mmm yyyy"), "Mar 2026")
+        self.assertEqual(displayed_date(d, "d mmm yyyy"), "1 Mar 2026")
+        self.assertEqual(displayed_date(d, "dd.mm.yyyy"), "01.03.2026")
+        self.assertEqual(displayed_date(d, "mmmm yyyy"), "March 2026")
+        self.assertEqual(displayed_date(d, "General"), "2026-03-01")
+        self.assertEqual(displayed_date(d, "yyyy-mm-dd h:mm"), "2026-03-01")
+
+    def test_cell_display_text(self):
+        class Cell:
+            def __init__(self, value, number_format="General"):
+                self.value, self.number_format = value, number_format
+        self.assertEqual(get_cell_display_text(Cell(datetime.datetime(2025, 9, 1), "mmm yyyy")), "Sep 2025")
+        self.assertEqual(get_cell_display_text(Cell("Apr 2025")), "Apr 2025")
+        self.assertEqual(get_cell_display_text(Cell(2019.0)), "2019")
+        self.assertEqual(get_cell_display_text(Cell(None)), "")
+
+
+class TestSheetDescription(unittest.TestCase):
+    def _page(self, description):
+        return {"title": "ДАЧкО/5", "url": f"{_WS}/wiki/Архів:ДАЧкО/5", "label": "DACHKO/5",
+                "description": description, "comments": "", "doc_links": [], "import_message": ""}
+
+    def test_merge_descriptions(self):
+        self.assertEqual(merge_descriptions("A", None), "A")
+        self.assertEqual(merge_descriptions("A  b", "A b"), "A  b")
+        self.assertEqual(merge_descriptions("A", "B"), "A\n[parent list] B")
+
+    def test_sheet_a2_wins_and_old_description_keeps_both(self):
+        table = []
+        add_page(self._page("Civil registration books of Cherkasy region, Zolotonosha city"), table, False)
+        self.assertEqual(table[0]["OLD_description"],
+                         "Civil registration books of Cherkasy region, Zolotonosha city")
+        add_page(self._page("Civil registration books, Zolotonosha"), table, True)
+        self.assertEqual(len(table), 1)
+        self.assertEqual(table[0]["description"], "Civil registration books, Zolotonosha")
+        self.assertEqual(table[0]["OLD_description"],
+                         "Civil registration books, Zolotonosha\n"
+                         "[parent list] Civil registration books of Cherkasy region, Zolotonosha city")
+
+    def test_same_description_is_not_repeated(self):
+        table = []
+        add_page(self._page("Uman council"), table, False)
+        add_page(self._page("Uman council"), table, True)
+        self.assertEqual(table[0]["OLD_description"], "Uman council")

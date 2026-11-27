@@ -502,6 +502,44 @@ def get_cell_value(cell, capitalized=False) -> str:
     return value
 
 
+_MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+_DATE_TOKEN_RE = re.compile(r"y+|m+|d+|[^ymd]+")
+
+
+def displayed_date(value, number_format: str | None) -> str:
+    """The text Excel shows for a date cell. Typing "Mar 2026" into a cell makes
+    it a date formatted "mmm yyyy"; str() of the value would give
+    "2026-03-01 00:00:00" instead. Formats with time or other codes we don't
+    render fall back to the plain date."""
+    fmt = (number_format or "").split(";")[0].lower().replace("\\", "").replace('"', "")
+    if not fmt or fmt == "general" or re.search(r"[hs]|am/pm|\[", fmt):
+        return value.strftime("%Y-%m-%d")
+    parts = []
+    for token in _DATE_TOKEN_RE.findall(fmt):
+        if token[0] == "y":
+            parts.append(f"{value.year:04d}" if len(token) > 2 else f"{value.year % 100:02d}")
+        elif token[0] == "m":
+            if len(token) >= 4:
+                parts.append(value.strftime("%B"))
+            elif len(token) == 3:
+                parts.append(_MONTH_ABBR[value.month - 1])
+            else:
+                parts.append(f"{value.month:02d}" if len(token) == 2 else str(value.month))
+        elif token[0] == "d":
+            parts.append(f"{value.day:02d}" if len(token) == 2 else str(value.day))
+        else:
+            parts.append(token)
+    return "".join(parts).strip()
+
+
+def get_cell_display_text(cell) -> str:
+    """Cell text as shown in the spreadsheet: dates in their display format,
+    everything else as get_cell_value."""
+    if isinstance(cell.value, datetime):
+        return displayed_date(cell.value, cell.number_format)
+    return get_cell_value(cell)
+
+
 def parse_http_list(s: str):
     # separators - comma, semicolon, and "and" with optional spaces before/after
     # we exclude commas that are followed by an underscore, because that is what we have in cell 'B4', sheet 'fund 315',
@@ -707,6 +745,18 @@ def delete_part_between_hyphen_and_slash(s: str) -> str:
     return result
 
 
+PARENT_LIST_LABEL = "[parent list]"
+
+
+def merge_descriptions(sheet_description: str, list_description: str | None) -> str:
+    """OLD_description of a fund or opus page described both in its own sheet
+    (A2) and in its parent's list: the sheet text, then the list text when it
+    says something else."""
+    if not list_description or " ".join(list_description.split()) == " ".join(sheet_description.split()):
+        return sheet_description
+    return f"{sheet_description}\n{PARENT_LIST_LABEL} {list_description}"
+
+
 def add_page(page: dict, page_table: list[dict], update_existing_page: bool) -> None:
     """Merge a page entry into the page_table by title.
     If update_existing_page is True and a page with the necessary URL already exists,
@@ -724,6 +774,8 @@ def add_page(page: dict, page_table: list[dict], update_existing_page: bool) -> 
     page["domain"] = domain_from_url(url)
     page["last_imported"] = str(utc_now_dt().replace(microsecond=0))
     page["label"] = delete_part_between_hyphen_and_slash(page["label"])
+    # the spreadsheet description, kept when the updater refreshes description from the wiki
+    page["OLD_description"] = page.get("description") or None
 
     if update_existing_page:
         # look for a page with this URL
@@ -748,12 +800,11 @@ def add_page(page: dict, page_table: list[dict], update_existing_page: bool) -> 
                 existing_page["doc_links"] = doc_links
             description = page["description"]
             if description:
+                # the sheet's own description (A2) wins over the parent list's
+                # one; when they differ OLD_description keeps both
                 existing_description = existing_page.get("description", "")
-                if existing_description and len(description) > len(existing_description):
-                    mess = f"Description changed from '{existing_description}' to '{description}'"
-                    existing_page["import_message"] = add_to_message(existing_page["import_message"], mess)
-                    existing_page["description"] = description
-                        
+                existing_page["description"] = description
+                existing_page["OLD_description"] = merge_descriptions(description, existing_description)
             return
 
     page_table.append(page)
@@ -1836,8 +1887,8 @@ def add_case_page(additional_column: bool, possible_hyphen_in_case_num: bool,
 
     process_code = get_cell_value(ws[f"{chr(ord(case_num_col) + process_code_col_offs)}{r}"], True)  # F
     process_code, curr_import_message = normalize_process_code(process_code, curr_import_message)
-    when_transcribed = ws[when_transcribed_cell_addr].value
-    when_transcribed = str(when_transcribed) if when_transcribed else ""
+    # stored as the text the sheet shows ("Mar 2026"), not as a date
+    when_transcribed = get_cell_display_text(ws[when_transcribed_cell_addr])
     doc_type = get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True)  # D
     doc_type = normalize_doc_type(doc_type)
     curr_import_message, doc_links = get_doc_links(
@@ -2286,7 +2337,7 @@ def import_spreadsheet(sw_filepath, actually_write=True):
                 # is overwritten from the wiki by the updater's page lookups.
                 doc_payload: dict[str, Any] = {
                     "page_description": output_page["description"],
-                    "OLD_page_description": output_page["description"],
+                    "OLD_page_description": output_page.get("OLD_description") or output_page["description"],
                 }
 
                 for joint_field in doc_and_page_fields:

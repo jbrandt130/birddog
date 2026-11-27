@@ -356,6 +356,15 @@ class TestFormDocumentRecord(unittest.TestCase):
         self.assertEqual(rec["url"], "https://commons.wikimedia.org/wiki/File:Чи_так%3F).pdf")
         self.assertEqual(rec["wikisource_url"], "https://uk.wikisource.org/wiki/Файл:Чи_так%3F).pdf")
 
+    def test_semicolon_in_file_name_is_kept(self):
+        # urlparse would take everything after ";" as path parameters and cut
+        # the title there (ДАЧкО 18-1-288)
+        name = "ДАЧкО_18-1-288_Статистические_ведомости;_удостоверения..._(1904).pdf"
+        rec = form_document_record(f"https://uk.wikisource.org/wiki/Файл:{name}")
+        self.assertEqual(rec["title"], f"File:{name}")
+        self.assertEqual(rec["url"], f"https://commons.wikimedia.org/wiki/File:{name}")
+        self.assertEqual(rec["wikisource_url"], f"https://uk.wikisource.org/wiki/Файл:{name}")
+
     def test_all_link_forms_give_the_same_record_url(self):
         urls = {
             form_document_record(u)["url"]

@@ -1,0 +1,7 @@
+{
+  "table": "Pages",
+  "field": "OLD_description",
+  "type": "text",
+  "column_type": "LongText",
+  "description": "Legacy description from the spreadsheet import (the sheet's A2, plus the parent list's text when it differs), preserved when description is refreshed from the wiki"
+}
