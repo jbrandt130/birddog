@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-Delete all records from one table of a NocoDB base, leaving the table and its
-fields in place.
+Delete all records from one or more tables of a NocoDB base, leaving the
+tables and their fields in place.
 
-Shows the record count, asks for confirmation, then deletes with progress. If a
-run is interrupted or fails, just run it again: whatever is left gets picked up.
+Shows each table's record count, asks once for confirmation, then clears the
+tables in the order given, with progress. If a run is interrupted or fails,
+just run it again: whatever is left gets picked up.
 
 This touches NocoDB only. Before clearing Pages or Documents, stop the app and
 clear its task store: queued update tasks left behind will recreate orphan
-Documents (local: sh/clear_local_tasks.sh, cloud: the bd_* DynamoDB task tables).
+Documents (local: utility/clear_local_tasks.sh, cloud: the bd_* DynamoDB task tables).
 
 Usage (from anywhere; exactly one target is required):
     venv/bin/python utility/clear_table.py --local Documents
+    venv/bin/python utility/clear_table.py --local Pages Documents
     venv/bin/python utility/clear_table.py --stage "FTP Site"
     venv/bin/python utility/clear_table.py --prod Locations
 """
@@ -28,8 +30,8 @@ SCHEMA_TABLES = ("Schema", "Schema Values")
 PAGE_SIZE = 1000
 
 def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="Delete all records from a NocoDB table.")
-    parser.add_argument("table", help="name of the table to clear")
+    parser = argparse.ArgumentParser(description="Delete all records from NocoDB tables.")
+    parser.add_argument("tables", nargs="+", metavar="table", help="name(s) of the table(s) to clear")
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--local", dest="env", action="store_const", const="LOCAL",
                         help="local dev base")
@@ -50,9 +52,9 @@ def connect(env_name):
     logging.getLogger().setLevel(logging.WARNING)
     return Database()
 
-def confirm(env_name, table_name, total):
+def confirm(env_name, table_names, total):
     """Require the environment name to be typed back; anything else aborts."""
-    prompt = f"Type {env_name} to permanently delete {total} records from {table_name}: "
+    prompt = f"Type {env_name} to permanently delete {total} records from {', '.join(table_names)}: "
     try:
         return input(prompt).strip() == env_name
     except EOFError:
@@ -88,27 +90,37 @@ def main(argv=None):
     sys.path.insert(0, REPO_ROOT)
     from birddog.abstract_database import ConfigError, FailedIO, InvalidTableName
 
+    tables = list(dict.fromkeys(args.tables))  # in order, each once
     try:
         db = connect(args.env)
         print(f"Target: {args.env}")
-        try:
-            total = db.count(args.table)
-        except InvalidTableName:
-            print(f"No table named {args.table!r}.", file=sys.stderr)
-            return 1
-        print(f"{args.table}: {total} records")
-        if not total:
+        # count every table before deleting anything, so a misspelled name
+        # aborts the whole run
+        counts = {}
+        for table in tables:
+            try:
+                counts[table] = db.count(table)
+            except InvalidTableName:
+                print(f"No table named {table!r}. Nothing was deleted.", file=sys.stderr)
+                return 1
+            print(f"{table}: {counts[table]} records")
+        to_clear = [t for t in tables if counts[t]]
+        if not to_clear:
             print("Nothing to delete.")
             return 0
 
-        if args.table in SCHEMA_TABLES:
-            print(f"WARNING: {args.table} is configuration. "
-                  "Without it the app runs schema-less.")
-        if not confirm(args.env, args.table, total):
+        for table in to_clear:
+            if table in SCHEMA_TABLES:
+                print(f"WARNING: {table} is configuration. "
+                      "Without it the app runs schema-less.")
+        if not confirm(args.env, to_clear, sum(counts[t] for t in to_clear)):
             print("Aborted. Nothing was deleted.")
             return 1
 
-        emptied = delete_records(db, args.table, total)
+        for table in to_clear:
+            if not delete_records(db, table, counts[table]):
+                return 1
+            print(f"{table} is empty.")
     except ConfigError as err:
         print(f"Configuration error: {err}", file=sys.stderr)
         return 1
@@ -117,9 +129,7 @@ def main(argv=None):
               "Run again to continue.", file=sys.stderr)
         return 1
 
-    if not emptied:
-        return 1
-    print(f"Done. {args.table} is empty.")
+    print("Done.")
     return 0
 
 if __name__ == "__main__":
