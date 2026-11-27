@@ -105,6 +105,18 @@ class TestOpusSheet(unittest.TestCase):
         n7 = next(r for r in f.rows if r["cell"] == "N7")
         self.assertEqual(n7["expected"], "Mar 2026")
 
+    def test_row_without_file_checked_on_self_link_record(self):
+        index = _identity_index()
+        red = "https://uk.wikisource.org/wiki/Архів:ДАЧкО/1/1/2"
+        index.add_page({"url": PAGE, "description": "Police department", "doc_links": []})
+        index.add_page({"url": PAGE + "/1", "description": "Lists", "years": "1865", "comments": "[JB] note"})
+        index.add_page({"url": red, "description": "Orders", "years": ""})
+        index.add_doc({"url": FILE, "OLD_doc_type": ["O", "V"], "OLD_process_code": "C1",
+                       "comments": "[JB] note", "when_transcribed": "Mar 2026"})
+        index.add_doc({"url": red, "OLD_doc_type": ["L"]})
+        found, _ = self._run(index)
+        self.assertEqual(found, {("row not imported (no link)", "A9")})
+
     def test_a2_checked_against_old_description(self):
         index = _identity_index()
         index.add_page({"url": PAGE, "description": "Police", "doc_links": [],

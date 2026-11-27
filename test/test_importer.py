@@ -2,6 +2,7 @@ import datetime
 import unittest
 
 from birddog.database_importer import (
+    add_case_page,
     add_page,
     canonical_wiki_url,
     check_redlink,
@@ -332,9 +333,6 @@ class TestCaseSelfLinkNote(unittest.TestCase):
         self.assertEqual(message, "")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class TestDisplayedDate(unittest.TestCase):
     def test_formats(self):
@@ -383,3 +381,42 @@ class TestSheetDescription(unittest.TestCase):
         add_page(self._page("Uman council"), table, False)
         add_page(self._page("Uman council"), table, True)
         self.assertEqual(table[0]["OLD_description"], "Uman council")
+
+
+class TestCaseRowWithoutFile(unittest.TestCase):
+    """A case row with no file link but values in D..O keeps them on a self-link record."""
+
+    def _row(self, **cells):
+        from openpyxl import Workbook
+        ws = Workbook().active
+        ws.title = "DACHKO 9-2"
+        ws["A7"] = 5.0
+        ws["B7"] = "Book of receipts"
+        for addr, value in cells.items():
+            ws[f"{addr}7"] = value
+        table = []
+        add_case_page(False, False, ws["A7"], "A7", "A", None, ord("G"), "", "wiki", "9",
+                      "DACHKO/9/2/5", "case", "2", "ДАЧкО/9/2", f"{_WS}/wiki/Архів:ДАЧкО/9/2",
+                      table, 7, f"{_WS}/w/index.php?title=Архів:ДАЧкО/9/2/5&{_RED}", None,
+                      "ДАЧкО/9/2/5", True, ws, None)
+        return table[0]
+
+    def test_curated_values_get_a_self_link_record(self):
+        page = self._row(D="V", F="C1", I="Gary")
+        self.assertEqual(page["doc_links"], [f"{_WS}/wiki/Архів:ДАЧкО/9/2/5?{_RED}"])
+        self.assertIn("no file link; curated values kept on a self-link record", page["import_message"])
+        self.assertEqual(page["OLD_process_code"], "C1")
+        url, availability = doc_link_availability(page["doc_links"][0], page["url"], page["availability"])
+        self.assertEqual((url, availability), (page["url"], "redlinked"))
+
+    def test_comment_alone_counts(self):
+        self.assertEqual(len(self._row(G="[JB] check later")["doc_links"]), 1)
+
+    def test_row_without_values_has_no_record(self):
+        page = self._row()
+        self.assertEqual(page["doc_links"], [])
+        self.assertNotIn("self-link record", page["import_message"])
+
+
+if __name__ == "__main__":
+    unittest.main()

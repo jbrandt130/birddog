@@ -7,7 +7,8 @@ The expectations come from the import requirements ("EXPECTED FROM SPREADSHEET
 IMPORTS"):
   - every row of every sheet becomes a record, including rows with only a
     comment or with no link, and each row gets its own record
-  - case rows keep columns B (title, link) and D..O
+  - case rows keep columns B (title, link) and D..O; a row without a file
+    link keeps D..O on a self-link record (the case page's own url)
   - all sheets: A2 (full description, kept in Pages.OLD_description where the
     base has it), B4 (as text, all links), D3 (all links), I3 (comment); other
     header links are reported
@@ -18,9 +19,9 @@ IMPORTS"):
 Records are matched by url: the page by the row's case/opus/fund link (column
 A), the document by the description link (column B). Nothing is written.
 
-Usage (from anywhere; exactly one target is required):
-    venv/bin/python utility/qa_import.py --local "var/WAT/DACHKO (Cherkassy)"/DACHKO-*.xlsx
-    venv/bin/python utility/qa_import.py --local --csv qa.csv FILE.xlsx ...
+Usage (from anywhere; checks LOCAL unless --stage or --prod is given):
+    venv/bin/python utility/qa_import.py "var/WAT/DACHKO (Cherkassy)"/DACHKO-*.xlsx
+    venv/bin/python utility/qa_import.py --prod --csv qa.csv FILE.xlsx ...
 """
 
 import argparse
@@ -57,10 +58,14 @@ OPUS_HEADERS = {"Doc type": "doc_type", "Content": "content", "Process": "proces
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Check an import against its spreadsheets.")
     parser.add_argument("spreadsheets", nargs="+", help="xlsx files that were imported")
-    target = parser.add_mutually_exclusive_group(required=True)
-    target.add_argument("--local", dest="env", action="store_const", const="LOCAL")
-    target.add_argument("--stage", dest="env", action="store_const", const="CLOUD_STAGE")
-    target.add_argument("--prod", dest="env", action="store_const", const="CLOUD_PROD")
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument("--local", dest="env", action="store_const", const="LOCAL",
+                        help="local dev base (the default)")
+    target.add_argument("--stage", dest="env", action="store_const", const="CLOUD_STAGE",
+                        help="NocoDB Cloud staging base")
+    target.add_argument("--prod", dest="env", action="store_const", const="CLOUD_PROD",
+                        help="NocoDB Cloud production base")
+    parser.set_defaults(env="LOCAL")
     parser.add_argument("--root", help="root_label of the archive (default: from the file name)")
     parser.add_argument("--csv", help="write every finding to this CSV file")
     parser.add_argument("--examples", type=int, default=5, help="examples shown per finding type")
@@ -366,6 +371,9 @@ def check_opus_sheet(ws, hdr_row, index, f, claimed, claimed_docs):
         doc = None
         for link in doc_links:
             doc = doc or index.doc(link)
+        if not doc_links and page_links:
+            # a row without a file keeps its D..O values on a self-link record
+            doc = index.doc(page_links[0])
 
         if page is None and doc is None:
             what = page_links[0] if page_links else (doc_links[0] if doc_links else "")

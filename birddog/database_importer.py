@@ -746,6 +746,7 @@ def delete_part_between_hyphen_and_slash(s: str) -> str:
 
 
 PARENT_LIST_LABEL = "[parent list]"
+NO_FILE_LINK_MSG = "no file link; curated values kept on a self-link record"
 
 
 def merge_descriptions(sheet_description: str, list_description: str | None) -> str:
@@ -1881,6 +1882,7 @@ def add_case_page(additional_column: bool, possible_hyphen_in_case_num: bool,
         process_code_col_offs = process_code_col_offs + 1
 
     filename = combine_cell_value(ws[file_name_cell_addr1], ws[file_name_cell_addr2])
+    curated_filename = filename
     root_label = get_root_label(label)
     if not filename:
         filename = label.lstrip("/").replace("/", "-")
@@ -1891,9 +1893,23 @@ def add_case_page(additional_column: bool, possible_hyphen_in_case_num: bool,
     when_transcribed = get_cell_display_text(ws[when_transcribed_cell_addr])
     doc_type = get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True)  # D
     doc_type = normalize_doc_type(doc_type)
+    description_cell_addr = f"{chr(ord(case_num_col) + description_col_offs)}{r}"
     curr_import_message, doc_links = get_doc_links(
-        ws, f"{chr(ord(case_num_col) + description_col_offs)}{r}", curr_import_message, raw_url,
-        note_self_link=True)
+        ws, description_cell_addr, curr_import_message, raw_url, note_self_link=True)
+    content_code = get_cell_value(ws[f"{chr(ord(case_num_col) + content_code_col_offs)}{r}"], True)  # E
+    comments = get_cell_value(ws[comments_cell_addr])
+    processor = combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2])
+    pages_processed = get_cell_int_value(ws[pages_processed_cell_addr1]) + \
+        get_cell_int_value(ws[pages_processed_cell_addr2])
+
+    if not doc_links and any((doc_type, content_code, process_code, comments, curated_filename,
+                              processor, pages_processed, when_transcribed, language)):
+        # no file yet, but the row holds the team's work (columns D..O): keep it
+        # on a self-link record, which the updater copies onto the page's file
+        # once the wiki links one (see DatabaseUpdater._propagate_kept_doc_curation)
+        doc_links = [canonical_wiki_url(raw_url)]
+        curr_import_message = add_to_message(
+            curr_import_message, f"{NO_FILE_LINK_MSG} in cell '{description_cell_addr}', sheet '{ws.title}'")
 
     add_page({
         "title": title,
@@ -1911,15 +1927,14 @@ def add_case_page(additional_column: bool, possible_hyphen_in_case_num: bool,
         "parent_url": opus_url,
         "doc_links": doc_links,  # B
         "OLD_doc_type": doc_type,  
-        "OLD_content_code": get_cell_value(ws[f"{chr(ord(case_num_col) + content_code_col_offs)}{r}"], True),  # E
+        "OLD_content_code": content_code,  # E
         "OLD_process_code": process_code,
         "import_message": curr_import_message,
         # the columns for the following cells are not fixed
-        "comments": get_cell_value(ws[comments_cell_addr]),
+        "comments": comments,
         "filename": filename,
-        "processor": combine_cell_value(ws[processor_cell_addr1], ws[processor_cell_addr2]),
-        "pages_processed": get_cell_int_value(ws[pages_processed_cell_addr1]) +
-                           get_cell_int_value(ws[pages_processed_cell_addr2]),
+        "processor": processor,
+        "pages_processed": pages_processed,
         "when_transcribed": when_transcribed,
         "language": language,
     }, page_table, False)
