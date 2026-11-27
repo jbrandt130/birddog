@@ -7,11 +7,11 @@ import urllib3
 sys.modules['requests.packages'] = requests
 sys.modules['requests.packages.urllib3'] = urllib3
 
+import datetime
 import os
 import random
 import re
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qs, quote, unquote, urlparse, urlunparse
@@ -907,7 +907,7 @@ def parse_cell_integers(fund_num_cell, fund_descr_cell, archive_latin_name) -> t
             return ints, url, in_first_cell
 
     # Case 4: datetime -> [day, month]
-    if isinstance(value, datetime):
+    if isinstance(value, datetime.datetime):
         return [str(value.day), str(value.month)], url, in_first_cell
 
     if not in_first_cell:
@@ -1836,8 +1836,14 @@ def add_case_page(additional_column: bool, possible_hyphen_in_case_num: bool,
 
     process_code = get_cell_value(ws[f"{chr(ord(case_num_col) + process_code_col_offs)}{r}"], True)  # F
     process_code, curr_import_message = normalize_process_code(process_code, curr_import_message)
+
     when_transcribed = ws[when_transcribed_cell_addr].value
-    when_transcribed = str(when_transcribed) if when_transcribed else ""
+    if isinstance(when_transcribed, datetime.datetime):
+        # Adjust the format codes (%m/%d/%Y, %d.%m.%Y, etc.) to match your sheet
+        when_transcribed = when_transcribed.strftime("%Y-%m-%d")
+    else:
+        when_transcribed = str(when_transcribed) if when_transcribed else ""
+
     doc_type = get_cell_value(ws[f"{chr(ord(case_num_col) + doc_type_col_offs)}{r}"], True)  # D
     doc_type = normalize_doc_type(doc_type)
     curr_import_message, doc_links = get_doc_links(
@@ -2390,8 +2396,8 @@ def process_dir(dir_path, actually_write=True):
 
 #testing
 if __name__ == "__main__":
-    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAKO-D-general-wiki-20261124.xlsx"
-#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/AGAD-wiki-20261022.xlsx"
+#    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DAKO-D-general-wiki-20261124.xlsx"
+    filepath = "C:/jewishGen/Import2DB/SourceSpreadsheets/All/DACHKO-D-wiki-20261124b.xlsx"
     import_spreadsheet(filepath, True)
 #    _dir_path = r"C:\jewishGen\Import2DB\SourceSpreadsheets\Test"
 #    process_dir(_dir_path)
